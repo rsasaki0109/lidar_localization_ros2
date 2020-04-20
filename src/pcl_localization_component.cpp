@@ -253,7 +253,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
       }
     }
     pcl::PointCloud<pcl::PointXYZI>::Ptr tmp_ptr(new pcl::PointCloud<pcl::PointXYZI>(tmp));
-    ndt_.setInputSource(filtered_cloud_ptr);
+    ndt_.setInputSource(tmp_ptr);
 
     Eigen::Affine3d affine;
     tf2::fromMsg(corrent_pose_stamped_.pose, affine);
