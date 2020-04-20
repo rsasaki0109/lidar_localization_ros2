@@ -8,6 +8,8 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("base_frame_id", "base_link");
   declare_parameter("ndt_resolution", 1.0);
   declare_parameter("voxel_leaf_size", 0.2);
+  declare_parameter("scan_max_range", 100.0);
+  declare_parameter("scan_min_range", 1.0);
   declare_parameter("use_pcd_map", false);
   declare_parameter("map_path", "/map/map.pcd");
   declare_parameter("set_initial_pose", false);
@@ -108,9 +110,18 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     get_parameter("odom_frame_id", odom_frame_id_);
     get_parameter("ndt_resolution", ndt_resolution_);
     get_parameter("voxel_leaf_size", voxel_leaf_size_);
+    get_parameter("scan_max_range", scan_max_range_);
+    get_parameter("scan_min_range", scan_min_range_);
     get_parameter("use_pcd_map", use_pcd_map_);
     get_parameter("map_path", map_path_);
     get_parameter("set_initial_pose", set_initial_pose_);
+    get_parameter("initial_pose_x", initial_pose_x_);
+    get_parameter("initial_pose_y", initial_pose_y_);
+    get_parameter("initial_pose_z", initial_pose_z_);
+    get_parameter("initial_pose_qx", initial_pose_qx_);
+    get_parameter("initial_pose_qy", initial_pose_qy_);
+    get_parameter("initial_pose_qz", initial_pose_qz_);
+    get_parameter("initial_pose_qw", initial_pose_qw_);
     get_parameter("use_odom", use_odom_);
     get_parameter("use_imu", use_imu_);
   }
@@ -231,7 +242,17 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
     voxel_grid_filter_.setInputCloud(cloud_ptr);
     voxel_grid_filter_.filter(*filtered_cloud_ptr);
-    // TODO:minmax and desckew 
+    // TODO:distortion
+    double r;
+    pcl::PointCloud<pcl::PointXYZI> tmp;
+    for (const auto &p : filtered_cloud_ptr->points) {
+      r = sqrt(pow(p.x, 2.0) + pow(p.y, 2.0));
+      if (scan_min_range_ < r && r < scan_max_range_)
+      {
+      tmp.push_back(p);
+      }
+    }
+    pcl::PointCloud<pcl::PointXYZI>::Ptr tmp_ptr(new pcl::PointCloud<pcl::PointXYZI>(tmp));
     ndt_.setInputSource(filtered_cloud_ptr);
 
     Eigen::Affine3d affine;
