@@ -15,11 +15,12 @@ A ROS2 package of Localization using 3D LiDAR.
 
 ## params
 
-
 |Name|Type|Default value|Description|
 |---|---|---|---|
 |ndt_resolution|double|2.0|resolution size of voxels[m]|
 |voxel_leaf_size|double|0.2|down sample size of input cloud[m]|
+|scan_max_range|double|100.0|max range of input cloud[m]|
+|scan_min_range|double|100.0|min range of input cloud[m]|
 |use_pcd_map|bool|false|whether pcd_map is used or not|
 |map_path|string|""|pcd map file path|
 |set_initial_pose|bool|false|whether or not to set the default value in the param file|

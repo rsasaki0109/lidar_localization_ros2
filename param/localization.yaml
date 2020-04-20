@@ -2,6 +2,8 @@ pcl_localization:
     ros__parameters:
       ndt_resolution: 2.0
       voxel_leaf_size: 1.0
+      scan_max_range: 100.0
+      scan_min_range: 1.0
       use_pcd_map: true
       map_path:  "/home/sasaki/github_ws/ros2_ws/src/pcl_localization_ros2/map/map.pcd"
       set_initial_pose: true
