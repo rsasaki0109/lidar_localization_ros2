@@ -41,8 +41,8 @@ ament_target_dependencies(pcl_localization_component
   geometry_msgs 
   sensor_msgs
   nav_msgs
-  #ndt_omp_ros2
   pcl_conversions
+  #ndt_omp_ros2
 )
 
 include_directories(
