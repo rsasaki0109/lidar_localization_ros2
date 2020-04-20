@@ -8,6 +8,8 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("base_frame_id", "base_link");
   declare_parameter("registration_method", "NDT");
   declare_parameter("ndt_resolution", 1.0);
+  declare_parameter("ndt_step_size", 0.1);
+  declare_parameter("trans_epsilon", 0.01);
   declare_parameter("voxel_leaf_size", 0.2);
   declare_parameter("scan_max_range", 100.0);
   declare_parameter("scan_min_range", 1.0);
@@ -35,6 +37,8 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     initializeParameters();
     initializePubSub();
     initializeRegistration();
+
+    path_.header.frame_id = global_frame_id_;
     
     return CallbackReturn::SUCCESS;
   }
@@ -44,6 +48,8 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     RCLCPP_INFO(get_logger(), "Activating");
 
     pose_pub_->on_activate();
+    path_pub_->on_activate();
+    initial_map_pub_->on_activate();
 
     if (set_initial_pose_) {
       auto msg = std::make_shared<geometry_msgs::msg::PoseStamped>();
@@ -58,12 +64,19 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
       msg->pose.orientation.z = initial_pose_qz_;
       msg->pose.orientation.w = initial_pose_qw_;
 
+      path_.poses.push_back(*msg);
+
       initialPoseReceived(msg);
     }
 
     if (use_pcd_map_) {
       pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
       pcl::io::loadPCDFile(map_path_, *map_cloud_ptr);
+
+      sensor_msgs::msg::PointCloud2::SharedPtr map_msg_ptr(new sensor_msgs::msg::PointCloud2);
+      pcl::toROSMsg(*map_cloud_ptr, *map_msg_ptr);
+      map_msg_ptr->header.frame_id = global_frame_id_;
+      initial_map_pub_->publish(map_msg_ptr);
 
       if (registration_method_ == "GICP") {
         pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
@@ -93,6 +106,8 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   {
     RCLCPP_INFO(get_logger(), "Cleaning Up");
     initial_pose_sub_.reset();
+    initial_map_pub_.reset();
+    path_pub_.reset();
     pose_pub_.reset();
     odom_sub_.reset();
     cloud_sub_.reset();
@@ -122,6 +137,8 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     get_parameter("base_frame_id", base_frame_id_);
     get_parameter("registration_method", registration_method_);
     get_parameter("ndt_resolution", ndt_resolution_);
+    get_parameter("ndt_step_size", ndt_step_size_);
+    get_parameter("trans_epsilon", trans_epsilon_);
     get_parameter("voxel_leaf_size", voxel_leaf_size_);
     get_parameter("scan_max_range", scan_max_range_);
     get_parameter("scan_min_range", scan_min_range_);
@@ -148,10 +165,18 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
       "pcl_pose",
       rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
 
+    path_pub_ = create_publisher<nav_msgs::msg::Path>(
+      "path",
+      rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
+
+    initial_map_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
+      "initial_map",
+      rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
+
     initial_pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
       "initialpose", rclcpp::SystemDefaultsQoS(),
       std::bind(&PCLLocalization::initialPoseReceived, this, std::placeholders::_1));
-
+    
     map_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
       "map", rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable(),
       std::bind(&PCLLocalization::mapReceived, this, std::placeholders::_1));
@@ -171,12 +196,13 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
 
     if (registration_method_ == "GICP") {
       pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp(new pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>());
-      gicp->setTransformationEpsilon(0.01);
+      gicp->setTransformationEpsilon(trans_epsilon_);
       registration_ = gicp;
     } else {
       pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt(new pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
+      ndt->setStepSize(ndt_step_size_);
       ndt->setResolution(ndt_resolution_);
-      ndt->setTransformationEpsilon(0.01);
+      ndt->setTransformationEpsilon(trans_epsilon_);
       registration_ = ndt;
     }
 
@@ -379,6 +405,10 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     transform_stamped.transform.translation.z = static_cast<double>(final_transformation(2, 3));
     transform_stamped.transform.rotation = quat_msg;
     broadcaster_.sendTransform(transform_stamped);
+
+    path_.poses.push_back(corrent_pose_stamped_);
+    path_pub_->publish(path_);
+
     #if 0
     std::cout << "number of filtered cloud points: " << filtered_cloud_ptr->size() << std::endl;
     std::cout << "has converged: " << registration_->hasConverged() << std::endl;
