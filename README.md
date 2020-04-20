@@ -17,6 +17,7 @@ A ROS2 package of Localization using 3D LiDAR.
 
 |Name|Type|Default value|Description|
 |---|---|---|---|
+|registration_method|string|"NDT"|"NDT" or "GICP"|
 |ndt_resolution|double|2.0|resolution size of voxels[m]|
 |voxel_leaf_size|double|0.2|down sample size of input cloud[m]|
 |scan_max_range|double|100.0|max range of input cloud[m]|

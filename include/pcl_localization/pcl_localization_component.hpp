@@ -6,6 +6,7 @@
 #include <utility>
 
 #include <pcl/registration/ndt.h>
+#include <pcl/registration/gicp.h>
 
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -62,7 +63,7 @@ public:
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::ConstSharedPtr 
     cloud_sub_;
   
-  pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI> ndt_;
+  pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr registration_;
   pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter_;
   geometry_msgs::msg::PoseStamped corrent_pose_stamped_;
 
@@ -73,6 +74,7 @@ public:
   std::string global_frame_id_;
   std::string odom_frame_id_;
   std::string base_frame_id_;
+  std::string registration_method_;
   double scan_max_range_;
   double scan_min_range_;
   double scan_period_;
