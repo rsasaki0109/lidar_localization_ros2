@@ -22,7 +22,6 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "nav_msgs/msg/path.hpp"
 
-
 using namespace std::chrono_literals;
 
 class PCLLocalization : public rclcpp_lifecycle::LifecycleNode
