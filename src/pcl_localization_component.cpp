@@ -297,6 +297,8 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   // Ref:LeGO-LOAM(BSD-3 LICENSE)
   // https://github.com/RobustFieldAutonomyLab/LeGO-LOAM/blob/master/LeGO-LOAM/src/featureAssociation.cpp#L431-L459
   void PCLLocalization::imuReceived(sensor_msgs::msg::Imu::ConstSharedPtr msg){
+    if(!use_imu_) return;
+
     double roll, pitch, yaw;
     tf2::Quaternion orientation;
     tf2::fromMsg(msg->orientation, orientation);
@@ -421,6 +423,16 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
       std::cout << "fitness score: " << registration_->getFitnessScore() << std::endl;
       std::cout << "final transformation:" << std::endl;
       std::cout <<  final_transformation << std::endl;
+      /* delta_angle check
+       * trace(RotationMatrix) = 2(cos(theta) + 1)
+       */
+      double init_cos_angle = 0.5 * (init_guess.coeff (0, 0) + init_guess.coeff (1, 1) + init_guess.coeff (2, 2) - 1);
+      double cos_angle = 0.5 * (final_transformation.coeff (0, 0) + final_transformation.coeff (1, 1) + final_transformation.coeff (2, 2) - 1);
+      double init_angle = acos(init_cos_angle);
+      double angle = acos(cos_angle);
+      // Ref:https://twitter.com/Atsushi_twi/status/1185868416864808960
+      double delta_angle = abs(atan2(sin(init_angle - angle), cos(init_angle - angle)));
+      std::cout << "delta_angle:" << delta_angle * 180 / M_PI  << "[deg]" << std::endl;
       std::cout << "-----------------------------------------------------" << std::endl;
     }
   }
