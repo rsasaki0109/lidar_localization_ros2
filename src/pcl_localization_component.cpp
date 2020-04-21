@@ -6,6 +6,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("global_frame_id", "map");
   declare_parameter("odom_frame_id", "odom");
   declare_parameter("base_frame_id", "base_link");
+  declare_parameter("registration_method", "NDT");
   declare_parameter("ndt_resolution", 1.0);
   declare_parameter("voxel_leaf_size", 0.2);
   declare_parameter("scan_max_range", 100.0);
@@ -61,9 +62,18 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     }
 
     if (use_pcd_map_) {
-      pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud(new pcl::PointCloud<pcl::PointXYZI>);
-      pcl::io::loadPCDFile(map_path_, *map_cloud);
-      ndt_.setInputTarget(map_cloud);
+      pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
+      pcl::io::loadPCDFile(map_path_, *map_cloud_ptr);
+
+      if (registration_method_ == "GICP") {
+        pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
+        voxel_grid_filter_.setInputCloud(map_cloud_ptr);
+        voxel_grid_filter_.filter(*filtered_cloud_ptr);
+        registration_->setInputTarget(filtered_cloud_ptr);
+      } else {
+        registration_->setInputTarget(map_cloud_ptr);
+      }
+
       map_recieved_ = true;
     }
 
@@ -110,6 +120,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     get_parameter("global_frame_id", global_frame_id_);
     get_parameter("odom_frame_id", odom_frame_id_);
     get_parameter("base_frame_id", base_frame_id_);
+    get_parameter("registration_method", registration_method_);
     get_parameter("ndt_resolution", ndt_resolution_);
     get_parameter("voxel_leaf_size", voxel_leaf_size_);
     get_parameter("scan_max_range", scan_max_range_);
@@ -158,8 +169,16 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   {
     RCLCPP_INFO(get_logger(), "initializeRegistration");
 
-    ndt_.setResolution(ndt_resolution_);
-    ndt_.setTransformationEpsilon(0.01);
+    if (registration_method_ == "GICP") {
+      pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp(new pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>());
+      gicp->setTransformationEpsilon(0.01);
+      registration_ = gicp;
+    } else {
+      pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt(new pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
+      ndt->setResolution(ndt_resolution_);
+      ndt->setTransformationEpsilon(0.01);
+      registration_ = ndt;
+    }
 
     voxel_grid_filter_.setLeafSize(voxel_leaf_size_, voxel_leaf_size_, voxel_leaf_size_);
   }
@@ -180,15 +199,25 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   {
     if(map_recieved_) return;
     RCLCPP_INFO(get_logger(), "mapReceived");
-    pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud(new pcl::PointCloud<pcl::PointXYZI>);
+    pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
 
     if(msg->header.frame_id != global_frame_id_){
       RCLCPP_WARN(this->get_logger(), "map_frame_id does not match　global_frame_id");
       return;
     };
 
-    pcl::fromROSMsg(*msg,*map_cloud);
-    ndt_.setInputTarget(map_cloud);
+    pcl::fromROSMsg(*msg,*map_cloud_ptr);
+    
+    if (registration_method_ == "GICP") {
+      pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
+      voxel_grid_filter_.setInputCloud(map_cloud_ptr);
+      voxel_grid_filter_.filter(*filtered_cloud_ptr);
+      registration_->setInputTarget(filtered_cloud_ptr);
+      
+    } else {
+      registration_->setInputTarget(map_cloud_ptr);
+    }
+    
     map_recieved_ = true;
   }
 
@@ -320,16 +349,16 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
       }
     }
     pcl::PointCloud<pcl::PointXYZI>::Ptr tmp_ptr(new pcl::PointCloud<pcl::PointXYZI>(tmp));
-    ndt_.setInputSource(tmp_ptr);
+    registration_->setInputSource(tmp_ptr);
 
     Eigen::Affine3d affine;
     tf2::fromMsg(corrent_pose_stamped_.pose, affine);
     Eigen::Matrix4f init_guess = affine.matrix().cast<float>();
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZI>);
-    ndt_.align(*output_cloud, init_guess);
+    registration_->align(*output_cloud, init_guess);
 
-    Eigen::Matrix4f final_transformation = ndt_.getFinalTransformation();
+    Eigen::Matrix4f final_transformation = registration_->getFinalTransformation();
     Eigen::Matrix3d rot_mat = final_transformation.block<3, 3>(0, 0).cast<double>();
     Eigen::Quaterniond quat_eig(rot_mat);
     geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
@@ -352,9 +381,9 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     broadcaster_.sendTransform(transform_stamped);
     #if 0
     std::cout << "number of filtered cloud points: " << filtered_cloud_ptr->size() << std::endl;
-    std::cout << "has converged: " << ndt_.hasConverged() << std::endl;
-    std::cout << "fitness score: " << ndt_.getFitnessScore() << std::endl;
-    std::cout << "Number of iteration: " << ndt_.getFinalNumIteration() << std::endl;
+    std::cout << "has converged: " << registration_->hasConverged() << std::endl;
+    std::cout << "fitness score: " << registration_->getFitnessScore() << std::endl;
+    std::cout << "Number of iteration: " << registration_->getFinalNumIteration() << std::endl;
     std::cout << "final transformation:" << std::endl;
     std::cout <<  final_transformation << std::endl;
     std::cout << "-----------------------------------------------------" << std::endl;
