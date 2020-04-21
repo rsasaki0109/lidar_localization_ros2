@@ -5,13 +5,15 @@ A ROS2 package of Localization using 3D LiDAR.
 ## IO
 - input  
 /cloud  (sensor_msgs/PointCloud2)  
-/map  (sensor_msgs/PointCloud2)(optional)  
+/map  (sensor_msgs/PointCloud2)  
 /initialpose (geometry_msgs/PoseStamed)(optional)  
 /odom (nav_msgs/Odometry)(optional)   
 /imu  (sensor_msgs/Imu)(optional)  
 
 - output  
-/pcl_pose (geometry_msgs/PoseStamped)
+/pcl_pose (geometry_msgs/PoseStamped)  
+/path (nav_msgs/Path)  
+/initial_map (sensor_msgs/PointCloud2)(optional)  
 
 ## params
 
@@ -19,6 +21,8 @@ A ROS2 package of Localization using 3D LiDAR.
 |---|---|---|---|
 |registration_method|string|"NDT"|"NDT" or "GICP"|
 |ndt_resolution|double|2.0|resolution size of voxels[m]|
+|ndt_step_size|double|0.1|step_size maximum step length[m]|
+|transform_epsilon|double|0.01|transform epsilon to stop iteration in registration|
 |voxel_leaf_size|double|0.2|down sample size of input cloud[m]|
 |scan_max_range|double|100.0|max range of input cloud[m]|
 |scan_min_range|double|1.0|min range of input cloud[m]|
