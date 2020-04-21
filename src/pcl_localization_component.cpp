@@ -10,6 +10,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("voxel_leaf_size", 0.2);
   declare_parameter("scan_max_range", 100.0);
   declare_parameter("scan_min_range", 1.0);
+  declare_parameter("scan_period", 0.1);
   declare_parameter("use_pcd_map", false);
   declare_parameter("map_path", "/map/map.pcd");
   declare_parameter("set_initial_pose", false);
@@ -108,10 +109,12 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     RCLCPP_INFO(get_logger(), "initializeParameters");
     get_parameter("global_frame_id", global_frame_id_);
     get_parameter("odom_frame_id", odom_frame_id_);
+    get_parameter("base_frame_id", base_frame_id_);
     get_parameter("ndt_resolution", ndt_resolution_);
     get_parameter("voxel_leaf_size", voxel_leaf_size_);
     get_parameter("scan_max_range", scan_max_range_);
     get_parameter("scan_min_range", scan_min_range_);
+    get_parameter("scan_period", scan_period_);
     get_parameter("use_pcd_map", use_pcd_map_);
     get_parameter("map_path", map_path_);
     get_parameter("set_initial_pose", set_initial_pose_);
@@ -202,6 +205,10 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
       RCLCPP_WARN(this->get_logger(), "odom time interval is too large");
       return;
     }
+    if (dt_odom < 0.0 /* [sec] */) {
+      RCLCPP_WARN(this->get_logger(), "odom time interval is negative");
+      return;
+    }
 
     tf2::Quaternion previous_quat_tf;
     double roll, pitch, yaw;
@@ -230,7 +237,61 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     corrent_pose_stamped_.pose.orientation = quat_msg;
   }
 
-  // void PCLLocalization::imuReceived(sensor_msgs::msg::Imu::ConstSharedPtr msg){}
+  // Ref:LeGO-LOAM(BSD-3 LICENSE)
+  // https://github.com/RobustFieldAutonomyLab/LeGO-LOAM/blob/master/LeGO-LOAM/src/featureAssociation.cpp#L431-L459
+  void PCLLocalization::imuReceived(sensor_msgs::msg::Imu::ConstSharedPtr msg){
+    double roll, pitch, yaw;
+    tf2::Quaternion orientation;
+    tf2::fromMsg(msg->orientation, orientation);
+    tf2::Matrix3x3(orientation).getRPY(roll, pitch, yaw);
+    float acc_x = msg->linear_acceleration.x + sin(pitch) * 9.81;
+    float acc_y = msg->linear_acceleration.y - cos(pitch) * sin(roll) * 9.81;
+    float acc_z = msg->linear_acceleration.z - cos(pitch) * cos(roll) * 9.81;
+
+    imu_ptr_last_ = (imu_ptr_last_ + 1) % imu_que_length_;
+
+    if ((imu_ptr_last_ + 1) % imu_que_length_ == imu_ptr_front_)
+    {
+      imu_ptr_front_ = (imu_ptr_front_ + 1) % imu_que_length_;
+    }
+
+    imu_time_[imu_ptr_last_] = msg->header.stamp.sec +
+      msg->header.stamp.nanosec * 1e-9;
+    imu_roll_[imu_ptr_last_] = roll;
+    imu_pitch_[imu_ptr_last_] = pitch;
+    imu_yaw_[imu_ptr_last_] = yaw;
+    imu_acc_x_[imu_ptr_last_] = acc_x;
+    imu_acc_y_[imu_ptr_last_] = acc_y;
+    imu_acc_z_[imu_ptr_last_] = acc_z;
+    imu_angular_velo_x_[imu_ptr_last_] = msg->angular_velocity.x;
+    imu_angular_velo_y_[imu_ptr_last_] = msg->angular_velocity.y;
+    imu_angular_velo_z_[imu_ptr_last_] = msg->angular_velocity.z;
+
+    Eigen::Matrix3f rot =
+      Eigen::Quaternionf(msg->orientation.w, msg->orientation.x, msg->orientation.y, msg->orientation.z).toRotationMatrix();
+    Eigen::Vector3f acc = rot * Eigen::Vector3f(acc_x, acc_y, acc_z);
+    Eigen::Vector3f angular_velo = rot * Eigen::Vector3f(msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
+
+    int imu_ptr_back = (imu_ptr_last_ - 1 + imu_que_length_) % imu_que_length_;
+    double time_diff = imu_time_[imu_ptr_last_] - imu_time_[imu_ptr_back];
+    if (time_diff < 1.0 /* [sec] */)
+    {
+      imu_shift_x_[imu_ptr_last_] =
+        imu_shift_x_[imu_ptr_back] +imu_velo_x_[imu_ptr_back] * time_diff + acc(0) * time_diff * time_diff * 0.5;
+      imu_shift_y_[imu_ptr_last_] =
+        imu_shift_y_[imu_ptr_back] + imu_velo_y_[imu_ptr_back] * time_diff + acc(1) * time_diff * time_diff * 0.5;
+      imu_shift_z_[imu_ptr_last_] =
+        imu_shift_z_[imu_ptr_back] + imu_velo_z_[imu_ptr_back] * time_diff + acc(2) * time_diff * time_diff * 0.5;
+
+      imu_velo_x_[imu_ptr_last_] = imu_velo_x_[imu_ptr_back] + acc(0) * time_diff;
+      imu_velo_y_[imu_ptr_last_] = imu_velo_y_[imu_ptr_back] + acc(1) * time_diff;
+      imu_velo_z_[imu_ptr_last_] = imu_velo_z_[imu_ptr_back] + acc(2) * time_diff;
+
+      imu_angular_rot_x_[imu_ptr_last_] = imu_angular_rot_x_[imu_ptr_back] + angular_velo(0) * time_diff;
+      imu_angular_rot_y_[imu_ptr_last_] = imu_angular_rot_y_[imu_ptr_back] + angular_velo(1) * time_diff;
+      imu_angular_rot_z_[imu_ptr_last_] = imu_angular_rot_z_[imu_ptr_back] + angular_velo(2) * time_diff;
+    }
+  }
 
   void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
   {
@@ -239,10 +300,16 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::fromROSMsg(*msg,*cloud_ptr);
 
+    if (use_imu_) {
+      double received_time = msg->header.stamp.sec +
+        msg->header.stamp.nanosec * 1e-9;
+      adjustDistortion(cloud_ptr, received_time);
+    }
+
     pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
     voxel_grid_filter_.setInputCloud(cloud_ptr);
     voxel_grid_filter_.filter(*filtered_cloud_ptr);
-    // TODO:distortion
+
     double r;
     pcl::PointCloud<pcl::PointXYZI> tmp;
     for (const auto &p : filtered_cloud_ptr->points) {
@@ -253,7 +320,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
       }
     }
     pcl::PointCloud<pcl::PointXYZI>::Ptr tmp_ptr(new pcl::PointCloud<pcl::PointXYZI>(tmp));
-    ndt_.setInputSource(filtered_cloud_ptr);
+    ndt_.setInputSource(tmp_ptr);
 
     Eigen::Affine3d affine;
     tf2::fromMsg(corrent_pose_stamped_.pose, affine);
@@ -292,4 +359,110 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     std::cout <<  final_transformation << std::endl;
     std::cout << "-----------------------------------------------------" << std::endl;
     #endif
+  }
+
+// Ref:LeGO-LOAM(BSD-3 LICENSE)
+// https://github.com/RobustFieldAutonomyLab/LeGO-LOAM/blob/master/LeGO-LOAM/src/featureAssociation.cpp#L491-L619
+void PCLLocalization::adjustDistortion(pcl::PointCloud<pcl::PointXYZI>::Ptr & cloud, double scan_time)
+{
+    bool half_passed = false;
+    int cloud_size = cloud->points.size();
+
+    float start_ori = -std::atan2(cloud->points[0].y, cloud->points[0].x);
+    float end_ori = -std::atan2(cloud->points[cloud_size - 1].y, cloud->points[cloud_size - 1].x);
+    if (end_ori - start_ori > 3 * M_PI) {
+      end_ori -= 2 * M_PI;
+    }
+    else if (end_ori - start_ori < M_PI) {
+      end_ori += 2 * M_PI;
+    }
+    float ori_diff = end_ori - start_ori;
+
+    Eigen::Vector3f rpy_start, shift_start, velo_start, rpy_cur, shift_cur, velo_cur;
+    Eigen::Vector3f shift_from_start;
+    Eigen::Matrix3f r_s_i, r_c;
+    Eigen::Vector3f adjusted_p;
+    float ori_h;
+    for (int i = 0; i < cloud_size; ++i)
+    {
+      pcl::PointXYZI &p = cloud->points[i];
+      ori_h = -std::atan2(p.y, p.x);
+      if (!half_passed) {
+        if (ori_h < start_ori - M_PI * 0.5) {
+            ori_h += 2 * M_PI;
+        } else if (ori_h > start_ori + M_PI * 1.5) {
+            ori_h -= 2 * M_PI;
+        }
+
+        if (ori_h - start_ori > M_PI) {
+          half_passed = true;
+        }
+      } else {
+        ori_h += 2 * M_PI;
+        if (ori_h < end_ori - 1.5 * M_PI) {
+          ori_h += 2 * M_PI;
+        }
+      else if (ori_h > end_ori + 0.5 * M_PI) {
+          ori_h -= 2 * M_PI;
+        }
+      }
+
+      float rel_time = (ori_h - start_ori) / ori_diff * scan_period_;
+
+      if (imu_ptr_last_ > 0) {
+        imu_ptr_front_ = imu_ptr_last_iter_;
+        while (imu_ptr_front_ != imu_ptr_last_) {
+          if (scan_time + rel_time > imu_time_[imu_ptr_front_]) {
+          break;
+          }
+          imu_ptr_front_ = (imu_ptr_front_ + 1) % imu_que_length_;
+        }
+
+        if (scan_time + rel_time > imu_time_[imu_ptr_front_]) {
+          rpy_cur(0) = imu_roll_[imu_ptr_front_];
+          rpy_cur(1) = imu_pitch_[imu_ptr_front_];
+          rpy_cur(2) = imu_yaw_[imu_ptr_front_];
+          shift_cur(0) = imu_shift_x_[imu_ptr_front_];
+          shift_cur(1) = imu_shift_y_[imu_ptr_front_];
+          shift_cur(2) = imu_shift_z_[imu_ptr_front_];
+          velo_cur(0) = imu_velo_x_[imu_ptr_front_];
+          velo_cur(1) = imu_velo_y_[imu_ptr_front_];
+          velo_cur(2) = imu_velo_z_[imu_ptr_front_];
+        } else  {
+          int imu_ptr_back = (imu_ptr_front_ - 1 + imu_que_length_) % imu_que_length_;
+          float ratio_front = (scan_time + rel_time - imu_time_[imu_ptr_back]) /
+            (imu_time_[imu_ptr_front_] - imu_time_[imu_ptr_back]);
+          float ratio_back = 1.0 - ratio_front;
+          rpy_cur(0) = imu_roll_[imu_ptr_front_] * ratio_front + imu_roll_[imu_ptr_back] * ratio_back;
+          rpy_cur(1) = imu_pitch_[imu_ptr_front_] * ratio_front + imu_pitch_[imu_ptr_back] * ratio_back;
+          rpy_cur(2) = imu_yaw_[imu_ptr_front_] * ratio_front + imu_yaw_[imu_ptr_back] * ratio_back;
+          shift_cur(0) = imu_shift_x_[imu_ptr_front_] * ratio_front + imu_shift_x_[imu_ptr_back] * ratio_back;
+          shift_cur(1) = imu_shift_y_[imu_ptr_front_] * ratio_front + imu_shift_y_[imu_ptr_back] * ratio_back;
+          shift_cur(2) = imu_shift_z_[imu_ptr_front_] * ratio_front + imu_shift_z_[imu_ptr_back] * ratio_back;
+          velo_cur(0) = imu_velo_x_[imu_ptr_front_] * ratio_front + imu_velo_x_[imu_ptr_back] * ratio_back;
+          velo_cur(1) = imu_velo_y_[imu_ptr_front_] * ratio_front + imu_velo_y_[imu_ptr_back] * ratio_back;
+          velo_cur(2) = imu_velo_z_[imu_ptr_front_] * ratio_front + imu_velo_z_[imu_ptr_back] * ratio_back;
+        }
+
+        r_c = (
+          Eigen::AngleAxisf(rpy_cur(2), Eigen::Vector3f::UnitZ()) *
+          Eigen::AngleAxisf(rpy_cur(1), Eigen::Vector3f::UnitY()) *
+          Eigen::AngleAxisf(rpy_cur(0), Eigen::Vector3f::UnitX())
+          ).toRotationMatrix();
+
+        if (i == 0) {
+          rpy_start = rpy_cur;
+          shift_start = shift_cur;
+          velo_start = velo_cur;
+          r_s_i = r_c.inverse();
+        } else {
+          shift_from_start = shift_cur - shift_start - velo_start * rel_time;
+          adjusted_p = r_s_i * (r_c * Eigen::Vector3f(p.x, p.y, p.z) + shift_from_start);
+          p.x = adjusted_p.x();
+          p.y = adjusted_p.y();
+          p.z = adjusted_p.z();
+        }
+      }
+      imu_ptr_last_iter_ = imu_ptr_front_;
+    }
   }

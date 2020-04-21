@@ -47,7 +47,7 @@ public:
   void cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
   // void gnssReceived();
 
-  // void distortScan();
+  void adjustDistortion(pcl::PointCloud<pcl::PointXYZI>::Ptr & cloud, double scan_time);
 
   tf2_ros::TransformBroadcaster broadcaster_;
 
@@ -75,6 +75,7 @@ public:
   std::string base_frame_id_;
   double scan_max_range_;
   double scan_min_range_;
+  double scan_period_;
   double ndt_resolution_;
   double voxel_leaf_size_;
   bool use_pcd_map_{false};
@@ -91,4 +92,30 @@ public:
   bool use_odom_{false};
   double last_odom_received_time_;
   bool use_imu_{false};
+  
+  // imu
+  static const int imu_que_length_{200};
+  int imu_ptr_front_{0}, imu_ptr_last_{-1}, imu_ptr_last_iter_{0};
+
+  std::array<double, imu_que_length_> imu_time_;
+  std::array<float, imu_que_length_> imu_roll_;
+  std::array<float, imu_que_length_> imu_pitch_;
+  std::array<float, imu_que_length_> imu_yaw_;
+
+  std::array<float, imu_que_length_> imu_acc_x_;
+  std::array<float, imu_que_length_> imu_acc_y_;
+  std::array<float, imu_que_length_> imu_acc_z_;
+  std::array<float, imu_que_length_> imu_velo_x_;
+  std::array<float, imu_que_length_> imu_velo_y_;
+  std::array<float, imu_que_length_> imu_velo_z_;
+  std::array<float, imu_que_length_> imu_shift_x_;
+  std::array<float, imu_que_length_> imu_shift_y_;
+  std::array<float, imu_que_length_> imu_shift_z_;
+
+  std::array<float, imu_que_length_> imu_angular_velo_x_;
+  std::array<float, imu_que_length_> imu_angular_velo_y_;
+  std::array<float, imu_que_length_> imu_angular_velo_z_;
+  std::array<float, imu_que_length_> imu_angular_rot_x_;
+  std::array<float, imu_que_length_> imu_angular_rot_y_;
+  std::array<float, imu_que_length_> imu_angular_rot_z_;
 };
