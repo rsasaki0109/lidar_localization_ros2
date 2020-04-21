@@ -20,3 +20,4 @@ pcl_localization:
       initial_pose_qw: 1.0
       use_odom: false
       use_imu: false
+      enable_debug: false

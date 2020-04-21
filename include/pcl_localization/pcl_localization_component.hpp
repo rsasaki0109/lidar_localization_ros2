@@ -101,6 +101,7 @@ public:
   bool use_odom_{false};
   double last_odom_received_time_;
   bool use_imu_{false};
+  bool enable_debug_{false};
   
   // imu
   static const int imu_que_length_{200};

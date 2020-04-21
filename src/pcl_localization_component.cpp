@@ -26,6 +26,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("initial_pose_qw", 1.0);
   declare_parameter("use_odom", false);
   declare_parameter("use_imu", false);
+  declare_parameter("enable_debug", false);
 }
 
   using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
@@ -155,6 +156,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     get_parameter("initial_pose_qw", initial_pose_qw_);
     get_parameter("use_odom", use_odom_);
     get_parameter("use_imu", use_imu_);
+    get_parameter("enable_debug", enable_debug_);
   }
 
   void PCLLocalization::initializePubSub()
@@ -223,7 +225,6 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
 
   void PCLLocalization::mapReceived(sensor_msgs::msg::PointCloud2::SharedPtr msg)
   {
-    if(map_recieved_) return;
     RCLCPP_INFO(get_logger(), "mapReceived");
     pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
 
@@ -256,7 +257,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
       msg->header.stamp.nanosec * 1e-9;
     double dt_odom = current_odom_received_time - last_odom_received_time_;
     last_odom_received_time_ = current_odom_received_time;
-    if (dt_odom > 5.0 /* [sec] */) {
+    if (dt_odom > 1.0 /* [sec] */) {
       RCLCPP_WARN(this->get_logger(), "odom time interval is too large");
       return;
     }
@@ -281,7 +282,8 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
 
     geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
     
-    Eigen::Vector3d odom{msg->twist.twist.linear.x,
+    Eigen::Vector3d odom{
+      msg->twist.twist.linear.x,
       msg->twist.twist.linear.y,
       msg->twist.twist.linear.z};
     Eigen::Vector3d delta_position = quat_eig.matrix() * dt_odom * odom;
@@ -382,7 +384,10 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     Eigen::Matrix4f init_guess = affine.matrix().cast<float>();
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZI>);
+    rclcpp::Clock system_clock;
+    rclcpp::Time time_align_start = system_clock.now();
     registration_->align(*output_cloud, init_guess);
+    rclcpp::Time time_align_end = system_clock.now();
 
     Eigen::Matrix4f final_transformation = registration_->getFinalTransformation();
     Eigen::Matrix3d rot_mat = final_transformation.block<3, 3>(0, 0).cast<double>();
@@ -409,15 +414,15 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     path_.poses.push_back(corrent_pose_stamped_);
     path_pub_->publish(path_);
 
-    #if 0
-    std::cout << "number of filtered cloud points: " << filtered_cloud_ptr->size() << std::endl;
-    std::cout << "has converged: " << registration_->hasConverged() << std::endl;
-    std::cout << "fitness score: " << registration_->getFitnessScore() << std::endl;
-    std::cout << "Number of iteration: " << registration_->getFinalNumIteration() << std::endl;
-    std::cout << "final transformation:" << std::endl;
-    std::cout <<  final_transformation << std::endl;
-    std::cout << "-----------------------------------------------------" << std::endl;
-    #endif
+    if (enable_debug_) {
+      std::cout << "number of filtered cloud points: " << filtered_cloud_ptr->size() << std::endl;
+      std::cout << "align time:" << time_align_end.seconds() - time_align_start.seconds() << "[sec]" << std::endl;
+      std::cout << "has converged: " << registration_->hasConverged() << std::endl;
+      std::cout << "fitness score: " << registration_->getFitnessScore() << std::endl;
+      std::cout << "final transformation:" << std::endl;
+      std::cout <<  final_transformation << std::endl;
+      std::cout << "-----------------------------------------------------" << std::endl;
+    }
   }
 
 // Ref:LeGO-LOAM(BSD-3 LICENSE)
