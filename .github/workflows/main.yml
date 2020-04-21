@@ -22,8 +22,8 @@ jobs:
             - uses: actions/checkout@v2-beta
             - name: Copy repository
               run: |
-                  mkdir -p ~/ros2_ws/src/kalman_filter_localization
-                  cp -rf . ~/ros2_ws/src/kalman_filter_localization
+                  mkdir -p ~/ros2_ws/src/pcl_localization_ros2
+                  cp -rf . ~/ros2_ws/src/pcl_localization_ros2
             - name: Install dependencies
               run: |
                   source /opt/ros/dashing/setup.bash

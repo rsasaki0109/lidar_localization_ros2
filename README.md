@@ -13,7 +13,7 @@ A ROS2 package of Localization using 3D LiDAR.
 - output  
 /pcl_pose (geometry_msgs/PoseStamped)  
 /path (nav_msgs/Path)  
-/initial_map (sensor_msgs/PointCloud2)(optional)  
+/initial_map (sensor_msgs/PointCloud2)(when `use_pcd_map` is true)  
 
 ## params
 
@@ -46,3 +46,7 @@ A ROS2 package of Localization using 3D LiDAR.
 rviz2 -d src/pcl_localization_ros2/rviz/localization.rviz
 ros2 launch pcl_localization_ros2 pcl_localization.launch.py
 ```
+
+<img src="./images/path.png" width="640px">
+
+Green: path, Red: map
