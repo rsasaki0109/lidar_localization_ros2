@@ -1,12 +1,12 @@
 # pcl_localization_ros2
 ![CI](https://github.com/rsasaki0109/pcl_localization_ros2/workflows/CI/badge.svg)  
-A ROS2 package of Localization using 3D LiDAR.
+A ROS2 package of 3D LIDAR-based Localization using PCL.
 
 ## IO
 - input  
 /cloud  (sensor_msgs/PointCloud2)  
 /map  (sensor_msgs/PointCloud2)  
-/initialpose (geometry_msgs/PoseStamed)(optional)  
+/initialpose (geometry_msgs/PoseStamed)(when `set_initial_pose` is false)  
 /odom (nav_msgs/Odometry)(optional)   
 /imu  (sensor_msgs/Imu)(optional)  
 
@@ -28,7 +28,7 @@ A ROS2 package of Localization using 3D LiDAR.
 |scan_min_range|double|1.0|min range of input cloud[m]|
 |scan_periad|double|0.1|scan period of input cloud[sec]|
 |use_pcd_map|bool|false|whether pcd_map is used or not|
-|map_path|string|"/map/map.pcd"|pcd map file path|
+|map_path|string|"/map/map.pcd"|pcd_map file path|
 |set_initial_pose|bool|false|whether or not to set the default value in the param file|
 |initial_pose_x|double|0.0|x-coordinate of the initial pose value[m]|
 |initial_pose_y|double|0.0|y-coordinate of the initial pose value[m]|
@@ -39,6 +39,7 @@ A ROS2 package of Localization using 3D LiDAR.
 |initial_pose_qw|double|1.0|Quaternion w of the initial pose value|
 |use_odom|bool|false|whether odom is used or not for initial attitude in point cloud registration|
 |use_imu|bool|false|whether 9-axis imu is used or not for point cloud distortion correction|
+|enable_debug|bool|false|whether debug is done or not|
 
 ## how to use
 
