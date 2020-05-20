@@ -355,7 +355,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
   {
     if(!map_recieved_ || !initialpose_recieved_) return;
-    RCLCPP_INFO(get_logger(), "cloudReceived");
+    // RCLCPP_INFO(get_logger(), "cloudReceived");
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::fromROSMsg(*msg,*cloud_ptr);
 
