@@ -45,7 +45,7 @@ def generate_launch_description():
         node_name='pcl_localization',
         package='pcl_localization_ros2',
         node_executable='pcl_localization_node',
-        remappings=[('/cloud','/velodyne_points')],
+        remappings=[('/cloud','/points_raw')],
         parameters=[localization_param_dir],
         output='screen')
 

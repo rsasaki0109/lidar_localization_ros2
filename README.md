@@ -2,6 +2,11 @@
 ![CI](https://github.com/rsasaki0109/pcl_localization_ros2/workflows/CI/badge.svg)  
 A ROS2 package of 3D LIDAR-based Localization using PCL.
 
+<img src="./images/path.png" width="640px">
+
+Green: path, Red: map  
+(the 5x5 grids in size of 50m × 50m)
+
 ## IO
 - input  
 /cloud  (sensor_msgs/PointCloud2)  
@@ -41,13 +46,21 @@ A ROS2 package of 3D LIDAR-based Localization using PCL.
 |use_imu|bool|false|whether 9-axis imu is used or not for point cloud distortion correction|
 |enable_debug|bool|false|whether debug is done or not|
 
-## how to use
+## demo
 
+demo data(ROS1) by Tier IV  
+https://data.tier4.jp/rosbag_details/?id=212  
+The Velodyne VLP-16 was used in this data.
+
+Before running, put `bin_tc-2017-10-15-ndmap.pcd` into your `map` directory and  
+edit the `map_path` parameter of `localization.yaml` in the `param` directory accordingly.
 ```
 rviz2 -d src/pcl_localization_ros2/rviz/localization.rviz
 ros2 launch pcl_localization_ros2 pcl_localization.launch.py
+ros2 bag play -s rosbag_v2 tc_2017-10-15-15-34-02_free_download.bag
 ```
 
 <img src="./images/path.png" width="640px">
 
-Green: path, Red: map
+Green: path, Red: map  
+(the 5x5 grids in size of 50m × 50m)
