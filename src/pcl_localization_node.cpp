@@ -1,6 +1,6 @@
 #include <pcl_localization/pcl_localization_component.hpp>
 
-int main(int argc, char *argv[])
+int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
   rclcpp::executors::SingleThreadedExecutor executor;
