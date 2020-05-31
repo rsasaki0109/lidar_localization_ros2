@@ -22,6 +22,8 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "nav_msgs/msg/path.hpp"
 
+#include "pcl_localization/lidar_undistortion.hpp"
+
 using namespace std::chrono_literals;
 
 class PCLLocalization : public rclcpp_lifecycle::LifecycleNode
@@ -35,8 +37,8 @@ public:
   CallbackReturn on_activate(const rclcpp_lifecycle::State &);
   CallbackReturn on_deactivate(const rclcpp_lifecycle::State &);
   CallbackReturn on_cleanup(const rclcpp_lifecycle::State &);
-  CallbackReturn on_shutdown(const rclcpp_lifecycle::State &state);
-  CallbackReturn on_error(const rclcpp_lifecycle::State &state);
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & state);
+  CallbackReturn on_error(const rclcpp_lifecycle::State & state);
 
   void initializeParameters();
   void initializePubSub();
@@ -48,8 +50,6 @@ public:
   void cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
   // void gnssReceived();
 
-  void adjustDistortion(pcl::PointCloud<pcl::PointXYZI>::Ptr & cloud, double scan_time);
-
   tf2_ros::TransformBroadcaster broadcaster_;
 
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::ConstSharedPtr
@@ -60,13 +60,13 @@ public:
     path_pub_;
   rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::PointCloud2>::SharedPtr
     initial_map_pub_;
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::ConstSharedPtr 
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::ConstSharedPtr
     map_sub_;
-  rclcpp::Subscription<nav_msgs::msg::Odometry>::ConstSharedPtr 
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::ConstSharedPtr
     odom_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::ConstSharedPtr 
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::ConstSharedPtr
     cloud_sub_;
-  
+
   pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr registration_;
   pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter_;
   geometry_msgs::msg::PoseStamped corrent_pose_stamped_;
@@ -102,30 +102,7 @@ public:
   double last_odom_received_time_;
   bool use_imu_{false};
   bool enable_debug_{false};
-  
+
   // imu
-  static const int imu_que_length_{200};
-  int imu_ptr_front_{0}, imu_ptr_last_{-1}, imu_ptr_last_iter_{0};
-
-  std::array<double, imu_que_length_> imu_time_;
-  std::array<float, imu_que_length_> imu_roll_;
-  std::array<float, imu_que_length_> imu_pitch_;
-  std::array<float, imu_que_length_> imu_yaw_;
-
-  std::array<float, imu_que_length_> imu_acc_x_;
-  std::array<float, imu_que_length_> imu_acc_y_;
-  std::array<float, imu_que_length_> imu_acc_z_;
-  std::array<float, imu_que_length_> imu_velo_x_;
-  std::array<float, imu_que_length_> imu_velo_y_;
-  std::array<float, imu_que_length_> imu_velo_z_;
-  std::array<float, imu_que_length_> imu_shift_x_;
-  std::array<float, imu_que_length_> imu_shift_y_;
-  std::array<float, imu_que_length_> imu_shift_z_;
-
-  std::array<float, imu_que_length_> imu_angular_velo_x_;
-  std::array<float, imu_que_length_> imu_angular_velo_y_;
-  std::array<float, imu_que_length_> imu_angular_velo_z_;
-  std::array<float, imu_que_length_> imu_angular_rot_x_;
-  std::array<float, imu_que_length_> imu_angular_rot_y_;
-  std::array<float, imu_que_length_> imu_angular_rot_z_;
+  LidarUndistortion lidar_undistortion_;
 };
