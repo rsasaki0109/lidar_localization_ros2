@@ -9,7 +9,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("registration_method", "NDT");
   declare_parameter("ndt_resolution", 1.0);
   declare_parameter("ndt_step_size", 0.1);
-  declare_parameter("trans_epsilon", 0.01);
+  declare_parameter("transform_epsilon", 0.01);
   declare_parameter("voxel_leaf_size", 0.2);
   declare_parameter("scan_max_range", 100.0);
   declare_parameter("scan_min_range", 1.0);
@@ -139,7 +139,7 @@ void PCLLocalization::initializeParameters()
   get_parameter("registration_method", registration_method_);
   get_parameter("ndt_resolution", ndt_resolution_);
   get_parameter("ndt_step_size", ndt_step_size_);
-  get_parameter("trans_epsilon", trans_epsilon_);
+  get_parameter("transform_epsilon", transform_epsilon_);
   get_parameter("voxel_leaf_size", voxel_leaf_size_);
   get_parameter("scan_max_range", scan_max_range_);
   get_parameter("scan_min_range", scan_min_range_);
@@ -199,14 +199,14 @@ void PCLLocalization::initializeRegistration()
   if (registration_method_ == "GICP") {
     pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp(
       new pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>());
-    gicp->setTransformationEpsilon(trans_epsilon_);
+    gicp->setTransformationEpsilon(transform_epsilon_);
     registration_ = gicp;
   } else {
     pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt(
       new pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
     ndt->setStepSize(ndt_step_size_);
     ndt->setResolution(ndt_resolution_);
-    ndt->setTransformationEpsilon(trans_epsilon_);
+    ndt->setTransformationEpsilon(transform_epsilon_);
     registration_ = ndt;
   }
 
