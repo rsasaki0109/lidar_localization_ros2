@@ -85,7 +85,7 @@ public:
   double scan_period_;
   double ndt_resolution_;
   double ndt_step_size_;
-  double trans_epsilon_;
+  double transform_epsilon_;
   double voxel_leaf_size_;
   bool use_pcd_map_{false};
   std::string map_path_;
