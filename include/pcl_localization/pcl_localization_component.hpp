@@ -66,6 +66,8 @@ public:
     odom_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::ConstSharedPtr
     cloud_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::Imu>::ConstSharedPtr
+    imu_sub_;
 
   pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr registration_;
   pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter_;
