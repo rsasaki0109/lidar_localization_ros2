@@ -1,4 +1,4 @@
-pcl_localization:
+/**:
     ros__parameters:
       registration_method: "NDT"
       ndt_resolution: 3.0
@@ -9,7 +9,7 @@ pcl_localization:
       scan_min_range: 1.0
       scan_period: 0.1
       use_pcd_map: true
-      map_path:  "/home/sasaki/github_ws/ros2_ws/src/pcl_localization_ros2/map/bin_tc-2017-10-15--ndmap.pcd"
+      map_path: "/home/sasaki/github_ws/ros2_ws/src/pcl_localization_ros2/map/bin_tc-2017-10-15--ndmap.pcd"
       set_initial_pose: true
       initial_pose_x: 0.0
       initial_pose_y: 0.0
