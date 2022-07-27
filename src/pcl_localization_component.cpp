@@ -77,7 +77,8 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     sensor_msgs::msg::PointCloud2::SharedPtr map_msg_ptr(new sensor_msgs::msg::PointCloud2);
     pcl::toROSMsg(*map_cloud_ptr, *map_msg_ptr);
     map_msg_ptr->header.frame_id = global_frame_id_;
-    initial_map_pub_->publish(map_msg_ptr);
+    initial_map_pub_->publish(*map_msg_ptr);
+    RCLCPP_INFO(get_logger(), "Initil Map Publishd");
 
     if (registration_method_ == "GICP") {
       pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
@@ -158,6 +159,24 @@ void PCLLocalization::initializeParameters()
   get_parameter("use_odom", use_odom_);
   get_parameter("use_imu", use_imu_);
   get_parameter("enable_debug", enable_debug_);
+
+  RCLCPP_INFO(get_logger(),"global_frame_id: %s", global_frame_id_.c_str());
+  RCLCPP_INFO(get_logger(),"odom_frame_id: %s", odom_frame_id_.c_str());
+  RCLCPP_INFO(get_logger(),"base_frame_id: %s", base_frame_id_.c_str());
+  RCLCPP_INFO(get_logger(),"registration_method: %s", registration_method_.c_str());
+  RCLCPP_INFO(get_logger(),"ndt_resolution: %lf", ndt_resolution_);
+  RCLCPP_INFO(get_logger(),"ndt_step_size: %lf", ndt_step_size_);
+  RCLCPP_INFO(get_logger(),"transform_epsilon: %lf", transform_epsilon_);
+  RCLCPP_INFO(get_logger(),"voxel_leaf_size: %lf", voxel_leaf_size_);
+  RCLCPP_INFO(get_logger(),"scan_max_range: %lf", scan_max_range_);
+  RCLCPP_INFO(get_logger(),"scan_min_range: %lf", scan_min_range_);
+  RCLCPP_INFO(get_logger(),"scan_period: %lf", scan_period_);
+  RCLCPP_INFO(get_logger(),"use_pcd_map: %d", use_pcd_map_);
+  RCLCPP_INFO(get_logger(),"map_path: %s", map_path_.c_str());
+  RCLCPP_INFO(get_logger(),"set_initial_pose: %d", set_initial_pose_);
+  RCLCPP_INFO(get_logger(),"use_odom: %d", use_odom_);
+  RCLCPP_INFO(get_logger(),"use_imu: %d", use_imu_);
+  RCLCPP_INFO(get_logger(),"enable_debug: %d", enable_debug_);
 }
 
 void PCLLocalization::initializePubSub()
