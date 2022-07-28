@@ -1,34 +1,50 @@
-name: build
-on: pull_request
+name: foxy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  foxy_build:
-    runs-on:  ubuntu-20.04
-    
-    container: ros:foxy
-    services:
-      ros:
-        image: ros
-
-    defaults:
-      run:
-        shell: bash
-
-    steps:
-      - name: checkout
-        uses: actions/checkout@v2
-
-      - name: rosdep update
-        run: |
-          apt-get update
-          rosdep update
-      - name: Create Workspace
-        run: |
-          mkdir -p ~/pcl_localization_ros2/src/
-          cp -r `pwd` ~/pcl_localization_ros2/src/
-      - name: Build
-        run: |
-          cd ~/pcl_localization_ros2/
-          source /opt/ros/foxy/setup.bash
-          rosdep install --from-paths src --ignore-src -r -y
-          colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --catkin-skip-building-tests
+    job1:
+        name: Build
+        runs-on: ubuntu-20.04
+        steps:
+            - name: ROS2 Install
+              run: |
+                  # Ref: https://index.ros.org/doc/ros2/Installation/Foxy/Linux-Install-Debians/
+                  sudo locale-gen en_US en_US.UTF-8
+                  sudo update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+                  export LANG=en_US.UTF-8
+                  sudo apt update && sudo apt install curl gnupg2 lsb-release
+                  curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo apt-key add -
+                  sudo sh -c 'echo "deb [arch=amd64,arm64] http://packages.ros.org/ros2/ubuntu `lsb_release -cs` main" > /etc/apt/sources.list.d/ros2-latest.list'
+                  sudo apt update
+                  sudo apt install ros-foxy-desktop
+                  source /opt/ros/foxy/setup.bash
+            - uses: actions/checkout@v1
+              with:
+                submodules: true
+            - name: Copy repository
+              run: |
+                  mkdir -p ~/ros2_ws/src/pcl_localization_ros2
+                  cp -rf . ~/ros2_ws/src/pcl_localization_ros2
+            - name: Install dependencies
+              run: |
+                  source /opt/ros/foxy/setup.bash
+                  sudo apt install -y python3-rosdep2
+                  rosdep update
+                  cd ~/ros2_ws/src
+                  rosdep install -r -y --from-paths . --ignore-src       
+            - name: Build packages
+              run: |
+                  source /opt/ros/foxy/setup.bash
+                  # Install colcon
+                  # Ref: https://index.ros.org/doc/ros2/Tutorials/Colcon-Tutorial/
+                  sudo apt install python3-colcon-common-extensions
+                  cd ~/ros2_ws
+                  colcon build
+                  source ~/ros2_ws/install/setup.bash
