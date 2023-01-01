@@ -352,7 +352,7 @@ void PCLLocalization::imuReceived(sensor_msgs::msg::Imu::ConstSharedPtr msg)
   catch (tf2::TransformException& ex)
   {
     std::cout << "Failed to lookup transform" << std::endl;
-    RCLCPP_WARN(rclcpp::get_logger("tf_converted_imu"), "Failed to lookup transform.");
+    RCLCPP_WARN(this->get_logger(), "Failed to lookup transform.");
     return;
   }
 
