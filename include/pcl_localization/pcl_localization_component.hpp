@@ -64,8 +64,8 @@ public:
     initial_pose_sub_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
     pose_pub_;
-  // rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr
-  //   path_pub_;
+  rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr
+    path_pub_;
   rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::PointCloud2>::SharedPtr
     initial_map_pub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::ConstSharedPtr
@@ -79,8 +79,9 @@ public:
 
   pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr registration_;
   pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter_;
-  geometry_msgs::msg::PoseWithCovarianceStamped corrent_pose_stamped_;
-  // nav_msgs::msg::Path path_;
+  geometry_msgs::msg::PoseWithCovarianceStamped corrent_pose_with_cov_stamped_;
+  nav_msgs::msg::Path path_;
+  sensor_msgs::msg::PointCloud2::ConstSharedPtr last_scan_ptr_;
 
   bool map_recieved_{false};
   bool initialpose_recieved_{false};
@@ -93,6 +94,7 @@ public:
   double scan_max_range_;
   double scan_min_range_;
   double scan_period_;
+  double score_threshold_;
   double ndt_resolution_;
   double ndt_step_size_;
   double transform_epsilon_;

@@ -10,6 +10,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("odom_frame_id", "odom");
   declare_parameter("base_frame_id", "base_link");
   declare_parameter("registration_method", "NDT");
+  declare_parameter("score_threshold", 2.0);
   declare_parameter("ndt_resolution", 1.0);
   declare_parameter("ndt_step_size", 0.1);
   declare_parameter("transform_epsilon", 0.01);
@@ -42,7 +43,7 @@ CallbackReturn PCLLocalization::on_configure(const rclcpp_lifecycle::State &)
   initializePubSub();
   initializeRegistration();
 
-  // path_.header.frame_id = global_frame_id_;
+  path_.header.frame_id = global_frame_id_;
 
   return CallbackReturn::SUCCESS;
 }
@@ -52,7 +53,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
   RCLCPP_INFO(get_logger(), "Activating");
 
   pose_pub_->on_activate();
-  // path_pub_->on_activate();
+  path_pub_->on_activate();
   initial_map_pub_->on_activate();
 
   if (set_initial_pose_) {
@@ -63,13 +64,16 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     msg->pose.pose.position.x = initial_pose_x_;
     msg->pose.pose.position.y = initial_pose_y_;
     msg->pose.pose.position.z = initial_pose_z_;
-    // msg->pose.pose.orientation = orientationAroundZAxis(initial_pose_yaw_);
     msg->pose.pose.orientation.x = initial_pose_qx_;
     msg->pose.pose.orientation.y = initial_pose_qy_;
     msg->pose.pose.orientation.z = initial_pose_qz_;
     msg->pose.pose.orientation.w = initial_pose_qw_;
 
-    // path_.poses.push_back(*msg);
+    geometry_msgs::msg::PoseStamped::SharedPtr pose_stamped(new geometry_msgs::msg::PoseStamped);
+    pose_stamped->header.stamp = msg->header.stamp;
+    pose_stamped->header.frame_id = global_frame_id_;
+    pose_stamped->pose = msg->pose.pose;
+    path_.poses.push_back(*pose_stamped);
 
     initialPoseReceived(msg);
   }
@@ -114,7 +118,7 @@ CallbackReturn PCLLocalization::on_cleanup(const rclcpp_lifecycle::State &)
   RCLCPP_INFO(get_logger(), "Cleaning Up");
   initial_pose_sub_.reset();
   initial_map_pub_.reset();
-  // path_pub_.reset();
+  path_pub_.reset();
   pose_pub_.reset();
   odom_sub_.reset();
   cloud_sub_.reset();
@@ -144,6 +148,7 @@ void PCLLocalization::initializeParameters()
   get_parameter("odom_frame_id", odom_frame_id_);
   get_parameter("base_frame_id", base_frame_id_);
   get_parameter("registration_method", registration_method_);
+  get_parameter("score_threshold", score_threshold_);
   get_parameter("ndt_resolution", ndt_resolution_);
   get_parameter("ndt_step_size", ndt_step_size_);
   get_parameter("transform_epsilon", transform_epsilon_);
@@ -192,9 +197,9 @@ void PCLLocalization::initializePubSub()
     "pcl_pose",
     rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
 
-  // path_pub_ = create_publisher<nav_msgs::msg::Path>(
-  //   "path",
-  //   rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
+  path_pub_ = create_publisher<nav_msgs::msg::Path>(
+    "path",
+    rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
 
   initial_map_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
     "initial_map",
@@ -246,12 +251,15 @@ void PCLLocalization::initialPoseReceived(geometry_msgs::msg::PoseWithCovariance
 {
   RCLCPP_INFO(get_logger(), "initialPoseReceived");
   if (msg->header.frame_id != global_frame_id_) {
-    RCLCPP_WARN(this->get_logger(), "initialpose_frame_id does not match　global_frame_id");
+    RCLCPP_WARN(this->get_logger(), "initialpose_frame_id does not match global_frame_id");
     return;
   }
   initialpose_recieved_ = true;
-  corrent_pose_stamped_ = *msg;
-  pose_pub_->publish(corrent_pose_stamped_);
+  corrent_pose_with_cov_stamped_ = *msg;
+  pose_pub_->publish(corrent_pose_with_cov_stamped_);
+
+  cloudReceived(last_scan_ptr_);
+
 }
 
 void PCLLocalization::mapReceived(sensor_msgs::msg::PointCloud2::SharedPtr msg)
@@ -299,7 +307,8 @@ void PCLLocalization::odomReceived(nav_msgs::msg::Odometry::ConstSharedPtr msg)
 
   tf2::Quaternion previous_quat_tf;
   double roll, pitch, yaw;
-  tf2::fromMsg(corrent_pose_stamped_.pose.pose.orientation, previous_quat_tf);
+  tf2::fromMsg(corrent_pose_with_cov_stamped_.pose.pose.orientation, previous_quat_tf);
+
   tf2::Matrix3x3(previous_quat_tf).getRPY(roll, pitch, yaw);
 
   roll += msg->twist.twist.angular.x * dt_odom;
@@ -319,10 +328,10 @@ void PCLLocalization::odomReceived(nav_msgs::msg::Odometry::ConstSharedPtr msg)
     msg->twist.twist.linear.z};
   Eigen::Vector3d delta_position = quat_eig.matrix() * dt_odom * odom;
 
-  corrent_pose_stamped_.pose.pose.position.x += delta_position.x();
-  corrent_pose_stamped_.pose.pose.position.y += delta_position.y();
-  corrent_pose_stamped_.pose.pose.position.z += delta_position.z();
-  corrent_pose_stamped_.pose.pose.orientation = quat_msg;
+  corrent_pose_with_cov_stamped_.pose.pose.position.x += delta_position.x();
+  corrent_pose_with_cov_stamped_.pose.pose.position.y += delta_position.y();
+  corrent_pose_with_cov_stamped_.pose.pose.position.z += delta_position.z();
+  corrent_pose_with_cov_stamped_.pose.pose.orientation = quat_msg;
 }
 
 void PCLLocalization::imuReceived(sensor_msgs::msg::Imu::ConstSharedPtr msg)
@@ -399,7 +408,8 @@ void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPt
   registration_->setInputSource(tmp_ptr);
 
   Eigen::Affine3d affine;
-  tf2::fromMsg(corrent_pose_stamped_.pose.pose, affine);
+  tf2::fromMsg(corrent_pose_with_cov_stamped_.pose.pose, affine);
+
   Eigen::Matrix4f init_guess = affine.matrix().cast<float>();
 
   pcl::PointCloud<pcl::PointXYZI>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZI>);
@@ -407,9 +417,15 @@ void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPt
   rclcpp::Time time_align_start = system_clock.now();
   registration_->align(*output_cloud, init_guess);
   rclcpp::Time time_align_end = system_clock.now();
-  if (!registration_->hasConverged()) {
+
+  bool has_converged = registration_->hasConverged();
+  double fitness_score = registration_->getFitnessScore();
+  if (!has_converged) {
     RCLCPP_WARN(get_logger(), "The registration didn't converge.");
     return;
+  }
+  if (fitness_score > score_threshold_) {
+    RCLCPP_WARN(get_logger(), "The fitness score is over %lf.", score_threshold_);
   }
 
   Eigen::Matrix4f final_transformation = registration_->getFinalTransformation();
@@ -417,32 +433,39 @@ void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPt
   Eigen::Quaterniond quat_eig(rot_mat);
   geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
 
-  corrent_pose_stamped_.header.stamp = msg->header.stamp;
-  corrent_pose_stamped_.pose.pose.position.x = static_cast<double>(final_transformation(0, 3));
-  corrent_pose_stamped_.pose.pose.position.y = static_cast<double>(final_transformation(1, 3));
-  corrent_pose_stamped_.pose.pose.position.z = static_cast<double>(final_transformation(2, 3));
-  corrent_pose_stamped_.pose.pose.orientation = quat_msg;
-  pose_pub_->publish(corrent_pose_stamped_);
+  corrent_pose_with_cov_stamped_.header.stamp = msg->header.stamp;
+  corrent_pose_with_cov_stamped_.header.frame_id = global_frame_id_;
+  corrent_pose_with_cov_stamped_.pose.pose.position.x = static_cast<double>(final_transformation(0, 3));
+  corrent_pose_with_cov_stamped_.pose.pose.position.y = static_cast<double>(final_transformation(1, 3));
+  corrent_pose_with_cov_stamped_.pose.pose.position.z = static_cast<double>(final_transformation(2, 3));
+  corrent_pose_with_cov_stamped_.pose.pose.orientation = quat_msg;
+  pose_pub_->publish(corrent_pose_with_cov_stamped_);
 
   geometry_msgs::msg::TransformStamped transform_stamped;
   transform_stamped.header.stamp = msg->header.stamp;
   transform_stamped.header.frame_id = global_frame_id_;
-  transform_stamped.child_frame_id = odom_frame_id_;
+  transform_stamped.child_frame_id = base_frame_id_;
   transform_stamped.transform.translation.x = static_cast<double>(final_transformation(0, 3));
   transform_stamped.transform.translation.y = static_cast<double>(final_transformation(1, 3));
   transform_stamped.transform.translation.z = static_cast<double>(final_transformation(2, 3));
   transform_stamped.transform.rotation = quat_msg;
   broadcaster_.sendTransform(transform_stamped);
 
-  // path_.poses.push_back(corrent_pose_stamped_);
-  // path_pub_->publish(path_);
+  geometry_msgs::msg::PoseStamped::SharedPtr pose_stamped(new geometry_msgs::msg::PoseStamped);
+  pose_stamped->header.stamp = msg->header.stamp;
+  pose_stamped->header.frame_id = global_frame_id_;
+  pose_stamped->pose = corrent_pose_with_cov_stamped_.pose.pose;
+  path_.poses.push_back(*pose_stamped);
+  path_pub_->publish(path_);
+
+  last_scan_ptr_ = msg;
 
   if (enable_debug_) {
     std::cout << "number of filtered cloud points: " << filtered_cloud_ptr->size() << std::endl;
     std::cout << "align time:" << time_align_end.seconds() - time_align_start.seconds() <<
       "[sec]" << std::endl;
-    std::cout << "has converged: " << registration_->hasConverged() << std::endl;
-    std::cout << "fitness score: " << registration_->getFitnessScore() << std::endl;
+    std::cout << "has converged: " << has_converged << std::endl;
+    std::cout << "fitness score: " << fitness_score << std::endl;
     std::cout << "final transformation:" << std::endl;
     std::cout << final_transformation << std::endl;
     /* delta_angle check
