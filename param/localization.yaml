@@ -1,23 +1,26 @@
 /**:
     ros__parameters:
       registration_method: "NDT"
-      ndt_resolution: 3.0
+      ndt_resolution: 2.0
       ndt_step_size: 0.1
       transform_epsilon: 0.01
-      voxel_leaf_size: 1.0
+      voxel_leaf_size: 0.2
       scan_max_range: 100.0
       scan_min_range: 1.0
       scan_period: 0.1
       use_pcd_map: true
-      map_path: "/home/sasaki/github_ws/ros2_ws/src/pcl_localization_ros2/map/bin_tc-2017-10-15--ndmap.pcd"
-      set_initial_pose: true
+      map_path: ""
+      set_initial_pose: false
       initial_pose_x: 0.0
       initial_pose_y: 0.0
       initial_pose_z: 0.0
       initial_pose_qx: 0.0
       initial_pose_qy: 0.0
       initial_pose_qz: 0.0
-      initial_pose_qw: 1.0
+      initial_pose_qw: 0.0
       use_odom: false
       use_imu: false
-      enable_debug: false
+      enable_debug: true
+      global_frame_id: map
+      odom_frame_id: odom
+      base_frame_id: base_footprint
