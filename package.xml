@@ -9,7 +9,7 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <build_depend>rclcpp_lifecycle</build_depend>  
+  <build_depend>rclcpp_lifecycle</build_depend>
   <build_depend>lifecycle_msgs</build_depend>
   <build_depend>geometry_msgs</build_depend>
   <build_depend>sensor_msgs</build_depend>
@@ -19,7 +19,7 @@
   <build_depend>tf2_geometry_msgs</build_depend>
   <build_depend>tf2_eigen</build_depend>
   <build_depend>pcl_conversions</build_depend>
-  
+
   <exec_depend>rclcpp_lifecycle</exec_depend>
   <exec_depend>lifecycle_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
@@ -35,7 +35,7 @@
   <test_depend>ament_lint_common</test_depend>
   <test_depend>ros_testing</test_depend>
   <test_depend>launch</test_depend>
-  
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>
