@@ -43,8 +43,10 @@ CallbackReturn PCLLocalization::on_configure(const rclcpp_lifecycle::State &)
   initializePubSub();
   initializeRegistration();
 
-  path_.header.frame_id = global_frame_id_;
+  path_ptr_ = std::make_shared<nav_msgs::msg::Path>();
+  path_ptr_->header.frame_id = global_frame_id_;
 
+  RCLCPP_INFO(get_logger(), "Configuring end");
   return CallbackReturn::SUCCESS;
 }
 
@@ -73,7 +75,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     pose_stamped->header.stamp = msg->header.stamp;
     pose_stamped->header.frame_id = global_frame_id_;
     pose_stamped->pose = msg->pose.pose;
-    path_.poses.push_back(*pose_stamped);
+    path_ptr_->poses.push_back(*pose_stamped);
 
     initialPoseReceived(msg);
   }
@@ -81,7 +83,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
   if (use_pcd_map_) {
     pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::io::loadPCDFile(map_path_, *map_cloud_ptr);
-    RCLCPP_INFO(get_logger(), "Map Size %d", map_cloud_ptr->size());
+    RCLCPP_INFO(get_logger(), "Map Size %ld", map_cloud_ptr->size());
 
     sensor_msgs::msg::PointCloud2::SharedPtr map_msg_ptr(new sensor_msgs::msg::PointCloud2);
     pcl::toROSMsg(*map_cloud_ptr, *map_msg_ptr);
@@ -89,7 +91,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     initial_map_pub_->publish(*map_msg_ptr);
     RCLCPP_INFO(get_logger(), "Initial Map Published");
 
-    if (registration_method_ == "GICP") {
+    if (registration_method_ == "GICP" || registration_method_ == "GICP_OMP") {
       pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
       voxel_grid_filter_.setInputCloud(map_cloud_ptr);
       voxel_grid_filter_.filter(*filtered_cloud_ptr);
@@ -101,6 +103,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     map_recieved_ = true;
   }
 
+  RCLCPP_INFO(get_logger(), "Activating end");
   return CallbackReturn::SUCCESS;
 }
 
@@ -109,7 +112,10 @@ CallbackReturn PCLLocalization::on_deactivate(const rclcpp_lifecycle::State &)
   RCLCPP_INFO(get_logger(), "Deactivating");
 
   pose_pub_->on_deactivate();
+  path_pub_->on_deactivate();
+  initial_map_pub_->on_deactivate();
 
+  RCLCPP_INFO(get_logger(), "Deactivating end");
   return CallbackReturn::SUCCESS;
 }
 
@@ -124,6 +130,7 @@ CallbackReturn PCLLocalization::on_cleanup(const rclcpp_lifecycle::State &)
   cloud_sub_.reset();
   imu_sub_.reset();
 
+  RCLCPP_INFO(get_logger(), "Cleaning Up end");
   return CallbackReturn::SUCCESS;
 }
 
@@ -151,6 +158,7 @@ void PCLLocalization::initializeParameters()
   get_parameter("score_threshold", score_threshold_);
   get_parameter("ndt_resolution", ndt_resolution_);
   get_parameter("ndt_step_size", ndt_step_size_);
+  get_parameter("ndt_num_threads", ndt_num_threads_);
   get_parameter("transform_epsilon", transform_epsilon_);
   get_parameter("voxel_leaf_size", voxel_leaf_size_);
   get_parameter("scan_max_range", scan_max_range_);
@@ -176,6 +184,7 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(),"registration_method: %s", registration_method_.c_str());
   RCLCPP_INFO(get_logger(),"ndt_resolution: %lf", ndt_resolution_);
   RCLCPP_INFO(get_logger(),"ndt_step_size: %lf", ndt_step_size_);
+  RCLCPP_INFO(get_logger(),"ndt_num_threads: %d", ndt_num_threads_);
   RCLCPP_INFO(get_logger(),"transform_epsilon: %lf", transform_epsilon_);
   RCLCPP_INFO(get_logger(),"voxel_leaf_size: %lf", voxel_leaf_size_);
   RCLCPP_INFO(get_logger(),"scan_max_range: %lf", scan_max_range_);
@@ -224,6 +233,8 @@ void PCLLocalization::initializePubSub()
   imu_sub_ = create_subscription<sensor_msgs::msg::Imu>(
     "imu", rclcpp::SensorDataQoS(),
     std::bind(&PCLLocalization::imuReceived, this, std::placeholders::_1));
+
+  RCLCPP_INFO(get_logger(), "initializePubSub end");
 }
 
 void PCLLocalization::initializeRegistration()
@@ -231,23 +242,49 @@ void PCLLocalization::initializeRegistration()
   RCLCPP_INFO(get_logger(), "initializeRegistration");
 
   if (registration_method_ == "GICP") {
-    pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp(
+    boost::shared_ptr<pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>> gicp(
       new pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>());
     gicp->setTransformationEpsilon(transform_epsilon_);
     registration_ = gicp;
-  } else {
-    pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt(
+  }
+  else if (registration_method_ == "NDT") {
+    boost::shared_ptr<pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>> ndt(
       new pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
     ndt->setStepSize(ndt_step_size_);
     ndt->setResolution(ndt_resolution_);
     ndt->setTransformationEpsilon(transform_epsilon_);
     registration_ = ndt;
   }
+  else if (registration_method_ == "NDT_OMP") {
+    pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp(
+      new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
+    ndt_omp->setStepSize(ndt_step_size_);
+    ndt_omp->setResolution(ndt_resolution_);
+    ndt_omp->setTransformationEpsilon(transform_epsilon_);
+    if (ndt_num_threads_ > 0) {
+      ndt_omp->setNumThreads(ndt_num_threads_);
+    } else {
+      ndt_omp->setNumThreads(omp_get_max_threads());
+    }
+    registration_ = ndt_omp;
+  }
+  else if (registration_method_ == "GICP_OMP") {
+    pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp_omp(
+      new pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>());
+    gicp_omp->setTransformationEpsilon(transform_epsilon_);
+    registration_ = gicp_omp;
+  }
+  else {
+    RCLCPP_ERROR(get_logger(), "Invalid registration method.");
+    exit(EXIT_FAILURE);
+  }
+
 
   voxel_grid_filter_.setLeafSize(voxel_leaf_size_, voxel_leaf_size_, voxel_leaf_size_);
+  RCLCPP_INFO(get_logger(), "initializeRegistration end");
 }
 
-void PCLLocalization::initialPoseReceived(geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg)
+void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg)
 {
   RCLCPP_INFO(get_logger(), "initialPoseReceived");
   if (msg->header.frame_id != global_frame_id_) {
@@ -255,14 +292,14 @@ void PCLLocalization::initialPoseReceived(geometry_msgs::msg::PoseWithCovariance
     return;
   }
   initialpose_recieved_ = true;
-  corrent_pose_with_cov_stamped_ = *msg;
-  pose_pub_->publish(corrent_pose_with_cov_stamped_);
+  corrent_pose_with_cov_stamped_ptr_ = msg;
+  pose_pub_->publish(*corrent_pose_with_cov_stamped_ptr_);
 
   cloudReceived(last_scan_ptr_);
-
+  RCLCPP_INFO(get_logger(), "initialPoseReceived end");
 }
 
-void PCLLocalization::mapReceived(sensor_msgs::msg::PointCloud2::SharedPtr msg)
+void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
   RCLCPP_INFO(get_logger(), "mapReceived");
   pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
@@ -274,7 +311,7 @@ void PCLLocalization::mapReceived(sensor_msgs::msg::PointCloud2::SharedPtr msg)
 
   pcl::fromROSMsg(*msg, *map_cloud_ptr);
 
-  if (registration_method_ == "GICP") {
+  if (registration_method_ == "GICP" || registration_method_ == "GICP_OMP") {
     pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
     voxel_grid_filter_.setInputCloud(map_cloud_ptr);
     voxel_grid_filter_.filter(*filtered_cloud_ptr);
@@ -285,9 +322,10 @@ void PCLLocalization::mapReceived(sensor_msgs::msg::PointCloud2::SharedPtr msg)
   }
 
   map_recieved_ = true;
+  RCLCPP_INFO(get_logger(), "mapReceived end");
 }
 
-void PCLLocalization::odomReceived(nav_msgs::msg::Odometry::ConstSharedPtr msg)
+void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr msg)
 {
   if (!use_odom_) {return;}
   RCLCPP_INFO(get_logger(), "odomReceived");
@@ -307,7 +345,7 @@ void PCLLocalization::odomReceived(nav_msgs::msg::Odometry::ConstSharedPtr msg)
 
   tf2::Quaternion previous_quat_tf;
   double roll, pitch, yaw;
-  tf2::fromMsg(corrent_pose_with_cov_stamped_.pose.pose.orientation, previous_quat_tf);
+  tf2::fromMsg(corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation, previous_quat_tf);
 
   tf2::Matrix3x3(previous_quat_tf).getRPY(roll, pitch, yaw);
 
@@ -328,13 +366,13 @@ void PCLLocalization::odomReceived(nav_msgs::msg::Odometry::ConstSharedPtr msg)
     msg->twist.twist.linear.z};
   Eigen::Vector3d delta_position = quat_eig.matrix() * dt_odom * odom;
 
-  corrent_pose_with_cov_stamped_.pose.pose.position.x += delta_position.x();
-  corrent_pose_with_cov_stamped_.pose.pose.position.y += delta_position.y();
-  corrent_pose_with_cov_stamped_.pose.pose.position.z += delta_position.z();
-  corrent_pose_with_cov_stamped_.pose.pose.orientation = quat_msg;
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x += delta_position.x();
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y += delta_position.y();
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z += delta_position.z();
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
 }
 
-void PCLLocalization::imuReceived(sensor_msgs::msg::Imu::ConstSharedPtr msg)
+void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr msg)
 {
   if (!use_imu_) {return;}
 
@@ -379,7 +417,7 @@ void PCLLocalization::imuReceived(sensor_msgs::msg::Imu::ConstSharedPtr msg)
 
 }
 
-void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
+void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
 {
   if (!map_recieved_ || !initialpose_recieved_) {return;}
   RCLCPP_INFO(get_logger(), "cloudReceived");
@@ -408,7 +446,7 @@ void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPt
   registration_->setInputSource(tmp_ptr);
 
   Eigen::Affine3d affine;
-  tf2::fromMsg(corrent_pose_with_cov_stamped_.pose.pose, affine);
+  tf2::fromMsg(corrent_pose_with_cov_stamped_ptr_->pose.pose, affine);
 
   Eigen::Matrix4f init_guess = affine.matrix().cast<float>();
 
@@ -433,13 +471,13 @@ void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPt
   Eigen::Quaterniond quat_eig(rot_mat);
   geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
 
-  corrent_pose_with_cov_stamped_.header.stamp = msg->header.stamp;
-  corrent_pose_with_cov_stamped_.header.frame_id = global_frame_id_;
-  corrent_pose_with_cov_stamped_.pose.pose.position.x = static_cast<double>(final_transformation(0, 3));
-  corrent_pose_with_cov_stamped_.pose.pose.position.y = static_cast<double>(final_transformation(1, 3));
-  corrent_pose_with_cov_stamped_.pose.pose.position.z = static_cast<double>(final_transformation(2, 3));
-  corrent_pose_with_cov_stamped_.pose.pose.orientation = quat_msg;
-  pose_pub_->publish(corrent_pose_with_cov_stamped_);
+  corrent_pose_with_cov_stamped_ptr_->header.stamp = msg->header.stamp;
+  corrent_pose_with_cov_stamped_ptr_->header.frame_id = global_frame_id_;
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x = static_cast<double>(final_transformation(0, 3));
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y = static_cast<double>(final_transformation(1, 3));
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z = static_cast<double>(final_transformation(2, 3));
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
+  pose_pub_->publish(*corrent_pose_with_cov_stamped_ptr_);
 
   geometry_msgs::msg::TransformStamped transform_stamped;
   transform_stamped.header.stamp = msg->header.stamp;
@@ -451,12 +489,12 @@ void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPt
   transform_stamped.transform.rotation = quat_msg;
   broadcaster_.sendTransform(transform_stamped);
 
-  geometry_msgs::msg::PoseStamped::SharedPtr pose_stamped(new geometry_msgs::msg::PoseStamped);
-  pose_stamped->header.stamp = msg->header.stamp;
-  pose_stamped->header.frame_id = global_frame_id_;
-  pose_stamped->pose = corrent_pose_with_cov_stamped_.pose.pose;
-  path_.poses.push_back(*pose_stamped);
-  path_pub_->publish(path_);
+  geometry_msgs::msg::PoseStamped::SharedPtr pose_stamped_ptr(new geometry_msgs::msg::PoseStamped);
+  pose_stamped_ptr->header.stamp = msg->header.stamp;
+  pose_stamped_ptr->header.frame_id = global_frame_id_;
+  pose_stamped_ptr->pose = corrent_pose_with_cov_stamped_ptr_->pose.pose;
+  path_ptr_->poses.push_back(*pose_stamped_ptr);
+  path_pub_->publish(*path_ptr_);
 
   last_scan_ptr_ = msg;
 

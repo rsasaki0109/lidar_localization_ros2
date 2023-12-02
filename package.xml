@@ -36,6 +36,8 @@
   <test_depend>ros_testing</test_depend>
   <test_depend>launch</test_depend>
 
+  <depend>ndt_omp_ros2</depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>

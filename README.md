@@ -7,6 +7,10 @@ A ROS2 package of 3D LIDAR-based Localization using PCL.
 Green: path, Red: map  
 (the 5x5 grids in size of 50m × 50m)
 
+## Requirements
+
+- [ndt_omp_ros2](https://github.com/rsasaki0109/ndt_omp_ros2.git)
+
 ## IO
 - input  
 /cloud  (sensor_msgs/PointCloud2)  
@@ -24,7 +28,7 @@ Green: path, Red: map
 
 |Name|Type|Default value|Description|
 |---|---|---|---|
-|registration_method|string|"GICP"|"NDT" or "GICP"|
+|registration_method|string|"GICP"|"NDT" or "GICP" of "NDT_OMP" of "GICP_OMP"|
 |score_threshold|double|2.0|registration score threshold|
 |ndt_resolution|double|2.0|resolution size of voxels[m]|
 |ndt_step_size|double|0.1|step_size maximum step length[m]|
