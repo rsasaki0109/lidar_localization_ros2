@@ -1,9 +1,10 @@
 /**:
     ros__parameters:
-      registration_method: "GICP"
+      registration_method: "NDT_OMP"
       score_threshold: 2.0
       ndt_resolution: 1.0
       ndt_step_size: 0.1
+      ndt_num_threads: 0
       transform_epsilon: 0.01
       voxel_leaf_size: 0.2
       scan_max_range: 100.0
