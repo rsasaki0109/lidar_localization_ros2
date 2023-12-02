@@ -1,5 +1,4 @@
 # pcl_localization_ros2
-![CI](https://github.com/rsasaki0109/pcl_localization_ros2/workflows/CI/badge.svg)  
 A ROS2 package of 3D LIDAR-based Localization using PCL.
 
 <img src="./images/path.png" width="640px">
