@@ -27,6 +27,13 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "nav_msgs/msg/path.hpp"
 
+#include <pclomp/ndt_omp.h>
+#include <pclomp/ndt_omp_impl.hpp>
+#include <pclomp/voxel_grid_covariance_omp.h>
+#include <pclomp/voxel_grid_covariance_omp_impl.hpp>
+#include <pclomp/gicp_omp.h>
+#include <pclomp/gicp_omp_impl.hpp>
+
 #include "pcl_localization/lidar_undistortion.hpp"
 
 using namespace std::chrono_literals;
@@ -77,7 +84,7 @@ public:
   rclcpp::Subscription<sensor_msgs::msg::Imu>::ConstSharedPtr
     imu_sub_;
 
-  pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr registration_;
+  boost::shared_ptr<pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>> registration_;
   pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter_;
   geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr corrent_pose_with_cov_stamped_ptr_;
   nav_msgs::msg::Path::SharedPtr path_ptr_;
@@ -114,6 +121,8 @@ public:
   double last_odom_received_time_;
   bool use_imu_{false};
   bool enable_debug_{false};
+
+  int ndt_num_threads_;
 
   // imu
   LidarUndistortion lidar_undistortion_;

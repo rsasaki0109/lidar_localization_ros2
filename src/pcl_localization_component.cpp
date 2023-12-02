@@ -83,7 +83,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
   if (use_pcd_map_) {
     pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::io::loadPCDFile(map_path_, *map_cloud_ptr);
-    RCLCPP_INFO(get_logger(), "Map Size %d", map_cloud_ptr->size());
+    RCLCPP_INFO(get_logger(), "Map Size %ld", map_cloud_ptr->size());
 
     sensor_msgs::msg::PointCloud2::SharedPtr map_msg_ptr(new sensor_msgs::msg::PointCloud2);
     pcl::toROSMsg(*map_cloud_ptr, *map_msg_ptr);
@@ -91,7 +91,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     initial_map_pub_->publish(*map_msg_ptr);
     RCLCPP_INFO(get_logger(), "Initial Map Published");
 
-    if (registration_method_ == "GICP") {
+    if (registration_method_ == "GICP" || registration_method_ == "GICP_OMP") {
       pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
       voxel_grid_filter_.setInputCloud(map_cloud_ptr);
       voxel_grid_filter_.filter(*filtered_cloud_ptr);
@@ -158,6 +158,7 @@ void PCLLocalization::initializeParameters()
   get_parameter("score_threshold", score_threshold_);
   get_parameter("ndt_resolution", ndt_resolution_);
   get_parameter("ndt_step_size", ndt_step_size_);
+  get_parameter("ndt_num_threads", ndt_num_threads_);
   get_parameter("transform_epsilon", transform_epsilon_);
   get_parameter("voxel_leaf_size", voxel_leaf_size_);
   get_parameter("scan_max_range", scan_max_range_);
@@ -183,6 +184,7 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(),"registration_method: %s", registration_method_.c_str());
   RCLCPP_INFO(get_logger(),"ndt_resolution: %lf", ndt_resolution_);
   RCLCPP_INFO(get_logger(),"ndt_step_size: %lf", ndt_step_size_);
+  RCLCPP_INFO(get_logger(),"ndt_num_threads: %d", ndt_num_threads_);
   RCLCPP_INFO(get_logger(),"transform_epsilon: %lf", transform_epsilon_);
   RCLCPP_INFO(get_logger(),"voxel_leaf_size: %lf", voxel_leaf_size_);
   RCLCPP_INFO(get_logger(),"scan_max_range: %lf", scan_max_range_);
@@ -240,18 +242,43 @@ void PCLLocalization::initializeRegistration()
   RCLCPP_INFO(get_logger(), "initializeRegistration");
 
   if (registration_method_ == "GICP") {
-    pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp(
+    boost::shared_ptr<pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>> gicp(
       new pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>());
     gicp->setTransformationEpsilon(transform_epsilon_);
     registration_ = gicp;
-  } else {
-    pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt(
+  }
+  else if (registration_method_ == "NDT") {
+    boost::shared_ptr<pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>> ndt(
       new pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
     ndt->setStepSize(ndt_step_size_);
     ndt->setResolution(ndt_resolution_);
     ndt->setTransformationEpsilon(transform_epsilon_);
     registration_ = ndt;
   }
+  else if (registration_method_ == "NDT_OMP") {
+    pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp(
+      new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
+    ndt_omp->setStepSize(ndt_step_size_);
+    ndt_omp->setResolution(ndt_resolution_);
+    ndt_omp->setTransformationEpsilon(transform_epsilon_);
+    if (ndt_num_threads_ > 0) {
+      ndt_omp->setNumThreads(ndt_num_threads_);
+    } else {
+      ndt_omp->setNumThreads(omp_get_max_threads());
+    }
+    registration_ = ndt_omp;
+  }
+  else if (registration_method_ == "GICP_OMP") {
+    pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp_omp(
+      new pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>());
+    gicp_omp->setTransformationEpsilon(transform_epsilon_);
+    registration_ = gicp_omp;
+  }
+  else {
+    RCLCPP_ERROR(get_logger(), "Invalid registration method.");
+    exit(EXIT_FAILURE);
+  }
+
 
   voxel_grid_filter_.setLeafSize(voxel_leaf_size_, voxel_leaf_size_, voxel_leaf_size_);
   RCLCPP_INFO(get_logger(), "initializeRegistration end");
@@ -284,7 +311,7 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
 
   pcl::fromROSMsg(*msg, *map_cloud_ptr);
 
-  if (registration_method_ == "GICP") {
+  if (registration_method_ == "GICP" || registration_method_ == "GICP_OMP") {
     pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
     voxel_grid_filter_.setInputCloud(map_cloud_ptr);
     voxel_grid_filter_.filter(*filtered_cloud_ptr);
