@@ -20,19 +20,19 @@ def generate_launch_description():
 
     ld = launch.LaunchDescription()
 
-    lidar_tf = launch_ros.actions.Node(
-        name='lidar_tf',
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        arguments=['0','0','0','0','0','0','1','odom','velodyne']
-        )
+    # lidar_tf = launch_ros.actions.Node(
+    #     name='lidar_tf',
+    #     package='tf2_ros',
+    #     executable='static_transform_publisher',
+    #     arguments=['0','0','0','0','0','0','1','odom','velodyne']
+    #     )
     
-    imu_tf = launch_ros.actions.Node(
-        name='imu_tf',
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        arguments=['0','0','0','0','0','0','1','odom','imu_link']
-        )
+    # imu_tf = launch_ros.actions.Node(
+    #     name='imu_tf',
+    #     package='tf2_ros',
+    #     executable='static_transform_publisher',
+    #     arguments=['0','0','0','0','0','0','1','odom','imu_link']
+    #     )
 
     localization_param_dir = launch.substitutions.LaunchConfiguration(
         'localization_param_dir',
@@ -46,7 +46,6 @@ def generate_launch_description():
         namespace='',
         package='pcl_localization_ros2',
         executable='pcl_localization_node',
-        remappings=[('/cloud','/points_raw')],
         parameters=[localization_param_dir],
         output='screen')
 
@@ -90,7 +89,7 @@ def generate_launch_description():
     ld.add_action(from_inactive_to_active)
     
     ld.add_action(pcl_localization)
-    ld.add_action(lidar_tf)
+    # ld.add_action(lidar_tf)
     ld.add_action(to_inactive)
 
     return ld

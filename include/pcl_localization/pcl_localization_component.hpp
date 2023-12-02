@@ -48,7 +48,7 @@ public:
   void initializeParameters();
   void initializePubSub();
   void initializeRegistration();
-  void initialPoseReceived(geometry_msgs::msg::PoseStamped::SharedPtr msg);
+  void initialPoseReceived(geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void mapReceived(sensor_msgs::msg::PointCloud2::SharedPtr msg);
   void odomReceived(nav_msgs::msg::Odometry::ConstSharedPtr msg);
   void imuReceived(sensor_msgs::msg::Imu::ConstSharedPtr msg);
@@ -60,12 +60,12 @@ public:
   tf2_ros::Buffer tfbuffer_;
   tf2_ros::TransformListener tflistener_;
 
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::ConstSharedPtr
+  rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::ConstSharedPtr
     initial_pose_sub_;
-  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
     pose_pub_;
-  rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr
-    path_pub_;
+  // rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr
+  //   path_pub_;
   rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::PointCloud2>::SharedPtr
     initial_map_pub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::ConstSharedPtr
@@ -79,8 +79,8 @@ public:
 
   pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr registration_;
   pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter_;
-  geometry_msgs::msg::PoseStamped corrent_pose_stamped_;
-  nav_msgs::msg::Path path_;
+  geometry_msgs::msg::PoseWithCovarianceStamped corrent_pose_stamped_;
+  // nav_msgs::msg::Path path_;
 
   bool map_recieved_{false};
   bool initialpose_recieved_{false};
