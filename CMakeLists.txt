@@ -11,10 +11,6 @@ endif()
 
 SET(CMAKE_CXX_FLAGS "-O2 -g ${CMAKE_CXX_FLAGS}")
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
-
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
@@ -27,22 +23,30 @@ find_package(tf2_sensor_msgs  REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(PCL REQUIRED)
+find_package(ndt_omp_ros2 REQUIRED)
+find_package(OpenMP)
+
+if (OPENMP_FOUND)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+endif()
+
 
 add_library(pcl_localization_component SHARED
 src/pcl_localization_component.cpp
 )
 
 ament_target_dependencies(pcl_localization_component
-  rclcpp  
-  tf2_ros 
-  tf2_geometry_msgs 
+  rclcpp
+  tf2_ros
+  tf2_geometry_msgs
   tf2_sensor_msgs
-  tf2_eigen 
-  geometry_msgs 
+  tf2_eigen
+  geometry_msgs
   sensor_msgs
   nav_msgs
   pcl_conversions
-  #ndt_omp_ros2
+  ndt_omp_ros2
 )
 
 include_directories(
