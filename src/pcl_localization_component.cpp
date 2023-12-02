@@ -43,7 +43,7 @@ CallbackReturn PCLLocalization::on_configure(const rclcpp_lifecycle::State &)
   initializePubSub();
   initializeRegistration();
 
-  // path_.header.frame_id = global_frame_id_;
+  path_.header.frame_id = global_frame_id_;
 
   return CallbackReturn::SUCCESS;
 }
@@ -53,7 +53,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
   RCLCPP_INFO(get_logger(), "Activating");
 
   pose_pub_->on_activate();
-  // path_pub_->on_activate();
+  path_pub_->on_activate();
   initial_map_pub_->on_activate();
 
   if (set_initial_pose_) {
@@ -118,7 +118,7 @@ CallbackReturn PCLLocalization::on_cleanup(const rclcpp_lifecycle::State &)
   RCLCPP_INFO(get_logger(), "Cleaning Up");
   initial_pose_sub_.reset();
   initial_map_pub_.reset();
-  // path_pub_.reset();
+  path_pub_.reset();
   pose_pub_.reset();
   odom_sub_.reset();
   cloud_sub_.reset();
@@ -197,9 +197,9 @@ void PCLLocalization::initializePubSub()
     "pcl_pose",
     rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
 
-  // path_pub_ = create_publisher<nav_msgs::msg::Path>(
-  //   "path",
-  //   rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
+  path_pub_ = create_publisher<nav_msgs::msg::Path>(
+    "path",
+    rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
 
   initial_map_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
     "initial_map",
