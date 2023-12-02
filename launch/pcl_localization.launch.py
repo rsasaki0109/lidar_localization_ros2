@@ -90,7 +90,7 @@ def generate_launch_description():
     ld.add_action(from_inactive_to_active)
 
     ld.add_action(pcl_localization)
-    ld.add_action(lidar_tf)
+    # ld.add_action(lidar_tf)
     ld.add_action(to_inactive)
 
     return ld

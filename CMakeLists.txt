@@ -23,6 +23,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs  REQUIRED)
+find_package(tf2_sensor_msgs  REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(PCL REQUIRED)
@@ -32,11 +33,12 @@ src/pcl_localization_component.cpp
 )
 
 ament_target_dependencies(pcl_localization_component
-  rclcpp
-  tf2_ros
-  tf2_geometry_msgs
-  tf2_eigen
-  geometry_msgs
+  rclcpp  
+  tf2_ros 
+  tf2_geometry_msgs 
+  tf2_sensor_msgs
+  tf2_eigen 
+  geometry_msgs 
   sensor_msgs
   nav_msgs
   pcl_conversions

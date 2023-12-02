@@ -43,7 +43,7 @@ CallbackReturn PCLLocalization::on_configure(const rclcpp_lifecycle::State &)
   initializePubSub();
   initializeRegistration();
 
-  path_.header.frame_id = global_frame_id_;
+  // path_.header.frame_id = global_frame_id_;
 
   return CallbackReturn::SUCCESS;
 }
@@ -53,7 +53,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
   RCLCPP_INFO(get_logger(), "Activating");
 
   pose_pub_->on_activate();
-  path_pub_->on_activate();
+  // path_pub_->on_activate();
   initial_map_pub_->on_activate();
 
   if (set_initial_pose_) {
@@ -118,7 +118,7 @@ CallbackReturn PCLLocalization::on_cleanup(const rclcpp_lifecycle::State &)
   RCLCPP_INFO(get_logger(), "Cleaning Up");
   initial_pose_sub_.reset();
   initial_map_pub_.reset();
-  path_pub_.reset();
+  // path_pub_.reset();
   pose_pub_.reset();
   odom_sub_.reset();
   cloud_sub_.reset();
@@ -197,9 +197,9 @@ void PCLLocalization::initializePubSub()
     "pcl_pose",
     rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
 
-  path_pub_ = create_publisher<nav_msgs::msg::Path>(
-    "path",
-    rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
+  // path_pub_ = create_publisher<nav_msgs::msg::Path>(
+  //   "path",
+  //   rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
 
   initial_map_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
     "initial_map",
@@ -218,7 +218,7 @@ void PCLLocalization::initializePubSub()
     std::bind(&PCLLocalization::odomReceived, this, std::placeholders::_1));
 
   cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-    "cloud", rclcpp::SensorDataQoS(),
+    "velodyne_points", rclcpp::SensorDataQoS(),
     std::bind(&PCLLocalization::cloudReceived, this, std::placeholders::_1));
 
   imu_sub_ = create_subscription<sensor_msgs::msg::Imu>(
@@ -308,6 +308,7 @@ void PCLLocalization::odomReceived(nav_msgs::msg::Odometry::ConstSharedPtr msg)
   tf2::Quaternion previous_quat_tf;
   double roll, pitch, yaw;
   tf2::fromMsg(corrent_pose_with_cov_stamped_.pose.pose.orientation, previous_quat_tf);
+
   tf2::Matrix3x3(previous_quat_tf).getRPY(roll, pitch, yaw);
 
   roll += msg->twist.twist.angular.x * dt_odom;
@@ -408,6 +409,7 @@ void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPt
 
   Eigen::Affine3d affine;
   tf2::fromMsg(corrent_pose_with_cov_stamped_.pose.pose, affine);
+
   Eigen::Matrix4f init_guess = affine.matrix().cast<float>();
 
   pcl::PointCloud<pcl::PointXYZI>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZI>);
