@@ -48,11 +48,11 @@ public:
   void initializeParameters();
   void initializePubSub();
   void initializeRegistration();
-  void initialPoseReceived(geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
-  void mapReceived(sensor_msgs::msg::PointCloud2::SharedPtr msg);
-  void odomReceived(nav_msgs::msg::Odometry::ConstSharedPtr msg);
-  void imuReceived(sensor_msgs::msg::Imu::ConstSharedPtr msg);
-  void cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
+  void initialPoseReceived(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
+  void mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+  void odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr msg);
+  void imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr msg);
+  void cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
   // void gnssReceived();
 
   tf2_ros::TransformBroadcaster broadcaster_;
@@ -79,8 +79,8 @@ public:
 
   pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr registration_;
   pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter_;
-  geometry_msgs::msg::PoseWithCovarianceStamped corrent_pose_with_cov_stamped_;
-  nav_msgs::msg::Path path_;
+  geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr corrent_pose_with_cov_stamped_ptr_;
+  nav_msgs::msg::Path::SharedPtr path_ptr_;
   sensor_msgs::msg::PointCloud2::ConstSharedPtr last_scan_ptr_;
 
   bool map_recieved_{false};
