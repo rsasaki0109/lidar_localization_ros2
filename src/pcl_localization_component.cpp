@@ -68,7 +68,11 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     msg->pose.pose.orientation.z = initial_pose_qz_;
     msg->pose.pose.orientation.w = initial_pose_qw_;
 
-    path_.poses.push_back(*msg);
+    geometry_msgs::msg::PoseStamped::SharedPtr pose_stamped(new geometry_msgs::msg::PoseStamped);
+    pose_stamped->header.stamp = msg->header.stamp;
+    pose_stamped->header.frame_id = global_frame_id_;
+    pose_stamped->pose = msg->pose.pose;
+    path_.poses.push_back(*pose_stamped);
 
     initialPoseReceived(msg);
   }
@@ -249,8 +253,10 @@ void PCLLocalization::initialPoseReceived(geometry_msgs::msg::PoseWithCovariance
     return;
   }
   initialpose_recieved_ = true;
-  corrent_pose_stamped_ = *msg;
-  pose_pub_->publish(corrent_pose_stamped_);
+  corrent_pose_with_cov_stamped_ = *msg;
+  pose_pub_->publish(corrent_pose_with_cov_stamped_);
+
+  cloudReceived(last_scan_ptr_);
 
 }
 
@@ -299,7 +305,7 @@ void PCLLocalization::odomReceived(nav_msgs::msg::Odometry::ConstSharedPtr msg)
 
   tf2::Quaternion previous_quat_tf;
   double roll, pitch, yaw;
-  tf2::fromMsg(corrent_pose_stamped_.pose.pose.orientation, previous_quat_tf);
+  tf2::fromMsg(corrent_pose_with_cov_stamped_.pose.pose.orientation, previous_quat_tf);
   tf2::Matrix3x3(previous_quat_tf).getRPY(roll, pitch, yaw);
 
   roll += msg->twist.twist.angular.x * dt_odom;
@@ -319,10 +325,10 @@ void PCLLocalization::odomReceived(nav_msgs::msg::Odometry::ConstSharedPtr msg)
     msg->twist.twist.linear.z};
   Eigen::Vector3d delta_position = quat_eig.matrix() * dt_odom * odom;
 
-  corrent_pose_stamped_.pose.pose.position.x += delta_position.x();
-  corrent_pose_stamped_.pose.pose.position.y += delta_position.y();
-  corrent_pose_stamped_.pose.pose.position.z += delta_position.z();
-  corrent_pose_stamped_.pose.pose.orientation = quat_msg;
+  corrent_pose_with_cov_stamped_.pose.pose.position.x += delta_position.x();
+  corrent_pose_with_cov_stamped_.pose.pose.position.y += delta_position.y();
+  corrent_pose_with_cov_stamped_.pose.pose.position.z += delta_position.z();
+  corrent_pose_with_cov_stamped_.pose.pose.orientation = quat_msg;
 }
 
 void PCLLocalization::imuReceived(sensor_msgs::msg::Imu::ConstSharedPtr msg)
@@ -399,7 +405,7 @@ void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPt
   registration_->setInputSource(tmp_ptr);
 
   Eigen::Affine3d affine;
-  tf2::fromMsg(corrent_pose_stamped_.pose.pose, affine);
+  tf2::fromMsg(corrent_pose_with_cov_stamped_.pose.pose, affine);
   Eigen::Matrix4f init_guess = affine.matrix().cast<float>();
 
   pcl::PointCloud<pcl::PointXYZI>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZI>);
@@ -417,13 +423,13 @@ void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPt
   Eigen::Quaterniond quat_eig(rot_mat);
   geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
 
-  corrent_pose_stamped_.header.stamp = msg->header.stamp;
-  corrent_pose_stamped_.header.frame_id = global_frame_id_;
-  corrent_pose_stamped_.pose.pose.position.x = static_cast<double>(final_transformation(0, 3));
-  corrent_pose_stamped_.pose.pose.position.y = static_cast<double>(final_transformation(1, 3));
-  corrent_pose_stamped_.pose.pose.position.z = static_cast<double>(final_transformation(2, 3));
-  corrent_pose_stamped_.pose.pose.orientation = quat_msg;
-  pose_pub_->publish(corrent_pose_stamped_);
+  corrent_pose_with_cov_stamped_.header.stamp = msg->header.stamp;
+  corrent_pose_with_cov_stamped_.header.frame_id = global_frame_id_;
+  corrent_pose_with_cov_stamped_.pose.pose.position.x = static_cast<double>(final_transformation(0, 3));
+  corrent_pose_with_cov_stamped_.pose.pose.position.y = static_cast<double>(final_transformation(1, 3));
+  corrent_pose_with_cov_stamped_.pose.pose.position.z = static_cast<double>(final_transformation(2, 3));
+  corrent_pose_with_cov_stamped_.pose.pose.orientation = quat_msg;
+  pose_pub_->publish(corrent_pose_with_cov_stamped_);
 
   geometry_msgs::msg::TransformStamped transform_stamped;
   transform_stamped.header.stamp = msg->header.stamp;
@@ -435,8 +441,14 @@ void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPt
   transform_stamped.transform.rotation = quat_msg;
   broadcaster_.sendTransform(transform_stamped);
 
-  path_.poses.push_back(corrent_pose_stamped_);
+  geometry_msgs::msg::PoseStamped::SharedPtr pose_stamped(new geometry_msgs::msg::PoseStamped);
+  pose_stamped->header.stamp = msg->header.stamp;
+  pose_stamped->header.frame_id = global_frame_id_;
+  pose_stamped->pose = corrent_pose_with_cov_stamped_.pose.pose;
+  path_.poses.push_back(*pose_stamped);
   path_pub_->publish(path_);
+
+  last_scan_ptr_ = msg;
 
   if (enable_debug_) {
     std::cout << "number of filtered cloud points: " << filtered_cloud_ptr->size() << std::endl;
