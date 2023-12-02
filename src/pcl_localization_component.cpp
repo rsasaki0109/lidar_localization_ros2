@@ -10,6 +10,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("odom_frame_id", "odom");
   declare_parameter("base_frame_id", "base_link");
   declare_parameter("registration_method", "NDT");
+  declare_parameter("score_threshold", 2.0);
   declare_parameter("ndt_resolution", 1.0);
   declare_parameter("ndt_step_size", 0.1);
   declare_parameter("transform_epsilon", 0.01);
@@ -147,6 +148,7 @@ void PCLLocalization::initializeParameters()
   get_parameter("odom_frame_id", odom_frame_id_);
   get_parameter("base_frame_id", base_frame_id_);
   get_parameter("registration_method", registration_method_);
+  get_parameter("score_threshold", score_threshold_);
   get_parameter("ndt_resolution", ndt_resolution_);
   get_parameter("ndt_step_size", ndt_step_size_);
   get_parameter("transform_epsilon", transform_epsilon_);
@@ -413,9 +415,15 @@ void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPt
   rclcpp::Time time_align_start = system_clock.now();
   registration_->align(*output_cloud, init_guess);
   rclcpp::Time time_align_end = system_clock.now();
-  if (!registration_->hasConverged()) {
+
+  bool has_converged = registration_->hasConverged();
+  double fitness_score = registration_->getFitnessScore();
+  if (!has_converged) {
     RCLCPP_WARN(get_logger(), "The registration didn't converge.");
     return;
+  }
+  if (fitness_score > score_threshold_) {
+    RCLCPP_WARN(get_logger(), "The fitness score is over %lf.", score_threshold_);
   }
 
   Eigen::Matrix4f final_transformation = registration_->getFinalTransformation();
@@ -454,8 +462,8 @@ void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPt
     std::cout << "number of filtered cloud points: " << filtered_cloud_ptr->size() << std::endl;
     std::cout << "align time:" << time_align_end.seconds() - time_align_start.seconds() <<
       "[sec]" << std::endl;
-    std::cout << "has converged: " << registration_->hasConverged() << std::endl;
-    std::cout << "fitness score: " << registration_->getFitnessScore() << std::endl;
+    std::cout << "has converged: " << has_converged << std::endl;
+    std::cout << "fitness score: " << fitness_score << std::endl;
     std::cout << "final transformation:" << std::endl;
     std::cout << final_transformation << std::endl;
     /* delta_angle check

@@ -94,6 +94,7 @@ public:
   double scan_max_range_;
   double scan_min_range_;
   double scan_period_;
+  double score_threshold_;
   double ndt_resolution_;
   double ndt_step_size_;
   double transform_epsilon_;

@@ -1,7 +1,8 @@
 /**:
     ros__parameters:
-      registration_method: "NDT"
-      ndt_resolution: 2.0
+      registration_method: "GICP"
+      score_threshold: 2.0
+      ndt_resolution: 1.0
       ndt_step_size: 0.1
       transform_epsilon: 0.01
       voxel_leaf_size: 0.2
