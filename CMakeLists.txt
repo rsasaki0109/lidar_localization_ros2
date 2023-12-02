@@ -1,12 +1,10 @@
 cmake_minimum_required(VERSION 3.5)
 project(pcl_localization_ros2)
 
-# Default to C99
 if(NOT CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 99)
 endif()
 
-# Default to C++14
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 14)
 endif()
@@ -34,11 +32,11 @@ src/pcl_localization_component.cpp
 )
 
 ament_target_dependencies(pcl_localization_component
-  rclcpp  
-  tf2_ros 
-  tf2_geometry_msgs 
-  tf2_eigen 
-  geometry_msgs 
+  rclcpp
+  tf2_ros
+  tf2_geometry_msgs
+  tf2_eigen
+  geometry_msgs
   sensor_msgs
   nav_msgs
   pcl_conversions

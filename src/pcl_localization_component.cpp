@@ -42,7 +42,7 @@ CallbackReturn PCLLocalization::on_configure(const rclcpp_lifecycle::State &)
   initializePubSub();
   initializeRegistration();
 
-  // path_.header.frame_id = global_frame_id_;
+  path_.header.frame_id = global_frame_id_;
 
   return CallbackReturn::SUCCESS;
 }
@@ -52,7 +52,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
   RCLCPP_INFO(get_logger(), "Activating");
 
   pose_pub_->on_activate();
-  // path_pub_->on_activate();
+  path_pub_->on_activate();
   initial_map_pub_->on_activate();
 
   if (set_initial_pose_) {
@@ -63,13 +63,12 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     msg->pose.pose.position.x = initial_pose_x_;
     msg->pose.pose.position.y = initial_pose_y_;
     msg->pose.pose.position.z = initial_pose_z_;
-    // msg->pose.pose.orientation = orientationAroundZAxis(initial_pose_yaw_);
     msg->pose.pose.orientation.x = initial_pose_qx_;
     msg->pose.pose.orientation.y = initial_pose_qy_;
     msg->pose.pose.orientation.z = initial_pose_qz_;
     msg->pose.pose.orientation.w = initial_pose_qw_;
 
-    // path_.poses.push_back(*msg);
+    path_.poses.push_back(*msg);
 
     initialPoseReceived(msg);
   }
@@ -114,7 +113,7 @@ CallbackReturn PCLLocalization::on_cleanup(const rclcpp_lifecycle::State &)
   RCLCPP_INFO(get_logger(), "Cleaning Up");
   initial_pose_sub_.reset();
   initial_map_pub_.reset();
-  // path_pub_.reset();
+  path_pub_.reset();
   pose_pub_.reset();
   odom_sub_.reset();
   cloud_sub_.reset();
@@ -192,9 +191,9 @@ void PCLLocalization::initializePubSub()
     "pcl_pose",
     rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
 
-  // path_pub_ = create_publisher<nav_msgs::msg::Path>(
-  //   "path",
-  //   rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
+  path_pub_ = create_publisher<nav_msgs::msg::Path>(
+    "path",
+    rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
 
   initial_map_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
     "initial_map",
@@ -213,7 +212,7 @@ void PCLLocalization::initializePubSub()
     std::bind(&PCLLocalization::odomReceived, this, std::placeholders::_1));
 
   cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-    "velodyne_points", rclcpp::SensorDataQoS(),
+    "cloud", rclcpp::SensorDataQoS(),
     std::bind(&PCLLocalization::cloudReceived, this, std::placeholders::_1));
 
   imu_sub_ = create_subscription<sensor_msgs::msg::Imu>(
@@ -246,12 +245,13 @@ void PCLLocalization::initialPoseReceived(geometry_msgs::msg::PoseWithCovariance
 {
   RCLCPP_INFO(get_logger(), "initialPoseReceived");
   if (msg->header.frame_id != global_frame_id_) {
-    RCLCPP_WARN(this->get_logger(), "initialpose_frame_id does not match　global_frame_id");
+    RCLCPP_WARN(this->get_logger(), "initialpose_frame_id does not match global_frame_id");
     return;
   }
   initialpose_recieved_ = true;
   corrent_pose_stamped_ = *msg;
   pose_pub_->publish(corrent_pose_stamped_);
+
 }
 
 void PCLLocalization::mapReceived(sensor_msgs::msg::PointCloud2::SharedPtr msg)
@@ -418,6 +418,7 @@ void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPt
   geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
 
   corrent_pose_stamped_.header.stamp = msg->header.stamp;
+  corrent_pose_stamped_.header.frame_id = global_frame_id_;
   corrent_pose_stamped_.pose.pose.position.x = static_cast<double>(final_transformation(0, 3));
   corrent_pose_stamped_.pose.pose.position.y = static_cast<double>(final_transformation(1, 3));
   corrent_pose_stamped_.pose.pose.position.z = static_cast<double>(final_transformation(2, 3));
@@ -427,15 +428,15 @@ void PCLLocalization::cloudReceived(sensor_msgs::msg::PointCloud2::ConstSharedPt
   geometry_msgs::msg::TransformStamped transform_stamped;
   transform_stamped.header.stamp = msg->header.stamp;
   transform_stamped.header.frame_id = global_frame_id_;
-  transform_stamped.child_frame_id = odom_frame_id_;
+  transform_stamped.child_frame_id = base_frame_id_;
   transform_stamped.transform.translation.x = static_cast<double>(final_transformation(0, 3));
   transform_stamped.transform.translation.y = static_cast<double>(final_transformation(1, 3));
   transform_stamped.transform.translation.z = static_cast<double>(final_transformation(2, 3));
   transform_stamped.transform.rotation = quat_msg;
   broadcaster_.sendTransform(transform_stamped);
 
-  // path_.poses.push_back(corrent_pose_stamped_);
-  // path_pub_->publish(path_);
+  path_.poses.push_back(corrent_pose_stamped_);
+  path_pub_->publish(path_);
 
   if (enable_debug_) {
     std::cout << "number of filtered cloud points: " << filtered_cloud_ptr->size() << std::endl;
