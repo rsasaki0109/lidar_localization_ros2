@@ -27,7 +27,7 @@ Green: path, Red: map
 
 |Name|Type|Default value|Description|
 |---|---|---|---|
-|registration_method|string|"GICP"|"NDT" or "GICP" of "NDT_OMP" of "GICP_OMP"|
+|registration_method|string|"GICP"|"NDT" or "GICP" or "NDT_OMP" or "GICP_OMP"|
 |score_threshold|double|2.0|registration score threshold|
 |ndt_resolution|double|2.0|resolution size of voxels[m]|
 |ndt_step_size|double|0.1|step_size maximum step length[m]|
