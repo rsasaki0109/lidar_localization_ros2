@@ -1,6 +1,6 @@
-#include <pcl_localization/pcl_localization_component.hpp>
+#include <lidar_localization/lidar_localization_component.hpp>
 PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
-: rclcpp_lifecycle::LifecycleNode("pcl_localization", options),
+: rclcpp_lifecycle::LifecycleNode("lidar_localization", options),
   clock_(RCL_ROS_TIME),
   tfbuffer_(std::make_shared<rclcpp::Clock>(clock_)),
   tflistener_(tfbuffer_),

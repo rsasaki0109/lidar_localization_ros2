@@ -1,4 +1,4 @@
-# pcl_localization_ros2
+# lidar_localization_ros2
 A ROS2 package of 3D LIDAR-based Localization using PCL.
 
 <img src="./images/path.png" width="640px">
@@ -61,8 +61,8 @@ The Velodyne VLP-16 was used in this data.
 Before running, put `bin_tc-2017-10-15-ndmap.pcd` into your `map` directory and  
 edit the `map_path` parameter of `localization.yaml` in the `param` directory accordingly.
 ```
-rviz2 -d src/pcl_localization_ros2/rviz/localization.rviz
-ros2 launch pcl_localization_ros2 pcl_localization.launch.py
+rviz2 -d src/lidar_localization_ros2/rviz/localization.rviz
+ros2 launch lidar_localization_ros2 lidar_localization.launch.py
 ros2 bag play tc_2017-10-15-15-34-02_free_download/
 ```
 

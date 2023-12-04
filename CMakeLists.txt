@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(pcl_localization_ros2)
+project(lidar_localization_ros2)
 
 if(NOT CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 99)
@@ -32,11 +32,11 @@ if (OPENMP_FOUND)
 endif()
 
 
-add_library(pcl_localization_component SHARED
-src/pcl_localization_component.cpp
+add_library(lidar_localization_component SHARED
+src/lidar_localization_component.cpp
 )
 
-ament_target_dependencies(pcl_localization_component
+ament_target_dependencies(lidar_localization_component
   rclcpp
   tf2_ros
   tf2_geometry_msgs
@@ -56,9 +56,9 @@ include_directories(
   ${rclcpp_lifecycle_INCLUDE_DIRS}
   ${rclcpp_INCLUDE_DIRS})
 
-add_executable(pcl_localization_node src/pcl_localization_node.cpp)
-target_link_libraries(pcl_localization_node
-  pcl_localization_component
+add_executable(lidar_localization_node src/lidar_localization_node.cpp)
+target_link_libraries(lidar_localization_node
+  lidar_localization_component
   ${PCL_LIBRARIES}
   ${rclcpp_lifecycle_LIBRARIES}
   ${std_msgs_LIBRARIES}
@@ -68,14 +68,14 @@ link_directories(
 )
 add_definitions(${PCL_DEFINITIONS})
 
-ament_export_libraries(pcl_localization_component)
+ament_export_libraries(lidar_localization_component)
 
 install(TARGETS
-  pcl_localization_node
+  lidar_localization_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(TARGETS
-  pcl_localization_component
+  lidar_localization_component
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
