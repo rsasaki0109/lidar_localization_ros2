@@ -1,4 +1,4 @@
-#include <pcl_localization/pcl_localization_component.hpp>
+#include <lidar_localization/lidar_localization_component.hpp>
 
 int main(int argc, char * argv[])
 {

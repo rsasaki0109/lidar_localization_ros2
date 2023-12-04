@@ -16,8 +16,8 @@ jobs:
                 submodules: true
             - name: Copy repository
               run: |
-                  mkdir -p ~/ros2_ws/src/pcl_localization_ros2
-                  cp -rf . ~/ros2_ws/src/pcl_localization_ros2
+                  mkdir -p ~/ros2_ws/src/lidar_localization_ros2
+                  cp -rf . ~/ros2_ws/src/lidar_localization_ros2
             - name: Install dependencies
               run: |
                   source /opt/ros/humble/setup.bash
