@@ -1,5 +1,5 @@
 # lidar_localization_ros2
-A ROS2 package of 3D LIDAR-based Localization using PCL.
+A ROS2 package of 3D LIDAR-based Localization.
 
 <img src="./images/path.png" width="640px">
 
