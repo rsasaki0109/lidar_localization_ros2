@@ -10,6 +10,22 @@ Green: path, Red: map
 
 - [ndt_omp_ros2](https://github.com/rsasaki0109/ndt_omp_ros2.git)
 
+## How to build
+
+clone
+```
+cd ~/ros2_ws/src
+git clone https://github.com/rsasaki0109/lidar_localization_ros2
+git clone https://github.com/rsasaki0109/ndt_omp_ros2.git -b humble
+cd ..
+rosdep install --from-paths src --ignore-src -r -y
+```
+
+build
+```
+colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+```
+
 ## IO
 - input  
 /cloud  (sensor_msgs/PointCloud2)  
