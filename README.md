@@ -31,7 +31,7 @@ Green: path, Red: map
 |score_threshold|double|2.0|registration score threshold|
 |ndt_resolution|double|2.0|resolution size of voxels[m]|
 |ndt_step_size|double|0.1|step_size maximum step length[m]|
-|ndt_num_threads|int|0|threads using NDT_OMP(if `0` is set, maximum alloawble threads are used.)|
+|ndt_num_threads|int|4|threads using NDT_OMP(if `0` is set, maximum alloawble threads are used.)|
 |transform_epsilon|double|0.01|transform epsilon to stop iteration in registration|
 |voxel_leaf_size|double|0.2|down sample size of input cloud[m]|
 |scan_max_range|double|100.0|max range of input cloud[m]|
