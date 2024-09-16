@@ -13,6 +13,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("score_threshold", 2.0);
   declare_parameter("ndt_resolution", 1.0);
   declare_parameter("ndt_step_size", 0.1);
+  declare_parameter("ndt_num_threads", 4);
   declare_parameter("transform_epsilon", 0.01);
   declare_parameter("voxel_leaf_size", 0.2);
   declare_parameter("scan_max_range", 100.0);
