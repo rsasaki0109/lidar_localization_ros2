@@ -13,6 +13,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("score_threshold", 2.0);
   declare_parameter("ndt_resolution", 1.0);
   declare_parameter("ndt_step_size", 0.1);
+  declare_parameter("ndt_max_iterations", 35);
   declare_parameter("ndt_num_threads", 4);
   declare_parameter("transform_epsilon", 0.01);
   declare_parameter("voxel_leaf_size", 0.2);
@@ -160,6 +161,7 @@ void PCLLocalization::initializeParameters()
   get_parameter("ndt_resolution", ndt_resolution_);
   get_parameter("ndt_step_size", ndt_step_size_);
   get_parameter("ndt_num_threads", ndt_num_threads_);
+  get_parameter("ndt_max_iterations", ndt_max_iterations_);
   get_parameter("transform_epsilon", transform_epsilon_);
   get_parameter("voxel_leaf_size", voxel_leaf_size_);
   get_parameter("scan_max_range", scan_max_range_);
@@ -279,6 +281,7 @@ void PCLLocalization::initializeRegistration()
     RCLCPP_ERROR(get_logger(), "Invalid registration method.");
     exit(EXIT_FAILURE);
   }
+  registration_->setMaximumIterations(ndt_max_iterations_);
 
 
   voxel_grid_filter_.setLeafSize(voxel_leaf_size_, voxel_leaf_size_, voxel_leaf_size_);
