@@ -123,6 +123,7 @@ public:
   bool enable_debug_{false};
 
   int ndt_num_threads_;
+  int ndt_max_iterations_;
 
   // imu
   LidarUndistortion lidar_undistortion_;
