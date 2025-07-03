@@ -225,9 +225,9 @@ void PCLLocalization::initializePubSub()
     "map", rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable(),
     std::bind(&PCLLocalization::mapReceived, this, std::placeholders::_1));
 
-  odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
-    "odom", rclcpp::SensorDataQoS(),
-    std::bind(&PCLLocalization::odomReceived, this, std::placeholders::_1));
+  // odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
+  //   "odom", rclcpp::SensorDataQoS(),
+  //   std::bind(&PCLLocalization::odomReceived, this, std::placeholders::_1));
 
   cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
     "cloud", rclcpp::SensorDataQoS(),
@@ -332,7 +332,7 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
 void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr msg)
 {
   if (!use_odom_) {return;}
-  RCLCPP_INFO(get_logger(), "odomReceived");
+    RCLCPP_INFO(get_logger(), "odomReceived");
 
   double current_odom_received_time = msg->header.stamp.sec +
     msg->header.stamp.nanosec * 1e-9;
@@ -424,7 +424,23 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
 void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
 {
   if (!map_recieved_ || !initialpose_recieved_) {return;}
+  if(!odom_avairable_)
+  {
+    odom_avairable_ = true;
+    odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
+    "odom", rclcpp::SensorDataQoS(),
+    std::bind(&PCLLocalization::odomReceived, this, std::placeholders::_1));
+
+  }
   RCLCPP_INFO(get_logger(), "cloudReceived");
+
+  sensor_msgs::msg::PointCloud2 transformed_cloud;
+  try {
+    tfbuffer_.transform(*msg, transformed_cloud, base_frame_id_, tf2::TimePointZero, msg->header.frame_id);
+  } catch (tf2::TransformException &ex) {
+    RCLCPP_ERROR(get_logger(), "Transform failed: %s", ex.what());
+    return;
+  }
   pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
   pcl::fromROSMsg(*msg, *cloud_ptr);
 

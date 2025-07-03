@@ -121,10 +121,11 @@ public:
   double last_odom_received_time_;
   bool use_imu_{false};
   bool enable_debug_{false};
+  bool odom_avairable_{false};
 
   int ndt_num_threads_;
   int ndt_max_iterations_;
-
+  
   // imu
   LidarUndistortion lidar_undistortion_;
 };
