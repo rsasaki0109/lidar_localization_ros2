@@ -84,9 +84,27 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
 
   if (use_pcd_map_) {
     pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
-    pcl::io::loadPCDFile(map_path_, *map_cloud_ptr);
-    RCLCPP_INFO(get_logger(), "Map Size %ld", map_cloud_ptr->size());
+    // load a pcd or ply file
+    if (map_path_.rfind(".pcd") != std::string::npos) {
+      RCLCPP_INFO(get_logger(), "Loading pcd map from: %s", map_path_.c_str());
+      if (pcl::io::loadPCDFile(map_path_, *map_cloud_ptr) == -1) {
+        RCLCPP_ERROR(get_logger(), "Failed to load pcd file: %s", map_path_.c_str());
+        return CallbackReturn::FAILURE;
+      }
+    } else if (map_path_.rfind(".ply") != std::string::npos) {
+      RCLCPP_INFO(get_logger(), "Loading ply map from: %s", map_path_.c_str());
+      if (pcl::io::loadPLYFile(map_path_, *map_cloud_ptr) == -1) {
+        RCLCPP_ERROR(get_logger(), "Failed to load ply file: %s", map_path_.c_str());
+        return CallbackReturn::FAILURE;
+      }
+    } else {
+      RCLCPP_ERROR(
+          get_logger(), "Unsupported map file format. Please use .pcd or .ply: %s",
+          map_path_.c_str());
+      return CallbackReturn::FAILURE;
+    }
 
+    RCLCPP_INFO(get_logger(), "Map Size %ld", map_cloud_ptr->size());
     sensor_msgs::msg::PointCloud2::SharedPtr map_msg_ptr(new sensor_msgs::msg::PointCloud2);
     pcl::toROSMsg(*map_cloud_ptr, *map_msg_ptr);
     map_msg_ptr->header.frame_id = global_frame_id_;

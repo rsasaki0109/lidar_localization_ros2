@@ -7,6 +7,7 @@
 
 #include <pcl/registration/ndt.h>
 #include <pcl/registration/gicp.h>
+#include <pcl/io/ply_io.h>
 
 #include <tf2/transform_datatypes.h>
 #include <tf2/utils.h>
