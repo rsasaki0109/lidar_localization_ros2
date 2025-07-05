@@ -38,7 +38,7 @@ Green: path, Red: map
 |scan_min_range|double|1.0|min range of input cloud[m]|
 |scan_periad|double|0.1|scan period of input cloud[sec]|
 |use_pcd_map|bool|false|whether pcd_map is used or not|
-|map_path|string|"/map/map.pcd"|pcd_map file path|
+|map_path|string|"/map/map.pcd"|pcd_map or ply_map file path|
 |set_initial_pose|bool|false|whether or not to set the default value in the param file|
 |initial_pose_x|double|0.0|x-coordinate of the initial pose value[m]|
 |initial_pose_y|double|0.0|y-coordinate of the initial pose value[m]|
