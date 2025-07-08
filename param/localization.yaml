@@ -24,6 +24,7 @@
       use_odom: false
       use_imu: false
       enable_debug: true
+      enable_map_odom_tf: false
       global_frame_id: map
       odom_frame_id: odom
       base_frame_id: base_link
