@@ -533,6 +533,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
 
     tf2::Transform map_to_odom_tf = map_to_base_link_tf * odom_to_base_link_tf.inverse();
     geometry_msgs::msg::TransformStamped map_to_odom_stamped;
+    map_to_odom_stamped.header.stamp = msg->header.stamp;
     map_to_odom_stamped.header.frame_id = global_frame_id_;
     map_to_odom_stamped.child_frame_id = odom_frame_id_;
     map_to_odom_stamped.transform = tf2::toMsg(map_to_odom_tf);
