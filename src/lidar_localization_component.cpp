@@ -449,6 +449,30 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
   pcl::fromROSMsg(*msg, *cloud_ptr);
 
+  // If your cloud is not robot-centric, convert to base_frame.
+  if (msg->header.frame_id != base_frame_id_) {
+    RCLCPP_DEBUG(
+        this->get_logger(), "Transforming point cloud from %s to %s",
+        msg->header.frame_id.c_str(), base_frame_id_.c_str());
+    geometry_msgs::msg::TransformStamped base_to_lidar_stamped;
+    try {
+      base_to_lidar_stamped = tfbuffer_.lookupTransform(
+          base_frame_id_, msg->header.frame_id, msg->header.stamp,
+          rclcpp::Duration::from_seconds(0.1));
+    } catch (const tf2::TransformException & ex) {
+      RCLCPP_ERROR(
+          this->get_logger(), "Could not transform %s to %s: %s",
+          msg->header.frame_id.c_str(), base_frame_id_.c_str(), ex.what());
+      return;
+    }
+
+    Eigen::Matrix4f initial_transformation =
+      tf2::transformToEigen(base_to_lidar_stamped.transform).matrix().cast<float>();
+    pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+    pcl::transformPointCloud(*cloud_ptr, *transformed_cloud, initial_transformation);
+    cloud_ptr = transformed_cloud;
+  }
+
   if (use_imu_) {
     double received_time = msg->header.stamp.sec +
       msg->header.stamp.nanosec * 1e-9;
