@@ -127,16 +127,12 @@ public:
   int ndt_num_threads_;
   int ndt_max_iterations_;
 
+  double pose_publish_frequency_;
+  bool enable_timer_publishing_{false};
+
   // imu
   LidarUndistortion lidar_undistortion_;
 
-  // NOTE: single-threaded executor is used (see lidar_localization_node.cpp).
-  // Callbacks and the timer run serially, so no mutex is used for pose/path state.
-
-  // timer to periodically publish current pose (independent from cloud frequency)
   rclcpp::TimerBase::SharedPtr pose_publish_timer_;
-  double pose_publish_frequency_; // [Hz]
-
-  // timer callback
   void timerPublishPose();
 };
