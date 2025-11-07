@@ -320,7 +320,10 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   corrent_pose_with_cov_stamped_ptr_ = msg;
   pose_pub_->publish(*corrent_pose_with_cov_stamped_ptr_);
 
-  cloudReceived(last_scan_ptr_);
+  if(last_scan_ptr_) {
+    cloudReceived(last_scan_ptr_);
+  }
+
   RCLCPP_INFO(get_logger(), "initialPoseReceived end");
 }
 
@@ -444,6 +447,11 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
 
 void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
 {
+  if (!msg) {
+    RCLCPP_WARN(get_logger(), "Received null point cloud message");
+    return;
+  }
+
   if (!map_recieved_ || !initialpose_recieved_) {return;}
   RCLCPP_INFO(get_logger(), "cloudReceived");
   pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
