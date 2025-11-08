@@ -127,6 +127,12 @@ public:
   int ndt_num_threads_;
   int ndt_max_iterations_;
 
+  double pose_publish_frequency_;
+  bool enable_timer_publishing_{false};
+
   // imu
   LidarUndistortion lidar_undistortion_;
+
+  rclcpp::TimerBase::SharedPtr pose_publish_timer_;
+  void timerPublishPose();
 };
