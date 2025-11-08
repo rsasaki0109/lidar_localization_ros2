@@ -50,6 +50,8 @@ Green: path, Red: map
 |use_odom|bool|false|whether odom is used or not for initial attitude in point cloud registration|
 |use_imu|bool|false|whether 9-axis imu is used or not for point cloud distortion correction|
 |enable_debug|bool|false|whether debug is done or not|
+|enable_timer_publishing|bool|false|if true, publish tf and pose on a set timer frequency|
+|pose_publish_frequency|double|10.0|publishing frequency if enable_timer_publishing is true|
 
 ## demo
 

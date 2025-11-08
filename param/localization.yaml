@@ -28,3 +28,5 @@
       global_frame_id: map
       odom_frame_id: odom
       base_frame_id: base_link
+      enable_timer_publishing: false
+      pose_publish_frequency: 30.0
