@@ -26,6 +26,8 @@ find_package(pcl_conversions REQUIRED)
 find_package(PCL REQUIRED)
 find_package(ndt_omp_ros2 REQUIRED)
 find_package(small_gicp QUIET CONFIG)
+find_package(nav2_util QUIET)
+find_package(bondcpp QUIET)
 find_package(OpenMP)
 
 if (OPENMP_FOUND)
@@ -55,6 +57,12 @@ ament_target_dependencies(lidar_localization_component
 if(small_gicp_FOUND)
   target_compile_definitions(lidar_localization_component PRIVATE LIDAR_LOCALIZATION_HAVE_SMALL_GICP=1)
   target_link_libraries(lidar_localization_component small_gicp::small_gicp)
+endif()
+
+if(nav2_util_FOUND AND bondcpp_FOUND)
+  target_compile_definitions(lidar_localization_component PRIVATE LIDAR_LOCALIZATION_HAVE_NAV2_BOND=1)
+  ament_target_dependencies(lidar_localization_component nav2_util bondcpp)
+  message(STATUS "Nav2 bond support enabled")
 endif()
 
 

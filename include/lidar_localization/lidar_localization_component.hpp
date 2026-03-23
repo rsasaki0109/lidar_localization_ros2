@@ -51,6 +51,10 @@
 #include "lidar_localization/twist_gtsam_smoother.hpp"
 #include "lidar_localization/imu_gtsam_smoother.hpp"
 
+#ifdef LIDAR_LOCALIZATION_HAVE_NAV2_BOND
+#include "bondcpp/bond.hpp"
+#endif
+
 using namespace std::chrono_literals;
 
 class PCLLocalization : public rclcpp_lifecycle::LifecycleNode
@@ -134,6 +138,12 @@ public:
   std::deque<ImuSample> imu_buffer_;
   double last_imu_stamp_{0.0};
   double last_scan_stamp_for_imu_{0.0};
+
+#ifdef LIDAR_LOCALIZATION_HAVE_NAV2_BOND
+  // Nav2 lifecycle manager bond
+  std::unique_ptr<bond::Bond> bond_;
+  bool use_bond_{false};
+#endif
 
   // parameters
   std::string global_frame_id_;

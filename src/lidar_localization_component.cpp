@@ -272,6 +272,17 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     map_recieved_ = true;
   }
 
+  // Start Nav2 bond if available
+#ifdef LIDAR_LOCALIZATION_HAVE_NAV2_BOND
+  if (use_bond_) {
+    bond_ = std::make_unique<bond::Bond>("bond", get_name(), shared_from_this());
+    bond_->setHeartbeatPeriod(0.1);
+    bond_->setHeartbeatTimeout(4.0);
+    bond_->start();
+    RCLCPP_INFO(get_logger(), "Nav2 bond started");
+  }
+#endif
+
   RCLCPP_INFO(get_logger(), "Activating end");
   return CallbackReturn::SUCCESS;
 }
@@ -279,6 +290,13 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
 CallbackReturn PCLLocalization::on_deactivate(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(get_logger(), "Deactivating");
+
+#ifdef LIDAR_LOCALIZATION_HAVE_NAV2_BOND
+  if (bond_) {
+    bond_.reset();
+    RCLCPP_INFO(get_logger(), "Nav2 bond stopped");
+  }
+#endif
 
   pose_pub_->on_deactivate();
   path_pub_->on_deactivate();
@@ -1322,25 +1340,36 @@ void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
 
 void PCLLocalization::fillPoseCovariance(double fitness_score)
 {
-  // Set covariance from fitness score for Nav2 compatibility
-  // Nav2 PoseWithCovarianceStamped.pose.covariance is a 6x6 row-major array [36]
+  // Nav2 PoseWithCovarianceStamped.pose.covariance: 6x6 row-major [36]
   // Indices: [0]=xx, [7]=yy, [14]=zz, [21]=roll, [28]=pitch, [35]=yaw
   auto & cov = corrent_pose_with_cov_stamped_ptr_->pose.covariance;
   std::fill(cov.begin(), cov.end(), 0.0);
 
-  // Base uncertainty from fitness score (higher fitness = more uncertainty)
-  double scale = std::max(1.0, fitness_score / 1.0);
-  double pos_var = 0.01 * scale;   // ~0.1m std at fitness=1.0
-  double z_var = 0.05 * scale;
-  double rp_var = 0.001 * scale;   // ~1.8deg std at fitness=1.0
-  double yaw_var = 0.0005 * scale; // ~1.3deg std at fitness=1.0
+  // Use EKF covariance matrix if available (most accurate)
+  if (use_twist_ekf_ && twist_ekf_.isInitialized()) {
+    const auto & P = twist_ekf_.covariance();
+    // EKF state: [px,py,pz,vx,vy,vz,yaw,gyro_bias,speed_bias]
+    cov[0] = P(0, 0);    // xx
+    cov[1] = P(0, 1);    // xy
+    cov[6] = P(1, 0);    // yx
+    cov[7] = P(1, 1);    // yy
+    cov[14] = P(2, 2);   // zz
+    cov[35] = P(6, 6);   // yaw-yaw
+    // roll/pitch not estimated by EKF — use fitness-based estimate
+    double scale = std::max(1.0, fitness_score);
+    cov[21] = 0.001 * scale;
+    cov[28] = 0.001 * scale;
+    return;
+  }
 
-  cov[0] = pos_var;   // x
-  cov[7] = pos_var;   // y
-  cov[14] = z_var;    // z
-  cov[21] = rp_var;   // roll
-  cov[28] = rp_var;   // pitch
-  cov[35] = yaw_var;  // yaw
+  // Fitness-based covariance for smoother / standard paths
+  double scale = std::max(1.0, fitness_score);
+  cov[0] = 0.01 * scale;    // x
+  cov[7] = 0.01 * scale;    // y
+  cov[14] = 0.05 * scale;   // z
+  cov[21] = 0.001 * scale;  // roll
+  cov[28] = 0.001 * scale;  // pitch
+  cov[35] = 0.0005 * scale; // yaw
 }
 
 void PCLLocalization::publishAlignmentStatus(
