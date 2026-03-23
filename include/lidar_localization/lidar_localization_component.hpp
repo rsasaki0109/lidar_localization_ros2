@@ -205,6 +205,7 @@ public:
   void resetPredictionState(const Eigen::Matrix4f & pose_matrix, double stamp_sec);
   void updatePredictionState(const Eigen::Matrix4f & accepted_pose_matrix, double stamp_sec);
   void advancePredictionWithoutMeasurement(double stamp_sec);
+  void fillPoseCovariance(double fitness_score);
   void publishAlignmentStatus(
     const builtin_interfaces::msg::Time & stamp,
     uint8_t level,

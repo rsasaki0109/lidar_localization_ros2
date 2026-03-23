@@ -1023,6 +1023,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z = gtsam_smoother_.pz();
     corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
 
+    fillPoseCovariance(fitness_score);
     updatePredictionState(gtsam_pose, scan_stamp_sec);
 
     if (!gtsam_updated) {
@@ -1065,6 +1066,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z = imu_smoother_.pz();
     corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
 
+    fillPoseCovariance(fitness_score);
     updatePredictionState(imu_pose, scan_stamp_sec);
     last_scan_stamp_for_imu_ = scan_stamp_sec;
 
@@ -1110,6 +1112,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
 
     // Also update prediction state for compatibility
+    fillPoseCovariance(fitness_score);
     updatePredictionState(ekf_pose, scan_stamp_sec);
 
     // Publish diagnostics with EKF info
@@ -1143,6 +1146,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y = static_cast<double>(final_transformation(1, 3));
     corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z = static_cast<double>(final_transformation(2, 3));
     corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
+    fillPoseCovariance(fitness_score);
     updatePredictionState(final_transformation, scan_stamp_sec);
   }
     
@@ -1314,6 +1318,29 @@ void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
     return;
   }
   ++consecutive_rejected_updates_;
+}
+
+void PCLLocalization::fillPoseCovariance(double fitness_score)
+{
+  // Set covariance from fitness score for Nav2 compatibility
+  // Nav2 PoseWithCovarianceStamped.pose.covariance is a 6x6 row-major array [36]
+  // Indices: [0]=xx, [7]=yy, [14]=zz, [21]=roll, [28]=pitch, [35]=yaw
+  auto & cov = corrent_pose_with_cov_stamped_ptr_->pose.covariance;
+  std::fill(cov.begin(), cov.end(), 0.0);
+
+  // Base uncertainty from fitness score (higher fitness = more uncertainty)
+  double scale = std::max(1.0, fitness_score / 1.0);
+  double pos_var = 0.01 * scale;   // ~0.1m std at fitness=1.0
+  double z_var = 0.05 * scale;
+  double rp_var = 0.001 * scale;   // ~1.8deg std at fitness=1.0
+  double yaw_var = 0.0005 * scale; // ~1.3deg std at fitness=1.0
+
+  cov[0] = pos_var;   // x
+  cov[7] = pos_var;   // y
+  cov[14] = z_var;    // z
+  cov[21] = rp_var;   // roll
+  cov[28] = rp_var;   // pitch
+  cov[35] = yaw_var;  // yaw
 }
 
 void PCLLocalization::publishAlignmentStatus(
