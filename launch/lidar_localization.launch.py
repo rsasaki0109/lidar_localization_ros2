@@ -40,6 +40,12 @@ def generate_launch_description():
             get_package_share_directory('lidar_localization_ros2'),
             'param',
             'localization.yaml'))
+    cloud_topic = launch.substitutions.LaunchConfiguration(
+        'cloud_topic',
+        default='/velodyne_points')
+    twist_topic = launch.substitutions.LaunchConfiguration(
+        'twist_topic',
+        default='/twist')
 
     lidar_localization = launch_ros.actions.LifecycleNode(
         name='lidar_localization',
@@ -47,7 +53,7 @@ def generate_launch_description():
         package='lidar_localization_ros2',
         executable='lidar_localization_node',
         parameters=[localization_param_dir],
-        remappings=[('/cloud','/velodyne_points')],
+        remappings=[('/cloud', cloud_topic), ('/twist', twist_topic)],
         output='screen')
 
     to_inactive = launch.actions.EmitEvent(

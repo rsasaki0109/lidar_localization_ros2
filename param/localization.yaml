@@ -6,6 +6,9 @@
       ndt_step_size: 0.1
       ndt_num_threads: 4
       ndt_max_iterations: 35
+      gicp_corr_randomness: 20
+      gicp_max_correspondence_distance: 2.0
+      vgicp_voxel_resolution: 1.0
       transform_epsilon: 0.01
       voxel_leaf_size: 0.2
       scan_max_range: 100.0
@@ -22,8 +25,13 @@
       initial_pose_qz: 0.0
       initial_pose_qw: 0.0
       use_odom: false
+      use_twist_prediction: false
+      twist_prediction_use_angular_velocity: true
+      max_twist_prediction_dt: 0.5
       use_imu: false
       enable_debug: true
+      predict_pose_from_previous_delta: true
+      reject_above_score_threshold: true
       enable_map_odom_tf: false
       global_frame_id: map
       odom_frame_id: odom

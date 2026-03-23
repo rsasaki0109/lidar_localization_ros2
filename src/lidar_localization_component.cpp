@@ -1,6 +1,80 @@
 #include <lidar_localization/lidar_localization_component.hpp>
 #include <chrono>
 
+namespace
+{
+double stamp_to_sec(const builtin_interfaces::msg::Time & stamp)
+{
+  return static_cast<double>(stamp.sec) + static_cast<double>(stamp.nanosec) * 1e-9;
+}
+
+bool uses_filtered_target(const std::string & registration_method)
+{
+  return registration_method == "GICP" || registration_method == "GICP_OMP" ||
+         registration_method == "SMALL_GICP" || registration_method == "SMALL_VGICP";
+}
+
+template<typename FieldContainerT>
+bool has_field(const FieldContainerT & fields, const std::string & field_name)
+{
+  return std::any_of(
+    fields.begin(), fields.end(),
+    [&field_name](const auto & field) {
+      return field.name == field_name;
+    });
+}
+
+void copy_xyz_to_xyzi(
+  const pcl::PointCloud<pcl::PointXYZ> & input,
+  pcl::PointCloud<pcl::PointXYZI> & output)
+{
+  output.clear();
+  output.reserve(input.size());
+  output.header = input.header;
+  output.width = input.width;
+  output.height = input.height;
+  output.is_dense = input.is_dense;
+
+  for (const auto & point : input.points) {
+    pcl::PointXYZI converted;
+    converted.x = point.x;
+    converted.y = point.y;
+    converted.z = point.z;
+    converted.intensity = 0.0f;
+    output.push_back(converted);
+  }
+}
+
+void convert_sensor_cloud_to_xyzi(
+  const sensor_msgs::msg::PointCloud2 & input,
+  pcl::PointCloud<pcl::PointXYZI> & output)
+{
+  if (has_field(input.fields, "intensity")) {
+    pcl::fromROSMsg(input, output);
+    return;
+  }
+
+  pcl::PointCloud<pcl::PointXYZ> xyz_cloud;
+  pcl::fromROSMsg(input, xyz_cloud);
+  copy_xyz_to_xyzi(xyz_cloud, output);
+}
+
+bool convert_pcl_cloud_to_xyzi(
+  const pcl::PCLPointCloud2 & input,
+  pcl::PointCloud<pcl::PointXYZI> & output)
+{
+  if (has_field(input.fields, "intensity")) {
+    pcl::fromPCLPointCloud2(input, output);
+    return true;
+  }
+
+  pcl::PointCloud<pcl::PointXYZ> xyz_cloud;
+  pcl::fromPCLPointCloud2(input, xyz_cloud);
+  copy_xyz_to_xyzi(xyz_cloud, output);
+  return false;
+}
+}  // namespace
+
 PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("lidar_localization", options),
   clock_(RCL_ROS_TIME),
@@ -18,6 +92,9 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("ndt_step_size", 0.1);
   declare_parameter("ndt_max_iterations", 35);
   declare_parameter("ndt_num_threads", 4);
+  declare_parameter("gicp_corr_randomness", 20);
+  declare_parameter("gicp_max_correspondence_distance", 2.0);
+  declare_parameter("vgicp_voxel_resolution", 1.0);
   declare_parameter("transform_epsilon", 0.01);
   declare_parameter("voxel_leaf_size", 0.2);
   declare_parameter("scan_max_range", 100.0);
@@ -34,8 +111,35 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("initial_pose_qz", 0.0);
   declare_parameter("initial_pose_qw", 1.0);
   declare_parameter("use_odom", false);
+  declare_parameter("use_twist_prediction", false);
+  declare_parameter("twist_prediction_use_angular_velocity", true);
+  declare_parameter("max_twist_prediction_dt", 0.5);
   declare_parameter("use_imu", false);
+  declare_parameter("use_twist_ekf", false);
+  declare_parameter("ekf_sigma_pos", 0.01);
+  declare_parameter("ekf_sigma_vel", 0.5);
+  declare_parameter("ekf_sigma_yaw", 0.01);
+  declare_parameter("ekf_sigma_gyro_bias", 0.001);
+  declare_parameter("ekf_sigma_speed_bias", 0.01);
+  declare_parameter("ekf_sigma_ndt_pos", 0.1);
+  declare_parameter("ekf_sigma_ndt_yaw", 0.02);
+  declare_parameter("ekf_fitness_nominal", 1.0);
+  declare_parameter("ekf_fitness_scale_factor", 2.0);
+  declare_parameter("ekf_fitness_reject", 50.0);
+  declare_parameter("use_gtsam_smoother", false);
+  declare_parameter("gtsam_odom_sigma_x", 0.05);
+  declare_parameter("gtsam_odom_sigma_y", 0.02);
+  declare_parameter("gtsam_odom_sigma_yaw", 0.01);
+  declare_parameter("gtsam_ndt_sigma_x", 0.1);
+  declare_parameter("gtsam_ndt_sigma_y", 0.1);
+  declare_parameter("gtsam_ndt_sigma_yaw", 0.02);
+  declare_parameter("gtsam_fitness_nominal", 1.0);
+  declare_parameter("gtsam_fitness_scale_factor", 2.0);
+  declare_parameter("gtsam_fitness_reject", 50.0);
+  declare_parameter("gtsam_huber_k", 1.345);
   declare_parameter("enable_debug", false);
+  declare_parameter("predict_pose_from_previous_delta", true);
+  declare_parameter("reject_above_score_threshold", true);
   declare_parameter("enable_timer_publishing", false);
   declare_parameter("pose_publish_frequency", 10.0);
 }
@@ -63,6 +167,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
 
   pose_pub_->on_activate();
   path_pub_->on_activate();
+  status_pub_->on_activate();
   initial_map_pub_->on_activate();
 
   if (set_initial_pose_) {
@@ -89,16 +194,18 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
 
   if (use_pcd_map_) {
     pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
+    pcl::PCLPointCloud2 raw_map_cloud;
+    bool map_has_intensity = true;
     // load a pcd or ply file
     if (map_path_.rfind(".pcd") != std::string::npos) {
       RCLCPP_INFO(get_logger(), "Loading pcd map from: %s", map_path_.c_str());
-      if (pcl::io::loadPCDFile(map_path_, *map_cloud_ptr) == -1) {
+      if (pcl::io::loadPCDFile(map_path_, raw_map_cloud) == -1) {
         RCLCPP_ERROR(get_logger(), "Failed to load pcd file: %s", map_path_.c_str());
         return CallbackReturn::FAILURE;
       }
     } else if (map_path_.rfind(".ply") != std::string::npos) {
       RCLCPP_INFO(get_logger(), "Loading ply map from: %s", map_path_.c_str());
-      if (pcl::io::loadPLYFile(map_path_, *map_cloud_ptr) == -1) {
+      if (pcl::io::loadPLYFile(map_path_, raw_map_cloud) == -1) {
         RCLCPP_ERROR(get_logger(), "Failed to load ply file: %s", map_path_.c_str());
         return CallbackReturn::FAILURE;
       }
@@ -109,6 +216,13 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
       return CallbackReturn::FAILURE;
     }
 
+    map_has_intensity = convert_pcl_cloud_to_xyzi(raw_map_cloud, *map_cloud_ptr);
+    if (!map_has_intensity) {
+      RCLCPP_WARN(
+        get_logger(),
+        "Map point cloud does not contain intensity. Falling back to xyz with zero intensity.");
+    }
+
     RCLCPP_INFO(get_logger(), "Map Size %ld", map_cloud_ptr->size());
     sensor_msgs::msg::PointCloud2::SharedPtr map_msg_ptr(new sensor_msgs::msg::PointCloud2);
     pcl::toROSMsg(*map_cloud_ptr, *map_msg_ptr);
@@ -116,7 +230,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     initial_map_pub_->publish(*map_msg_ptr);
     RCLCPP_INFO(get_logger(), "Initial Map Published");
 
-    if (registration_method_ == "GICP" || registration_method_ == "GICP_OMP") {
+    if (uses_filtered_target(registration_method_)) {
       pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
       voxel_grid_filter_.setInputCloud(map_cloud_ptr);
       voxel_grid_filter_.filter(*filtered_cloud_ptr);
@@ -138,6 +252,7 @@ CallbackReturn PCLLocalization::on_deactivate(const rclcpp_lifecycle::State &)
 
   pose_pub_->on_deactivate();
   path_pub_->on_deactivate();
+  status_pub_->on_deactivate();
   initial_map_pub_->on_deactivate();
 
   RCLCPP_INFO(get_logger(), "Deactivating end");
@@ -150,10 +265,13 @@ CallbackReturn PCLLocalization::on_cleanup(const rclcpp_lifecycle::State &)
   initial_pose_sub_.reset();
   initial_map_pub_.reset();
   path_pub_.reset();
+  status_pub_.reset();
   pose_pub_.reset();
   odom_sub_.reset();
+  twist_sub_.reset();
   cloud_sub_.reset();
   imu_sub_.reset();
+  latest_twist_msg_.reset();
 
   if (enable_timer_publishing_){
     pose_publish_timer_.reset();
@@ -190,6 +308,9 @@ void PCLLocalization::initializeParameters()
   get_parameter("ndt_step_size", ndt_step_size_);
   get_parameter("ndt_num_threads", ndt_num_threads_);
   get_parameter("ndt_max_iterations", ndt_max_iterations_);
+  get_parameter("gicp_corr_randomness", gicp_corr_randomness_);
+  get_parameter("gicp_max_correspondence_distance", gicp_max_correspondence_distance_);
+  get_parameter("vgicp_voxel_resolution", vgicp_voxel_resolution_);
   get_parameter("transform_epsilon", transform_epsilon_);
   get_parameter("voxel_leaf_size", voxel_leaf_size_);
   get_parameter("scan_max_range", scan_max_range_);
@@ -206,8 +327,45 @@ void PCLLocalization::initializeParameters()
   get_parameter("initial_pose_qz", initial_pose_qz_);
   get_parameter("initial_pose_qw", initial_pose_qw_);
   get_parameter("use_odom", use_odom_);
+  get_parameter("use_twist_prediction", use_twist_prediction_);
+  get_parameter("twist_prediction_use_angular_velocity", twist_prediction_use_angular_velocity_);
+  get_parameter("max_twist_prediction_dt", max_twist_prediction_dt_);
   get_parameter("use_imu", use_imu_);
+  get_parameter("use_twist_ekf", use_twist_ekf_);
+  if (use_twist_ekf_) {
+    TwistEkf::Params ekf_params;
+    get_parameter("ekf_sigma_pos", ekf_params.sigma_pos);
+    get_parameter("ekf_sigma_vel", ekf_params.sigma_vel);
+    get_parameter("ekf_sigma_yaw", ekf_params.sigma_yaw);
+    get_parameter("ekf_sigma_gyro_bias", ekf_params.sigma_gyro_bias);
+    get_parameter("ekf_sigma_speed_bias", ekf_params.sigma_speed_bias);
+    get_parameter("ekf_sigma_ndt_pos", ekf_params.sigma_ndt_pos);
+    get_parameter("ekf_sigma_ndt_yaw", ekf_params.sigma_ndt_yaw);
+    get_parameter("ekf_fitness_nominal", ekf_params.fitness_nominal);
+    get_parameter("ekf_fitness_scale_factor", ekf_params.fitness_scale_factor);
+    get_parameter("ekf_fitness_reject", ekf_params.fitness_reject);
+    twist_ekf_.setParams(ekf_params);
+    twist_ekf_.reset();
+  }
+  get_parameter("use_gtsam_smoother", use_gtsam_smoother_);
+  if (use_gtsam_smoother_) {
+    TwistGtsamSmoother::Params gtsam_params;
+    get_parameter("gtsam_odom_sigma_x", gtsam_params.odom_sigma_x);
+    get_parameter("gtsam_odom_sigma_y", gtsam_params.odom_sigma_y);
+    get_parameter("gtsam_odom_sigma_yaw", gtsam_params.odom_sigma_yaw);
+    get_parameter("gtsam_ndt_sigma_x", gtsam_params.ndt_sigma_x);
+    get_parameter("gtsam_ndt_sigma_y", gtsam_params.ndt_sigma_y);
+    get_parameter("gtsam_ndt_sigma_yaw", gtsam_params.ndt_sigma_yaw);
+    get_parameter("gtsam_fitness_nominal", gtsam_params.fitness_nominal);
+    get_parameter("gtsam_fitness_scale_factor", gtsam_params.fitness_scale_factor);
+    get_parameter("gtsam_fitness_reject", gtsam_params.fitness_reject);
+    get_parameter("gtsam_huber_k", gtsam_params.huber_k);
+    gtsam_smoother_.setParams(gtsam_params);
+    gtsam_smoother_.reset();
+  }
   get_parameter("enable_debug", enable_debug_);
+  get_parameter("predict_pose_from_previous_delta", predict_pose_from_previous_delta_);
+  get_parameter("reject_above_score_threshold", reject_above_score_threshold_);
   get_parameter("enable_timer_publishing", enable_timer_publishing_);
   get_parameter("pose_publish_frequency", pose_publish_frequency_);
 
@@ -219,6 +377,9 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(),"ndt_resolution: %lf", ndt_resolution_);
   RCLCPP_INFO(get_logger(),"ndt_step_size: %lf", ndt_step_size_);
   RCLCPP_INFO(get_logger(),"ndt_num_threads: %d", ndt_num_threads_);
+  RCLCPP_INFO(get_logger(),"gicp_corr_randomness: %d", gicp_corr_randomness_);
+  RCLCPP_INFO(get_logger(),"gicp_max_correspondence_distance: %lf", gicp_max_correspondence_distance_);
+  RCLCPP_INFO(get_logger(),"vgicp_voxel_resolution: %lf", vgicp_voxel_resolution_);
   RCLCPP_INFO(get_logger(),"transform_epsilon: %lf", transform_epsilon_);
   RCLCPP_INFO(get_logger(),"voxel_leaf_size: %lf", voxel_leaf_size_);
   RCLCPP_INFO(get_logger(),"scan_max_range: %lf", scan_max_range_);
@@ -228,8 +389,19 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(),"map_path: %s", map_path_.c_str());
   RCLCPP_INFO(get_logger(),"set_initial_pose: %d", set_initial_pose_);
   RCLCPP_INFO(get_logger(),"use_odom: %d", use_odom_);
+  RCLCPP_INFO(get_logger(),"use_twist_prediction: %d", use_twist_prediction_);
+  RCLCPP_INFO(
+    get_logger(), "twist_prediction_use_angular_velocity: %d",
+    twist_prediction_use_angular_velocity_);
+  RCLCPP_INFO(get_logger(),"max_twist_prediction_dt: %lf", max_twist_prediction_dt_);
   RCLCPP_INFO(get_logger(),"use_imu: %d", use_imu_);
+  RCLCPP_INFO(get_logger(),"use_twist_ekf: %d", use_twist_ekf_);
+  RCLCPP_INFO(get_logger(),"use_gtsam_smoother: %d", use_gtsam_smoother_);
   RCLCPP_INFO(get_logger(),"enable_debug: %d", enable_debug_);
+  RCLCPP_INFO(
+    get_logger(), "predict_pose_from_previous_delta: %d", predict_pose_from_previous_delta_);
+  RCLCPP_INFO(
+    get_logger(), "reject_above_score_threshold: %d", reject_above_score_threshold_);
   RCLCPP_INFO(get_logger(),"enable_timer_publishing: %d", enable_timer_publishing_);
   RCLCPP_INFO(get_logger(),"pose_publish_frequency: %lf", pose_publish_frequency_);
 }
@@ -244,6 +416,10 @@ void PCLLocalization::initializePubSub()
 
   path_pub_ = create_publisher<nav_msgs::msg::Path>(
     "path",
+    rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
+
+  status_pub_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
+    "alignment_status",
     rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
 
   initial_map_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
@@ -261,6 +437,10 @@ void PCLLocalization::initializePubSub()
   odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
     "odom", rclcpp::SensorDataQoS(),
     std::bind(&PCLLocalization::odomReceived, this, std::placeholders::_1));
+
+  twist_sub_ = create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(
+    "twist", rclcpp::SensorDataQoS(),
+    std::bind(&PCLLocalization::twistReceived, this, std::placeholders::_1));
 
   cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
     "cloud", rclcpp::SensorDataQoS(),
@@ -284,19 +464,31 @@ void PCLLocalization::initializeRegistration()
 {
   RCLCPP_INFO(get_logger(), "initializeRegistration");
 
+  registration_ = nullptr;
+  pcl_registration_.reset();
+  ndt_omp_registration_.reset();
+  gicp_omp_registration_.reset();
+#ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
+  small_gicp_registration_.reset();
+#endif
+
   if (registration_method_ == "GICP") {
-    boost::shared_ptr<pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>> gicp(
+    pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp(
       new pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>());
     gicp->setTransformationEpsilon(transform_epsilon_);
-    registration_ = gicp;
+    gicp->setCorrespondenceRandomness(gicp_corr_randomness_);
+    gicp->setMaxCorrespondenceDistance(gicp_max_correspondence_distance_);
+    pcl_registration_ = gicp;
+    registration_ = pcl_registration_.get();
   }
   else if (registration_method_ == "NDT") {
-    boost::shared_ptr<pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>> ndt(
+    pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt(
       new pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
     ndt->setStepSize(ndt_step_size_);
     ndt->setResolution(ndt_resolution_);
     ndt->setTransformationEpsilon(transform_epsilon_);
-    registration_ = ndt;
+    pcl_registration_ = ndt;
+    registration_ = pcl_registration_.get();
   }
   else if (registration_method_ == "NDT_OMP") {
     pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp(
@@ -309,16 +501,49 @@ void PCLLocalization::initializeRegistration()
     } else {
       ndt_omp->setNumThreads(omp_get_max_threads());
     }
-    registration_ = ndt_omp;
+    ndt_omp_registration_ = ndt_omp;
+    registration_ = ndt_omp_registration_.get();
   }
   else if (registration_method_ == "GICP_OMP") {
     pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp_omp(
       new pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>());
     gicp_omp->setTransformationEpsilon(transform_epsilon_);
-    registration_ = gicp_omp;
+    gicp_omp->setCorrespondenceRandomness(gicp_corr_randomness_);
+    gicp_omp->setMaxCorrespondenceDistance(gicp_max_correspondence_distance_);
+    gicp_omp_registration_ = gicp_omp;
+    registration_ = gicp_omp_registration_.get();
   }
+#ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
+  else if (registration_method_ == "SMALL_GICP" || registration_method_ == "SMALL_VGICP") {
+    small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>::Ptr reg(
+      new small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>());
+    reg->setTransformationEpsilon(transform_epsilon_);
+    reg->setCorrespondenceRandomness(gicp_corr_randomness_);
+    reg->setMaxCorrespondenceDistance(gicp_max_correspondence_distance_);
+    reg->setVoxelResolution(vgicp_voxel_resolution_);
+    reg->setRegistrationType(registration_method_ == "SMALL_VGICP" ? "VGICP" : "GICP");
+    if (ndt_num_threads_ > 0) {
+      reg->setNumThreads(ndt_num_threads_);
+    } else {
+      reg->setNumThreads(omp_get_max_threads());
+    }
+    small_gicp_registration_ = reg;
+    registration_ = small_gicp_registration_.get();
+  }
+#else
+  else if (registration_method_ == "SMALL_GICP" || registration_method_ == "SMALL_VGICP") {
+    RCLCPP_ERROR(
+      get_logger(),
+      "small_gicp backend requested but support is not available. Install small_gicp and rebuild.");
+    exit(EXIT_FAILURE);
+  }
+#endif
   else {
     RCLCPP_ERROR(get_logger(), "Invalid registration method.");
+    exit(EXIT_FAILURE);
+  }
+  if (registration_ == nullptr) {
+    RCLCPP_ERROR(get_logger(), "Registration backend setup failed.");
     exit(EXIT_FAILURE);
   }
   registration_->setMaximumIterations(ndt_max_iterations_);
@@ -337,6 +562,39 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   }
   initialpose_recieved_ = true;
   corrent_pose_with_cov_stamped_ptr_ = msg;
+  resetPredictionState(currentPoseMatrix(), stamp_to_sec(msg->header.stamp));
+
+  if (use_twist_ekf_) {
+    tf2::Quaternion q;
+    tf2::fromMsg(msg->pose.pose.orientation, q);
+    double roll, pitch, yaw;
+    tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+    last_ndt_roll_ = static_cast<float>(roll);
+    last_ndt_pitch_ = static_cast<float>(pitch);
+    twist_ekf_.initialize(
+      msg->pose.pose.position.x,
+      msg->pose.pose.position.y,
+      msg->pose.pose.position.z,
+      yaw,
+      stamp_to_sec(msg->header.stamp));
+    RCLCPP_INFO(get_logger(), "TwistEKF initialized from initial pose");
+  }
+
+  if (use_gtsam_smoother_) {
+    tf2::Quaternion q_gtsam;
+    tf2::fromMsg(msg->pose.pose.orientation, q_gtsam);
+    double roll_g, pitch_g, yaw_g;
+    tf2::Matrix3x3(q_gtsam).getRPY(roll_g, pitch_g, yaw_g);
+    last_ndt_roll_ = static_cast<float>(roll_g);
+    last_ndt_pitch_ = static_cast<float>(pitch_g);
+    gtsam_smoother_.initialize(
+      msg->pose.pose.position.x,
+      msg->pose.pose.position.y,
+      msg->pose.pose.position.z,
+      yaw_g,
+      stamp_to_sec(msg->header.stamp));
+    RCLCPP_INFO(get_logger(), "GTSAM smoother initialized from initial pose");
+  }
   pose_pub_->publish(*corrent_pose_with_cov_stamped_ptr_);
 
   if(last_scan_ptr_) {
@@ -358,7 +616,7 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
 
   pcl::fromROSMsg(*msg, *map_cloud_ptr);
 
-  if (registration_method_ == "GICP" || registration_method_ == "GICP_OMP") {
+  if (uses_filtered_target(registration_method_)) {
     pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
     voxel_grid_filter_.setInputCloud(map_cloud_ptr);
     voxel_grid_filter_.filter(*filtered_cloud_ptr);
@@ -419,6 +677,24 @@ void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr
   corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
 }
 
+void PCLLocalization::twistReceived(
+  const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg)
+{
+  latest_twist_msg_ = msg;
+
+  double stamp_sec = stamp_to_sec(msg->header.stamp);
+  double vx = msg->twist.twist.linear.x;
+  double wz = msg->twist.twist.angular.z;
+
+  if (use_twist_ekf_ && twist_ekf_.isInitialized()) {
+    twist_ekf_.predict(vx, wz, stamp_sec);
+  }
+
+  if (use_gtsam_smoother_ && gtsam_smoother_.isInitialized()) {
+    gtsam_smoother_.predict(vx, wz, stamp_sec);
+  }
+}
+
 void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr msg)
 {
   if (!use_imu_) {return;}
@@ -430,7 +706,8 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
      base_frame_id_, msg->header.frame_id, tf2::TimePointZero);
 
     geometry_msgs::msg::Vector3Stamped angular_velocity, linear_acceleration, transformed_angular_velocity, transformed_linear_acceleration;
-    geometry_msgs::msg::Quaternion  transformed_quaternion;
+    tf2::Quaternion imu_orientation;
+    tf2::Quaternion base_from_imu;
 
     angular_velocity.header = msg->header;
     angular_velocity.vector = msg->angular_velocity;
@@ -439,10 +716,12 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
 
     tf2::doTransform(angular_velocity, transformed_angular_velocity, transform);
     tf2::doTransform(linear_acceleration, transformed_linear_acceleration, transform);
+    tf2::fromMsg(msg->orientation, imu_orientation);
+    tf2::fromMsg(transform.transform.rotation, base_from_imu);
 
     tf_converted_imu.angular_velocity = transformed_angular_velocity.vector;
     tf_converted_imu.linear_acceleration = transformed_linear_acceleration.vector;
-    tf_converted_imu.orientation = transformed_quaternion;
+    tf_converted_imu.orientation = tf2::toMsg(base_from_imu * imu_orientation);
 
   }
   catch (tf2::TransformException& ex)
@@ -452,11 +731,19 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
     return;
   }
 
-  Eigen::Vector3f angular_velo{tf_converted_imu.angular_velocity.x, tf_converted_imu.angular_velocity.y,
-    tf_converted_imu.angular_velocity.z};
-  Eigen::Vector3f acc{tf_converted_imu.linear_acceleration.x, tf_converted_imu.linear_acceleration.y, tf_converted_imu.linear_acceleration.z};
-  Eigen::Quaternionf quat{msg->orientation.w, msg->orientation.x, msg->orientation.y,
-    msg->orientation.z};
+  Eigen::Vector3f angular_velo{
+    static_cast<float>(tf_converted_imu.angular_velocity.x),
+    static_cast<float>(tf_converted_imu.angular_velocity.y),
+    static_cast<float>(tf_converted_imu.angular_velocity.z)};
+  Eigen::Vector3f acc{
+    static_cast<float>(tf_converted_imu.linear_acceleration.x),
+    static_cast<float>(tf_converted_imu.linear_acceleration.y),
+    static_cast<float>(tf_converted_imu.linear_acceleration.z)};
+  Eigen::Quaternionf quat{
+    static_cast<float>(tf_converted_imu.orientation.w),
+    static_cast<float>(tf_converted_imu.orientation.x),
+    static_cast<float>(tf_converted_imu.orientation.y),
+    static_cast<float>(tf_converted_imu.orientation.z)};
   double imu_time = msg->header.stamp.sec +
     msg->header.stamp.nanosec * 1e-9;
 
@@ -471,10 +758,18 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     return;
   }
 
+  last_scan_ptr_ = msg;
+
   if (!map_recieved_ || !initialpose_recieved_) {return;}
   RCLCPP_INFO(get_logger(), "cloudReceived");
   pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
-  pcl::fromROSMsg(*msg, *cloud_ptr);
+  const bool cloud_has_intensity = has_field(msg->fields, "intensity");
+  convert_sensor_cloud_to_xyzi(*msg, *cloud_ptr);
+  if (!cloud_has_intensity) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "Input cloud does not contain intensity. Falling back to xyz with zero intensity.");
+  }
 
   // If your cloud is not robot-centric, convert to base_frame.
   if (msg->header.frame_id != base_frame_id_) {
@@ -521,38 +816,164 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   pcl::PointCloud<pcl::PointXYZI>::Ptr tmp_ptr(new pcl::PointCloud<pcl::PointXYZI>(tmp));
   registration_->setInputSource(tmp_ptr);
 
-  Eigen::Affine3d affine;
-  tf2::fromMsg(corrent_pose_with_cov_stamped_ptr_->pose.pose, affine);
-
-  Eigen::Matrix4f init_guess = affine.matrix().cast<float>();
+  Eigen::Matrix4f init_guess = currentPoseMatrix();
+  const double scan_stamp_sec = stamp_to_sec(msg->header.stamp);
+  if (use_gtsam_smoother_ && gtsam_smoother_.isInitialized()) {
+    init_guess = gtsam_smoother_.predictedPoseMatrix(last_ndt_roll_, last_ndt_pitch_);
+  } else if (use_twist_ekf_ && twist_ekf_.isInitialized()) {
+    init_guess = twist_ekf_.poseMatrix(last_ndt_roll_, last_ndt_pitch_);
+  } else if (use_twist_prediction_ && have_last_accepted_pose_ && latest_twist_msg_) {
+    const double dt = std::clamp(
+      scan_stamp_sec - predicted_pose_time_sec_, 0.0, max_twist_prediction_dt_);
+    init_guess = applyTwistPrediction(predicted_pose_matrix_, dt);
+  } else if (predict_pose_from_previous_delta_ && have_last_accepted_pose_) {
+    init_guess = predicted_pose_matrix_;
+  }
 
   pcl::PointCloud<pcl::PointXYZI>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZI>);
   rclcpp::Clock system_clock;
   rclcpp::Time time_align_start = system_clock.now();
   registration_->align(*output_cloud, init_guess);
   rclcpp::Time time_align_end = system_clock.now();
+  const double alignment_time_sec = time_align_end.seconds() - time_align_start.seconds();
 
   bool has_converged = registration_->hasConverged();
   double fitness_score = registration_->getFitnessScore();
   if (!has_converged) {
+    publishAlignmentStatus(
+      msg->header.stamp,
+      diagnostic_msgs::msg::DiagnosticStatus::ERROR,
+      "registration_not_converged",
+      has_converged,
+      fitness_score,
+      alignment_time_sec,
+      filtered_cloud_ptr->size());
     RCLCPP_WARN(get_logger(), "The registration didn't converge.");
+    advancePredictionWithoutMeasurement(scan_stamp_sec);
     return;
   }
+  uint8_t status_level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+  std::string status_message = "ok";
+  bool reject_measurement = false;
   if (fitness_score > score_threshold_) {
+    status_level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+    status_message = reject_above_score_threshold_ ?
+      "fitness_score_over_threshold_rejected" :
+      "fitness_score_over_threshold";
+    reject_measurement = reject_above_score_threshold_;
     RCLCPP_WARN(get_logger(), "The fitness score is over %lf.", score_threshold_);
   }
-
   Eigen::Matrix4f final_transformation = registration_->getFinalTransformation();
-  Eigen::Matrix3d rot_mat = final_transformation.block<3, 3>(0, 0).cast<double>();
-  Eigen::Quaterniond quat_eig(rot_mat);
-  geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
 
-  corrent_pose_with_cov_stamped_ptr_->header.stamp = msg->header.stamp;
-  corrent_pose_with_cov_stamped_ptr_->header.frame_id = global_frame_id_;
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x = static_cast<double>(final_transformation(0, 3));
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y = static_cast<double>(final_transformation(1, 3));
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z = static_cast<double>(final_transformation(2, 3));
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
+  if (use_gtsam_smoother_) {
+    // Extract roll, pitch, yaw from NDT rotation matrix
+    Eigen::Matrix3f ndt_rot = final_transformation.block<3, 3>(0, 0);
+    last_ndt_pitch_ = std::asin(-ndt_rot(2, 0));
+    last_ndt_roll_ = std::atan2(ndt_rot(2, 1), ndt_rot(2, 2));
+    double ndt_yaw = static_cast<double>(std::atan2(ndt_rot(1, 0), ndt_rot(0, 0)));
+    double ndt_px = static_cast<double>(final_transformation(0, 3));
+    double ndt_py = static_cast<double>(final_transformation(1, 3));
+    double ndt_pz = static_cast<double>(final_transformation(2, 3));
+
+    if (!gtsam_smoother_.isInitialized()) {
+      gtsam_smoother_.initialize(ndt_px, ndt_py, ndt_pz, ndt_yaw, scan_stamp_sec);
+    }
+
+    bool gtsam_updated = gtsam_smoother_.update(
+      ndt_px, ndt_py, ndt_pz, ndt_yaw, fitness_score, scan_stamp_sec);
+
+    // Use smoothed state for published pose
+    Eigen::Matrix4f gtsam_pose = gtsam_smoother_.poseMatrix(last_ndt_roll_, last_ndt_pitch_);
+    Eigen::Matrix3d gtsam_rot_mat = gtsam_pose.block<3, 3>(0, 0).cast<double>();
+    Eigen::Quaterniond quat_eig(gtsam_rot_mat);
+    geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
+
+    corrent_pose_with_cov_stamped_ptr_->header.stamp = msg->header.stamp;
+    corrent_pose_with_cov_stamped_ptr_->header.frame_id = global_frame_id_;
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x = gtsam_smoother_.px();
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y = gtsam_smoother_.py();
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z = gtsam_smoother_.pz();
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
+
+    updatePredictionState(gtsam_pose, scan_stamp_sec);
+
+    if (!gtsam_updated) {
+      status_level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+      status_message = "gtsam_update_rejected";
+    }
+    publishAlignmentStatus(
+      msg->header.stamp, status_level, status_message,
+      has_converged, fitness_score, alignment_time_sec,
+      filtered_cloud_ptr->size());
+  } else if (use_twist_ekf_) {
+    // Extract roll, pitch, yaw from NDT rotation matrix using atan2
+    // (eulerAngles() has gimbal-lock ambiguity)
+    Eigen::Matrix3f ndt_rot = final_transformation.block<3, 3>(0, 0);
+    last_ndt_pitch_ = std::asin(-ndt_rot(2, 0));
+    last_ndt_roll_ = std::atan2(ndt_rot(2, 1), ndt_rot(2, 2));
+    double ndt_yaw = static_cast<double>(
+      std::atan2(ndt_rot(1, 0), ndt_rot(0, 0)));
+    double ndt_px = static_cast<double>(final_transformation(0, 3));
+    double ndt_py = static_cast<double>(final_transformation(1, 3));
+    double ndt_pz = static_cast<double>(final_transformation(2, 3));
+
+    if (!twist_ekf_.isInitialized()) {
+      twist_ekf_.initialize(ndt_px, ndt_py, ndt_pz, ndt_yaw, scan_stamp_sec);
+    }
+
+    // EKF update with NDT measurement (not gated by score_threshold)
+    // The EKF adaptively scales measurement noise by fitness
+    bool ekf_updated = twist_ekf_.update(ndt_px, ndt_py, ndt_pz, ndt_yaw, fitness_score);
+
+    // Use EKF state for published pose
+    Eigen::Matrix4f ekf_pose = twist_ekf_.poseMatrix(last_ndt_roll_, last_ndt_pitch_);
+    Eigen::Matrix3d ekf_rot_mat = ekf_pose.block<3, 3>(0, 0).cast<double>();
+    Eigen::Quaterniond quat_eig(ekf_rot_mat);
+    geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
+
+    corrent_pose_with_cov_stamped_ptr_->header.stamp = msg->header.stamp;
+    corrent_pose_with_cov_stamped_ptr_->header.frame_id = global_frame_id_;
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x = twist_ekf_.px();
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y = twist_ekf_.py();
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z = twist_ekf_.pz();
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
+
+    // Also update prediction state for compatibility
+    updatePredictionState(ekf_pose, scan_stamp_sec);
+
+    // Publish diagnostics with EKF info
+    if (!ekf_updated) {
+      status_level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+      status_message = "ekf_update_rejected";
+    }
+    publishAlignmentStatus(
+      msg->header.stamp, status_level, status_message,
+      has_converged, fitness_score, alignment_time_sec,
+      filtered_cloud_ptr->size());
+  } else {
+    // Original flow
+    publishAlignmentStatus(
+      msg->header.stamp, status_level, status_message,
+      has_converged, fitness_score, alignment_time_sec,
+      filtered_cloud_ptr->size());
+
+    if (reject_measurement) {
+      advancePredictionWithoutMeasurement(scan_stamp_sec);
+      return;
+    }
+
+    Eigen::Matrix3d rot_mat = final_transformation.block<3, 3>(0, 0).cast<double>();
+    Eigen::Quaterniond quat_eig(rot_mat);
+    geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
+
+    corrent_pose_with_cov_stamped_ptr_->header.stamp = msg->header.stamp;
+    corrent_pose_with_cov_stamped_ptr_->header.frame_id = global_frame_id_;
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x = static_cast<double>(final_transformation(0, 3));
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y = static_cast<double>(final_transformation(1, 3));
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z = static_cast<double>(final_transformation(2, 3));
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
+    updatePredictionState(final_transformation, scan_stamp_sec);
+  }
     
   // publish here if timer is not enabled
 
@@ -563,10 +984,10 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     map_to_base_link_stamped.header.stamp = msg->header.stamp;
     map_to_base_link_stamped.header.frame_id = global_frame_id_;
     map_to_base_link_stamped.child_frame_id = base_frame_id_;
-    map_to_base_link_stamped.transform.translation.x = static_cast<double>(final_transformation(0, 3));
-    map_to_base_link_stamped.transform.translation.y = static_cast<double>(final_transformation(1, 3));
-    map_to_base_link_stamped.transform.translation.z = static_cast<double>(final_transformation(2, 3));
-    map_to_base_link_stamped.transform.rotation = quat_msg;
+    map_to_base_link_stamped.transform.translation.x = corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x;
+    map_to_base_link_stamped.transform.translation.y = corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y;
+    map_to_base_link_stamped.transform.translation.z = corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z;
+    map_to_base_link_stamped.transform.rotation = corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation;
     if (!enable_map_odom_tf_) {
       broadcaster_.sendTransform(map_to_base_link_stamped);
     } else {
@@ -603,11 +1024,9 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     path_pub_->publish(*path_ptr_);
   }
 
-  last_scan_ptr_ = msg;
-
   if (enable_debug_) {
     std::cout << "number of filtered cloud points: " << filtered_cloud_ptr->size() << std::endl;
-    std::cout << "align time:" << time_align_end.seconds() - time_align_start.seconds() <<
+    std::cout << "align time:" << alignment_time_sec <<
       "[sec]" << std::endl;
     std::cout << "has converged: " << has_converged << std::endl;
     std::cout << "fitness score: " << fitness_score << std::endl;
@@ -628,6 +1047,144 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     std::cout << "delta_angle:" << delta_angle * 180 / M_PI << "[deg]" << std::endl;
     std::cout << "-----------------------------------------------------" << std::endl;
   }
+}
+
+Eigen::Matrix4f PCLLocalization::currentPoseMatrix() const
+{
+  if (!corrent_pose_with_cov_stamped_ptr_) {
+    return Eigen::Matrix4f::Identity();
+  }
+
+  Eigen::Affine3d affine;
+  tf2::fromMsg(corrent_pose_with_cov_stamped_ptr_->pose.pose, affine);
+  return affine.matrix().cast<float>();
+}
+
+Eigen::Matrix4f PCLLocalization::applyTwistPrediction(
+  const Eigen::Matrix4f & pose_matrix,
+  double dt_sec) const
+{
+  if (!latest_twist_msg_ || dt_sec <= 0.0) {
+    return pose_matrix;
+  }
+
+  const auto & twist = latest_twist_msg_->twist.twist;
+  Eigen::Affine3f affine(pose_matrix);
+  Eigen::Vector3f linear_velocity(
+    static_cast<float>(twist.linear.x),
+    static_cast<float>(twist.linear.y),
+    static_cast<float>(twist.linear.z));
+  Eigen::Vector3f angular_velocity(
+    static_cast<float>(twist.angular.x),
+    static_cast<float>(twist.angular.y),
+    static_cast<float>(twist.angular.z));
+
+  const Eigen::Vector3f world_delta = affine.linear() * (linear_velocity * static_cast<float>(dt_sec));
+  affine.translation() += world_delta;
+
+  if (twist_prediction_use_angular_velocity_) {
+    const float roll = angular_velocity.x() * static_cast<float>(dt_sec);
+    const float pitch = angular_velocity.y() * static_cast<float>(dt_sec);
+    const float yaw = angular_velocity.z() * static_cast<float>(dt_sec);
+    const Eigen::Matrix3f delta_rotation =
+      (Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX()) *
+      Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) *
+      Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ())).toRotationMatrix();
+    affine.linear() = affine.linear() * delta_rotation;
+  }
+
+  return affine.matrix();
+}
+
+void PCLLocalization::resetPredictionState(const Eigen::Matrix4f & pose_matrix, double stamp_sec)
+{
+  have_last_accepted_pose_ = true;
+  last_accepted_pose_matrix_ = pose_matrix;
+  predicted_pose_matrix_ = pose_matrix;
+  last_relative_motion_matrix_ = Eigen::Matrix4f::Identity();
+  consecutive_rejected_updates_ = 0;
+  predicted_pose_time_sec_ = stamp_sec;
+}
+
+void PCLLocalization::updatePredictionState(
+  const Eigen::Matrix4f & accepted_pose_matrix,
+  double stamp_sec)
+{
+  if (!have_last_accepted_pose_) {
+    resetPredictionState(accepted_pose_matrix, stamp_sec);
+    return;
+  }
+
+  if (consecutive_rejected_updates_ == 0) {
+    last_relative_motion_matrix_ = last_accepted_pose_matrix_.inverse() * accepted_pose_matrix;
+  }
+
+  last_accepted_pose_matrix_ = accepted_pose_matrix;
+  predicted_pose_matrix_ = accepted_pose_matrix * last_relative_motion_matrix_;
+  have_last_accepted_pose_ = true;
+  consecutive_rejected_updates_ = 0;
+  predicted_pose_time_sec_ = stamp_sec;
+}
+
+void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
+{
+  if (!have_last_accepted_pose_) {
+    return;
+  }
+
+  if (use_twist_prediction_ && latest_twist_msg_) {
+    const double dt = std::clamp(stamp_sec - predicted_pose_time_sec_, 0.0, max_twist_prediction_dt_);
+    predicted_pose_matrix_ = applyTwistPrediction(predicted_pose_matrix_, dt);
+    predicted_pose_time_sec_ = stamp_sec;
+  } else if (predict_pose_from_previous_delta_) {
+    predicted_pose_matrix_ = predicted_pose_matrix_ * last_relative_motion_matrix_;
+    predicted_pose_time_sec_ = stamp_sec;
+  } else {
+    return;
+  }
+  ++consecutive_rejected_updates_;
+}
+
+void PCLLocalization::publishAlignmentStatus(
+  const builtin_interfaces::msg::Time & stamp,
+  uint8_t level,
+  const std::string & message,
+  bool has_converged,
+  double fitness_score,
+  double alignment_time_sec,
+  std::size_t filtered_point_count)
+{
+  if (!status_pub_) {return;}
+
+  diagnostic_msgs::msg::DiagnosticStatus status;
+  status.level = level;
+  status.name = "lidar_localization_ros2/alignment";
+  status.message = message;
+  status.hardware_id = registration_method_;
+
+  auto append_value =
+    [&status](const std::string & key, const std::string & value)
+    {
+      diagnostic_msgs::msg::KeyValue kv;
+      kv.key = key;
+      kv.value = value;
+      status.values.push_back(kv);
+    };
+
+  append_value("registration_method", registration_method_);
+  append_value("has_converged", has_converged ? "true" : "false");
+  append_value("fitness_score", std::to_string(fitness_score));
+  append_value("score_threshold", std::to_string(score_threshold_));
+  append_value("alignment_time_sec", std::to_string(alignment_time_sec));
+  append_value("filtered_point_count", std::to_string(filtered_point_count));
+  append_value("map_received", map_recieved_ ? "true" : "false");
+  append_value("initialpose_received", initialpose_recieved_ ? "true" : "false");
+
+  diagnostic_msgs::msg::DiagnosticArray status_array;
+  status_array.header.stamp = stamp;
+  status_array.header.frame_id = base_frame_id_;
+  status_array.status.push_back(status);
+  status_pub_->publish(status_array);
 }
 
 void PCLLocalization::timerPublishPose()
