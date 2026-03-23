@@ -230,11 +230,30 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     initial_map_pub_->publish(*map_msg_ptr);
     RCLCPP_INFO(get_logger(), "Initial Map Published");
 
-    if (uses_filtered_target(registration_method_)) {
-      pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
+    // Store full map for local cropping (GICP methods)
+    use_local_map_crop_ = uses_filtered_target(registration_method_);
+    if (use_local_map_crop_) {
+      // Downsample and store full map; target will be set per-scan via local crop
+      pcl::PointCloud<pcl::PointXYZI>::Ptr filtered(new pcl::PointCloud<pcl::PointXYZI>());
       voxel_grid_filter_.setInputCloud(map_cloud_ptr);
-      voxel_grid_filter_.filter(*filtered_cloud_ptr);
-      registration_->setInputTarget(filtered_cloud_ptr);
+      voxel_grid_filter_.filter(*filtered);
+      full_map_cloud_ptr_ = filtered;
+      RCLCPP_INFO(get_logger(), "Local map cropping enabled. Filtered map: %ld pts, radius: %.0fm",
+                  full_map_cloud_ptr_->size(), local_map_radius_);
+      // Set initial target (will be updated per scan)
+      registration_->setInputTarget(full_map_cloud_ptr_);
+
+      // Create NDT initializer for robust initial alignment
+      use_ndt_initializer_ = true;
+      ndt_init_scan_count_ = 0;
+      ndt_initializer_.reset(new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
+      ndt_initializer_->setStepSize(ndt_step_size_);
+      ndt_initializer_->setResolution(ndt_resolution_);
+      ndt_initializer_->setTransformationEpsilon(transform_epsilon_);
+      ndt_initializer_->setNumThreads(ndt_num_threads_ > 0 ? ndt_num_threads_ : omp_get_max_threads());
+      ndt_initializer_->setInputTarget(map_cloud_ptr);
+      RCLCPP_INFO(get_logger(), "NDT initializer created (%d scans before GICP switch)",
+                  ndt_init_scans_required_);
     } else {
       registration_->setInputTarget(map_cloud_ptr);
     }
@@ -828,6 +847,39 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     init_guess = applyTwistPrediction(predicted_pose_matrix_, dt);
   } else if (predict_pose_from_previous_delta_ && have_last_accepted_pose_) {
     init_guess = predicted_pose_matrix_;
+  }
+
+  // NDT initializer phase: use NDT for first N scans, then switch to GICP
+  if (use_ndt_initializer_ && ndt_init_scan_count_ < ndt_init_scans_required_) {
+    ndt_initializer_->setInputSource(tmp_ptr);
+    pcl::PointCloud<pcl::PointXYZI>::Ptr ndt_output(new pcl::PointCloud<pcl::PointXYZI>);
+    ndt_initializer_->align(*ndt_output, init_guess);
+    if (ndt_initializer_->hasConverged()) {
+      init_guess = ndt_initializer_->getFinalTransformation();
+      ++ndt_init_scan_count_;
+      RCLCPP_INFO(get_logger(), "NDT init scan %d/%d fitness=%.3f",
+                  ndt_init_scan_count_, ndt_init_scans_required_,
+                  ndt_initializer_->getFitnessScore());
+      if (ndt_init_scan_count_ >= ndt_init_scans_required_) {
+        RCLCPP_INFO(get_logger(), "NDT init complete, switching to %s", registration_method_.c_str());
+        ndt_initializer_.reset();
+      }
+    }
+  }
+
+  // Crop local map around init_guess for GICP-based methods
+  if (use_local_map_crop_ && full_map_cloud_ptr_) {
+    float cx = init_guess(0, 3), cy = init_guess(1, 3);
+    float r2 = static_cast<float>(local_map_radius_ * local_map_radius_);
+    pcl::PointCloud<pcl::PointXYZI>::Ptr local_map(new pcl::PointCloud<pcl::PointXYZI>());
+    local_map->reserve(full_map_cloud_ptr_->size() / 10);
+    for (const auto & p : full_map_cloud_ptr_->points) {
+      float dx = p.x - cx, dy = p.y - cy;
+      if (dx * dx + dy * dy <= r2) {
+        local_map->push_back(p);
+      }
+    }
+    registration_->setInputTarget(local_map);
   }
 
   pcl::PointCloud<pcl::PointXYZI>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZI>);
