@@ -117,6 +117,15 @@ public:
 
   bool map_recieved_{false};
   bool initialpose_recieved_{false};
+  pcl::PointCloud<pcl::PointXYZI>::Ptr full_map_cloud_ptr_;
+  bool use_local_map_crop_{false};
+  double local_map_radius_{150.0};
+
+  // NDT initializer for GICP-based methods
+  bool use_ndt_initializer_{false};
+  int ndt_init_scan_count_{0};
+  int ndt_init_scans_required_{5};
+  pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_initializer_;
 
   // parameters
   std::string global_frame_id_;
