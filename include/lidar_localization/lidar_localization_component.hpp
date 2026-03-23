@@ -49,6 +49,7 @@
 #include "lidar_localization/lidar_undistortion.hpp"
 #include "lidar_localization/twist_ekf.hpp"
 #include "lidar_localization/twist_gtsam_smoother.hpp"
+#include "lidar_localization/imu_gtsam_smoother.hpp"
 
 using namespace std::chrono_literals;
 
@@ -126,6 +127,13 @@ public:
   int ndt_init_scan_count_{0};
   int ndt_init_scans_required_{5};
   pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_initializer_;
+
+  // IMU preintegration smoother
+  bool use_imu_preintegration_{false};
+  ImuGtsamSmoother imu_smoother_;
+  std::deque<ImuSample> imu_buffer_;
+  double last_imu_stamp_{0.0};
+  double last_scan_stamp_for_imu_{0.0};
 
   // parameters
   std::string global_frame_id_;

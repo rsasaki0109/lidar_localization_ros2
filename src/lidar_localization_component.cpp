@@ -137,6 +137,17 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("gtsam_fitness_scale_factor", 2.0);
   declare_parameter("gtsam_fitness_reject", 50.0);
   declare_parameter("gtsam_huber_k", 1.345);
+  // IMU preintegration parameters
+  declare_parameter("use_imu_preintegration", false);
+  declare_parameter("imu_gyro_noise_density", 0.01);
+  declare_parameter("imu_accel_noise_density", 0.1);
+  declare_parameter("imu_gyro_random_walk", 0.0001);
+  declare_parameter("imu_accel_random_walk", 0.001);
+  declare_parameter("imu_ndt_sigma_z", 0.1);
+  declare_parameter("imu_ndt_sigma_roll", 0.05);
+  declare_parameter("imu_ndt_sigma_pitch", 0.05);
+  declare_parameter("imu_bias_prior_sigma_gyro", 0.01);
+  declare_parameter("imu_bias_prior_sigma_accel", 0.1);
   declare_parameter("enable_debug", false);
   declare_parameter("predict_pose_from_previous_delta", true);
   declare_parameter("reject_above_score_threshold", true);
@@ -382,6 +393,30 @@ void PCLLocalization::initializeParameters()
     gtsam_smoother_.setParams(gtsam_params);
     gtsam_smoother_.reset();
   }
+  get_parameter("use_imu_preintegration", use_imu_preintegration_);
+  if (use_imu_preintegration_) {
+    ImuGtsamSmoother::Params imu_params;
+    // Reuse GTSAM NDT sigmas for x, y, yaw
+    get_parameter("gtsam_ndt_sigma_x", imu_params.ndt_sigma_x);
+    get_parameter("gtsam_ndt_sigma_y", imu_params.ndt_sigma_y);
+    get_parameter("gtsam_ndt_sigma_yaw", imu_params.ndt_sigma_yaw);
+    get_parameter("imu_ndt_sigma_z", imu_params.ndt_sigma_z);
+    get_parameter("imu_ndt_sigma_roll", imu_params.ndt_sigma_roll);
+    get_parameter("imu_ndt_sigma_pitch", imu_params.ndt_sigma_pitch);
+    get_parameter("gtsam_fitness_nominal", imu_params.fitness_nominal);
+    get_parameter("gtsam_fitness_scale_factor", imu_params.fitness_scale_factor);
+    get_parameter("gtsam_fitness_reject", imu_params.fitness_reject);
+    get_parameter("gtsam_huber_k", imu_params.huber_k);
+    get_parameter("imu_gyro_noise_density", imu_params.imu_params.gyro_noise_density);
+    get_parameter("imu_accel_noise_density", imu_params.imu_params.accel_noise_density);
+    get_parameter("imu_gyro_random_walk", imu_params.imu_params.gyro_random_walk);
+    get_parameter("imu_accel_random_walk", imu_params.imu_params.accel_random_walk);
+    get_parameter("imu_bias_prior_sigma_gyro", imu_params.bias_prior_sigma_gyro);
+    get_parameter("imu_bias_prior_sigma_accel", imu_params.bias_prior_sigma_accel);
+    imu_smoother_.params_ = imu_params;
+    imu_buffer_.clear();
+    RCLCPP_INFO(get_logger(), "IMU preintegration smoother enabled");
+  }
   get_parameter("enable_debug", enable_debug_);
   get_parameter("predict_pose_from_previous_delta", predict_pose_from_previous_delta_);
   get_parameter("reject_above_score_threshold", reject_above_score_threshold_);
@@ -614,6 +649,22 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
       stamp_to_sec(msg->header.stamp));
     RCLCPP_INFO(get_logger(), "GTSAM smoother initialized from initial pose");
   }
+
+  if (use_imu_preintegration_) {
+    tf2::Quaternion q_imu;
+    tf2::fromMsg(msg->pose.pose.orientation, q_imu);
+    double roll_i, pitch_i, yaw_i;
+    tf2::Matrix3x3(q_imu).getRPY(roll_i, pitch_i, yaw_i);
+    imu_smoother_.initialize(
+      msg->pose.pose.position.x,
+      msg->pose.pose.position.y,
+      msg->pose.pose.position.z,
+      roll_i, pitch_i, yaw_i,
+      0.0, 0.0, 0.0,  // initial velocity = 0
+      stamp_to_sec(msg->header.stamp));
+    last_scan_stamp_for_imu_ = stamp_to_sec(msg->header.stamp);
+    RCLCPP_INFO(get_logger(), "IMU preintegration smoother initialized from initial pose");
+  }
   pose_pub_->publish(*corrent_pose_with_cov_stamped_ptr_);
 
   if(last_scan_ptr_) {
@@ -716,6 +767,29 @@ void PCLLocalization::twistReceived(
 
 void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr msg)
 {
+  // IMU preintegration buffering (always runs if enabled, independent of use_imu_)
+  if (use_imu_preintegration_) {
+    double stamp_sec = stamp_to_sec(msg->header.stamp);
+    ImuSample sample;
+    sample.stamp = stamp_sec;
+    sample.gyro = Eigen::Vector3d(
+      msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
+    sample.accel = Eigen::Vector3d(
+      msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
+    imu_buffer_.push_back(sample);
+    // Trim to ~2 seconds
+    while (imu_buffer_.size() > 400) imu_buffer_.pop_front();
+
+    // Feed to smoother for dead-reckoning
+    if (imu_smoother_.isInitialized() && last_imu_stamp_ > 0.0) {
+      double dt = stamp_sec - last_imu_stamp_;
+      if (dt > 0.0 && dt < 0.5) {
+        imu_smoother_.integrateImu(sample.gyro, sample.accel, dt);
+      }
+    }
+    last_imu_stamp_ = stamp_sec;
+  }
+
   if (!use_imu_) {return;}
 
   sensor_msgs::msg::Imu tf_converted_imu;
@@ -837,7 +911,9 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
 
   Eigen::Matrix4f init_guess = currentPoseMatrix();
   const double scan_stamp_sec = stamp_to_sec(msg->header.stamp);
-  if (use_gtsam_smoother_ && gtsam_smoother_.isInitialized()) {
+  if (use_imu_preintegration_ && imu_smoother_.isInitialized()) {
+    init_guess = imu_smoother_.predictedPoseMatrix();
+  } else if (use_gtsam_smoother_ && gtsam_smoother_.isInitialized()) {
     init_guess = gtsam_smoother_.predictedPoseMatrix(last_ndt_roll_, last_ndt_pitch_);
   } else if (use_twist_ekf_ && twist_ekf_.isInitialized()) {
     init_guess = twist_ekf_.poseMatrix(last_ndt_roll_, last_ndt_pitch_);
@@ -952,6 +1028,49 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     if (!gtsam_updated) {
       status_level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
       status_message = "gtsam_update_rejected";
+    }
+    publishAlignmentStatus(
+      msg->header.stamp, status_level, status_message,
+      has_converged, fitness_score, alignment_time_sec,
+      filtered_cloud_ptr->size());
+  } else if (use_imu_preintegration_) {
+    // Extract full 6DOF from registration result
+    Eigen::Matrix3f ndt_rot = final_transformation.block<3, 3>(0, 0);
+    double ndt_roll = static_cast<double>(std::atan2(ndt_rot(2, 1), ndt_rot(2, 2)));
+    double ndt_pitch = static_cast<double>(std::asin(-std::clamp(ndt_rot(2, 0), -1.0f, 1.0f)));
+    double ndt_yaw = static_cast<double>(std::atan2(ndt_rot(1, 0), ndt_rot(0, 0)));
+    double ndt_px = static_cast<double>(final_transformation(0, 3));
+    double ndt_py = static_cast<double>(final_transformation(1, 3));
+    double ndt_pz = static_cast<double>(final_transformation(2, 3));
+
+    if (!imu_smoother_.isInitialized()) {
+      imu_smoother_.initialize(ndt_px, ndt_py, ndt_pz, ndt_roll, ndt_pitch, ndt_yaw,
+                               0.0, 0.0, 0.0, scan_stamp_sec);
+    }
+
+    bool imu_updated = imu_smoother_.update(
+      ndt_px, ndt_py, ndt_pz, ndt_roll, ndt_pitch, ndt_yaw,
+      fitness_score, scan_stamp_sec);
+
+    // Use smoothed state for published pose
+    Eigen::Matrix4f imu_pose = imu_smoother_.poseMatrix();
+    Eigen::Matrix3d imu_rot_mat = imu_pose.block<3, 3>(0, 0).cast<double>();
+    Eigen::Quaterniond quat_eig(imu_rot_mat);
+    geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
+
+    corrent_pose_with_cov_stamped_ptr_->header.stamp = msg->header.stamp;
+    corrent_pose_with_cov_stamped_ptr_->header.frame_id = global_frame_id_;
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x = imu_smoother_.px();
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y = imu_smoother_.py();
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z = imu_smoother_.pz();
+    corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
+
+    updatePredictionState(imu_pose, scan_stamp_sec);
+    last_scan_stamp_for_imu_ = scan_stamp_sec;
+
+    if (!imu_updated) {
+      status_level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+      status_message = "imu_smoother_update_rejected";
     }
     publishAlignmentStatus(
       msg->header.stamp, status_level, status_message,
