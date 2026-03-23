@@ -46,6 +46,9 @@ def generate_launch_description():
     twist_topic = launch.substitutions.LaunchConfiguration(
         'twist_topic',
         default='/twist')
+    imu_topic = launch.substitutions.LaunchConfiguration(
+        'imu_topic',
+        default='/imu')
 
     lidar_localization = launch_ros.actions.LifecycleNode(
         name='lidar_localization',
@@ -53,7 +56,7 @@ def generate_launch_description():
         package='lidar_localization_ros2',
         executable='lidar_localization_node',
         parameters=[localization_param_dir],
-        remappings=[('/cloud', cloud_topic), ('/twist', twist_topic)],
+        remappings=[('/cloud', cloud_topic), ('/twist', twist_topic), ('/imu', imu_topic)],
         output='screen')
 
     to_inactive = launch.actions.EmitEvent(
