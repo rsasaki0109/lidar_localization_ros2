@@ -29,6 +29,15 @@
       twist_prediction_use_angular_velocity: true
       max_twist_prediction_dt: 0.5
       use_imu: false
+      use_imu_preintegration: true
+      imu_prediction_correction_guard_translation_m: 2.0
+      imu_prediction_correction_guard_yaw_deg: 4.0
+      enable_reinitialization_request_output: true
+      reinitialization_trigger_threshold: 0.95
+      reinitialization_trigger_gap_scale_sec: 30.0
+      reinitialization_trigger_seed_translation_scale_m: 100.0
+      reinitialization_trigger_reject_streak_scale: 200.0
+      reinitialization_trigger_fitness_explosion_threshold: 1000.0
       enable_debug: true
       predict_pose_from_previous_delta: true
       reject_above_score_threshold: true

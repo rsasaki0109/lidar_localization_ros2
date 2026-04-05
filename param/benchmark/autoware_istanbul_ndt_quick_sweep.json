@@ -1,0 +1,86 @@
+{
+  "common_params": {
+    "registration_method": "NDT_OMP",
+    "set_initial_pose": true,
+    "use_imu": false,
+    "use_odom": false,
+    "enable_debug": false,
+    "reject_above_score_threshold": true,
+    "predict_pose_from_previous_delta": true,
+    "scan_min_range": 1.0
+  },
+  "runs": [
+    {
+      "name": "ndt_r1_l02_thr30",
+      "params": {
+        "score_threshold": 30.0,
+        "ndt_resolution": 1.0,
+        "voxel_leaf_size": 0.2,
+        "scan_max_range": 150.0
+      }
+    },
+    {
+      "name": "ndt_r2_l02_thr30",
+      "params": {
+        "score_threshold": 30.0,
+        "ndt_resolution": 2.0,
+        "voxel_leaf_size": 0.2,
+        "scan_max_range": 150.0
+      }
+    },
+    {
+      "name": "ndt_r3_l02_thr30",
+      "params": {
+        "score_threshold": 30.0,
+        "ndt_resolution": 3.0,
+        "voxel_leaf_size": 0.2,
+        "scan_max_range": 150.0
+      }
+    },
+    {
+      "name": "ndt_r2_l05_thr30",
+      "params": {
+        "score_threshold": 30.0,
+        "ndt_resolution": 2.0,
+        "voxel_leaf_size": 0.5,
+        "scan_max_range": 150.0
+      }
+    },
+    {
+      "name": "ndt_r2_l10_thr30",
+      "params": {
+        "score_threshold": 30.0,
+        "ndt_resolution": 2.0,
+        "voxel_leaf_size": 1.0,
+        "scan_max_range": 150.0
+      }
+    },
+    {
+      "name": "ndt_r2_l05_thr50",
+      "params": {
+        "score_threshold": 50.0,
+        "ndt_resolution": 2.0,
+        "voxel_leaf_size": 0.5,
+        "scan_max_range": 150.0
+      }
+    },
+    {
+      "name": "ndt_r2_l10_thr50",
+      "params": {
+        "score_threshold": 50.0,
+        "ndt_resolution": 2.0,
+        "voxel_leaf_size": 1.0,
+        "scan_max_range": 150.0
+      }
+    },
+    {
+      "name": "ndt_r2_l05_thr50_range120",
+      "params": {
+        "score_threshold": 50.0,
+        "ndt_resolution": 2.0,
+        "voxel_leaf_size": 0.5,
+        "scan_max_range": 120.0
+      }
+    }
+  ]
+}

@@ -1,0 +1,408 @@
+#!/usr/bin/env python3
+
+import argparse
+import copy
+import json
+import os
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+from typing import Dict
+from typing import Optional
+
+import yaml
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run benchmark_runner or benchmark_sweep_localizer from a dataset manifest."
+    )
+    parser.add_argument("--manifest", required=True, help="Path to the benchmark manifest YAML")
+    parser.add_argument(
+        "--mode",
+        choices=["auto", "run", "sweep"],
+        default="auto",
+        help="Override the manifest mode. auto infers sweep when benchmark.config_json is set.",
+    )
+    parser.add_argument(
+        "--print-only",
+        action="store_true",
+        help="Print the resolved commands and generated paths without executing them.",
+    )
+    return parser.parse_args()
+
+
+def load_yaml(path: Path) -> Dict[str, Any]:
+    with path.open("r", encoding="utf-8") as stream:
+        data = yaml.safe_load(stream)
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Expected a YAML mapping in {path}")
+    return data
+
+
+def write_yaml(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as stream:
+        yaml.safe_dump(data, stream, sort_keys=False)
+
+
+def quote(value: str) -> str:
+    return shlex.quote(value)
+
+
+def resolve_path(raw: Optional[str], base_dir: Path) -> Optional[Path]:
+    if raw is None:
+        return None
+    raw_str = os.path.expandvars(os.path.expanduser(str(raw)))
+    if raw_str.startswith("repo://"):
+        expanded = (REPO_ROOT / raw_str[len("repo://") :]).resolve()
+    elif raw_str.startswith("manifest://"):
+        expanded = (base_dir / raw_str[len("manifest://") :]).resolve()
+    else:
+        expanded = Path(raw_str)
+    if not expanded.is_absolute():
+        expanded = (base_dir / expanded).resolve()
+    return expanded
+
+
+def resolve_required_path(section: Dict[str, Any], key: str, base_dir: Path) -> Path:
+    raw = section.get(key)
+    if not raw:
+        raise RuntimeError(f"Missing required manifest field: {key}")
+    resolved = resolve_path(str(raw), base_dir)
+    assert resolved is not None
+    return resolved
+
+
+def normalize_launch_arg(value: str) -> str:
+    if ":=" not in value:
+        return quote(value)
+    key, raw = value.split(":=", 1)
+    return f"{key}:={quote(raw)}"
+
+
+def validate_manifest_for_execution(manifest_path: Path, manifest: Dict[str, Any]) -> None:
+    if manifest_path.name.endswith(".example.yaml"):
+        raise RuntimeError(
+            f"Refusing to execute the example manifest directly: {manifest_path}. "
+            "Copy it to a real manifest path first."
+        )
+
+    serialized = json.dumps(manifest, ensure_ascii=False)
+    if "/absolute/path/to/" in serialized:
+        raise RuntimeError(
+            "Manifest still contains /absolute/path/to/ placeholder values. "
+            "Replace them with real dataset paths before execution."
+        )
+
+
+def run_command(command: list[str], print_only: bool) -> None:
+    print(" ".join(quote(part) for part in command))
+    if print_only:
+        return
+    subprocess.run(command, check=True)
+
+
+def infer_mode(manifest: Dict[str, Any], mode_override: str) -> str:
+    if mode_override != "auto":
+        return mode_override
+    benchmark = manifest.get("benchmark", {})
+    if not isinstance(benchmark, dict):
+        raise RuntimeError("benchmark must be a mapping")
+    return "sweep" if benchmark.get("config_json") else "run"
+
+
+def build_localization_yaml(
+    manifest: Dict[str, Any],
+    manifest_dir: Path,
+    generated_dir: Path,
+    print_only: bool,
+) -> Path:
+    localizer = manifest.get("localizer", {})
+    if not isinstance(localizer, dict):
+        raise RuntimeError("localizer must be a mapping")
+    dataset = manifest.get("dataset", {})
+    if not isinstance(dataset, dict):
+        raise RuntimeError("dataset must be a mapping")
+
+    base_param_yaml = resolve_required_path(localizer, "base_param_yaml", manifest_dir)
+    base_data = load_yaml(base_param_yaml)
+    merged = copy.deepcopy(base_data)
+    ros_params = merged.get("/**", {}).get("ros__parameters")
+    if not isinstance(ros_params, dict):
+        raise RuntimeError(f"{base_param_yaml} is missing /**/ros__parameters")
+
+    map_path = dataset.get("map_path")
+    if map_path:
+        resolved_map_path = resolve_path(str(map_path), manifest_dir)
+        assert resolved_map_path is not None
+        ros_params["map_path"] = str(resolved_map_path)
+
+    initial_pose_yaml = dataset.get("initial_pose_yaml")
+    if initial_pose_yaml:
+        resolved_initial_pose_yaml = resolve_path(str(initial_pose_yaml), manifest_dir)
+        assert resolved_initial_pose_yaml is not None
+        if resolved_initial_pose_yaml.exists():
+            initial_pose_data = load_yaml(resolved_initial_pose_yaml)
+            initial_pose_params = initial_pose_data.get("/**", {}).get("ros__parameters")
+            if not isinstance(initial_pose_params, dict):
+                raise RuntimeError(
+                    f"{resolved_initial_pose_yaml} is missing /**/ros__parameters"
+                )
+            ros_params.update(initial_pose_params)
+        elif not print_only:
+            raise RuntimeError(
+                f"dataset.initial_pose_yaml does not exist yet: {resolved_initial_pose_yaml}"
+            )
+
+    overrides = localizer.get("param_overrides", {})
+    if overrides:
+        if not isinstance(overrides, dict):
+            raise RuntimeError("localizer.param_overrides must be a mapping")
+        ros_params.update(overrides)
+
+    generated_yaml = generated_dir / "localization.yaml"
+    write_yaml(generated_yaml, merged)
+    return generated_yaml
+
+
+def build_system_command(
+    manifest: Dict[str, Any],
+    manifest_dir: Path,
+    generated_yaml: Path,
+) -> str:
+    localizer = manifest.get("localizer", {})
+    dataset = manifest.get("dataset", {})
+    launch_package = str(localizer.get("launch_package", "lidar_localization_ros2"))
+    launch_file = str(localizer.get("launch_file", "lidar_localization.launch.py"))
+
+    parts = [
+        "ros2",
+        "launch",
+        launch_package,
+        launch_file,
+        f"localization_param_dir:={quote(str(generated_yaml))}",
+    ]
+
+    cloud_topic = dataset.get("cloud_topic", "/velodyne_points")
+    parts.append(f"cloud_topic:={quote(str(cloud_topic))}")
+
+    twist_topic = str(dataset.get("twist_topic", "") or "")
+    if twist_topic:
+        parts.append(f"twist_topic:={quote(twist_topic)}")
+
+    imu_topic = str(dataset.get("imu_topic", "") or "")
+    if imu_topic:
+        parts.append(f"imu_topic:={quote(imu_topic)}")
+
+    launch_args = localizer.get("launch_args", [])
+    if launch_args:
+        if not isinstance(launch_args, list):
+            raise RuntimeError("localizer.launch_args must be a list")
+        for launch_arg in launch_args:
+            parts.append(normalize_launch_arg(str(launch_arg)))
+
+    return " ".join(parts)
+
+
+def run_single_benchmark(
+    manifest: Dict[str, Any],
+    manifest_path: Path,
+    manifest_dir: Path,
+    print_only: bool,
+) -> int:
+    repo_root = Path(__file__).resolve().parents[1]
+    benchmark = manifest.get("benchmark", {})
+    dataset = manifest.get("dataset", {})
+    output_dir = resolve_required_path(benchmark, "output_dir", manifest_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    generated_dir = output_dir / "generated"
+    generated_dir.mkdir(parents=True, exist_ok=True)
+
+    generated_yaml = build_localization_yaml(manifest, manifest_dir, generated_dir, print_only)
+    system_command = build_system_command(manifest, manifest_dir, generated_yaml)
+    manifest_copy_path = generated_dir / "manifest.yaml"
+    write_yaml(manifest_copy_path, manifest)
+
+    bag_path = resolve_required_path(dataset, "bag_path", manifest_dir)
+    runner_script = repo_root / "scripts" / "benchmark_runner"
+    runner_cmd = [
+        str(runner_script),
+        "--bag-path",
+        str(bag_path),
+        "--output-dir",
+        str(output_dir),
+        "--system-command",
+        system_command,
+        "--target-process-pattern",
+        str(benchmark.get("target_process_pattern", "lidar_localization_node")),
+        "--record-topic",
+        str(benchmark.get("record_topic", "/pcl_pose")),
+        "--record-qos-reliability",
+        str(benchmark.get("record_qos_reliability", "reliable")),
+        "--record-qos-durability",
+        str(benchmark.get("record_qos_durability", "volatile")),
+        "--diagnostic-topic",
+        str(benchmark.get("diagnostic_topic", "/alignment_status")),
+        "--bag-duration",
+        str(float(benchmark.get("bag_duration", 30.0))),
+        "--bag-start-offset",
+        str(float(benchmark.get("bag_start_offset", 0.0))),
+        "--settle-seconds",
+        str(float(benchmark.get("settle_seconds", 5.0))),
+        "--post-roll-seconds",
+        str(float(benchmark.get("post_roll_seconds", 1.0))),
+    ]
+
+    ros_domain_id = benchmark.get("ros_domain_id")
+    if ros_domain_id is not None:
+        runner_cmd.extend(["--ros-domain-id", str(int(ros_domain_id))])
+
+    bag_command = str(benchmark.get("bag_command", "") or "")
+    if bag_command:
+        runner_cmd.extend(["--bag-command", bag_command])
+
+    if bool(benchmark.get("record_use_node_clock", False)):
+        runner_cmd.append("--record-use-node-clock")
+    if bool(benchmark.get("record_use_sim_time", False)):
+        runner_cmd.append("--record-use-sim-time")
+
+    run_command(runner_cmd, print_only)
+
+    reference_csv_raw = dataset.get("reference_csv")
+    if reference_csv_raw:
+        reference_csv = resolve_path(str(reference_csv_raw), manifest_dir)
+        assert reference_csv is not None
+        eval_script = repo_root / "scripts" / "benchmark_eval_trajectory"
+        eval_json = output_dir / "trajectory_eval.json"
+        eval_cmd = [
+            str(eval_script),
+            "--estimated-csv",
+            str(output_dir / "pose_trace.csv"),
+            "--reference-csv",
+            str(reference_csv),
+            "--output-json",
+            str(eval_json),
+            "--max-time-diff",
+            str(float(benchmark.get("max_time_diff", 0.05))),
+        ]
+        run_command(eval_cmd, print_only)
+        if not print_only:
+            (output_dir / "eval.json").write_text(eval_json.read_text(encoding="utf-8"), encoding="utf-8")
+
+    print(f"manifest_copy: {manifest_copy_path}")
+    print(f"generated_param_yaml: {generated_yaml}")
+    print(f"output_dir: {output_dir}")
+    return 0
+
+
+def run_sweep_benchmark(
+    manifest: Dict[str, Any],
+    manifest_path: Path,
+    manifest_dir: Path,
+    print_only: bool,
+) -> int:
+    repo_root = Path(__file__).resolve().parents[1]
+    benchmark = manifest.get("benchmark", {})
+    dataset = manifest.get("dataset", {})
+    output_dir = resolve_required_path(benchmark, "output_dir", manifest_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    generated_dir = output_dir / "generated"
+    generated_dir.mkdir(parents=True, exist_ok=True)
+
+    generated_yaml = build_localization_yaml(manifest, manifest_dir, generated_dir, print_only)
+    manifest_copy_path = generated_dir / "manifest.yaml"
+    write_yaml(manifest_copy_path, manifest)
+
+    bag_path = resolve_required_path(dataset, "bag_path", manifest_dir)
+    reference_csv = resolve_required_path(dataset, "reference_csv", manifest_dir)
+    config_json = resolve_required_path(benchmark, "config_json", manifest_dir)
+
+    sweep_script = repo_root / "scripts" / "benchmark_sweep_localizer"
+    sweep_cmd = [
+        str(sweep_script),
+        "--bag-path",
+        str(bag_path),
+        "--reference-csv",
+        str(reference_csv),
+        "--base-param-yaml",
+        str(generated_yaml),
+        "--config-json",
+        str(config_json),
+        "--output-dir",
+        str(output_dir),
+        "--cloud-topic",
+        str(dataset.get("cloud_topic", "/velodyne_points")),
+        "--bag-duration",
+        str(float(benchmark.get("bag_duration", 30.0))),
+        "--bag-start-offset",
+        str(float(benchmark.get("bag_start_offset", 0.0))),
+        "--settle-seconds",
+        str(float(benchmark.get("settle_seconds", 5.0))),
+        "--post-roll-seconds",
+        str(float(benchmark.get("post_roll_seconds", 1.0))),
+        "--ros-domain-base",
+        str(int(benchmark.get("ros_domain_base", 120))),
+        "--max-time-diff",
+        str(float(benchmark.get("max_time_diff", 0.05))),
+        "--record-qos-reliability",
+        str(benchmark.get("record_qos_reliability", "reliable")),
+        "--record-qos-durability",
+        str(benchmark.get("record_qos_durability", "volatile")),
+    ]
+
+    map_path_raw = dataset.get("map_path")
+    if map_path_raw:
+        map_path = resolve_path(str(map_path_raw), manifest_dir)
+        assert map_path is not None
+        sweep_cmd.extend(["--map-path", str(map_path)])
+
+    twist_topic = str(dataset.get("twist_topic", "") or "")
+    if twist_topic:
+        sweep_cmd.extend(["--twist-topic", twist_topic])
+
+    imu_topic = str(dataset.get("imu_topic", "") or "")
+    if imu_topic:
+        sweep_cmd.extend(["--launch-arg", f"imu_topic:={imu_topic}"])
+
+    localizer = manifest.get("localizer", {})
+    launch_args = localizer.get("launch_args", [])
+    if launch_args:
+        if not isinstance(launch_args, list):
+            raise RuntimeError("localizer.launch_args must be a list")
+        for launch_arg in launch_args:
+            sweep_cmd.extend(["--launch-arg", str(launch_arg)])
+
+    if bool(benchmark.get("resume", False)):
+        sweep_cmd.append("--resume")
+
+    run_command(sweep_cmd, print_only)
+    print(f"manifest_copy: {manifest_copy_path}")
+    print(f"generated_param_yaml: {generated_yaml}")
+    print(f"output_dir: {output_dir}")
+    return 0
+
+
+def main() -> int:
+    args = parse_args()
+    manifest_path = Path(args.manifest).expanduser().resolve()
+    manifest = load_yaml(manifest_path)
+    manifest_dir = manifest_path.parent
+    mode = infer_mode(manifest, args.mode)
+    if not args.print_only:
+        validate_manifest_for_execution(manifest_path, manifest)
+
+    if mode == "run":
+        return run_single_benchmark(manifest, manifest_path, manifest_dir, args.print_only)
+    if mode == "sweep":
+        return run_sweep_benchmark(manifest, manifest_path, manifest_dir, args.print_only)
+    raise RuntimeError(f"Unsupported mode: {mode}")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,55 @@
+name: boreas_starter_bundle
+
+dataset:
+  mapping_bag_path: /absolute/path/to/boreas_mapping_rosbag2
+  localization_bag_path: /absolute/path/to/boreas_localization_rosbag2
+  cloud_topic: /velodyne_points
+  imu_topic: /imu/data
+  twist_topic: /vehicle/twist
+
+bundle:
+  output_dir: /absolute/path/to/boreas_mapless_public_dataset_bundle
+  base_param_yaml: repo://param/nav2_ndt_urban.yaml
+  generated_map_path: manifest://generated/mapping_map.pcd
+  reference_csv: manifest://generated/reference_pose.csv
+  initial_pose_yaml: manifest://generated/initial_pose.yaml
+  localization_output_dir: manifest://output/localization_benchmark
+  nav2_map_output_dir: manifest://generated/nav2_map
+  nav2_map_name: boreas_nav2_map
+
+mapping:
+  command_template: >-
+    ros2 launch lidarslam_ros2 mapping.launch.py
+    points_topic:={cloud_topic}
+    imu_topic:={imu_topic}
+    bag_path:={mapping_bag_path}
+    map_path:={generated_map_path}
+
+reference:
+  pose_topic: /ground_truth/pose_with_covariance
+  sample_topic: /velodyne_points
+  bag_duration: 120
+  bag_start_offset: 0.0
+  initial_pose_skip_sec: 0.05
+  max_match_diff: 0.05
+  output_stamp_source: sample_header
+
+localizer:
+  launch_package: lidar_localization_ros2
+  launch_file: lidar_localization.launch.py
+  launch_args:
+    - enable_scan_voxel_filter:=false
+  param_overrides:
+    use_imu_preintegration: true
+    use_twist_prediction: true
+    score_threshold: 6.0
+
+benchmark:
+  bag_duration: 120
+  bag_start_offset: 0.0
+  settle_seconds: 5.0
+  post_roll_seconds: 1.0
+  ros_domain_id: 120
+  max_time_diff: 0.05
+  record_qos_reliability: reliable
+  record_qos_durability: volatile

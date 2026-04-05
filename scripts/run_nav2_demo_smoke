@@ -1,0 +1,249 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  run_nav2_demo_smoke \
+    --map-yaml /absolute/path/to/map.yaml \
+    --initial-pose-x X --initial-pose-y Y \
+    --goal-x X --goal-y Y [options]
+
+Required:
+  --map-yaml PATH
+  --initial-pose-x VALUE
+  --initial-pose-y VALUE
+  --goal-x VALUE
+  --goal-y VALUE
+
+Optional:
+  --initial-pose-z VALUE        default: 0.0
+  --initial-pose-qx VALUE       default: 0.0
+  --initial-pose-qy VALUE       default: 0.0
+  --initial-pose-qz VALUE       default: 0.0
+  --initial-pose-qw VALUE       default: 1.0
+  --goal-z VALUE                default: initial_pose_z
+  --goal-yaw VALUE              default: 0.0
+  --robot-radius VALUE          default: 0.3
+  --launch-timeout-sec VALUE    default: 120
+  --goal-timeout-sec VALUE      default: 120
+  --log-dir PATH                default: mktemp dir
+  --extra-launch-arg ARG:=VALUE repeatable
+  --help
+
+This script launches:
+  ros2 launch lidar_localization_ros2 nav2_navigation.launch.py \
+    use_odom_localization_demo:=true publish_cmd_vel_odom:=true ...
+
+It is a self-contained Nav2 smoke/demo path. It does not validate the real
+LiDAR localizer or a real odom source.
+EOF
+}
+
+require_arg() {
+  local name="$1"
+  local value="$2"
+  if [[ -z "${value}" ]]; then
+    printf 'Missing required argument: %s\n' "${name}" >&2
+    usage >&2
+    exit 2
+  fi
+}
+
+map_yaml=""
+initial_pose_x=""
+initial_pose_y=""
+initial_pose_z="0.0"
+initial_pose_qx="0.0"
+initial_pose_qy="0.0"
+initial_pose_qz="0.0"
+initial_pose_qw="1.0"
+goal_x=""
+goal_y=""
+goal_z=""
+goal_yaw="0.0"
+robot_radius="0.3"
+launch_timeout_sec="120"
+goal_timeout_sec="120"
+log_dir=""
+declare -a extra_launch_args=()
+
+while (($# > 0)); do
+  case "$1" in
+    --map-yaml)
+      map_yaml="$2"
+      shift 2
+      ;;
+    --initial-pose-x)
+      initial_pose_x="$2"
+      shift 2
+      ;;
+    --initial-pose-y)
+      initial_pose_y="$2"
+      shift 2
+      ;;
+    --initial-pose-z)
+      initial_pose_z="$2"
+      shift 2
+      ;;
+    --initial-pose-qx)
+      initial_pose_qx="$2"
+      shift 2
+      ;;
+    --initial-pose-qy)
+      initial_pose_qy="$2"
+      shift 2
+      ;;
+    --initial-pose-qz)
+      initial_pose_qz="$2"
+      shift 2
+      ;;
+    --initial-pose-qw)
+      initial_pose_qw="$2"
+      shift 2
+      ;;
+    --goal-x)
+      goal_x="$2"
+      shift 2
+      ;;
+    --goal-y)
+      goal_y="$2"
+      shift 2
+      ;;
+    --goal-z)
+      goal_z="$2"
+      shift 2
+      ;;
+    --goal-yaw)
+      goal_yaw="$2"
+      shift 2
+      ;;
+    --robot-radius)
+      robot_radius="$2"
+      shift 2
+      ;;
+    --launch-timeout-sec)
+      launch_timeout_sec="$2"
+      shift 2
+      ;;
+    --goal-timeout-sec)
+      goal_timeout_sec="$2"
+      shift 2
+      ;;
+    --log-dir)
+      log_dir="$2"
+      shift 2
+      ;;
+    --extra-launch-arg)
+      extra_launch_args+=("$2")
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'Unknown argument: %s\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+require_arg "--map-yaml" "${map_yaml}"
+require_arg "--initial-pose-x" "${initial_pose_x}"
+require_arg "--initial-pose-y" "${initial_pose_y}"
+require_arg "--goal-x" "${goal_x}"
+require_arg "--goal-y" "${goal_y}"
+
+if [[ -z "${goal_z}" ]]; then
+  goal_z="${initial_pose_z}"
+fi
+
+if [[ ! -f "${map_yaml}" ]]; then
+  printf 'map_yaml does not exist: %s\n' "${map_yaml}" >&2
+  exit 2
+fi
+
+if [[ -z "${log_dir}" ]]; then
+  log_dir="$(mktemp -d -t lidarloc_nav2_demo_smoke.XXXXXX)"
+else
+  mkdir -p "${log_dir}"
+fi
+
+launch_log="${log_dir}/nav2_launch.log"
+goal_log="${log_dir}/navigate_to_pose.log"
+goal_sender="$(cd "$(dirname "$0")" && pwd)/send_nav2_goal.py"
+
+launch_cmd=(
+  ros2 launch lidar_localization_ros2 nav2_navigation.launch.py
+  "map_yaml:=${map_yaml}"
+  "use_odom_localization_demo:=true"
+  "publish_cmd_vel_odom:=true"
+  "set_initial_pose:=true"
+  "initial_pose_x:=${initial_pose_x}"
+  "initial_pose_y:=${initial_pose_y}"
+  "initial_pose_z:=${initial_pose_z}"
+  "initial_pose_qx:=${initial_pose_qx}"
+  "initial_pose_qy:=${initial_pose_qy}"
+  "initial_pose_qz:=${initial_pose_qz}"
+  "initial_pose_qw:=${initial_pose_qw}"
+  "robot_radius:=${robot_radius}"
+)
+launch_cmd+=("${extra_launch_args[@]}")
+
+printf 'Launching Nav2 demo smoke. Logs: %s\n' "${log_dir}"
+setsid stdbuf -oL -eL "${launch_cmd[@]}" >"${launch_log}" 2>&1 &
+launch_pid=$!
+
+cleanup() {
+  if kill -0 "${launch_pid}" 2>/dev/null; then
+    kill -TERM -- "-${launch_pid}" 2>/dev/null || true
+    wait "${launch_pid}" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+ready_deadline=$((SECONDS + launch_timeout_sec))
+while ((SECONDS < ready_deadline)); do
+  if grep -q "Caught exception in launch" "${launch_log}" 2>/dev/null; then
+    printf 'Launch failed before Nav2 became ready.\n' >&2
+    tail -n 80 "${launch_log}" >&2 || true
+    exit 1
+  fi
+
+  active_count="$(grep -c "Managed nodes are active" "${launch_log}" 2>/dev/null || true)"
+  if [[ "${active_count}" -ge 2 ]]; then
+    break
+  fi
+  sleep 1
+done
+
+if ((SECONDS >= ready_deadline)); then
+  printf 'Timed out waiting for Nav2 demo to become ready.\n' >&2
+  tail -n 80 "${launch_log}" >&2 || true
+  exit 1
+fi
+
+printf 'Sending goal to /navigate_to_pose: x=%s y=%s yaw=%s\n' "${goal_x}" "${goal_y}" "${goal_yaw}"
+if ! python3 "${goal_sender}" \
+  --goal-x "${goal_x}" \
+  --goal-y "${goal_y}" \
+  --goal-z "${goal_z}" \
+  --goal-yaw "${goal_yaw}" \
+  --result-timeout-sec "${goal_timeout_sec}" >"${goal_log}" 2>&1; then
+  printf 'navigate_to_pose timed out or failed.\n' >&2
+  tail -n 80 "${goal_log}" >&2 || true
+  tail -n 80 "${launch_log}" >&2 || true
+  exit 1
+fi
+
+if ! grep -q "Goal finished with status: SUCCEEDED" "${goal_log}"; then
+  printf 'navigate_to_pose did not report SUCCEEDED.\n' >&2
+  tail -n 80 "${goal_log}" >&2 || true
+  exit 1
+fi
+
+printf 'Nav2 demo smoke succeeded.\n'
+printf 'Launch log: %s\n' "${launch_log}"
+printf 'Goal log: %s\n' "${goal_log}"

@@ -64,6 +64,11 @@ public:
     entry.has_ndt = false;
     poses_.clear();
     poses_.push_back(entry);
+    gyro_bias_.setZero();
+    accel_bias_.setZero();
+    dr_p_ = entry.position;
+    dr_v_ = entry.velocity;
+    dr_R_ = entry.R;
     last_stamp_ = stamp_sec;
     initialized_ = true;
     // Reset IMU accumulation

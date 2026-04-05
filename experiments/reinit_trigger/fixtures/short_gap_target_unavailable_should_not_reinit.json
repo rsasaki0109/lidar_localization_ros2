@@ -1,0 +1,16 @@
+{
+  "name": "short_gap_target_unavailable_should_not_reinit",
+  "description": "Distilled short-gap crop failure. When the last accepted pose is still recent, the system should retry locally before requesting reinitialization.",
+  "source": "distilled_from_local_map_crop_retry_intent",
+  "expectation": {
+    "expected_trigger_reinitialization": false
+  },
+  "sample": {
+    "index": 0,
+    "failure_kind": "target_unavailable",
+    "fitness_score": 0.0,
+    "seed_translation_since_accept_m": 11.5,
+    "accepted_gap_sec": 0.8,
+    "consecutive_rejected_updates": 3
+  }
+}

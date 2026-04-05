@@ -1,0 +1,18 @@
+{
+  "name": "long_gap_collapse_should_not_retry",
+  "description": "Real 180 s collapse window. Once the open-loop gap and drift have exploded, retrying from the last accepted pose should be suppressed.",
+  "source": "artifacts/public/istanbul_180s_recovery_retry_from_last_pose_r3_gap1_seed15_compare_seeded/nav2_ndt_urban_recovery_retry_from_last_pose_r3_gap1_seed15_120s/alignment_status.csv:1004-1006",
+  "expectation": {
+    "expected_action": "advance_prediction_only"
+  },
+  "sample": {
+    "index": 1006,
+    "failure_kind": "target_unavailable",
+    "fitness_score": 23696.739347,
+    "correction_translation_m": 0.0,
+    "correction_yaw_deg": 0.0,
+    "seed_translation_since_accept_m": 690.196289,
+    "accepted_gap_sec": 105.400017,
+    "consecutive_rejected_updates": 834
+  }
+}

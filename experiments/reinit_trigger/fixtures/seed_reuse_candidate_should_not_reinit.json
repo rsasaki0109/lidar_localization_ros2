@@ -1,0 +1,16 @@
+{
+  "name": "seed_reuse_candidate_should_not_reinit",
+  "description": "Real 60 s borderline reject that later benchmarking marked as a bad seed-reuse direction, but still not a case for full reinitialization.",
+  "source": "artifacts/public/istanbul_60s_rejected_seed_update_r1_repeat_compare/nav2_ndt_urban_rejected_seed_update_r1_r1/alignment_status.csv:90",
+  "expectation": {
+    "expected_trigger_reinitialization": false
+  },
+  "sample": {
+    "index": 90,
+    "failure_kind": "rejected_measurement",
+    "fitness_score": 5.694015,
+    "seed_translation_since_accept_m": 5.522689,
+    "accepted_gap_sec": 0.500003,
+    "consecutive_rejected_updates": 1
+  }
+}

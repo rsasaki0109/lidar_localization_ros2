@@ -1,0 +1,15 @@
+{
+  "name": "clear_over_threshold",
+  "description": "Real Istanbul sample with fitness clearly over the effective threshold. Every sane gate should reject it.",
+  "source": "artifacts/public/istanbul_60s_rejected_seed_update_r1_repeat_compare/nav2_ndt_urban_rejected_seed_update_r1_r1/alignment_status.csv:89",
+  "expectation": {
+    "expected_reject": true
+  },
+  "sample": {
+    "index": 89,
+    "fitness_score": 7.286614,
+    "effective_score_threshold": 6.0,
+    "seed_translation_since_accept_m": 4.495765,
+    "consecutive_rejected_updates": 0
+  }
+}
