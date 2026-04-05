@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(lidar_localization_ros2)
+project(lidar_localization_ros2 VERSION 1.0.0)
 
 if(NOT CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 99)
@@ -15,6 +15,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
@@ -47,6 +48,7 @@ ament_target_dependencies(lidar_localization_component
   tf2_sensor_msgs
   tf2_eigen
   diagnostic_msgs
+  std_msgs
   geometry_msgs
   sensor_msgs
   nav_msgs
@@ -55,12 +57,12 @@ ament_target_dependencies(lidar_localization_component
 )
 
 if(small_gicp_FOUND)
-  target_compile_definitions(lidar_localization_component PRIVATE LIDAR_LOCALIZATION_HAVE_SMALL_GICP=1)
+  target_compile_definitions(lidar_localization_component PUBLIC LIDAR_LOCALIZATION_HAVE_SMALL_GICP=1)
   target_link_libraries(lidar_localization_component small_gicp::small_gicp)
 endif()
 
 if(nav2_util_FOUND AND bondcpp_FOUND)
-  target_compile_definitions(lidar_localization_component PRIVATE LIDAR_LOCALIZATION_HAVE_NAV2_BOND=1)
+  target_compile_definitions(lidar_localization_component PUBLIC LIDAR_LOCALIZATION_HAVE_NAV2_BOND=1)
   ament_target_dependencies(lidar_localization_component nav2_util bondcpp)
   message(STATUS "Nav2 bond support enabled")
 endif()
@@ -101,23 +103,50 @@ install(TARGETS
 install(PROGRAMS
   scripts/benchmark_analyze_drift_window
   scripts/benchmark_compare_runs
+  scripts/compare_nav2_reinit_supervisor_runs.py
+  scripts/convert_boreas_sequence_to_rosbag2.py
   scripts/benchmark_extract_pose_reference_from_rosbag2
+  scripts/benchmark_from_manifest
   scripts/benchmark_make_graph_dataset
   scripts/benchmark_pose_recorder
   scripts/benchmark_diagnostic_recorder
   scripts/benchmark_runner
   scripts/benchmark_sweep_localizer
   scripts/benchmark_eval_trajectory
+  scripts/augment_pointcloud_intensity.py
+  scripts/scaffold_mapless_public_dataset_bundle.py
   scripts/fetch_official_autoware_istanbul_dataset.sh
   scripts/fetch_official_hdl_localization_sample.sh
+  scripts/generate_occupancy_map_from_pcd.py
   scripts/make_localization_comparison_report.py
+  scripts/publish_cmd_vel_odom.py
+  scripts/publish_identity_odom.py
+  scripts/publish_odom_from_localization.py
+  scripts/publish_odom_from_twist.py
+  scripts/publish_pose_from_odom.py
+  scripts/republish_initialpose_on_reinit.py
+  scripts/relay_localization_inputs_with_current_stamp.py
   scripts/record_hdl_localization_outputs.py
+  scripts/run_borderline_gate_experiments.py
+  scripts/run_experiment_suite.py
+  scripts/run_imu_guard_experiments.py
+  scripts/run_nav2_reinit_supervisor_sweep.sh
+  scripts/run_nav2_reinit_supervisor_regression.sh
+  scripts/run_recovery_action_experiments.py
+  scripts/run_reinit_trigger_experiments.py
+  scripts/run_public_regression_suite.sh
+  scripts/run_release_regression_suite.sh
+  scripts/run_nav2_demo_smoke
+  scripts/run_nav2_replay_smoke
+  scripts/send_nav2_goal.py
+  scripts/run_autoware_istanbul_60s_predictor_compare.sh
   scripts/run_hdl_localization_docker_benchmark.sh
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY
   launch
   docs
+  experiments
   param
   DESTINATION share/${PROJECT_NAME}/
 )

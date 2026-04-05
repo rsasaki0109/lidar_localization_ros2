@@ -1,0 +1,314 @@
+#!/usr/bin/env python3
+"""Generate an HTML report correlating translation drift with alignment diagnostics.
+
+Produces a multi-panel interactive Plotly report showing:
+  - Panel 1: Translation error vs reference over time
+  - Panel 2: Fitness score over time
+  - Panel 3: Alignment time over time
+  - Panel 4: Update rate (inter-update interval)
+  - Panel 5: Pose increment between consecutive accepted updates
+
+Vertical markers highlight drift threshold crossings.
+"""
+
+import argparse
+import json
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from scipy.spatial.transform import Rotation
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--estimated-csv", required=True)
+    parser.add_argument("--reference-csv", required=True)
+    parser.add_argument("--diagnostic-csv", required=True)
+    parser.add_argument("--output-html", required=True)
+    parser.add_argument("--output-json", default="")
+    parser.add_argument(
+        "--thresholds",
+        nargs="+",
+        type=float,
+        default=[1.0, 2.0, 3.0, 5.0],
+    )
+    return parser.parse_args()
+
+
+def load_pose_csv(path: str) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    for col in [
+        "stamp_sec", "position_x", "position_y", "position_z",
+        "orientation_x", "orientation_y", "orientation_z", "orientation_w",
+    ]:
+        df[col] = df[col].astype(float)
+    df = df.sort_values("stamp_sec").drop_duplicates("stamp_sec")
+    quat = df[["orientation_x", "orientation_y", "orientation_z", "orientation_w"]].to_numpy()
+    euler = Rotation.from_quat(quat).as_euler("xyz", degrees=True)
+    df["yaw_deg"] = np.rad2deg(np.unwrap(np.deg2rad(euler[:, 2])))
+    return df
+
+
+def parse_diagnostics(path: str) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    values = []
+    for item in df["values_json"].fillna("{}"):
+        try:
+            values.append(json.loads(item))
+        except json.JSONDecodeError:
+            values.append({})
+    parsed = pd.DataFrame(values)
+    out = df.copy()
+    for col in ["alignment_time_sec", "fitness_score"]:
+        if col in parsed.columns:
+            out[col] = pd.to_numeric(parsed[col], errors="coerce")
+    if "has_converged" in parsed.columns:
+        out["has_converged"] = parsed["has_converged"].astype(str) == "true"
+    out["stamp_sec"] = out["stamp_sec"].astype(float)
+    return out
+
+
+def compute_translation_error(est: pd.DataFrame, ref: pd.DataFrame):
+    start = max(est["stamp_sec"].min(), ref["stamp_sec"].min())
+    end = min(est["stamp_sec"].max(), ref["stamp_sec"].max())
+    e = est[(est["stamp_sec"] >= start) & (est["stamp_sec"] <= end)].copy()
+    r = ref[(ref["stamp_sec"] >= start) & (ref["stamp_sec"] <= end)].copy()
+    if e.empty or r.empty:
+        return pd.DataFrame()
+
+    t = e["stamp_sec"].to_numpy()
+    t0 = t[0]
+    rt = r["stamp_sec"].to_numpy()
+    ref_x = np.interp(t, rt, r["position_x"].to_numpy())
+    ref_y = np.interp(t, rt, r["position_y"].to_numpy())
+    ref_z = np.interp(t, rt, r["position_z"].to_numpy())
+
+    pos_est = e[["position_x", "position_y", "position_z"]].to_numpy()
+    pos_ref = np.column_stack([ref_x, ref_y, ref_z])
+    delta = np.linalg.norm(pos_est - pos_ref, axis=1)
+
+    # Pose increments between consecutive updates
+    dx = np.diff(pos_est[:, 0])
+    dy = np.diff(pos_est[:, 1])
+    dz = np.diff(pos_est[:, 2])
+    increments = np.sqrt(dx**2 + dy**2 + dz**2)
+    increments = np.concatenate([[0.0], increments])
+
+    return pd.DataFrame({
+        "stamp_sec": t,
+        "time_rel": t - t0,
+        "translation_error_m": delta,
+        "pose_increment_m": increments,
+        "est_x": pos_est[:, 0],
+        "est_y": pos_est[:, 1],
+        "ref_x": ref_x,
+        "ref_y": ref_y,
+    })
+
+
+def first_crossings(series, time_rel, thresholds):
+    crossings = {}
+    for thr in thresholds:
+        idx = np.where(series > thr)[0]
+        crossings[thr] = float(time_rel.iloc[idx[0]]) if len(idx) > 0 else None
+    return crossings
+
+
+def build_html(err_df, diag_df, crossings, t0):
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    diag = diag_df.copy()
+    diag["time_rel"] = diag["stamp_sec"] - t0
+
+    fig = make_subplots(
+        rows=5, cols=1, shared_xaxes=True, vertical_spacing=0.04,
+        subplot_titles=[
+            "Translation Error vs Reference [m]",
+            "Fitness Score",
+            "Alignment Time [ms]",
+            "Update Interval [s]",
+            "Pose Increment [m]",
+        ],
+    )
+
+    # Panel 1: Translation error
+    fig.add_trace(
+        go.Scattergl(
+            x=err_df["time_rel"], y=err_df["translation_error_m"],
+            mode="lines+markers", marker=dict(size=3),
+            name="Translation Error",
+        ),
+        row=1, col=1,
+    )
+    # Rolling median
+    rolling = err_df["translation_error_m"].rolling(10, min_periods=1).median()
+    fig.add_trace(
+        go.Scattergl(
+            x=err_df["time_rel"], y=rolling,
+            mode="lines", line=dict(width=2, dash="dash"),
+            name="Rolling Median (10)",
+        ),
+        row=1, col=1,
+    )
+
+    # Panel 2: Fitness score
+    if "fitness_score" in diag.columns:
+        fig.add_trace(
+            go.Scattergl(
+                x=diag["time_rel"], y=diag["fitness_score"],
+                mode="lines+markers", marker=dict(size=2),
+                name="Fitness Score",
+            ),
+            row=2, col=1,
+        )
+
+    # Panel 3: Alignment time
+    if "alignment_time_sec" in diag.columns:
+        fig.add_trace(
+            go.Scattergl(
+                x=diag["time_rel"], y=diag["alignment_time_sec"] * 1000,
+                mode="lines+markers", marker=dict(size=2),
+                name="Alignment Time",
+            ),
+            row=3, col=1,
+        )
+
+    # Panel 4: Update interval
+    dt = np.diff(err_df["stamp_sec"].to_numpy())
+    fig.add_trace(
+        go.Scattergl(
+            x=err_df["time_rel"].iloc[1:], y=dt,
+            mode="lines+markers", marker=dict(size=2),
+            name="Update Interval",
+        ),
+        row=4, col=1,
+    )
+
+    # Panel 5: Pose increment
+    fig.add_trace(
+        go.Scattergl(
+            x=err_df["time_rel"], y=err_df["pose_increment_m"],
+            mode="lines+markers", marker=dict(size=2),
+            name="Pose Increment",
+        ),
+        row=5, col=1,
+    )
+
+    # Vertical lines for drift crossings
+    colors = ["orange", "red", "darkred", "purple"]
+    for i, (thr, t_cross) in enumerate(crossings.items()):
+        if t_cross is not None:
+            color = colors[i % len(colors)]
+            for row in range(1, 6):
+                fig.add_vline(
+                    x=t_cross, line_width=1, line_dash="dot",
+                    line_color=color, row=row, col=1,
+                    annotation_text=f"{thr}m" if row == 1 else None,
+                )
+
+    fig.update_layout(
+        height=1200, title="Drift–Diagnostics Correlation",
+        template="plotly_white", showlegend=True,
+    )
+    fig.update_xaxes(title_text="Time [s]", row=5, col=1)
+
+    return fig.to_html(include_plotlyjs="cdn", full_html=True)
+
+
+def build_summary(err_df, diag_df, crossings, t0):
+    """Build a structured summary of diagnostics around each crossing."""
+    diag = diag_df.copy()
+    diag["time_rel"] = diag["stamp_sec"] - t0
+
+    summary = {"crossings": {}, "diagnostics_at_crossings": {}}
+    for thr, t_cross in crossings.items():
+        key = f"{thr:g}m"
+        summary["crossings"][key] = t_cross
+        if t_cross is None:
+            continue
+        stamp = t_cross + t0
+        window = diag[(diag["stamp_sec"] >= stamp - 2) & (diag["stamp_sec"] <= stamp + 2)]
+        if window.empty:
+            summary["diagnostics_at_crossings"][key] = {"rows": 0}
+            continue
+        d = {
+            "rows": int(len(window)),
+            "fitness_median": round(float(window["fitness_score"].median()), 4) if "fitness_score" in window else None,
+            "fitness_max": round(float(window["fitness_score"].max()), 4) if "fitness_score" in window else None,
+            "fitness_min": round(float(window["fitness_score"].min()), 4) if "fitness_score" in window else None,
+            "alignment_time_median_ms": round(float(window["alignment_time_sec"].median()) * 1000, 3) if "alignment_time_sec" in window else None,
+            "alignment_time_max_ms": round(float(window["alignment_time_sec"].max()) * 1000, 3) if "alignment_time_sec" in window else None,
+        }
+        if "has_converged" in window.columns:
+            d["non_converged_count"] = int((~window["has_converged"]).sum())
+        summary["diagnostics_at_crossings"][key] = d
+
+    # Overall diagnostics stats
+    if "fitness_score" in diag_df.columns:
+        fs = diag_df["fitness_score"].dropna()
+        summary["fitness_overall"] = {
+            "mean": round(float(fs.mean()), 4),
+            "median": round(float(fs.median()), 4),
+            "std": round(float(fs.std()), 4),
+            "min": round(float(fs.min()), 4),
+            "max": round(float(fs.max()), 4),
+        }
+
+    # Update cadence
+    dt = np.diff(err_df["stamp_sec"].to_numpy())
+    summary["update_interval"] = {
+        "mean_sec": round(float(np.mean(dt)), 4),
+        "median_sec": round(float(np.median(dt)), 4),
+        "max_sec": round(float(np.max(dt)), 4),
+        "min_sec": round(float(np.min(dt)), 4),
+    }
+
+    # Pose increments
+    inc = err_df["pose_increment_m"].to_numpy()
+    summary["pose_increment"] = {
+        "mean_m": round(float(np.mean(inc)), 4),
+        "median_m": round(float(np.median(inc)), 4),
+        "max_m": round(float(np.max(inc)), 4),
+        "p95_m": round(float(np.percentile(inc, 95)), 4),
+    }
+
+    summary["translation_rmse_m"] = round(float(np.sqrt(np.mean(err_df["translation_error_m"].to_numpy() ** 2))), 4)
+
+    return summary
+
+
+def main() -> int:
+    args = parse_args()
+    est = load_pose_csv(args.estimated_csv)
+    ref = load_pose_csv(args.reference_csv)
+    diag = parse_diagnostics(args.diagnostic_csv)
+    err_df = compute_translation_error(est, ref)
+    if err_df.empty:
+        raise RuntimeError("No overlap")
+
+    t0 = err_df["stamp_sec"].iloc[0]
+    crossings = first_crossings(
+        err_df["translation_error_m"], err_df["time_rel"], args.thresholds,
+    )
+
+    html = build_html(err_df, diag, crossings, t0)
+    out = Path(args.output_html)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+    print(f"Report: {out}")
+
+    summary = build_summary(err_df, diag, crossings, t0)
+    if args.output_json:
+        jpath = Path(args.output_json)
+        jpath.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+        print(f"Summary: {jpath}")
+    else:
+        print(json.dumps(summary, indent=2))
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

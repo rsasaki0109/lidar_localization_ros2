@@ -1,3 +1,9 @@
 .vscode
 build
+/install
+/log
+__pycache__/
+*.pyc
 map/bin_tc-2017-10-15--ndmap.pcd
+param/benchmark/*.local.yaml
+param/benchmark/private/

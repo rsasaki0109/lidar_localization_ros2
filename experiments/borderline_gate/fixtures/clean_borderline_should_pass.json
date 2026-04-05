@@ -1,0 +1,15 @@
+{
+  "name": "clean_borderline_should_pass",
+  "description": "Distilled 30 s style case. Borderline fitness with a clean seed should still pass; a global 5.5 threshold is too strict here.",
+  "source": "distilled_from_public_30s_threshold_regression",
+  "expectation": {
+    "expected_reject": false
+  },
+  "sample": {
+    "index": 0,
+    "fitness_score": 5.55,
+    "effective_score_threshold": 6.0,
+    "seed_translation_since_accept_m": 0.25,
+    "consecutive_rejected_updates": 0
+  }
+}

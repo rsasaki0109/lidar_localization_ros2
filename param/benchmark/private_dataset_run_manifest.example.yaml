@@ -1,0 +1,33 @@
+mode: run
+
+dataset:
+  bag_path: /absolute/path/to/private_rosbag2
+  map_path: /absolute/path/to/private_map.pcd
+  reference_csv: /absolute/path/to/private_reference.csv
+  cloud_topic: /points_raw
+  twist_topic: /vehicle/status/twist
+  imu_topic: /sensing/imu/imu_data
+
+localizer:
+  base_param_yaml: repo://param/nav2_ndt_urban.yaml
+  param_overrides:
+    set_initial_pose: true
+    initial_pose_x: 0.0
+    initial_pose_y: 0.0
+    initial_pose_z: 0.0
+    initial_pose_qx: 0.0
+    initial_pose_qy: 0.0
+    initial_pose_qz: 0.0
+    initial_pose_qw: 1.0
+  launch_args: []
+
+benchmark:
+  output_dir: /tmp/lidarloc_private_run
+  ros_domain_id: 190
+  bag_duration: 60
+  bag_start_offset: 0
+  settle_seconds: 10
+  post_roll_seconds: 3
+  max_time_diff: 0.05
+  record_qos_reliability: reliable
+  record_qos_durability: volatile

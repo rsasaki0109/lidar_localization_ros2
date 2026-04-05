@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <chrono>
+#include <deque>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
@@ -34,6 +36,7 @@
 #include "sensor_msgs/msg/imu.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "nav_msgs/msg/path.hpp"
+#include "std_msgs/msg/bool.hpp"
 
 #include <pclomp/ndt_omp.h>
 #include <pclomp/ndt_omp_impl.hpp>
@@ -61,6 +64,7 @@ class PCLLocalization : public rclcpp_lifecycle::LifecycleNode
 {
 public:
   explicit PCLLocalization(const rclcpp::NodeOptions & options);
+  ~PCLLocalization() override;
 
   using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
@@ -74,6 +78,7 @@ public:
   void initializeParameters();
   void initializePubSub();
   void initializeRegistration();
+  void releaseRuntimeResources(bool leak_target_clouds_for_shutdown = false);
   void initialPoseReceived(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
   void odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr msg);
@@ -95,6 +100,8 @@ public:
     path_pub_;
   rclcpp_lifecycle::LifecyclePublisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr
     status_pub_;
+  rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr
+    reinitialization_request_pub_;
   rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::PointCloud2>::SharedPtr
     initial_map_pub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::ConstSharedPtr
@@ -123,8 +130,12 @@ public:
   bool map_recieved_{false};
   bool initialpose_recieved_{false};
   pcl::PointCloud<pcl::PointXYZI>::Ptr full_map_cloud_ptr_;
+  std::deque<pcl::PointCloud<pcl::PointXYZI>::Ptr> recent_source_clouds_;
+  std::deque<pcl::PointCloud<pcl::PointXYZI>::Ptr> recent_target_clouds_;
   bool use_local_map_crop_{false};
+  bool enable_local_map_crop_{false};
   double local_map_radius_{150.0};
+  std::size_t local_map_min_points_{100};
 
   // NDT initializer for GICP-based methods
   bool use_ndt_initializer_{false};
@@ -134,10 +145,12 @@ public:
 
   // IMU preintegration smoother
   bool use_imu_preintegration_{false};
+  double imu_prediction_correction_guard_translation_m_{2.0};
+  double imu_prediction_correction_guard_yaw_deg_{4.0};
   ImuGtsamSmoother imu_smoother_;
-  std::deque<ImuSample> imu_buffer_;
   double last_imu_stamp_{0.0};
   double last_scan_stamp_for_imu_{0.0};
+  bool imu_preintegration_fallback_mode_{false};
 
 #ifdef LIDAR_LOCALIZATION_HAVE_NAV2_BOND
   // Nav2 lifecycle manager bond
@@ -158,6 +171,7 @@ public:
   double ndt_step_size_;
   double transform_epsilon_;
   double voxel_leaf_size_;
+  bool enable_scan_voxel_filter_{true};
   int gicp_corr_randomness_;
   double gicp_max_correspondence_distance_;
   double vgicp_voxel_resolution_;
@@ -184,6 +198,36 @@ public:
   bool enable_map_odom_tf_{false};
   bool predict_pose_from_previous_delta_{true};
   bool reject_above_score_threshold_{true};
+  bool enable_consistency_recovery_gate_{false};
+  int consistency_recovery_min_rejections_{10};
+  double consistency_recovery_score_margin_{2.0};
+  double consistency_recovery_max_translation_m_{0.05};
+  double consistency_recovery_max_yaw_deg_{0.5};
+  bool enable_post_reject_strict_score_threshold_{false};
+  int post_reject_strict_min_rejections_{100};
+  double post_reject_strict_score_threshold_{5.5};
+  bool enable_open_loop_strict_score_threshold_{false};
+  double open_loop_strict_min_accepted_gap_sec_{15.0};
+  double open_loop_strict_min_seed_translation_m_{100.0};
+  double open_loop_strict_score_threshold_{5.25};
+  bool enable_borderline_seed_rejection_gate_{false};
+  double borderline_seed_gate_score_threshold_{5.25};
+  double borderline_seed_gate_min_seed_translation_m_{1.0};
+  bool enable_rejected_seed_update_{false};
+  int rejected_seed_update_min_rejections_{0};
+  double rejected_seed_update_max_fitness_{10.0};
+  double rejected_seed_update_max_correction_translation_m_{2.0};
+  double rejected_seed_update_max_correction_yaw_deg_{2.0};
+  bool enable_recovery_retry_from_last_pose_{false};
+  int recovery_retry_from_last_pose_min_rejections_{1};
+  double recovery_retry_from_last_pose_max_accepted_gap_sec_{1.0};
+  double recovery_retry_from_last_pose_max_seed_translation_m_{1000000000.0};
+  bool enable_reinitialization_request_output_{true};
+  double reinitialization_trigger_threshold_{0.95};
+  double reinitialization_trigger_gap_scale_sec_{30.0};
+  double reinitialization_trigger_seed_translation_scale_m_{100.0};
+  double reinitialization_trigger_reject_streak_scale_{200.0};
+  double reinitialization_trigger_fitness_explosion_threshold_{1000.0};
 
   int ndt_num_threads_;
   int ndt_max_iterations_;
@@ -205,8 +249,13 @@ public:
   Eigen::Matrix4f predicted_pose_matrix_{Eigen::Matrix4f::Identity()};
   Eigen::Matrix4f last_relative_motion_matrix_{Eigen::Matrix4f::Identity()};
   std::size_t consecutive_rejected_updates_{0};
+  double last_accepted_pose_time_sec_{0.0};
   double predicted_pose_time_sec_{0.0};
   geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr latest_twist_msg_;
+  bool shutting_down_{false};
+  bool reinitialization_requested_{false};
+  std::string reinitialization_request_reason_{"not_requested"};
+  double reinitialization_request_score_{0.0};
 
   rclcpp::TimerBase::SharedPtr pose_publish_timer_;
   void timerPublishPose();
@@ -215,7 +264,38 @@ public:
   void resetPredictionState(const Eigen::Matrix4f & pose_matrix, double stamp_sec);
   void updatePredictionState(const Eigen::Matrix4f & accepted_pose_matrix, double stamp_sec);
   void advancePredictionWithoutMeasurement(double stamp_sec);
+  void updatePredictionFromRejectedMeasurement(
+    const Eigen::Matrix4f & rejected_pose_matrix,
+    double stamp_sec);
+  void setCurrentPoseFromMatrix(
+    const Eigen::Matrix4f & pose_matrix,
+    const builtin_interfaces::msg::Time & stamp);
+  void publishCurrentPose(const builtin_interfaces::msg::Time & stamp);
   void fillPoseCovariance(double fitness_score);
+  double computeEffectiveScoreThreshold(
+    double accepted_gap_sec,
+    double seed_translation_since_accept_m,
+    bool * post_reject_strict_active = nullptr,
+    bool * open_loop_strict_active = nullptr) const;
+  bool computeBorderlineSeedGateActive(
+    double fitness_score,
+    double seed_translation_since_accept_m,
+    double effective_score_threshold) const;
+  struct ReinitializationRequestDecision
+  {
+    bool requested{false};
+    std::string reason{"not_requested"};
+    double score{0.0};
+  };
+  ReinitializationRequestDecision computeReinitializationRequest(
+    const builtin_interfaces::msg::Time & stamp,
+    const std::string & status_message,
+    double fitness_score,
+    double seed_translation_since_accept_m,
+    double accepted_gap_sec) const;
+  void publishReinitializationRequest(
+    const builtin_interfaces::msg::Time & stamp,
+    const ReinitializationRequestDecision & decision);
   void publishAlignmentStatus(
     const builtin_interfaces::msg::Time & stamp,
     uint8_t level,
@@ -223,5 +303,11 @@ public:
     bool has_converged,
     double fitness_score,
     double alignment_time_sec,
-    std::size_t filtered_point_count);
+    std::size_t filtered_point_count,
+    double correction_translation_m = std::numeric_limits<double>::quiet_NaN(),
+    double correction_yaw_deg = std::numeric_limits<double>::quiet_NaN(),
+    double seed_translation_since_accept_m = std::numeric_limits<double>::quiet_NaN(),
+    double seed_yaw_since_accept_deg = std::numeric_limits<double>::quiet_NaN(),
+    double accepted_gap_sec = std::numeric_limits<double>::quiet_NaN(),
+    bool imu_prediction_active = false);
 };

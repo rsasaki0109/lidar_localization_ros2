@@ -1,0 +1,15 @@
+{
+  "name": "post_reject_low_seed_should_pass",
+  "description": "Distilled short-gap replay case. Recent rejects alone are not enough to justify strict gating when the seed is still close to the last accepted pose.",
+  "source": "distilled_from_post_reject_strict_experiments",
+  "expectation": {
+    "expected_reject": false
+  },
+  "sample": {
+    "index": 0,
+    "fitness_score": 5.55,
+    "effective_score_threshold": 6.0,
+    "seed_translation_since_accept_m": 0.25,
+    "consecutive_rejected_updates": 2
+  }
+}

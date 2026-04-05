@@ -1,0 +1,128 @@
+{
+  "name": "hdl_unstable_candidate_r02",
+  "description": "Unstable HDL IMU-enabled trace excerpt. The guard should cut IMU before the first over-threshold reject at sample 5.",
+  "source": "/tmp/lidarloc_public_regression_suite_20260402_repeat2/hdl/imu_preintegration_with_disable_fallback/r02/alignment_status.csv",
+  "expectation": {
+    "must_not_trigger_before_index": 3,
+    "should_trigger_by_index": 4
+  },
+  "samples": [
+    {
+      "index": 0,
+      "status": "ok",
+      "fitness_score": 0.01273,
+      "alignment_time_sec": 0.874177,
+      "imu_prediction_active": false,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.0,
+      "seed_yaw_since_accept_deg": 0.0,
+      "accepted_gap_sec": 0.0,
+      "correction_translation_m": 1.791298,
+      "correction_yaw_deg": 0.073974
+    },
+    {
+      "index": 1,
+      "status": "ok",
+      "fitness_score": 0.015038,
+      "alignment_time_sec": 0.054573,
+      "imu_prediction_active": true,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.0,
+      "seed_yaw_since_accept_deg": 0.0,
+      "accepted_gap_sec": 0.200288,
+      "correction_translation_m": 0.014269,
+      "correction_yaw_deg": 0.183517
+    },
+    {
+      "index": 2,
+      "status": "ok",
+      "fitness_score": 0.020373,
+      "alignment_time_sec": 0.196703,
+      "imu_prediction_active": true,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.082152,
+      "seed_yaw_since_accept_deg": 0.743444,
+      "accepted_gap_sec": 0.9006,
+      "correction_translation_m": 0.199367,
+      "correction_yaw_deg": 1.454249
+    },
+    {
+      "index": 3,
+      "status": "ok",
+      "fitness_score": 0.04464,
+      "alignment_time_sec": 0.283565,
+      "imu_prediction_active": true,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 2.32951,
+      "seed_yaw_since_accept_deg": 3.703934,
+      "accepted_gap_sec": 0.300386,
+      "correction_translation_m": 2.332638,
+      "correction_yaw_deg": 3.955574
+    },
+    {
+      "index": 4,
+      "status": "ok",
+      "fitness_score": 1.439284,
+      "alignment_time_sec": 0.232674,
+      "imu_prediction_active": true,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 4.801634,
+      "seed_yaw_since_accept_deg": 4.825058,
+      "accepted_gap_sec": 0.400175,
+      "correction_translation_m": 3.431668,
+      "correction_yaw_deg": 1.005599
+    },
+    {
+      "index": 5,
+      "status": "fitness_score_over_threshold",
+      "fitness_score": 36.978023,
+      "alignment_time_sec": 0.090906,
+      "imu_prediction_active": true,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 7.540738,
+      "seed_yaw_since_accept_deg": 8.374013,
+      "accepted_gap_sec": 0.400401,
+      "correction_translation_m": 1.369418,
+      "correction_yaw_deg": 0.005735
+    },
+    {
+      "index": 6,
+      "status": "fitness_score_over_threshold",
+      "fitness_score": 7.226217,
+      "alignment_time_sec": 0.1645,
+      "imu_prediction_active": true,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.0,
+      "seed_yaw_since_accept_deg": 0.0,
+      "accepted_gap_sec": 0.50041,
+      "correction_translation_m": 3.650737,
+      "correction_yaw_deg": 1.049839
+    },
+    {
+      "index": 7,
+      "status": "ok",
+      "fitness_score": 0.360058,
+      "alignment_time_sec": 0.32282,
+      "imu_prediction_active": true,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.0,
+      "seed_yaw_since_accept_deg": 0.0,
+      "accepted_gap_sec": 1.201041,
+      "correction_translation_m": 3.0437,
+      "correction_yaw_deg": 3.230699
+    },
+    {
+      "index": 8,
+      "status": "imu_smoother_diverged_imu_disabled",
+      "fitness_score": 61.100698,
+      "alignment_time_sec": 0.068287,
+      "imu_prediction_active": true,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 12.428193,
+      "seed_yaw_since_accept_deg": 0.203085,
+      "accepted_gap_sec": 0.500497,
+      "correction_translation_m": 2.833427,
+      "correction_yaw_deg": 1.102667
+    }
+  ]
+}
