@@ -1,0 +1,48 @@
+# GLIL OS1-128 test data (Zenodo 7233945 / 7961649).
+# No GT available — use as smoke/acceptance test for LiDAR localization.
+#
+# Data setup:
+#   wget "https://zenodo.org/record/7961649/files/os1_128.pcd?download=1" -O os1_128.pcd
+#   wget "https://zenodo.org/record/7233945/files/os1_128_01_downsampled.tar.gz?download=1" -O os1_128_01_downsampled.tar.gz
+#   tar xzf os1_128_01_downsampled.tar.gz
+
+mode: run
+
+dataset:
+  bag_path: /absolute/path/to/data/public/glil_os1/os1_128_01_downsampled
+  map_path: /absolute/path/to/data/public/glil_os1/os1_128.pcd
+  cloud_topic: /os_cloud_node/points
+  imu_topic: /os_cloud_node/imu
+
+localizer:
+  base_param_yaml: repo://param/nav2_ndt_urban.yaml
+  param_overrides:
+    use_imu: false
+    use_imu_preintegration: false
+    enable_scan_voxel_filter: true
+    voxel_leaf_size: 1.0
+    base_frame_id: os_sensor
+    scan_min_range: 1.0
+    scan_max_range: 80.0
+    score_threshold: 20.0
+    borderline_seed_gate_score_threshold: 15.0
+    set_initial_pose: true
+    initial_pose_x: 0.011
+    initial_pose_y: -0.033
+    initial_pose_z: 0.078
+    initial_pose_qx: 0.109
+    initial_pose_qy: -0.042
+    initial_pose_qz: -0.006
+    initial_pose_qw: 0.993
+  launch_args:
+    - lidar_frame_id:=os_sensor
+
+benchmark:
+  output_dir: /tmp/lidarloc_glil_os1_128_01
+  ros_domain_id: 140
+  bag_duration: 60
+  bag_start_offset: 0
+  settle_seconds: 5
+  post_roll_seconds: 1
+  record_qos_reliability: reliable
+  record_qos_durability: volatile

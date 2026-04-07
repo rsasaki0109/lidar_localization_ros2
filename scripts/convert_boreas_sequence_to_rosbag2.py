@@ -196,12 +196,17 @@ def numeric_rows(path: Path) -> Iterable[List[float]]:
                 continue
 
 
+def _normalise_stamp_us(raw: float) -> int:
+    """Boreas CSVs mix seconds (imu.csv) and microseconds (lidar_poses.csv)."""
+    return int(round(raw)) if raw > 1e12 else int(round(raw * 1e6))
+
+
 def load_pose_records(path: Path, start_us: int, end_us: Optional[int]) -> List[PoseRecord]:
     records: List[PoseRecord] = []
     for row in numeric_rows(path):
         if len(row) < 13:
             continue
-        stamp_us = int(round(row[0]))
+        stamp_us = _normalise_stamp_us(row[0])
         if stamp_us < start_us:
             continue
         if end_us is not None and stamp_us > end_us:
@@ -233,7 +238,7 @@ def load_imu_records(path: Path, start_us: int, end_us: Optional[int]) -> List[I
     for row in numeric_rows(path):
         if len(row) < 7:
             continue
-        stamp_us = int(round(row[0]))
+        stamp_us = _normalise_stamp_us(row[0])
         if stamp_us < start_us:
             continue
         if end_us is not None and stamp_us > end_us:

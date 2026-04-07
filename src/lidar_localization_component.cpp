@@ -229,6 +229,8 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("scan_max_range", 100.0);
   declare_parameter("scan_min_range", 1.0);
   declare_parameter("scan_period", 0.1);
+  declare_parameter("cloud_queue_depth", 1);
+  declare_parameter("min_scan_interval_sec", 0.0);
   declare_parameter("use_pcd_map", false);
   declare_parameter("map_path", "/map/map.pcd");
   declare_parameter("set_initial_pose", false);
@@ -594,6 +596,8 @@ void PCLLocalization::initializeParameters()
   get_parameter("scan_max_range", scan_max_range_);
   get_parameter("scan_min_range", scan_min_range_);
   get_parameter("scan_period", scan_period_);
+  get_parameter("cloud_queue_depth", cloud_queue_depth_);
+  get_parameter("min_scan_interval_sec", min_scan_interval_sec_);
   get_parameter("use_pcd_map", use_pcd_map_);
   get_parameter("map_path", map_path_);
   get_parameter("set_initial_pose", set_initial_pose_);
@@ -766,6 +770,8 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(),"scan_max_range: %lf", scan_max_range_);
   RCLCPP_INFO(get_logger(),"scan_min_range: %lf", scan_min_range_);
   RCLCPP_INFO(get_logger(),"scan_period: %lf", scan_period_);
+  RCLCPP_INFO(get_logger(),"cloud_queue_depth: %d", cloud_queue_depth_);
+  RCLCPP_INFO(get_logger(),"min_scan_interval_sec: %lf", min_scan_interval_sec_);
   RCLCPP_INFO(get_logger(),"use_pcd_map: %d", use_pcd_map_);
   RCLCPP_INFO(get_logger(),"map_path: %s", map_path_.c_str());
   RCLCPP_INFO(get_logger(),"set_initial_pose: %d", set_initial_pose_);
@@ -926,7 +932,7 @@ void PCLLocalization::initializePubSub()
     std::bind(&PCLLocalization::twistReceived, this, std::placeholders::_1));
 
   cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-    "cloud", rclcpp::SensorDataQoS(),
+    "cloud", rclcpp::SensorDataQoS().keep_last(cloud_queue_depth_),
     std::bind(&PCLLocalization::cloudReceived, this, std::placeholders::_1));
 
   imu_sub_ = create_subscription<sensor_msgs::msg::Imu>(
@@ -1290,6 +1296,17 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   last_scan_ptr_ = msg;
 
   if (!map_recieved_ || !initialpose_recieved_) {return;}
+
+  // Skip scans that arrive too soon after the last processed scan.
+  if (min_scan_interval_sec_ > 0.0 && last_cloud_process_time_.nanoseconds() > 0) {
+    const auto now = this->now();
+    const double dt = (now - last_cloud_process_time_).seconds();
+    if (dt < min_scan_interval_sec_) {
+      return;
+    }
+  }
+  last_cloud_process_time_ = this->now();
+
   RCLCPP_INFO(get_logger(), "cloudReceived");
   const bool cloud_has_intensity = has_field(msg->fields, "intensity");
   if (!cloud_has_intensity) {
