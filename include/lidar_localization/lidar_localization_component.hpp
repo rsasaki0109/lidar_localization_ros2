@@ -166,6 +166,9 @@ public:
   double scan_max_range_;
   double scan_min_range_;
   double scan_period_;
+  int cloud_queue_depth_{1};
+  double min_scan_interval_sec_{0.0};
+  rclcpp::Time last_cloud_process_time_{0, 0, RCL_ROS_TIME};
   double score_threshold_;
   double ndt_resolution_;
   double ndt_step_size_;
