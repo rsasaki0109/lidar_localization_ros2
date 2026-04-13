@@ -1404,29 +1404,30 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       lidar_undistortion_.adjustDistortion(cloud_ptr, received_time);
     }
 
-    pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr;
-    pcl::PointCloud<pcl::PointXYZI>::Ptr range_filter_input_cloud_ptr = cloud_ptr;
-    if (enable_scan_voxel_filter_) {
-      filtered_cloud_ptr.reset(new pcl::PointCloud<pcl::PointXYZI>());
-      pcl::VoxelGrid<pcl::PointXYZI> scan_voxel_grid_filter;
-      scan_voxel_grid_filter.setLeafSize(voxel_leaf_size_, voxel_leaf_size_, voxel_leaf_size_);
-      scan_voxel_grid_filter.setInputCloud(cloud_ptr);
-      scan_voxel_grid_filter.filter(*filtered_cloud_ptr);
-      range_filter_input_cloud_ptr = filtered_cloud_ptr;
-    }
-
     pcl::PointCloud<pcl::PointXYZI> tmp;
-    filtered_point_count = range_filter_input_cloud_ptr->size();
-    tmp.reserve(filtered_point_count);
-    for (const auto & point : range_filter_input_cloud_ptr->points) {
+    tmp.reserve(cloud_ptr->size());
+    for (const auto & point : cloud_ptr->points) {
+      if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+        continue;
+      }
       const double range = std::hypot(point.x, point.y);
       if (scan_min_range_ < range && range < scan_max_range_) {
         tmp.push_back(point);
       }
     }
+    filtered_point_count = tmp.size();
     tmp_ptr.reset(new pcl::PointCloud<pcl::PointXYZI>(tmp));
-    range_filter_input_cloud_ptr.reset();
-    filtered_cloud_ptr.reset();
+
+    if (enable_scan_voxel_filter_ && !tmp_ptr->empty()) {
+      pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(
+        new pcl::PointCloud<pcl::PointXYZI>());
+      pcl::VoxelGrid<pcl::PointXYZI> scan_voxel_grid_filter;
+      scan_voxel_grid_filter.setLeafSize(voxel_leaf_size_, voxel_leaf_size_, voxel_leaf_size_);
+      scan_voxel_grid_filter.setInputCloud(tmp_ptr);
+      scan_voxel_grid_filter.filter(*filtered_cloud_ptr);
+      filtered_point_count = filtered_cloud_ptr->size();
+      tmp_ptr = filtered_cloud_ptr;
+    }
     cloud_ptr.reset();
   }
 
