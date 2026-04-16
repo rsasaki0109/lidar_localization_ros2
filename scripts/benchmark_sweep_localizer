@@ -1,0 +1,361 @@
+#!/usr/bin/env python3
+
+import argparse
+import csv
+import json
+import os
+import shlex
+import shutil
+import subprocess
+from pathlib import Path
+from statistics import median
+from typing import Any
+from typing import Dict
+from typing import List
+
+import yaml
+
+MAX_FASTDDS_ROS_DOMAIN_ID = 232
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run a repeatable localization parameter sweep.")
+    parser.add_argument("--bag-path", required=True)
+    parser.add_argument("--reference-csv", required=True)
+    parser.add_argument("--base-param-yaml", required=True)
+    parser.add_argument("--config-json", required=True)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--map-path", default="")
+    parser.add_argument("--cloud-topic", default="/velodyne_points")
+    parser.add_argument("--twist-topic", default="", help="Optional twist topic remap passed to the launch file")
+    parser.add_argument(
+        "--launch-arg",
+        action="append",
+        default=[],
+        help="Additional launch arguments in the form key:=value. Can be specified multiple times.",
+    )
+    parser.add_argument("--bag-duration", type=float, default=30.0)
+    parser.add_argument("--bag-start-offset", type=float, default=0.0)
+    parser.add_argument("--settle-seconds", type=float, default=5.0)
+    parser.add_argument("--post-roll-seconds", type=float, default=1.0)
+    parser.add_argument("--ros-domain-base", type=int, default=120)
+    parser.add_argument("--max-time-diff", type=float, default=0.05)
+    parser.add_argument("--record-qos-reliability", default="reliable")
+    parser.add_argument("--record-qos-durability", default="volatile")
+    parser.add_argument("--resume", action="store_true")
+    return parser.parse_args()
+
+
+def load_yaml(path: Path) -> Dict[str, Any]:
+    with path.open("r", encoding="utf-8") as stream:
+        return yaml.safe_load(stream)
+
+
+def write_yaml(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as stream:
+        yaml.safe_dump(data, stream, sort_keys=False)
+
+
+def load_json(path: Path) -> Dict[str, Any]:
+    with path.open("r", encoding="utf-8") as stream:
+        return json.load(stream)
+
+
+def count_csv_rows(path: Path) -> int:
+    if not path.exists():
+        return 0
+    with path.open("r", encoding="utf-8", newline="") as stream:
+        return max(0, sum(1 for _ in stream) - 1)
+
+
+def parse_diagnostics(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {
+            "diagnostic_rows": 0,
+            "diagnostic_ok": 0,
+            "diagnostic_warn": 0,
+            "diagnostic_error": 0,
+            "fitness_median": None,
+            "fitness_max": None,
+            "align_time_median_sec": None,
+            "align_time_max_sec": None,
+            "rejected_streak_max": None,
+            "accepted_gap_median_sec": None,
+            "accepted_gap_max_sec": None,
+            "seed_translation_since_accept_median_m": None,
+            "seed_translation_since_accept_max_m": None,
+            "imu_prediction_active_rows": 0,
+            "imu_prediction_inactive_rows": 0,
+            "reinitialization_requested_rows": 0,
+            "reinitialization_request_score_max": None,
+            "reinitialization_request_first_trigger_stamp_sec": None,
+            "reinitialization_request_first_trigger_reason": None,
+        }
+
+    rows = list(csv.DictReader(path.open("r", encoding="utf-8", newline="")))
+    level_counts = {"0": 0, "1": 0, "2": 0, "3": 0}
+    fitness_scores: List[float] = []
+    align_times: List[float] = []
+    rejected_streaks: List[float] = []
+    accepted_gaps: List[float] = []
+    seed_translations: List[float] = []
+    imu_prediction_active_rows = 0
+    imu_prediction_inactive_rows = 0
+    reinitialization_requested_rows = 0
+    reinitialization_request_scores: List[float] = []
+    reinitialization_request_first_trigger_stamp_sec = None
+    reinitialization_request_first_trigger_reason = None
+
+    for row in rows:
+        level = str(row.get("level", ""))
+        level_counts[level] = level_counts.get(level, 0) + 1
+        values_json = row.get("values_json", "")
+        if not values_json:
+            continue
+        try:
+            values = json.loads(values_json)
+        except json.JSONDecodeError:
+            continue
+        if "fitness_score" in values:
+            fitness_scores.append(float(values["fitness_score"]))
+        if "alignment_time_sec" in values:
+            align_times.append(float(values["alignment_time_sec"]))
+        if "consecutive_rejected_updates" in values:
+            rejected_streaks.append(float(values["consecutive_rejected_updates"]))
+        if "accepted_gap_sec" in values:
+            accepted_gaps.append(float(values["accepted_gap_sec"]))
+        if "seed_translation_since_accept_m" in values:
+            seed_translations.append(float(values["seed_translation_since_accept_m"]))
+        if "imu_prediction_active" in values:
+            if str(values["imu_prediction_active"]).lower() == "true":
+                imu_prediction_active_rows += 1
+            else:
+                imu_prediction_inactive_rows += 1
+        reinitialization_requested = str(values.get("reinitialization_requested", "")).lower() == "true"
+        reinitialization_request_score = values.get("reinitialization_request_score")
+        if reinitialization_request_score is not None:
+            try:
+                reinitialization_request_scores.append(float(reinitialization_request_score))
+            except (TypeError, ValueError):
+                pass
+        if reinitialization_requested:
+            reinitialization_requested_rows += 1
+            if reinitialization_request_first_trigger_stamp_sec is None:
+                try:
+                    reinitialization_request_first_trigger_stamp_sec = float(row.get("stamp_sec", ""))
+                except (TypeError, ValueError):
+                    reinitialization_request_first_trigger_stamp_sec = None
+                reinitialization_request_first_trigger_reason = values.get(
+                    "reinitialization_request_reason"
+                )
+
+    return {
+        "diagnostic_rows": len(rows),
+        "diagnostic_ok": level_counts.get("0", 0),
+        "diagnostic_warn": level_counts.get("1", 0),
+        "diagnostic_error": level_counts.get("2", 0) + level_counts.get("3", 0),
+        "fitness_median": median(fitness_scores) if fitness_scores else None,
+        "fitness_max": max(fitness_scores) if fitness_scores else None,
+        "align_time_median_sec": median(align_times) if align_times else None,
+        "align_time_max_sec": max(align_times) if align_times else None,
+        "rejected_streak_max": max(rejected_streaks) if rejected_streaks else None,
+        "accepted_gap_median_sec": median(accepted_gaps) if accepted_gaps else None,
+        "accepted_gap_max_sec": max(accepted_gaps) if accepted_gaps else None,
+        "seed_translation_since_accept_median_m": median(seed_translations) if seed_translations else None,
+        "seed_translation_since_accept_max_m": max(seed_translations) if seed_translations else None,
+        "imu_prediction_active_rows": imu_prediction_active_rows,
+        "imu_prediction_inactive_rows": imu_prediction_inactive_rows,
+        "reinitialization_requested_rows": reinitialization_requested_rows,
+        "reinitialization_request_score_max": (
+            max(reinitialization_request_scores) if reinitialization_request_scores else None
+        ),
+        "reinitialization_request_first_trigger_stamp_sec": (
+            reinitialization_request_first_trigger_stamp_sec
+        ),
+        "reinitialization_request_first_trigger_reason": (
+            reinitialization_request_first_trigger_reason
+        ),
+    }
+
+
+def quote(value: str) -> str:
+    return shlex.quote(value)
+
+
+def run_command(command: List[str], env: Dict[str, str]) -> None:
+    subprocess.run(command, check=True, env=env)
+
+
+def resolve_eval_path(run_dir: Path) -> Path:
+    trajectory_eval_json = run_dir / "trajectory_eval.json"
+    if trajectory_eval_json.exists():
+        return trajectory_eval_json
+    return run_dir / "eval.json"
+
+
+def main() -> int:
+    args = parse_args()
+    repo_root = Path(__file__).resolve().parents[1]
+    runner_script = repo_root / "scripts" / "benchmark_runner"
+    eval_script = repo_root / "scripts" / "benchmark_eval_trajectory"
+
+    output_dir = Path(args.output_dir).resolve()
+    config_dir = output_dir / "configs"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    base_config = load_yaml(Path(args.base_param_yaml).resolve())
+    sweep_config = load_json(Path(args.config_json).resolve())
+    common_params = dict(sweep_config.get("common_params", {}))
+    runs = list(sweep_config.get("runs", []))
+    if not runs:
+        raise RuntimeError("No runs defined in config json")
+    max_ros_domain_id = args.ros_domain_base + len(runs) - 1
+    if max_ros_domain_id > MAX_FASTDDS_ROS_DOMAIN_ID:
+        raise RuntimeError(
+            "Requested ROS domain range exceeds the Fast DDS limit: "
+            f"{args.ros_domain_base}..{max_ros_domain_id} > {MAX_FASTDDS_ROS_DOMAIN_ID}. "
+            "Choose a lower --ros-domain-base or reduce the run count."
+        )
+
+    summary_csv = output_dir / "summary.csv"
+    summary_json = output_dir / "summary.json"
+    env = os.environ.copy()
+
+    results: List[Dict[str, Any]] = []
+    for index, run in enumerate(runs):
+        run_name = str(run["name"])
+        run_params = dict(run.get("params", {}))
+        run_dir = output_dir / run_name
+        run_summary = run_dir / "summary.json"
+        eval_json = run_dir / "eval.json"
+        trajectory_eval_json = run_dir / "trajectory_eval.json"
+        yaml_path = config_dir / f"{run_name}.yaml"
+
+        merged = load_yaml(Path(args.base_param_yaml).resolve())
+        params = merged["/**"]["ros__parameters"]
+        params.update(common_params)
+        params.update(run_params)
+        if args.map_path:
+            params["map_path"] = str(Path(args.map_path).resolve())
+        write_yaml(yaml_path, merged)
+
+        eval_ready = trajectory_eval_json.exists() or eval_json.exists()
+        if not (args.resume and run_summary.exists() and eval_ready):
+            system_command = (
+                "ros2 launch lidar_localization_ros2 lidar_localization.launch.py "
+                f"localization_param_dir:={quote(str(yaml_path))} "
+                f"cloud_topic:={quote(args.cloud_topic)}"
+            )
+            if args.twist_topic:
+                system_command += f" twist_topic:={quote(args.twist_topic)}"
+            for launch_arg in args.launch_arg:
+                system_command += f" {launch_arg}"
+            runner_cmd = [
+                str(runner_script),
+                "--bag-path",
+                str(Path(args.bag_path).resolve()),
+                "--output-dir",
+                str(run_dir),
+                "--ros-domain-id",
+                str(args.ros_domain_base + index),
+                "--bag-duration",
+                str(args.bag_duration),
+                "--bag-start-offset",
+                str(args.bag_start_offset),
+                "--settle-seconds",
+                str(args.settle_seconds),
+                "--post-roll-seconds",
+                str(args.post_roll_seconds),
+                "--target-process-pattern",
+                "lidar_localization_node",
+                "--record-topic",
+                "/pcl_pose",
+                "--record-qos-reliability",
+                args.record_qos_reliability,
+                "--record-qos-durability",
+                args.record_qos_durability,
+                "--diagnostic-topic",
+                "/alignment_status",
+                "--system-command",
+                system_command,
+            ]
+            run_command(runner_cmd, env)
+
+            eval_cmd = [
+                str(eval_script),
+                "--estimated-csv",
+                str(run_dir / "pose_trace.csv"),
+                "--reference-csv",
+                str(Path(args.reference_csv).resolve()),
+                "--output-json",
+                str(trajectory_eval_json),
+                "--max-time-diff",
+                str(args.max_time_diff),
+            ]
+            run_command(eval_cmd, env)
+            shutil.copyfile(trajectory_eval_json, eval_json)
+
+        with run_summary.open("r", encoding="utf-8") as stream:
+            benchmark_summary = json.load(stream)
+        eval_path = resolve_eval_path(run_dir)
+        if eval_path == trajectory_eval_json and not eval_json.exists():
+            shutil.copyfile(trajectory_eval_json, eval_json)
+        if eval_path == eval_json and not trajectory_eval_json.exists():
+            shutil.copyfile(eval_json, trajectory_eval_json)
+        with eval_path.open("r", encoding="utf-8") as stream:
+            eval_summary = json.load(stream)
+
+        diagnostic_summary = parse_diagnostics(run_dir / "alignment_status.csv")
+        pose_rows = count_csv_rows(run_dir / "pose_trace.csv")
+        matched_sample_count = eval_summary.get("matched_sample_count")
+        if pose_rows <= 1:
+            raise RuntimeError(
+                f"{run_name} recorded only {pose_rows} pose rows. "
+                "Check pose recorder QoS compatibility or topic configuration."
+            )
+
+        row = {
+            "name": run_name,
+            "run_dir": str(run_dir),
+            "config_yaml": str(yaml_path),
+            "registration_method": params.get("registration_method"),
+            "score_threshold": params.get("score_threshold"),
+            "ndt_resolution": params.get("ndt_resolution"),
+            "voxel_leaf_size": params.get("voxel_leaf_size"),
+            "scan_max_range": params.get("scan_max_range"),
+            "pose_rows": pose_rows,
+            "matched_sample_count": matched_sample_count,
+            "translation_rmse_m": eval_summary.get("translation_rmse_m"),
+            "rotation_rmse_deg": eval_summary.get("rotation_rmse_deg"),
+            "bag_play_seconds": benchmark_summary.get("timing_sec", {}).get("bag_play_seconds"),
+            "cpu_percent_median": benchmark_summary.get("resource_monitor", {}).get("stats", {}).get("cpu_percent_median"),
+            "rss_mb_max": benchmark_summary.get("resource_monitor", {}).get("stats", {}).get("rss_mb_max"),
+            **diagnostic_summary,
+            "params_json": json.dumps(run_params, sort_keys=True),
+        }
+        results.append(row)
+
+        fieldnames = list(results[0].keys())
+        with summary_csv.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(results)
+
+        with summary_json.open("w", encoding="utf-8") as stream:
+            json.dump(results, stream, indent=2, sort_keys=False)
+            stream.write("\n")
+
+        print(
+            f"{run_name}: translation_rmse_m={row['translation_rmse_m']} "
+            f"rotation_rmse_deg={row['rotation_rmse_deg']} "
+            f"matched={row['matched_sample_count']} pose_rows={row['pose_rows']}"
+        )
+
+    print(f"summary_csv: {summary_csv}")
+    print(f"summary_json: {summary_json}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

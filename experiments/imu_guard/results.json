@@ -1,0 +1,642 @@
+{
+  "problem": "imu_guard",
+  "title": "IMU Correction Guard",
+  "problem_statement": "Disable the IMU-preintegration path early enough to avoid poisoning localization, without false positives on no-IMU traces.",
+  "generated_from": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/scripts/run_imu_guard_experiments.py",
+  "interface": {
+    "methods": [
+      "reset() -> None",
+      "step(sample: GuardSample) -> GuardDecision"
+    ],
+    "sample_type": "GuardSample",
+    "sample_fields": [
+      "index",
+      "status",
+      "fitness_score",
+      "alignment_time_sec",
+      "imu_prediction_active",
+      "consecutive_rejected_updates",
+      "seed_translation_since_accept_m",
+      "seed_yaw_since_accept_deg",
+      "accepted_gap_sec",
+      "correction_translation_m",
+      "correction_yaw_deg"
+    ],
+    "decision_type": "GuardDecision",
+    "decision_fields": [
+      "disable_imu_preintegration",
+      "reason",
+      "score"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "hdl_healthy_candidate_r01",
+      "description": "Healthy HDL IMU-enabled trace excerpt. The guard may cut IMU around the observed divergence event, but it must not fire before sample 3."
+    },
+    {
+      "name": "hdl_unstable_candidate_r02",
+      "description": "Unstable HDL IMU-enabled trace excerpt. The guard should cut IMU before the first over-threshold reject at sample 5."
+    },
+    {
+      "name": "istanbul_no_imu",
+      "description": "Autoware Istanbul excerpt with no IMU activity. Any IMU guard trigger here is a false positive."
+    }
+  ],
+  "fixture_names": [
+    "hdl_healthy_candidate_r01",
+    "hdl_unstable_candidate_r02",
+    "istanbul_no_imu"
+  ],
+  "variants": [
+    {
+      "name": "absolute_threshold",
+      "design": "functional threshold rule",
+      "fixture_results": [
+        {
+          "fixture": "hdl_healthy_candidate_r01",
+          "passed": true,
+          "outcome": "within_expected_window",
+          "trigger_index": 3,
+          "trigger_reason": "correction_yaw_guard",
+          "decision_log": [
+            {
+              "sample_index": 0,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 1,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "within_absolute_thresholds",
+              "score": null
+            },
+            {
+              "sample_index": 2,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "within_absolute_thresholds",
+              "score": null
+            },
+            {
+              "sample_index": 3,
+              "status": "imu_smoother_diverged_imu_disabled",
+              "disable_imu_preintegration": true,
+              "reason": "correction_yaw_guard",
+              "score": null
+            },
+            {
+              "sample_index": 4,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 5,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            }
+          ]
+        },
+        {
+          "fixture": "hdl_unstable_candidate_r02",
+          "passed": true,
+          "outcome": "within_expected_window",
+          "trigger_index": 3,
+          "trigger_reason": "correction_translation_guard",
+          "decision_log": [
+            {
+              "sample_index": 0,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 1,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "within_absolute_thresholds",
+              "score": null
+            },
+            {
+              "sample_index": 2,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "within_absolute_thresholds",
+              "score": null
+            },
+            {
+              "sample_index": 3,
+              "status": "ok",
+              "disable_imu_preintegration": true,
+              "reason": "correction_translation_guard",
+              "score": null
+            },
+            {
+              "sample_index": 4,
+              "status": "ok",
+              "disable_imu_preintegration": true,
+              "reason": "correction_translation_guard",
+              "score": null
+            },
+            {
+              "sample_index": 5,
+              "status": "fitness_score_over_threshold",
+              "disable_imu_preintegration": false,
+              "reason": "within_absolute_thresholds",
+              "score": null
+            },
+            {
+              "sample_index": 6,
+              "status": "fitness_score_over_threshold",
+              "disable_imu_preintegration": true,
+              "reason": "correction_translation_guard",
+              "score": null
+            },
+            {
+              "sample_index": 7,
+              "status": "ok",
+              "disable_imu_preintegration": true,
+              "reason": "correction_translation_guard",
+              "score": null
+            },
+            {
+              "sample_index": 8,
+              "status": "imu_smoother_diverged_imu_disabled",
+              "disable_imu_preintegration": true,
+              "reason": "correction_translation_guard",
+              "score": null
+            }
+          ]
+        },
+        {
+          "fixture": "istanbul_no_imu",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "decision_log": [
+            {
+              "sample_index": 0,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 1,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 2,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 3,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 4,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 5,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            }
+          ]
+        }
+      ],
+      "benchmark_score": 100.0,
+      "readability_score": 58.0,
+      "extensibility_score": 94.0,
+      "static_metrics": {
+        "implementation_file": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/experiments/imu_guard/variants/absolute_threshold.py",
+        "loc": 15,
+        "branch_count": 4,
+        "max_nesting_depth": 1,
+        "state_field_count": 1,
+        "public_method_count": 2,
+        "import_count": 4,
+        "has_config_dataclass": true,
+        "readability_score": 58.0,
+        "extensibility_score": 94.0
+      },
+      "overall_score": 90.4
+    },
+    {
+      "name": "score_budget",
+      "design": "pipeline scorecard",
+      "fixture_results": [
+        {
+          "fixture": "hdl_healthy_candidate_r01",
+          "passed": false,
+          "outcome": "missing_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "decision_log": [
+            {
+              "sample_index": 0,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": 0.0
+            },
+            {
+              "sample_index": 1,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "score_budget_safe",
+              "score": 0.00996075
+            },
+            {
+              "sample_index": 2,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "score_budget_safe",
+              "score": 0.15208245
+            },
+            {
+              "sample_index": 3,
+              "status": "imu_smoother_diverged_imu_disabled",
+              "disable_imu_preintegration": false,
+              "reason": "score_budget_safe",
+              "score": 0.8693473749999999
+            },
+            {
+              "sample_index": 4,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": 0.0
+            },
+            {
+              "sample_index": 5,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": 0.0
+            }
+          ]
+        },
+        {
+          "fixture": "hdl_unstable_candidate_r02",
+          "passed": true,
+          "outcome": "within_expected_window",
+          "trigger_index": 3,
+          "trigger_reason": "score_budget_exceeded",
+          "decision_log": [
+            {
+              "sample_index": 0,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": 0.0
+            },
+            {
+              "sample_index": 1,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "score_budget_safe",
+              "score": 0.018082925
+            },
+            {
+              "sample_index": 2,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "score_budget_safe",
+              "score": 0.16609047500000002
+            },
+            {
+              "sample_index": 3,
+              "status": "ok",
+              "disable_imu_preintegration": true,
+              "reason": "score_budget_exceeded",
+              "score": 1.0567728
+            },
+            {
+              "sample_index": 4,
+              "status": "ok",
+              "disable_imu_preintegration": true,
+              "reason": "score_budget_exceeded",
+              "score": 1.365423675
+            },
+            {
+              "sample_index": 5,
+              "status": "fitness_score_over_threshold",
+              "disable_imu_preintegration": true,
+              "reason": "score_budget_exceeded",
+              "score": 2.757241125
+            },
+            {
+              "sample_index": 6,
+              "status": "fitness_score_over_threshold",
+              "disable_imu_preintegration": true,
+              "reason": "score_budget_exceeded",
+              "score": 1.352733025
+            },
+            {
+              "sample_index": 7,
+              "status": "ok",
+              "disable_imu_preintegration": true,
+              "reason": "score_budget_exceeded",
+              "score": 1.0212303249999999
+            },
+            {
+              "sample_index": 8,
+              "status": "imu_smoother_diverged_imu_disabled",
+              "disable_imu_preintegration": true,
+              "reason": "score_budget_exceeded",
+              "score": 4.778206150000001
+            }
+          ]
+        },
+        {
+          "fixture": "istanbul_no_imu",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "decision_log": [
+            {
+              "sample_index": 0,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": 0.0
+            },
+            {
+              "sample_index": 1,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": 0.0
+            },
+            {
+              "sample_index": 2,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": 0.0
+            },
+            {
+              "sample_index": 3,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": 0.0
+            },
+            {
+              "sample_index": 4,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": 0.0
+            },
+            {
+              "sample_index": 5,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": 0.0
+            }
+          ]
+        }
+      ],
+      "benchmark_score": 66.66666666666666,
+      "readability_score": 59.400000000000006,
+      "extensibility_score": 94.0,
+      "static_metrics": {
+        "implementation_file": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/experiments/imu_guard/variants/score_budget.py",
+        "loc": 18,
+        "branch_count": 3,
+        "max_nesting_depth": 1,
+        "state_field_count": 1,
+        "public_method_count": 2,
+        "import_count": 4,
+        "has_config_dataclass": true,
+        "readability_score": 59.400000000000006,
+        "extensibility_score": 94.0
+      },
+      "overall_score": 70.68
+    },
+    {
+      "name": "streak_guard",
+      "design": "stateful OOP streak detector",
+      "fixture_results": [
+        {
+          "fixture": "hdl_healthy_candidate_r01",
+          "passed": false,
+          "outcome": "missing_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "decision_log": [
+            {
+              "sample_index": 0,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 1,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "waiting_for_streak",
+              "score": 0.0
+            },
+            {
+              "sample_index": 2,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "waiting_for_streak",
+              "score": 0.0
+            },
+            {
+              "sample_index": 3,
+              "status": "imu_smoother_diverged_imu_disabled",
+              "disable_imu_preintegration": false,
+              "reason": "waiting_for_streak",
+              "score": 1.0
+            },
+            {
+              "sample_index": 4,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 5,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            }
+          ]
+        },
+        {
+          "fixture": "hdl_unstable_candidate_r02",
+          "passed": true,
+          "outcome": "within_expected_window",
+          "trigger_index": 4,
+          "trigger_reason": "hazard_streak_reached",
+          "decision_log": [
+            {
+              "sample_index": 0,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 1,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "waiting_for_streak",
+              "score": 0.0
+            },
+            {
+              "sample_index": 2,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "waiting_for_streak",
+              "score": 0.0
+            },
+            {
+              "sample_index": 3,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "waiting_for_streak",
+              "score": 1.0
+            },
+            {
+              "sample_index": 4,
+              "status": "ok",
+              "disable_imu_preintegration": true,
+              "reason": "hazard_streak_reached",
+              "score": 2.0
+            },
+            {
+              "sample_index": 5,
+              "status": "fitness_score_over_threshold",
+              "disable_imu_preintegration": false,
+              "reason": "waiting_for_streak",
+              "score": 0.0
+            },
+            {
+              "sample_index": 6,
+              "status": "fitness_score_over_threshold",
+              "disable_imu_preintegration": false,
+              "reason": "waiting_for_streak",
+              "score": 1.0
+            },
+            {
+              "sample_index": 7,
+              "status": "ok",
+              "disable_imu_preintegration": true,
+              "reason": "hazard_streak_reached",
+              "score": 2.0
+            },
+            {
+              "sample_index": 8,
+              "status": "imu_smoother_diverged_imu_disabled",
+              "disable_imu_preintegration": true,
+              "reason": "hazard_streak_reached",
+              "score": 3.0
+            }
+          ]
+        },
+        {
+          "fixture": "istanbul_no_imu",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "decision_log": [
+            {
+              "sample_index": 0,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 1,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 2,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 3,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 4,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            },
+            {
+              "sample_index": 5,
+              "status": "ok",
+              "disable_imu_preintegration": false,
+              "reason": "imu_inactive",
+              "score": null
+            }
+          ]
+        }
+      ],
+      "benchmark_score": 66.66666666666666,
+      "readability_score": 52.0,
+      "extensibility_score": 84.0,
+      "static_metrics": {
+        "implementation_file": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/experiments/imu_guard/variants/streak_guard.py",
+        "loc": 20,
+        "branch_count": 4,
+        "max_nesting_depth": 1,
+        "state_field_count": 5,
+        "public_method_count": 2,
+        "import_count": 4,
+        "has_config_dataclass": true,
+        "readability_score": 52.0,
+        "extensibility_score": 84.0
+      },
+      "overall_score": 67.2
+    }
+  ],
+  "benchmark_score_mean": 77.77777777777777
+}

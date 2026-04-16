@@ -1,0 +1,15 @@
+{
+  "name": "drifted_borderline_bad",
+  "description": "Real Istanbul borderline sample. Fitness is below 6.0 but the seed has already drifted far from the last accepted pose, so the measurement should be rejected.",
+  "source": "artifacts/public/istanbul_60s_rejected_seed_update_r1_repeat_compare/nav2_ndt_urban_rejected_seed_update_r1_r1/alignment_status.csv:90",
+  "expectation": {
+    "expected_reject": true
+  },
+  "sample": {
+    "index": 90,
+    "fitness_score": 5.694015,
+    "effective_score_threshold": 6.0,
+    "seed_translation_since_accept_m": 5.522689,
+    "consecutive_rejected_updates": 1
+  }
+}

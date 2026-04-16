@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+from pathlib import Path
+from typing import Dict
+from typing import List
+from typing import Optional
+
+import numpy as np
+import pandas as pd
+from scipy.spatial.transform import Rotation
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Analyze the first drift window between an estimated pose trace and a reference trajectory."
+    )
+    parser.add_argument("--estimated-csv", required=True)
+    parser.add_argument("--reference-csv", required=True)
+    parser.add_argument("--diagnostic-csv", default="")
+    parser.add_argument("--output-json", required=True)
+    parser.add_argument(
+        "--thresholds",
+        nargs="+",
+        type=float,
+        default=[1.0, 2.0, 3.0, 5.0],
+        help="Translation delta thresholds in meters.",
+    )
+    parser.add_argument(
+        "--window-half-width-sec",
+        type=float,
+        default=2.0,
+        help="Half-width of the diagnostic summary window around the first crossing.",
+    )
+    parser.add_argument(
+        "--moving-median-samples",
+        type=int,
+        default=10,
+        help="Rolling median window size used to detect sustained crossings.",
+    )
+    return parser.parse_args()
+
+
+def load_pose_csv(path: Path) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    for col in [
+        "stamp_sec",
+        "position_x",
+        "position_y",
+        "position_z",
+        "orientation_x",
+        "orientation_y",
+        "orientation_z",
+        "orientation_w",
+    ]:
+        df[col] = df[col].astype(float)
+    df = df.sort_values("stamp_sec").drop_duplicates("stamp_sec")
+    quat = df[["orientation_x", "orientation_y", "orientation_z", "orientation_w"]].to_numpy()
+    euler = Rotation.from_quat(quat).as_euler("xyz", degrees=True)
+    df["roll_deg"] = euler[:, 0]
+    df["pitch_deg"] = euler[:, 1]
+    df["yaw_deg"] = np.rad2deg(np.unwrap(np.deg2rad(euler[:, 2])))
+    return df
+
+
+def build_overlap_series(estimated: pd.DataFrame, reference: pd.DataFrame) -> pd.DataFrame:
+    start = max(estimated["stamp_sec"].min(), reference["stamp_sec"].min())
+    end = min(estimated["stamp_sec"].max(), reference["stamp_sec"].max())
+    est = estimated[(estimated["stamp_sec"] >= start) & (estimated["stamp_sec"] <= end)].copy()
+    ref = reference[(reference["stamp_sec"] >= start) & (reference["stamp_sec"] <= end)].copy()
+    if est.empty or ref.empty:
+        return pd.DataFrame()
+
+    target_t = est["stamp_sec"].to_numpy()
+    ref_t = ref["stamp_sec"].to_numpy()
+    interp = {
+        col: np.interp(target_t, ref_t, ref[col].to_numpy())
+        for col in ["position_x", "position_y", "position_z", "roll_deg", "pitch_deg", "yaw_deg"]
+    }
+    pos_est = est[["position_x", "position_y", "position_z"]].to_numpy()
+    pos_ref = np.column_stack([interp["position_x"], interp["position_y"], interp["position_z"]])
+    rpy_est = est[["roll_deg", "pitch_deg", "yaw_deg"]].to_numpy()
+    rpy_ref = np.column_stack([interp["roll_deg"], interp["pitch_deg"], interp["yaw_deg"]])
+
+    overlap = pd.DataFrame(
+        {
+            "stamp_sec": target_t,
+            "time_rel": target_t - target_t[0],
+            "translation_delta_m": np.linalg.norm(pos_est - pos_ref, axis=1),
+            "rotation_delta_deg": np.sqrt(np.sum((rpy_est - rpy_ref) ** 2, axis=1) / 3.0),
+        }
+    )
+    return overlap
+
+
+def parse_diagnostics(path: Path) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    values: List[Dict[str, str]] = []
+    for item in df["values_json"].fillna("{}"):
+        try:
+            values.append(json.loads(item))
+        except json.JSONDecodeError:
+            values.append({})
+    parsed = pd.DataFrame(values)
+    out = df.copy()
+    for col in ["alignment_time_sec", "fitness_score"]:
+        if col in parsed.columns:
+            out[col] = pd.to_numeric(parsed[col], errors="coerce")
+    if "filtered_point_count" in parsed.columns:
+        out["filtered_point_count"] = pd.to_numeric(parsed["filtered_point_count"], errors="coerce")
+    if "has_converged" in parsed.columns:
+        out["has_converged"] = parsed["has_converged"].astype(str)
+    out["stamp_sec"] = out["stamp_sec"].astype(float)
+    return out
+
+
+def first_crossing(series: pd.Series, time_rel: pd.Series, threshold: float) -> Optional[float]:
+    crossed = np.where(series.to_numpy() > threshold)[0]
+    if len(crossed) == 0:
+        return None
+    return float(time_rel.iloc[crossed[0]])
+
+
+def summarize_diag_window(diag: pd.DataFrame, center_stamp_sec: float, half_width_sec: float) -> Dict[str, Optional[float]]:
+    window = diag[
+        (diag["stamp_sec"] >= center_stamp_sec - half_width_sec)
+        & (diag["stamp_sec"] <= center_stamp_sec + half_width_sec)
+    ].copy()
+    if window.empty:
+        return {"rows": 0}
+
+    return {
+        "rows": int(len(window)),
+        "warn_count": int((window["level"].astype(int) == 1).sum()) if "level" in window else None,
+        "error_count": int((window["level"].astype(int) >= 2).sum()) if "level" in window else None,
+        "fitness_median": float(window["fitness_score"].median()) if "fitness_score" in window else None,
+        "fitness_max": float(window["fitness_score"].max()) if "fitness_score" in window else None,
+        "alignment_time_median_sec": float(window["alignment_time_sec"].median()) if "alignment_time_sec" in window else None,
+        "alignment_time_max_sec": float(window["alignment_time_sec"].max()) if "alignment_time_sec" in window else None,
+        "filtered_point_count_median": float(window["filtered_point_count"].median())
+        if "filtered_point_count" in window
+        else None,
+        "non_converged_count": int((window["has_converged"] == "false").sum()) if "has_converged" in window else None,
+    }
+
+
+def main() -> int:
+    args = parse_args()
+    estimated = load_pose_csv(Path(args.estimated_csv))
+    reference = load_pose_csv(Path(args.reference_csv))
+    overlap = build_overlap_series(estimated, reference)
+    if overlap.empty:
+        raise RuntimeError("No overlap between estimated and reference trajectories")
+
+    moving_median = (
+        overlap["translation_delta_m"]
+        .rolling(args.moving_median_samples, min_periods=1)
+        .median()
+    )
+
+    result: Dict[str, object] = {
+        "translation_rmse_m": float(np.sqrt(np.mean(overlap["translation_delta_m"].to_numpy() ** 2))),
+        "rotation_rmse_deg": float(np.sqrt(np.mean(overlap["rotation_delta_deg"].to_numpy() ** 2))),
+        "overlap_duration_sec": float(overlap["time_rel"].iloc[-1]) if len(overlap) >= 2 else 0.0,
+        "crossings": {},
+        "sustained_crossings": {},
+    }
+
+    diag = parse_diagnostics(Path(args.diagnostic_csv)) if args.diagnostic_csv else None
+    first_threshold = None
+    first_stamp = None
+
+    for threshold in args.thresholds:
+        cross = first_crossing(overlap["translation_delta_m"], overlap["time_rel"], threshold)
+        sustained = first_crossing(moving_median, overlap["time_rel"], threshold)
+        key = f"{threshold:g}m"
+        result["crossings"][key] = cross
+        result["sustained_crossings"][key] = sustained
+        if first_threshold is None and cross is not None:
+            idx = np.where(overlap["translation_delta_m"].to_numpy() > threshold)[0][0]
+            first_threshold = threshold
+            first_stamp = float(overlap["stamp_sec"].iloc[idx])
+
+    if first_threshold is not None and first_stamp is not None:
+        result["first_drift_event"] = {
+            "threshold_m": float(first_threshold),
+            "time_rel_sec": float(result["crossings"][f"{first_threshold:g}m"]),
+            "stamp_sec": first_stamp,
+        }
+        if diag is not None:
+            result["first_drift_diagnostic_window"] = summarize_diag_window(
+                diag,
+                center_stamp_sec=first_stamp,
+                half_width_sec=args.window_half_width_sec,
+            )
+
+    output_path = Path(args.output_json)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(result, indent=2, sort_keys=False) + "\n", encoding="utf-8")
+    print(json.dumps(result, indent=2, sort_keys=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,420 @@
+#!/usr/bin/env python3
+
+import argparse
+import csv
+import math
+import shutil
+from pathlib import Path
+from typing import Dict
+from typing import Iterable
+from typing import List
+from typing import Tuple
+
+import numpy as np
+from rosbags.rosbag2 import Writer
+from rosbags.typesys import Stores
+from rosbags.typesys import get_typestore
+
+
+TYPESTORE = get_typestore(Stores.ROS2_HUMBLE)
+
+Time = TYPESTORE.types["builtin_interfaces/msg/Time"]
+Header = TYPESTORE.types["std_msgs/msg/Header"]
+PointField = TYPESTORE.types["sensor_msgs/msg/PointField"]
+PointCloud2 = TYPESTORE.types["sensor_msgs/msg/PointCloud2"]
+Point = TYPESTORE.types["geometry_msgs/msg/Point"]
+Quaternion = TYPESTORE.types["geometry_msgs/msg/Quaternion"]
+Pose = TYPESTORE.types["geometry_msgs/msg/Pose"]
+PoseWithCovariance = TYPESTORE.types["geometry_msgs/msg/PoseWithCovariance"]
+PoseWithCovarianceStamped = TYPESTORE.types["geometry_msgs/msg/PoseWithCovarianceStamped"]
+
+
+SCAN_DTYPE = np.dtype(
+    [
+        ("x", "<f4"),
+        ("y", "<f4"),
+        ("z", "<f4"),
+        ("intensity", "<f4"),
+    ]
+)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Create a small synthetic rosbag2 benchmark dataset from graph scan PCDs."
+    )
+    parser.add_argument("--graph-dir", required=True, help="Graph directory containing 00000000/cloud.pcd style subdirectories")
+    parser.add_argument("--bag-dir", required=True, help="Output rosbag2 directory")
+    parser.add_argument("--map-pcd", required=True, help="Output synthetic map PCD path")
+    parser.add_argument("--param-yaml", required=True, help="Output parameter YAML path")
+    parser.add_argument("--reference-csv", required=True, help="Output reference trajectory CSV path")
+    parser.add_argument("--sequence-start", type=int, default=0, help="First graph subdirectory index to use")
+    parser.add_argument("--sequence-count", type=int, default=20, help="Number of graph subdirectories to use")
+    parser.add_argument("--map-point-stride", type=int, default=8, help="Keep every Nth point when building the synthetic map")
+    parser.add_argument("--cloud-point-stride", type=int, default=1, help="Keep every Nth point when writing cloud messages into the bag")
+    parser.add_argument("--registration-method", default="NDT_OMP", help="registration_method written to the generated parameter YAML")
+    parser.add_argument("--map-frame", default="map", help="Frame id for poses")
+    parser.add_argument("--cloud-frame", default="velodyne", help="Frame id for cloud messages")
+    parser.add_argument("--cloud-topic", default="/velodyne_points", help="Topic name for cloud messages")
+    parser.add_argument("--initialpose-topic", default="/initialpose", help="Topic name for the initial pose message")
+    parser.add_argument("--force", action="store_true", help="Overwrite existing outputs")
+    return parser.parse_args()
+
+
+def ensure_parent(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def prepare_output_path(path: Path, force: bool) -> None:
+    if path.exists():
+        if not force:
+            raise FileExistsError(f"{path} already exists, pass --force to overwrite it")
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+
+
+def list_graph_frames(graph_dir: Path, start: int, count: int) -> List[Path]:
+    frame_dirs = sorted(
+        [path for path in graph_dir.iterdir() if path.is_dir() and (path / "cloud.pcd").exists() and (path / "trajectory.csv").exists()],
+        key=lambda path: int(path.name),
+    )
+    selected = frame_dirs[start : start + count]
+    if len(selected) != count:
+        raise ValueError(f"Requested {count} frames from index {start}, but only found {len(selected)} usable frames")
+    return selected
+
+
+def read_pcd_points(path: Path) -> np.ndarray:
+    fields = None
+    sizes = None
+    types = None
+    count = None
+    points = None
+    data_kind = None
+
+    with path.open("rb") as stream:
+        while True:
+            line = stream.readline()
+            if not line:
+                raise ValueError(f"Unexpected end of PCD header in {path}")
+            decoded = line.decode("ascii", errors="ignore").strip()
+            if not decoded or decoded.startswith("#"):
+                continue
+            key, _, value = decoded.partition(" ")
+            if key == "FIELDS":
+                fields = value.split()
+            elif key == "SIZE":
+                sizes = [int(item) for item in value.split()]
+            elif key == "TYPE":
+                types = value.split()
+            elif key == "COUNT":
+                count = [int(item) for item in value.split()]
+            elif key == "POINTS":
+                points = int(value)
+            elif key == "DATA":
+                data_kind = value
+                break
+
+        if data_kind != "binary":
+            raise ValueError(f"Only binary PCD is supported, got {data_kind} in {path}")
+        if fields != ["x", "y", "z", "intensity"]:
+            raise ValueError(f"Unsupported PCD fields in {path}: {fields}")
+        if sizes != [4, 4, 4, 4] or types != ["F", "F", "F", "F"] or count != [1, 1, 1, 1]:
+            raise ValueError(f"Unsupported PCD schema in {path}")
+
+        array = np.fromfile(stream, dtype=SCAN_DTYPE, count=points)
+        if array.shape[0] != points:
+            raise ValueError(f"Expected {points} points in {path}, found {array.shape[0]}")
+        return array
+
+
+def read_pose(path: Path) -> Dict[str, float]:
+    with path.open("r", encoding="utf-8", newline="") as stream:
+        reader = csv.DictReader(stream)
+        first_row = next(reader, None)
+    if first_row is None:
+        raise ValueError(f"No trajectory rows found in {path}")
+    return {
+        "timestamp": float(first_row["timestamp"]),
+        "x": float(first_row["lidar_pose.x"]),
+        "y": float(first_row["lidar_pose.y"]),
+        "z": float(first_row["lidar_pose.z"]),
+        "roll": float(first_row["lidar_pose.roll"]),
+        "pitch": float(first_row["lidar_pose.pitch"]),
+        "yaw": float(first_row["lidar_pose.yaw"]),
+    }
+
+
+def rotation_matrix(roll: float, pitch: float, yaw: float) -> np.ndarray:
+    cr, sr = math.cos(roll), math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+
+    rx = np.array([[1.0, 0.0, 0.0], [0.0, cr, -sr], [0.0, sr, cr]], dtype=np.float64)
+    ry = np.array([[cp, 0.0, sp], [0.0, 1.0, 0.0], [-sp, 0.0, cp]], dtype=np.float64)
+    rz = np.array([[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
+    return rz @ ry @ rx
+
+
+def quaternion_from_rpy(roll: float, pitch: float, yaw: float) -> Tuple[float, float, float, float]:
+    half_roll = roll * 0.5
+    half_pitch = pitch * 0.5
+    half_yaw = yaw * 0.5
+
+    cr, sr = math.cos(half_roll), math.sin(half_roll)
+    cp, sp = math.cos(half_pitch), math.sin(half_pitch)
+    cy, sy = math.cos(half_yaw), math.sin(half_yaw)
+
+    x = sr * cp * cy - cr * sp * sy
+    y = cr * sp * cy + sr * cp * sy
+    z = cr * cp * sy - sr * sp * cy
+    w = cr * cp * cy + sr * sp * sy
+    return x, y, z, w
+
+
+def transform_points(points: np.ndarray, pose: Dict[str, float]) -> np.ndarray:
+    rotation = rotation_matrix(pose["roll"], pose["pitch"], pose["yaw"])
+    xyz = np.column_stack((points["x"], points["y"], points["z"])).astype(np.float64, copy=False)
+    translated = xyz @ rotation.T
+    translated[:, 0] += pose["x"]
+    translated[:, 1] += pose["y"]
+    translated[:, 2] += pose["z"]
+
+    transformed = np.empty((points.shape[0], 4), dtype=np.float32)
+    transformed[:, 0:3] = translated.astype(np.float32)
+    transformed[:, 3] = points["intensity"]
+    return transformed
+
+
+def write_binary_pcd(path: Path, points: np.ndarray) -> None:
+    ensure_parent(path)
+    header = "\n".join(
+        [
+            "# .PCD v0.7 - Point Cloud Data file format",
+            "VERSION 0.7",
+            "FIELDS x y z intensity",
+            "SIZE 4 4 4 4",
+            "TYPE F F F F",
+            "COUNT 1 1 1 1",
+            f"WIDTH {points.shape[0]}",
+            "HEIGHT 1",
+            "VIEWPOINT 0 0 0 1 0 0 0",
+            f"POINTS {points.shape[0]}",
+            "DATA binary",
+            "",
+        ]
+    ).encode("ascii")
+
+    with path.open("wb") as stream:
+        stream.write(header)
+        stream.write(np.ascontiguousarray(points, dtype=np.float32).tobytes())
+
+
+def pointcloud2_message(points: np.ndarray, stamp_ns: int, frame_id: str):
+    point_fields = [
+        PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
+        PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
+        PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1),
+        PointField(name="intensity", offset=12, datatype=PointField.FLOAT32, count=1),
+    ]
+    stamp = Time(sec=stamp_ns // 1_000_000_000, nanosec=stamp_ns % 1_000_000_000)
+    header = Header(stamp=stamp, frame_id=frame_id)
+    payload = np.frombuffer(np.ascontiguousarray(points, dtype=np.float32).tobytes(), dtype=np.uint8)
+    return PointCloud2(
+        header=header,
+        height=1,
+        width=int(points.shape[0]),
+        fields=point_fields,
+        is_bigendian=False,
+        point_step=16,
+        row_step=int(points.shape[0]) * 16,
+        data=payload,
+        is_dense=True,
+    )
+
+
+def initialpose_message(pose: Dict[str, float], stamp_ns: int, frame_id: str):
+    stamp = Time(sec=stamp_ns // 1_000_000_000, nanosec=stamp_ns % 1_000_000_000)
+    header = Header(stamp=stamp, frame_id=frame_id)
+    qx, qy, qz, qw = quaternion_from_rpy(pose["roll"], pose["pitch"], pose["yaw"])
+    return PoseWithCovarianceStamped(
+        header=header,
+        pose=PoseWithCovariance(
+            pose=Pose(
+                position=Point(x=pose["x"], y=pose["y"], z=pose["z"]),
+                orientation=Quaternion(x=qx, y=qy, z=qz, w=qw),
+            ),
+            covariance=np.zeros(36, dtype=np.float64),
+        ),
+    )
+
+
+def write_reference_csv(path: Path, poses: Iterable[Dict[str, float]], frame_id: str) -> None:
+    ensure_parent(path)
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(
+            [
+                "message_index",
+                "stamp_sec",
+                "frame_id",
+                "position_x",
+                "position_y",
+                "position_z",
+                "orientation_x",
+                "orientation_y",
+                "orientation_z",
+                "orientation_w",
+                "covariance",
+            ]
+        )
+
+        for index, pose in enumerate(poses):
+            qx, qy, qz, qw = quaternion_from_rpy(pose["roll"], pose["pitch"], pose["yaw"])
+            writer.writerow(
+                [
+                    index,
+                    f"{pose['timestamp']:.9f}",
+                    frame_id,
+                    f"{pose['x']:.10f}",
+                    f"{pose['y']:.10f}",
+                    f"{pose['z']:.10f}",
+                    f"{qx:.10f}",
+                    f"{qy:.10f}",
+                    f"{qz:.10f}",
+                    f"{qw:.10f}",
+                    " ".join("0" for _ in range(36)),
+                ]
+            )
+
+
+def write_param_yaml(path: Path, map_pcd: Path, registration_method: str) -> None:
+    ensure_parent(path)
+    path.write_text(
+        "\n".join(
+            [
+                "/**:",
+                "    ros__parameters:",
+                f'      registration_method: "{registration_method}"',
+                "      score_threshold: 2.0",
+                "      ndt_resolution: 1.0",
+                "      ndt_step_size: 0.1",
+                "      ndt_num_threads: 4",
+                "      ndt_max_iterations: 35",
+                "      gicp_corr_randomness: 20",
+                "      gicp_max_correspondence_distance: 2.0",
+                "      vgicp_voxel_resolution: 1.0",
+                "      transform_epsilon: 0.01",
+                "      voxel_leaf_size: 0.2",
+                "      scan_max_range: 100.0",
+                "      scan_min_range: 1.0",
+                "      scan_period: 0.1",
+                "      use_pcd_map: true",
+                f'      map_path: "{map_pcd}"',
+                "      set_initial_pose: false",
+                "      initial_pose_x: 0.0",
+                "      initial_pose_y: 0.0",
+                "      initial_pose_z: 0.0",
+                "      initial_pose_qx: 0.0",
+                "      initial_pose_qy: 0.0",
+                "      initial_pose_qz: 0.0",
+                "      initial_pose_qw: 1.0",
+                "      use_odom: false",
+                "      use_imu: false",
+                "      enable_debug: true",
+                "      enable_map_odom_tf: false",
+                "      global_frame_id: map",
+                "      odom_frame_id: odom",
+                "      base_frame_id: base_link",
+                "      enable_timer_publishing: false",
+                "      pose_publish_frequency: 30.0",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def main() -> None:
+    args = parse_args()
+
+    graph_dir = Path(args.graph_dir).expanduser().resolve()
+    bag_dir = Path(args.bag_dir).expanduser().resolve()
+    map_pcd = Path(args.map_pcd).expanduser().resolve()
+    param_yaml = Path(args.param_yaml).expanduser().resolve()
+    reference_csv = Path(args.reference_csv).expanduser().resolve()
+
+    if not graph_dir.is_dir():
+        raise FileNotFoundError(f"Graph directory not found: {graph_dir}")
+
+    prepare_output_path(bag_dir, args.force)
+    prepare_output_path(map_pcd, args.force)
+    prepare_output_path(param_yaml, args.force)
+    prepare_output_path(reference_csv, args.force)
+
+    selected = list_graph_frames(graph_dir, args.sequence_start, args.sequence_count)
+
+    map_chunks: List[np.ndarray] = []
+    bag_records: List[Tuple[int, np.ndarray]] = []
+    reference_poses: List[Dict[str, float]] = []
+
+    for frame_dir in selected:
+        pose = read_pose(frame_dir / "trajectory.csv")
+        cloud = read_pcd_points(frame_dir / "cloud.pcd")
+
+        bag_points = cloud[:: max(1, args.cloud_point_stride)]
+        bag_records.append((int(round(pose["timestamp"] * 1_000_000_000.0)), np.column_stack((bag_points["x"], bag_points["y"], bag_points["z"], bag_points["intensity"])).astype(np.float32)))
+
+        map_points = transform_points(cloud[:: max(1, args.map_point_stride)], pose)
+        map_chunks.append(map_points)
+        reference_poses.append(pose)
+
+    if not map_chunks:
+        raise RuntimeError("No map chunks were generated")
+
+    merged_map = np.concatenate(map_chunks, axis=0)
+    write_binary_pcd(map_pcd, merged_map)
+    write_reference_csv(reference_csv, reference_poses, args.map_frame)
+    write_param_yaml(param_yaml, map_pcd, args.registration_method)
+
+    initial_stamp_ns = max(0, bag_records[0][0] - 100_000_000)
+    initial_pose = initialpose_message(reference_poses[0], initial_stamp_ns, args.map_frame)
+
+    with Writer(bag_dir, version=8) as writer:
+        cloud_connection = writer.add_connection(
+            args.cloud_topic,
+            PointCloud2.__msgtype__,
+            typestore=TYPESTORE,
+        )
+        initialpose_connection = writer.add_connection(
+            args.initialpose_topic,
+            PoseWithCovarianceStamped.__msgtype__,
+            typestore=TYPESTORE,
+        )
+
+        writer.write(
+            initialpose_connection,
+            initial_stamp_ns,
+            TYPESTORE.serialize_cdr(initial_pose, PoseWithCovarianceStamped.__msgtype__),
+        )
+
+        for stamp_ns, points in bag_records:
+            cloud_msg = pointcloud2_message(points, stamp_ns, args.cloud_frame)
+            writer.write(
+                cloud_connection,
+                stamp_ns,
+                TYPESTORE.serialize_cdr(cloud_msg, PointCloud2.__msgtype__),
+            )
+
+    print(f"Generated rosbag2 dataset in {bag_dir}")
+    print(f"Synthetic map: {map_pcd}")
+    print(f"Benchmark params: {param_yaml}")
+    print(f"Reference poses: {reference_csv}")
+    print(f"Frames used: {len(selected)}")
+    print(f"Map points: {merged_map.shape[0]}")
+
+
+if __name__ == "__main__":
+    main()

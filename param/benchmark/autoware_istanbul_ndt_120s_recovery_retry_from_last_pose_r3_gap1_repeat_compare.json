@@ -1,0 +1,73 @@
+{
+  "common_params": {
+    "registration_method": "NDT_OMP",
+    "score_threshold": 6.0,
+    "ndt_resolution": 1.0,
+    "ndt_step_size": 0.1,
+    "ndt_num_threads": 4,
+    "ndt_max_iterations": 35,
+    "transform_epsilon": 0.01,
+    "voxel_leaf_size": 0.2,
+    "enable_scan_voxel_filter": false,
+    "scan_min_range": 1.0,
+    "scan_max_range": 100.0,
+    "predict_pose_from_previous_delta": true,
+    "reject_above_score_threshold": true,
+    "use_imu": false,
+    "use_odom": false,
+    "enable_debug": false,
+    "use_twist_prediction": true,
+    "twist_prediction_use_angular_velocity": false,
+    "max_twist_prediction_dt": 0.5,
+    "enable_local_map_crop": true,
+    "local_map_radius": 150.0,
+    "local_map_min_points": 100,
+    "enable_borderline_seed_rejection_gate": true,
+    "borderline_seed_gate_score_threshold": 5.25,
+    "borderline_seed_gate_min_seed_translation_m": 1.0
+  },
+  "runs": [
+    {
+      "name": "nav2_ndt_urban_borderline_only_120s_r1",
+      "params": {
+        "enable_recovery_retry_from_last_pose": false
+      }
+    },
+    {
+      "name": "nav2_ndt_urban_recovery_retry_from_last_pose_r3_gap1_120s_r1",
+      "params": {
+        "enable_recovery_retry_from_last_pose": true,
+        "recovery_retry_from_last_pose_min_rejections": 3,
+        "recovery_retry_from_last_pose_max_accepted_gap_sec": 1.0
+      }
+    },
+    {
+      "name": "nav2_ndt_urban_borderline_only_120s_r2",
+      "params": {
+        "enable_recovery_retry_from_last_pose": false
+      }
+    },
+    {
+      "name": "nav2_ndt_urban_recovery_retry_from_last_pose_r3_gap1_120s_r2",
+      "params": {
+        "enable_recovery_retry_from_last_pose": true,
+        "recovery_retry_from_last_pose_min_rejections": 3,
+        "recovery_retry_from_last_pose_max_accepted_gap_sec": 1.0
+      }
+    },
+    {
+      "name": "nav2_ndt_urban_borderline_only_120s_r3",
+      "params": {
+        "enable_recovery_retry_from_last_pose": false
+      }
+    },
+    {
+      "name": "nav2_ndt_urban_recovery_retry_from_last_pose_r3_gap1_120s_r3",
+      "params": {
+        "enable_recovery_retry_from_last_pose": true,
+        "recovery_retry_from_last_pose_min_rejections": 3,
+        "recovery_retry_from_last_pose_max_accepted_gap_sec": 1.0
+      }
+    }
+  ]
+}
