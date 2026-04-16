@@ -116,7 +116,9 @@ install(PROGRAMS
   scripts/augment_pointcloud_intensity.py
   scripts/scaffold_mapless_public_dataset_bundle.py
   scripts/fetch_official_autoware_istanbul_dataset.sh
+  scripts/fetch_koide_hard_pointcloud_localization_dataset.sh
   scripts/fetch_official_hdl_localization_sample.sh
+  scripts/tum_trajectory_to_pose_reference_csv.py
   scripts/generate_occupancy_map_from_pcd.py
   scripts/make_localization_comparison_report.py
   scripts/publish_cmd_vel_odom.py
