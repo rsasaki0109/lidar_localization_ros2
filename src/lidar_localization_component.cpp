@@ -1186,7 +1186,7 @@ void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr
 {
   if (shutting_down_) {return;}
   if (!use_odom_) {return;}
-  RCLCPP_INFO(get_logger(), "odomReceived");
+  RCLCPP_DEBUG(get_logger(), "odomReceived");
 
   double current_odom_received_time = msg->header.stamp.sec +
     msg->header.stamp.nanosec * 1e-9;
@@ -1346,7 +1346,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   }
   last_cloud_process_time_ = this->now();
 
-  RCLCPP_INFO(get_logger(), "cloudReceived");
+  RCLCPP_DEBUG(get_logger(), "cloudReceived");
   const double scan_stamp_sec = stamp_to_sec(msg->header.stamp);
   if (consecutive_crop_failures_ > 100) {
     if (!crop_failure_guard_active_) {
