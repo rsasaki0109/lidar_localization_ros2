@@ -32,6 +32,7 @@ if str(repo_root) not in sys.path:
 
 from experiments.imu_guard.interface import GuardSample
 from experiments.reporting import generate_combined_docs
+from experiments.reporting import repo_relative_path
 from experiments.imu_guard.variants import AbsoluteThresholdGuard
 from experiments.imu_guard.variants import ScoreBudgetGuard
 from experiments.imu_guard.variants import StreakGuard
@@ -169,7 +170,7 @@ def compute_static_metrics(variant_cls: type) -> dict[str, Any]:
         + max(0.0, 5.0 - 1.0 * max(0, import_count - 3))
     )
     return {
-        "implementation_file": str(Path(inspect.getsourcefile(variant_cls)).resolve()),
+        "implementation_file": repo_relative_path(inspect.getsourcefile(variant_cls)),
         "loc": loc,
         "branch_count": branch_count,
         "max_nesting_depth": max_nesting_depth(class_node),
@@ -355,7 +356,7 @@ def main() -> int:
         "problem": "imu_guard",
         "title": "IMU Correction Guard",
         "problem_statement": "Disable the IMU-preintegration path early enough to avoid poisoning localization, without false positives on no-IMU traces.",
-        "generated_from": str(Path(__file__).resolve()),
+        "generated_from": repo_relative_path(__file__),
         "interface": {
             "methods": [
                 "reset() -> None",

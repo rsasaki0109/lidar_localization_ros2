@@ -35,6 +35,7 @@ from experiments.borderline_gate.variants import SeedConditionedBorderlineGate
 from experiments.reporting import compute_static_metrics
 from experiments.reporting import generate_combined_docs
 from experiments.reporting import overall_score
+from experiments.reporting import repo_relative_path
 
 
 VARIANTS = [
@@ -120,7 +121,7 @@ def main() -> int:
         "problem": "borderline_gate",
         "title": "Borderline Measurement Gate",
         "problem_statement": "Reject truly bad borderline measurements without regressing clean short-gap updates.",
-        "generated_from": str(Path(__file__).resolve()),
+        "generated_from": repo_relative_path(__file__),
         "interface": {
             "methods": [
                 "reset() -> None",
