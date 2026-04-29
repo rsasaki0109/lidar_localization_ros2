@@ -1,0 +1,253 @@
+{
+  "problem": "reinit_trigger",
+  "title": "Reinitialization Trigger",
+  "problem_statement": "Decide when bounded local recovery should stop and the system should escalate to full reinitialization.",
+  "generated_from": "scripts/run_reinit_trigger_experiments.py",
+  "interface": {
+    "methods": [
+      "reset() -> None",
+      "step(sample: ReinitSample) -> ReinitDecision"
+    ],
+    "sample_type": "ReinitSample",
+    "sample_fields": [
+      "index",
+      "failure_kind",
+      "fitness_score",
+      "seed_translation_since_accept_m",
+      "accepted_gap_sec",
+      "consecutive_rejected_updates"
+    ],
+    "decision_type": "ReinitDecision",
+    "decision_fields": [
+      "trigger_reinitialization",
+      "reason",
+      "score"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "long_gap_crop_failure_should_reinit",
+      "description": "Real 180 s crop-collapse onset. At this point local recovery has already failed and reinitialization should be requested."
+    },
+    {
+      "name": "long_gap_hopeless_reject_should_reinit",
+      "description": "Real 180 s run just before crop failure. The open-loop gap and drift have already exploded, so the system should request reinitialization even before the crop fully fails."
+    },
+    {
+      "name": "seed_reuse_candidate_should_not_reinit",
+      "description": "Real 60 s borderline reject that later benchmarking marked as a bad seed-reuse direction, but still not a case for full reinitialization."
+    },
+    {
+      "name": "short_gap_rejected_measurement_should_not_reinit",
+      "description": "Real 60 s retry-success window before recovery. This is still inside bounded local recovery and should not escalate to full reinitialization."
+    },
+    {
+      "name": "short_gap_target_unavailable_should_not_reinit",
+      "description": "Distilled short-gap crop failure. When the last accepted pose is still recent, the system should retry locally before requesting reinitialization."
+    }
+  ],
+  "variants": [
+    {
+      "name": "gap_streak_score_reinit",
+      "design": "scorecard threshold",
+      "fixture_results": [
+        {
+          "fixture": "long_gap_crop_failure_should_reinit",
+          "passed": true,
+          "outcome": "matched_expected_trigger",
+          "decision": "trigger_reinit",
+          "decision_reason": "reinit_score_exceeded",
+          "decision_score": 1.2499999999999998,
+          "expected_trigger_reinitialization": true
+        },
+        {
+          "fixture": "long_gap_hopeless_reject_should_reinit",
+          "passed": true,
+          "outcome": "matched_expected_trigger",
+          "decision": "trigger_reinit",
+          "decision_reason": "reinit_score_exceeded",
+          "decision_score": 1.0999999999999999,
+          "expected_trigger_reinitialization": true
+        },
+        {
+          "fixture": "seed_reuse_candidate_should_not_reinit",
+          "passed": true,
+          "outcome": "matched_expected_trigger",
+          "decision": "stay_in_local_recovery",
+          "decision_reason": "reinit_score_safe",
+          "decision_score": 0.025068112,
+          "expected_trigger_reinitialization": false
+        },
+        {
+          "fixture": "short_gap_rejected_measurement_should_not_reinit",
+          "passed": true,
+          "outcome": "matched_expected_trigger",
+          "decision": "stay_in_local_recovery",
+          "decision_reason": "reinit_score_safe",
+          "decision_score": 0.041809179,
+          "expected_trigger_reinitialization": false
+        },
+        {
+          "fixture": "short_gap_target_unavailable_should_not_reinit",
+          "passed": true,
+          "outcome": "matched_expected_trigger",
+          "decision": "stay_in_local_recovery",
+          "decision_reason": "reinit_score_safe",
+          "decision_score": 0.1995,
+          "expected_trigger_reinitialization": false
+        }
+      ],
+      "benchmark_score": 100.0,
+      "readability_score": 53.2,
+      "extensibility_score": 94.0,
+      "static_metrics": {
+        "implementation_file": "experiments/reinit_trigger/variants/gap_streak_score.py",
+        "loc": 19,
+        "branch_count": 4,
+        "max_nesting_depth": 1,
+        "state_field_count": 1,
+        "public_method_count": 2,
+        "import_count": 4,
+        "has_config_dataclass": true,
+        "readability_score": 53.2,
+        "extensibility_score": 94.0
+      },
+      "overall_score": 89.44
+    },
+    {
+      "name": "failure_kind_eager_reinit",
+      "design": "event-driven rule table",
+      "fixture_results": [
+        {
+          "fixture": "long_gap_crop_failure_should_reinit",
+          "passed": true,
+          "outcome": "matched_expected_trigger",
+          "decision": "trigger_reinit",
+          "decision_reason": "target_unavailable",
+          "decision_score": null,
+          "expected_trigger_reinitialization": true
+        },
+        {
+          "fixture": "long_gap_hopeless_reject_should_reinit",
+          "passed": true,
+          "outcome": "matched_expected_trigger",
+          "decision": "trigger_reinit",
+          "decision_reason": "fitness_exploded",
+          "decision_score": null,
+          "expected_trigger_reinitialization": true
+        },
+        {
+          "fixture": "seed_reuse_candidate_should_not_reinit",
+          "passed": true,
+          "outcome": "matched_expected_trigger",
+          "decision": "stay_in_local_recovery",
+          "decision_reason": "continue_local_recovery",
+          "decision_score": null,
+          "expected_trigger_reinitialization": false
+        },
+        {
+          "fixture": "short_gap_rejected_measurement_should_not_reinit",
+          "passed": true,
+          "outcome": "matched_expected_trigger",
+          "decision": "stay_in_local_recovery",
+          "decision_reason": "continue_local_recovery",
+          "decision_score": null,
+          "expected_trigger_reinitialization": false
+        },
+        {
+          "fixture": "short_gap_target_unavailable_should_not_reinit",
+          "passed": false,
+          "outcome": "mismatched_expected_trigger",
+          "decision": "trigger_reinit",
+          "decision_reason": "target_unavailable",
+          "decision_score": null,
+          "expected_trigger_reinitialization": false
+        }
+      ],
+      "benchmark_score": 80.0,
+      "readability_score": 65.4,
+      "extensibility_score": 85.0,
+      "static_metrics": {
+        "implementation_file": "experiments/reinit_trigger/variants/failure_kind_eager.py",
+        "loc": 13,
+        "branch_count": 3,
+        "max_nesting_depth": 1,
+        "state_field_count": 0,
+        "public_method_count": 2,
+        "import_count": 3,
+        "has_config_dataclass": false,
+        "readability_score": 65.4,
+        "extensibility_score": 85.0
+      },
+      "overall_score": 78.08
+    },
+    {
+      "name": "never_reinit",
+      "design": "minimal baseline",
+      "fixture_results": [
+        {
+          "fixture": "long_gap_crop_failure_should_reinit",
+          "passed": false,
+          "outcome": "mismatched_expected_trigger",
+          "decision": "stay_in_local_recovery",
+          "decision_reason": "stay_in_local_recovery",
+          "decision_score": null,
+          "expected_trigger_reinitialization": true
+        },
+        {
+          "fixture": "long_gap_hopeless_reject_should_reinit",
+          "passed": false,
+          "outcome": "mismatched_expected_trigger",
+          "decision": "stay_in_local_recovery",
+          "decision_reason": "stay_in_local_recovery",
+          "decision_score": null,
+          "expected_trigger_reinitialization": true
+        },
+        {
+          "fixture": "seed_reuse_candidate_should_not_reinit",
+          "passed": true,
+          "outcome": "matched_expected_trigger",
+          "decision": "stay_in_local_recovery",
+          "decision_reason": "stay_in_local_recovery",
+          "decision_score": null,
+          "expected_trigger_reinitialization": false
+        },
+        {
+          "fixture": "short_gap_rejected_measurement_should_not_reinit",
+          "passed": true,
+          "outcome": "matched_expected_trigger",
+          "decision": "stay_in_local_recovery",
+          "decision_reason": "stay_in_local_recovery",
+          "decision_score": null,
+          "expected_trigger_reinitialization": false
+        },
+        {
+          "fixture": "short_gap_target_unavailable_should_not_reinit",
+          "passed": true,
+          "outcome": "matched_expected_trigger",
+          "decision": "stay_in_local_recovery",
+          "decision_reason": "stay_in_local_recovery",
+          "decision_score": null,
+          "expected_trigger_reinitialization": false
+        }
+      ],
+      "benchmark_score": 60.0,
+      "readability_score": 91.6,
+      "extensibility_score": 85.0,
+      "static_metrics": {
+        "implementation_file": "experiments/reinit_trigger/variants/never_reinit.py",
+        "loc": 7,
+        "branch_count": 0,
+        "max_nesting_depth": 0,
+        "state_field_count": 0,
+        "public_method_count": 2,
+        "import_count": 3,
+        "has_config_dataclass": false,
+        "readability_score": 91.6,
+        "extensibility_score": 85.0
+      },
+      "overall_score": 71.32
+    }
+  ],
+  "benchmark_score_mean": 80.0
+}

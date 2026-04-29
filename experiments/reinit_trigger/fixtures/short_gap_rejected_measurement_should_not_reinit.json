@@ -1,0 +1,16 @@
+{
+  "name": "short_gap_rejected_measurement_should_not_reinit",
+  "description": "Real 60 s retry-success window before recovery. This is still inside bounded local recovery and should not escalate to full reinitialization.",
+  "source": "artifacts/public/istanbul_60s_recovery_retry_from_last_pose_r3_compare/nav2_ndt_urban_recovery_retry_from_last_pose_r3/alignment_status.csv:89",
+  "expectation": {
+    "expected_trigger_reinitialization": false
+  },
+  "sample": {
+    "index": 89,
+    "failure_kind": "rejected_measurement",
+    "fitness_score": 7.728586,
+    "seed_translation_since_accept_m": 7.936618,
+    "accepted_gap_sec": 0.999955,
+    "consecutive_rejected_updates": 3
+  }
+}

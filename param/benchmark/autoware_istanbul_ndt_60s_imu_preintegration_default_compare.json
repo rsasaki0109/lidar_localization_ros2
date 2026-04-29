@@ -1,0 +1,16 @@
+{
+  "runs": [
+    {
+      "name": "twist_linear_thr6_borderline_seed_gate_no_imu_preintegration",
+      "params": {
+        "use_imu_preintegration": false
+      }
+    },
+    {
+      "name": "twist_linear_thr6_borderline_seed_gate_imu_preintegration_default",
+      "params": {
+        "use_imu_preintegration": true
+      }
+    }
+  ]
+}

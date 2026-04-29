@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+
+import csv
+import json
+import os
+
+import rclpy
+from diagnostic_msgs.msg import DiagnosticArray
+from rclpy.executors import ExternalShutdownException
+from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy
+from rclpy.qos import QoSProfile
+from rclpy.qos import ReliabilityPolicy
+
+
+class BenchmarkDiagnosticRecorder(Node):
+    def __init__(self) -> None:
+        super().__init__("benchmark_diagnostic_recorder")
+
+        self.declare_parameter("topic", "/alignment_status")
+        self.declare_parameter("output_path", "alignment_status.csv")
+
+        self._topic = str(self.get_parameter("topic").value)
+        self._output_path = str(self.get_parameter("output_path").value)
+        self._message_count = 0
+
+        os.makedirs(os.path.dirname(os.path.abspath(self._output_path)), exist_ok=True)
+        self._stream = open(self._output_path, "w", newline="", encoding="utf-8")
+        self._writer = csv.writer(self._stream)
+        self._writer.writerow(
+            [
+                "message_index",
+                "stamp_sec",
+                "status_index",
+                "level",
+                "name",
+                "message",
+                "hardware_id",
+                "values_json",
+            ]
+        )
+
+        qos = QoSProfile(depth=10)
+        qos.reliability = ReliabilityPolicy.RELIABLE
+        qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+
+        self._subscription = self.create_subscription(
+            DiagnosticArray,
+            self._topic,
+            self._callback,
+            qos,
+        )
+        self.get_logger().info(f"Recording diagnostics from {self._topic} to {self._output_path}")
+
+    def _callback(self, msg: DiagnosticArray) -> None:
+        stamp_sec = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
+        for status_index, status in enumerate(msg.status):
+            values = {entry.key: entry.value for entry in status.values}
+            level = status.level
+            if isinstance(level, (bytes, bytearray)):
+                level = int.from_bytes(level, byteorder="little", signed=False)
+            self._writer.writerow(
+                [
+                    self._message_count,
+                    f"{stamp_sec:.9f}",
+                    status_index,
+                    level,
+                    status.name,
+                    status.message,
+                    status.hardware_id,
+                    json.dumps(values, sort_keys=True),
+                ]
+            )
+            self._message_count += 1
+        self._stream.flush()
+
+    def close(self) -> None:
+        self.get_logger().info(f"Recorded {self._message_count} diagnostic rows")
+        self._stream.close()
+
+
+def main() -> None:
+    rclpy.init()
+    node = BenchmarkDiagnosticRecorder()
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    finally:
+        node.close()
+        node.destroy_node()
+        try:
+            if rclpy.ok():
+                rclpy.shutdown()
+        except RuntimeError:
+            pass
+
+
+if __name__ == "__main__":
+    main()

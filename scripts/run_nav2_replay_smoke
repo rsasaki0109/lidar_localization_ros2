@@ -1,0 +1,453 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  run_nav2_replay_smoke \
+    --map-yaml /absolute/path/to/map.yaml \
+    --pcd-map-path /absolute/path/to/map.pcd \
+    --bag-path /absolute/path/to/localization_rosbag \
+    --initial-pose-x X --initial-pose-y Y [options]
+
+Required:
+  --map-yaml PATH
+  --pcd-map-path PATH
+  --bag-path PATH
+  --initial-pose-x VALUE
+  --initial-pose-y VALUE
+
+Optional:
+  --initial-pose-z VALUE         default: 0.0
+  --initial-pose-qx VALUE        default: 0.0
+  --initial-pose-qy VALUE        default: 0.0
+  --initial-pose-qz VALUE        default: 0.0
+  --initial-pose-qw VALUE        default: 1.0
+  --goal-forward-m VALUE         default: 1.0
+  --goal-left-m VALUE            default: 0.0
+  --goal-yaw-delta-rad VALUE     default: 0.0
+  --goal-z-offset-m VALUE        default: 0.0
+  --wait-for-pose-motion-m VALUE default: 0.2
+  --launch-timeout-sec VALUE     default: 120
+  --goal-timeout-sec VALUE       default: 120
+  --goal-start-delay-sec VALUE   default: 3
+  --post-goal-observe-sec VALUE  default: 0
+  --clock-rate VALUE             default: 20.0
+  --play-rate VALUE              default: 1.0
+  --ros-domain-id VALUE          default: keep current env
+  --alignment-topic TOPIC        default: /alignment_status
+  --input-pointcloud-topic TOPIC default: /localization/util/downsample/pointcloud
+  --replay-pointcloud-topic TOPIC default: /localization/replay/downsample/pointcloud
+  --input-twist-topic TOPIC      default: /localization/twist_estimator/twist_with_covariance
+  --replay-twist-topic TOPIC     default: /localization/replay/twist_with_covariance
+  --odom-frame-id FRAME          default: odom
+  --base-frame-id FRAME          default: base_link
+  --enable-reinitialization-supervisor
+                                default: disabled
+  --reinitialization-supervisor-use-latest-pose
+                                default: disabled
+  --reinitialization-supervisor-publish-count VALUE
+                                default: 3
+  --reinitialization-supervisor-publish-interval-sec VALUE
+                                default: 0.2
+  --reinitialization-supervisor-cooldown-sec VALUE
+                                default: 15.0
+  --log-dir PATH                 default: mktemp dir
+  --extra-launch-arg ARG:=VALUE  repeatable
+  --help
+
+This helper runs a production-style replay smoke:
+  1. relay_localization_inputs_with_current_stamp.py
+  2. nav2_navigation.launch.py with publish_twist_odom:=true
+  3. ros2 bag play --clock
+  4. send_nav2_goal.py with pose/TF/lifecycle waits
+
+It is intended for the real localizer path, unlike run_nav2_demo_smoke.
+EOF
+}
+
+require_arg() {
+  local name="$1"
+  local value="$2"
+  if [[ -z "${value}" ]]; then
+    printf 'Missing required argument: %s\n' "${name}" >&2
+    usage >&2
+    exit 2
+  fi
+}
+
+map_yaml=""
+pcd_map_path=""
+bag_path=""
+initial_pose_x=""
+initial_pose_y=""
+initial_pose_z="0.0"
+initial_pose_qx="0.0"
+initial_pose_qy="0.0"
+initial_pose_qz="0.0"
+initial_pose_qw="1.0"
+goal_forward_m="1.0"
+goal_left_m="0.0"
+goal_yaw_delta_rad="0.0"
+goal_z_offset_m="0.0"
+wait_for_pose_motion_m="0.2"
+launch_timeout_sec="120"
+goal_timeout_sec="120"
+goal_start_delay_sec="3"
+post_goal_observe_sec="0"
+clock_rate="20.0"
+play_rate="1.0"
+ros_domain_id=""
+alignment_topic="/alignment_status"
+input_pointcloud_topic="/localization/util/downsample/pointcloud"
+replay_pointcloud_topic="/localization/replay/downsample/pointcloud"
+input_twist_topic="/localization/twist_estimator/twist_with_covariance"
+replay_twist_topic="/localization/replay/twist_with_covariance"
+odom_frame_id="odom"
+base_frame_id="base_link"
+enable_reinitialization_supervisor="false"
+reinitialization_supervisor_use_latest_pose="false"
+reinitialization_supervisor_publish_count="1"
+reinitialization_supervisor_publish_interval_sec="0.2"
+reinitialization_supervisor_cooldown_sec="15.0"
+log_dir=""
+declare -a extra_launch_args=()
+
+while (($# > 0)); do
+  case "$1" in
+    --map-yaml)
+      map_yaml="$2"
+      shift 2
+      ;;
+    --pcd-map-path)
+      pcd_map_path="$2"
+      shift 2
+      ;;
+    --bag-path)
+      bag_path="$2"
+      shift 2
+      ;;
+    --initial-pose-x)
+      initial_pose_x="$2"
+      shift 2
+      ;;
+    --initial-pose-y)
+      initial_pose_y="$2"
+      shift 2
+      ;;
+    --initial-pose-z)
+      initial_pose_z="$2"
+      shift 2
+      ;;
+    --initial-pose-qx)
+      initial_pose_qx="$2"
+      shift 2
+      ;;
+    --initial-pose-qy)
+      initial_pose_qy="$2"
+      shift 2
+      ;;
+    --initial-pose-qz)
+      initial_pose_qz="$2"
+      shift 2
+      ;;
+    --initial-pose-qw)
+      initial_pose_qw="$2"
+      shift 2
+      ;;
+    --goal-forward-m)
+      goal_forward_m="$2"
+      shift 2
+      ;;
+    --goal-left-m)
+      goal_left_m="$2"
+      shift 2
+      ;;
+    --goal-yaw-delta-rad)
+      goal_yaw_delta_rad="$2"
+      shift 2
+      ;;
+    --goal-z-offset-m)
+      goal_z_offset_m="$2"
+      shift 2
+      ;;
+    --wait-for-pose-motion-m)
+      wait_for_pose_motion_m="$2"
+      shift 2
+      ;;
+    --launch-timeout-sec)
+      launch_timeout_sec="$2"
+      shift 2
+      ;;
+    --goal-timeout-sec)
+      goal_timeout_sec="$2"
+      shift 2
+      ;;
+    --goal-start-delay-sec)
+      goal_start_delay_sec="$2"
+      shift 2
+      ;;
+    --post-goal-observe-sec)
+      post_goal_observe_sec="$2"
+      shift 2
+      ;;
+    --clock-rate)
+      clock_rate="$2"
+      shift 2
+      ;;
+    --play-rate)
+      play_rate="$2"
+      shift 2
+      ;;
+    --ros-domain-id)
+      ros_domain_id="$2"
+      shift 2
+      ;;
+    --alignment-topic)
+      alignment_topic="$2"
+      shift 2
+      ;;
+    --input-pointcloud-topic)
+      input_pointcloud_topic="$2"
+      shift 2
+      ;;
+    --replay-pointcloud-topic)
+      replay_pointcloud_topic="$2"
+      shift 2
+      ;;
+    --input-twist-topic)
+      input_twist_topic="$2"
+      shift 2
+      ;;
+    --replay-twist-topic)
+      replay_twist_topic="$2"
+      shift 2
+      ;;
+    --odom-frame-id)
+      odom_frame_id="$2"
+      shift 2
+      ;;
+    --base-frame-id)
+      base_frame_id="$2"
+      shift 2
+      ;;
+    --enable-reinitialization-supervisor)
+      enable_reinitialization_supervisor="true"
+      shift
+      ;;
+    --reinitialization-supervisor-use-latest-pose)
+      reinitialization_supervisor_use_latest_pose="true"
+      shift
+      ;;
+    --reinitialization-supervisor-publish-count)
+      reinitialization_supervisor_publish_count="$2"
+      shift 2
+      ;;
+    --reinitialization-supervisor-publish-interval-sec)
+      reinitialization_supervisor_publish_interval_sec="$2"
+      shift 2
+      ;;
+    --reinitialization-supervisor-cooldown-sec)
+      reinitialization_supervisor_cooldown_sec="$2"
+      shift 2
+      ;;
+    --log-dir)
+      log_dir="$2"
+      shift 2
+      ;;
+    --extra-launch-arg)
+      extra_launch_args+=("$2")
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'Unknown argument: %s\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+require_arg "--map-yaml" "${map_yaml}"
+require_arg "--pcd-map-path" "${pcd_map_path}"
+require_arg "--bag-path" "${bag_path}"
+require_arg "--initial-pose-x" "${initial_pose_x}"
+require_arg "--initial-pose-y" "${initial_pose_y}"
+
+if [[ ! -f "${map_yaml}" ]]; then
+  printf 'map_yaml does not exist: %s\n' "${map_yaml}" >&2
+  exit 2
+fi
+if [[ ! -f "${pcd_map_path}" ]]; then
+  printf 'pcd_map_path does not exist: %s\n' "${pcd_map_path}" >&2
+  exit 2
+fi
+if [[ ! -e "${bag_path}" ]]; then
+  printf 'bag_path does not exist: %s\n' "${bag_path}" >&2
+  exit 2
+fi
+
+if [[ -n "${ros_domain_id}" ]]; then
+  export ROS_DOMAIN_ID="${ros_domain_id}"
+fi
+
+if [[ -z "${log_dir}" ]]; then
+  log_dir="$(mktemp -d -t lidarloc_nav2_replay_smoke.XXXXXX)"
+else
+  mkdir -p "${log_dir}"
+fi
+
+relay_log="${log_dir}/relay.log"
+launch_log="${log_dir}/nav2_launch.log"
+bag_log="${log_dir}/bag.log"
+goal_log="${log_dir}/navigate_to_pose.log"
+alignment_csv="${log_dir}/alignment_status.csv"
+diagnostic_log="${log_dir}/diagnostic_recorder.log"
+
+relay_cmd=(
+  ros2 run lidar_localization_ros2 relay_localization_inputs_with_current_stamp.py
+  --ros-args
+  -p use_sim_time:=true
+  -p "input_pointcloud_topic:=${input_pointcloud_topic}"
+  -p "output_pointcloud_topic:=${replay_pointcloud_topic}"
+  -p "input_twist_topic:=${input_twist_topic}"
+  -p "output_twist_topic:=${replay_twist_topic}"
+)
+
+launch_cmd=(
+  ros2 launch lidar_localization_ros2 nav2_navigation.launch.py
+  "map_yaml:=${map_yaml}"
+  "pcd_map_path:=${pcd_map_path}"
+  "cloud_topic:=${replay_pointcloud_topic}"
+  "pointcloud_topic:=${replay_pointcloud_topic}"
+  "twist_topic:=${replay_twist_topic}"
+  "use_sim_time:=true"
+  "set_initial_pose:=true"
+  "initial_pose_x:=${initial_pose_x}"
+  "initial_pose_y:=${initial_pose_y}"
+  "initial_pose_z:=${initial_pose_z}"
+  "initial_pose_qx:=${initial_pose_qx}"
+  "initial_pose_qy:=${initial_pose_qy}"
+  "initial_pose_qz:=${initial_pose_qz}"
+  "initial_pose_qw:=${initial_pose_qw}"
+  "publish_localizer_pose_odom:=false"
+  "publish_identity_odom:=false"
+  "publish_twist_odom:=true"
+  "publish_lidar_tf:=false"
+  "publish_imu_tf:=false"
+  "odom_frame_id:=${odom_frame_id}"
+  "base_frame_id:=${base_frame_id}"
+  "enable_reinitialization_supervisor:=${enable_reinitialization_supervisor}"
+  "reinitialization_supervisor_use_latest_pose:=${reinitialization_supervisor_use_latest_pose}"
+  "reinitialization_supervisor_publish_count:=${reinitialization_supervisor_publish_count}"
+  "reinitialization_supervisor_publish_interval_sec:=${reinitialization_supervisor_publish_interval_sec}"
+  "reinitialization_supervisor_cooldown_sec:=${reinitialization_supervisor_cooldown_sec}"
+)
+launch_cmd+=("${extra_launch_args[@]}")
+
+bag_cmd=(
+  ros2 bag play "${bag_path}"
+  --clock "${clock_rate}"
+  --rate "${play_rate}"
+  --topics
+  /tf_static
+  "${input_pointcloud_topic}"
+  "${input_twist_topic}"
+)
+
+goal_cmd=(
+  ros2 run lidar_localization_ros2 send_nav2_goal.py
+  --use-current-pose
+  --wait-for-pose-motion-m "${wait_for_pose_motion_m}"
+  --wait-for-transform-target-frame "${odom_frame_id}"
+  --wait-for-transform-source-frame "${base_frame_id}"
+  --wait-for-lifecycle-node controller_server
+  --wait-for-lifecycle-node planner_server
+  --wait-for-lifecycle-node behavior_server
+  --wait-for-lifecycle-node bt_navigator
+  --post-ready-delay-sec 1.0
+  --forward-m "${goal_forward_m}"
+  --left-m "${goal_left_m}"
+  --yaw-delta-rad "${goal_yaw_delta_rad}"
+  --z-offset-m "${goal_z_offset_m}"
+  --result-timeout-sec "${goal_timeout_sec}"
+)
+
+printf 'Launching Nav2 replay smoke. Logs: %s\n' "${log_dir}"
+setsid stdbuf -oL -eL "${relay_cmd[@]}" >"${relay_log}" 2>&1 &
+relay_pid=$!
+
+setsid stdbuf -oL -eL \
+  ros2 run lidar_localization_ros2 benchmark_diagnostic_recorder \
+  --ros-args \
+  -p "topic:=${alignment_topic}" \
+  -p "output_path:=${alignment_csv}" >"${diagnostic_log}" 2>&1 &
+diagnostic_pid=$!
+
+setsid stdbuf -oL -eL "${launch_cmd[@]}" >"${launch_log}" 2>&1 &
+launch_pid=$!
+
+bag_pid=""
+
+cleanup() {
+  local pid
+  for pid in "${bag_pid:-}" "${launch_pid}" "${relay_pid}" "${diagnostic_pid}"; do
+    if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
+      kill -TERM -- "-${pid}" 2>/dev/null || kill -TERM "${pid}" 2>/dev/null || true
+      wait "${pid}" 2>/dev/null || true
+    fi
+  done
+}
+trap cleanup EXIT
+
+ready_deadline=$((SECONDS + launch_timeout_sec))
+while ((SECONDS < ready_deadline)); do
+  if grep -q "Caught exception in launch" "${launch_log}" 2>/dev/null; then
+    printf 'Launch failed before localization became ready.\n' >&2
+    tail -n 80 "${launch_log}" >&2 || true
+    exit 1
+  fi
+  if grep -q "Initial Map Published" "${launch_log}" 2>/dev/null; then
+    break
+  fi
+  sleep 1
+done
+
+if ((SECONDS >= ready_deadline)); then
+  printf 'Timed out waiting for localizer initial map publish.\n' >&2
+  tail -n 80 "${launch_log}" >&2 || true
+  exit 1
+fi
+
+setsid stdbuf -oL -eL "${bag_cmd[@]}" >"${bag_log}" 2>&1 &
+bag_pid=$!
+sleep "${goal_start_delay_sec}"
+
+printf 'Sending replay validation goal.\n'
+if ! "${goal_cmd[@]}" >"${goal_log}" 2>&1; then
+  printf 'Replay navigate_to_pose failed.\n' >&2
+  tail -n 80 "${goal_log}" >&2 || true
+  tail -n 80 "${launch_log}" >&2 || true
+  exit 1
+fi
+
+if ! grep -q "Goal finished with status: SUCCEEDED" "${goal_log}"; then
+  printf 'Replay navigate_to_pose did not report SUCCEEDED.\n' >&2
+  tail -n 80 "${goal_log}" >&2 || true
+  exit 1
+fi
+
+if [[ "${post_goal_observe_sec}" != "0" ]]; then
+  printf 'Observing post-goal replay for %s seconds.\n' "${post_goal_observe_sec}"
+  sleep "${post_goal_observe_sec}"
+fi
+
+printf 'Nav2 replay smoke succeeded.\n'
+printf 'Relay log: %s\n' "${relay_log}"
+printf 'Launch log: %s\n' "${launch_log}"
+printf 'Bag log: %s\n' "${bag_log}"
+printf 'Goal log: %s\n' "${goal_log}"
+printf 'Alignment CSV: %s\n' "${alignment_csv}"

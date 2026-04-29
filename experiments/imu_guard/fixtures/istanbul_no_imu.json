@@ -1,0 +1,88 @@
+{
+  "name": "istanbul_no_imu",
+  "description": "Autoware Istanbul excerpt with no IMU activity. Any IMU guard trigger here is a false positive.",
+  "source": "/tmp/lidarloc_public_regression_suite_20260402_repeat2/istanbul/default_on_no_imu/alignment_status.csv",
+  "expectation": {
+    "must_not_trigger": true
+  },
+  "samples": [
+    {
+      "index": 0,
+      "status": "ok",
+      "fitness_score": 0.746918,
+      "alignment_time_sec": 6.845012,
+      "imu_prediction_active": false,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.005188,
+      "seed_yaw_since_accept_deg": 1.0e-06,
+      "accepted_gap_sec": 0.0,
+      "correction_translation_m": 0.005188,
+      "correction_yaw_deg": 1.0e-06
+    },
+    {
+      "index": 1,
+      "status": "ok",
+      "fitness_score": 0.749558,
+      "alignment_time_sec": 0.002712,
+      "imu_prediction_active": false,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.008484,
+      "seed_yaw_since_accept_deg": 1.0e-06,
+      "accepted_gap_sec": 6.599954,
+      "correction_translation_m": 0.007997,
+      "correction_yaw_deg": 0.0
+    },
+    {
+      "index": 2,
+      "status": "ok",
+      "fitness_score": 0.746638,
+      "alignment_time_sec": 0.001689,
+      "imu_prediction_active": false,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.012207,
+      "seed_yaw_since_accept_deg": 1.0e-06,
+      "accepted_gap_sec": 0.100002,
+      "correction_translation_m": 0.009246,
+      "correction_yaw_deg": 2.0e-06
+    },
+    {
+      "index": 3,
+      "status": "ok",
+      "fitness_score": 0.745063,
+      "alignment_time_sec": 0.001121,
+      "imu_prediction_active": false,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.020301,
+      "seed_yaw_since_accept_deg": 1.0e-06,
+      "accepted_gap_sec": 0.100006,
+      "correction_translation_m": 0.002197,
+      "correction_yaw_deg": 1.0e-06
+    },
+    {
+      "index": 4,
+      "status": "ok",
+      "fitness_score": 0.728559,
+      "alignment_time_sec": 7.12e-04,
+      "imu_prediction_active": false,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.019898,
+      "seed_yaw_since_accept_deg": 0.0,
+      "accepted_gap_sec": 0.100011,
+      "correction_translation_m": 0.004456,
+      "correction_yaw_deg": 2.0e-06
+    },
+    {
+      "index": 5,
+      "status": "ok",
+      "fitness_score": 0.73261,
+      "alignment_time_sec": 6.17e-04,
+      "imu_prediction_active": false,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.012573,
+      "seed_yaw_since_accept_deg": 4.0e-06,
+      "accepted_gap_sec": 0.100015,
+      "correction_translation_m": 3.05e-04,
+      "correction_yaw_deg": 1.0e-06
+    }
+  ]
+}

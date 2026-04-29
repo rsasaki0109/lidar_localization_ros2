@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+
+import csv
+import os
+from typing import Optional
+
+import rclpy
+from geometry_msgs.msg import PoseWithCovarianceStamped
+from rclpy.executors import ExternalShutdownException
+from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy
+from rclpy.qos import QoSProfile
+from rclpy.qos import ReliabilityPolicy
+
+
+def parse_reliability(value: str) -> ReliabilityPolicy:
+    normalized = value.strip().lower()
+    if normalized == "reliable":
+        return ReliabilityPolicy.RELIABLE
+    if normalized == "best_effort":
+        return ReliabilityPolicy.BEST_EFFORT
+    raise ValueError(f"Unsupported reliability policy: {value}")
+
+
+def parse_durability(value: str) -> DurabilityPolicy:
+    normalized = value.strip().lower()
+    if normalized == "volatile":
+        return DurabilityPolicy.VOLATILE
+    if normalized == "transient_local":
+        return DurabilityPolicy.TRANSIENT_LOCAL
+    raise ValueError(f"Unsupported durability policy: {value}")
+
+
+class BenchmarkPoseRecorder(Node):
+    def __init__(self) -> None:
+        super().__init__("benchmark_pose_recorder")
+
+        self.declare_parameter("topic", "/pcl_pose")
+        self.declare_parameter("output_path", "pose_trace.csv")
+        self.declare_parameter("qos_reliability", "reliable")
+        self.declare_parameter("qos_durability", "transient_local")
+        self.declare_parameter("use_node_clock", False)
+
+        self._topic = str(self.get_parameter("topic").value)
+        self._output_path = str(self.get_parameter("output_path").value)
+        self._qos_reliability = str(self.get_parameter("qos_reliability").value)
+        self._qos_durability = str(self.get_parameter("qos_durability").value)
+        self._use_node_clock = bool(self.get_parameter("use_node_clock").value)
+        self._message_count = 0
+        self._last_stamp: Optional[float] = None
+
+        os.makedirs(os.path.dirname(os.path.abspath(self._output_path)), exist_ok=True)
+        self._stream = open(self._output_path, "w", newline="", encoding="utf-8")
+        self._writer = csv.writer(self._stream)
+        self._writer.writerow(
+            [
+                "message_index",
+                "stamp_sec",
+                "frame_id",
+                "position_x",
+                "position_y",
+                "position_z",
+                "orientation_x",
+                "orientation_y",
+                "orientation_z",
+                "orientation_w",
+                "covariance",
+            ]
+        )
+
+        qos = QoSProfile(depth=10)
+        qos.reliability = parse_reliability(self._qos_reliability)
+        qos.durability = parse_durability(self._qos_durability)
+
+        self._subscription = self.create_subscription(
+            PoseWithCovarianceStamped,
+            self._topic,
+            self._callback,
+            qos,
+        )
+        self.get_logger().info(
+            f"Recording poses from {self._topic} to {self._output_path}"
+            f" with reliability={self._qos_reliability} durability={self._qos_durability}"
+        )
+
+    def _callback(self, msg: PoseWithCovarianceStamped) -> None:
+        if self._use_node_clock:
+            now = self.get_clock().now().to_msg()
+            stamp_sec = float(now.sec) + float(now.nanosec) * 1e-9
+        else:
+            stamp_sec = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
+        covariance = " ".join(f"{value:.10g}" for value in msg.pose.covariance)
+
+        self._writer.writerow(
+            [
+                self._message_count,
+                f"{stamp_sec:.9f}",
+                msg.header.frame_id,
+                f"{msg.pose.pose.position.x:.10f}",
+                f"{msg.pose.pose.position.y:.10f}",
+                f"{msg.pose.pose.position.z:.10f}",
+                f"{msg.pose.pose.orientation.x:.10f}",
+                f"{msg.pose.pose.orientation.y:.10f}",
+                f"{msg.pose.pose.orientation.z:.10f}",
+                f"{msg.pose.pose.orientation.w:.10f}",
+                covariance,
+            ]
+        )
+        self._stream.flush()
+
+        self._message_count += 1
+        self._last_stamp = stamp_sec
+
+    def close(self) -> None:
+        self.get_logger().info(
+            f"Recorded {self._message_count} pose messages"
+            + (f", last stamp {self._last_stamp:.3f}" if self._last_stamp is not None else "")
+        )
+        self._stream.close()
+
+
+def main() -> None:
+    rclpy.init()
+    node = BenchmarkPoseRecorder()
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    finally:
+        node.close()
+        node.destroy_node()
+        try:
+            if rclpy.ok():
+                rclpy.shutdown()
+        except RuntimeError:
+            pass
+
+
+if __name__ == "__main__":
+    main()

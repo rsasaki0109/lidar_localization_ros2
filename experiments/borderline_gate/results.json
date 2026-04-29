@@ -1,0 +1,252 @@
+{
+  "problem": "borderline_gate",
+  "title": "Borderline Measurement Gate",
+  "problem_statement": "Reject truly bad borderline measurements without regressing clean short-gap updates.",
+  "generated_from": "scripts/run_borderline_gate_experiments.py",
+  "interface": {
+    "methods": [
+      "reset() -> None",
+      "step(sample: GateSample) -> GateDecision"
+    ],
+    "sample_type": "GateSample",
+    "sample_fields": [
+      "index",
+      "fitness_score",
+      "effective_score_threshold",
+      "seed_translation_since_accept_m",
+      "consecutive_rejected_updates"
+    ],
+    "decision_type": "GateDecision",
+    "decision_fields": [
+      "reject_measurement",
+      "reason",
+      "score"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "clean_borderline_should_pass",
+      "description": "Distilled 30 s style case. Borderline fitness with a clean seed should still pass; a global 5.5 threshold is too strict here."
+    },
+    {
+      "name": "clear_good",
+      "description": "Real Istanbul accepted sample. Even with a large seed drift, a clearly good measurement should pass."
+    },
+    {
+      "name": "clear_over_threshold",
+      "description": "Real Istanbul sample with fitness clearly over the effective threshold. Every sane gate should reject it."
+    },
+    {
+      "name": "drifted_borderline_bad",
+      "description": "Real Istanbul borderline sample. Fitness is below 6.0 but the seed has already drifted far from the last accepted pose, so the measurement should be rejected."
+    },
+    {
+      "name": "post_reject_low_seed_should_pass",
+      "description": "Distilled short-gap replay case. Recent rejects alone are not enough to justify strict gating when the seed is still close to the last accepted pose."
+    }
+  ],
+  "variants": [
+    {
+      "name": "seed_conditioned_borderline",
+      "design": "seed-aware rule table",
+      "fixture_results": [
+        {
+          "fixture": "clean_borderline_should_pass",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "accept",
+          "decision_reason": "within_seed_conditioned_thresholds",
+          "decision_score": null,
+          "expected_reject": false
+        },
+        {
+          "fixture": "clear_good",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "accept",
+          "decision_reason": "within_seed_conditioned_thresholds",
+          "decision_score": null,
+          "expected_reject": false
+        },
+        {
+          "fixture": "clear_over_threshold",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "over_effective_threshold",
+          "decision_score": null,
+          "expected_reject": true
+        },
+        {
+          "fixture": "drifted_borderline_bad",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "over_borderline_seed_gate",
+          "decision_score": null,
+          "expected_reject": true
+        },
+        {
+          "fixture": "post_reject_low_seed_should_pass",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "accept",
+          "decision_reason": "within_seed_conditioned_thresholds",
+          "decision_score": null,
+          "expected_reject": false
+        }
+      ],
+      "benchmark_score": 100.0,
+      "readability_score": 56.8,
+      "extensibility_score": 94.0,
+      "static_metrics": {
+        "implementation_file": "experiments/borderline_gate/variants/seed_conditioned.py",
+        "loc": 16,
+        "branch_count": 4,
+        "max_nesting_depth": 1,
+        "state_field_count": 1,
+        "public_method_count": 2,
+        "import_count": 4,
+        "has_config_dataclass": true,
+        "readability_score": 56.8,
+        "extensibility_score": 94.0
+      },
+      "overall_score": 90.16
+    },
+    {
+      "name": "post_reject_strict",
+      "design": "state-escalation rule table",
+      "fixture_results": [
+        {
+          "fixture": "clean_borderline_should_pass",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "accept",
+          "decision_reason": "within_dynamic_thresholds",
+          "decision_score": null,
+          "expected_reject": false
+        },
+        {
+          "fixture": "clear_good",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "accept",
+          "decision_reason": "within_dynamic_thresholds",
+          "decision_score": null,
+          "expected_reject": false
+        },
+        {
+          "fixture": "clear_over_threshold",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "over_effective_threshold",
+          "decision_score": null,
+          "expected_reject": true
+        },
+        {
+          "fixture": "drifted_borderline_bad",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "over_post_reject_strict_threshold",
+          "decision_score": null,
+          "expected_reject": true
+        },
+        {
+          "fixture": "post_reject_low_seed_should_pass",
+          "passed": false,
+          "outcome": "mismatched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "over_post_reject_strict_threshold",
+          "decision_score": null,
+          "expected_reject": false
+        }
+      ],
+      "benchmark_score": 80.0,
+      "readability_score": 56.8,
+      "extensibility_score": 94.0,
+      "static_metrics": {
+        "implementation_file": "experiments/borderline_gate/variants/post_reject_strict.py",
+        "loc": 16,
+        "branch_count": 4,
+        "max_nesting_depth": 1,
+        "state_field_count": 1,
+        "public_method_count": 2,
+        "import_count": 4,
+        "has_config_dataclass": true,
+        "readability_score": 56.8,
+        "extensibility_score": 94.0
+      },
+      "overall_score": 78.16
+    },
+    {
+      "name": "fixed_threshold_55",
+      "design": "functional fixed threshold",
+      "fixture_results": [
+        {
+          "fixture": "clean_borderline_should_pass",
+          "passed": false,
+          "outcome": "mismatched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "over_fixed_5_5",
+          "decision_score": null,
+          "expected_reject": false
+        },
+        {
+          "fixture": "clear_good",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "accept",
+          "decision_reason": "within_thresholds",
+          "decision_score": null,
+          "expected_reject": false
+        },
+        {
+          "fixture": "clear_over_threshold",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "over_effective_threshold",
+          "decision_score": null,
+          "expected_reject": true
+        },
+        {
+          "fixture": "drifted_borderline_bad",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "over_fixed_5_5",
+          "decision_score": null,
+          "expected_reject": true
+        },
+        {
+          "fixture": "post_reject_low_seed_should_pass",
+          "passed": false,
+          "outcome": "mismatched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "over_fixed_5_5",
+          "decision_score": null,
+          "expected_reject": false
+        }
+      ],
+      "benchmark_score": 60.0,
+      "readability_score": 65.4,
+      "extensibility_score": 94.0,
+      "static_metrics": {
+        "implementation_file": "experiments/borderline_gate/variants/fixed_threshold_55.py",
+        "loc": 13,
+        "branch_count": 3,
+        "max_nesting_depth": 1,
+        "state_field_count": 1,
+        "public_method_count": 2,
+        "import_count": 4,
+        "has_config_dataclass": true,
+        "readability_score": 65.4,
+        "extensibility_score": 94.0
+      },
+      "overall_score": 67.88
+    }
+  ],
+  "benchmark_score_mean": 80.0
+}

@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+
+import argparse
+import csv
+from pathlib import Path
+
+import pandas as pd
+from scipy.spatial.transform import Rotation
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Convert a traj_refined.csv style trajectory into pose_trace.csv format."
+    )
+    parser.add_argument("--input-csv", required=True, help="Input traj_refined.csv path")
+    parser.add_argument("--output-csv", required=True, help="Output pose CSV path")
+    parser.add_argument("--frame-id", default="", help="Override frame_id column value")
+    parser.add_argument("--pose-prefix", default="lidar_pose", help="Pose column prefix, e.g. lidar_pose")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    input_path = Path(args.input_csv).expanduser().resolve()
+    output_path = Path(args.output_csv).expanduser().resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    df = pd.read_csv(input_path)
+    prefix = args.pose_prefix
+    pose_cols = [
+        f"{prefix}.x",
+        f"{prefix}.y",
+        f"{prefix}.z",
+        f"{prefix}.roll",
+        f"{prefix}.pitch",
+        f"{prefix}.yaw",
+    ]
+    missing = [col for col in ["timestamp", "frame_id", *pose_cols] if col not in df.columns]
+    if missing:
+        raise KeyError(f"Missing required columns in {input_path}: {missing}")
+
+    df = df.sort_values("timestamp").drop_duplicates("timestamp")
+    euler = df[[f"{prefix}.roll", f"{prefix}.pitch", f"{prefix}.yaw"]].to_numpy()
+    quat = Rotation.from_euler("xyz", euler, degrees=False).as_quat()
+
+    with output_path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(
+            [
+                "message_index",
+                "stamp_sec",
+                "frame_id",
+                "position_x",
+                "position_y",
+                "position_z",
+                "orientation_x",
+                "orientation_y",
+                "orientation_z",
+                "orientation_w",
+                "covariance",
+            ]
+        )
+        for idx, (_, row) in enumerate(df.iterrows()):
+            frame_id = args.frame_id or row["frame_id"]
+            writer.writerow(
+                [
+                    idx,
+                    f"{float(row['timestamp']):.9f}",
+                    frame_id,
+                    f"{float(row[f'{prefix}.x']):.10f}",
+                    f"{float(row[f'{prefix}.y']):.10f}",
+                    f"{float(row[f'{prefix}.z']):.10f}",
+                    f"{quat[idx, 0]:.10f}",
+                    f"{quat[idx, 1]:.10f}",
+                    f"{quat[idx, 2]:.10f}",
+                    f"{quat[idx, 3]:.10f}",
+                    " ".join("0" for _ in range(36)),
+                ]
+            )
+
+    print(output_path)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

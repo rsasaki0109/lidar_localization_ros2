@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+
+import argparse
+import csv
+import json
+import os
+import statistics
+from pathlib import Path
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Compare one or more benchmark run directories.")
+    parser.add_argument(
+        "--run-dir",
+        action="append",
+        required=True,
+        help="Benchmark run directory containing summary.json and optional trajectory_eval.json",
+    )
+    parser.add_argument(
+        "--output-json",
+        default="",
+        help="Optional output JSON path for the aggregated comparison result",
+    )
+    return parser.parse_args()
+
+
+def median(values: List[float]) -> Optional[float]:
+    return statistics.median(values) if values else None
+
+
+def safe_float(value: str) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def load_json(path: Path) -> Any:
+    with path.open("r", encoding="utf-8") as stream:
+        return json.load(stream)
+
+
+def expand_run_dirs(path: Path) -> List[Path]:
+    summary_path = path / "summary.json"
+    if summary_path.exists():
+        summary = load_json(summary_path)
+        if isinstance(summary, list):
+            expanded: List[Path] = []
+            for item in summary:
+                if not isinstance(item, dict):
+                    continue
+                run_dir = item.get("run_dir")
+                if not run_dir:
+                    continue
+                expanded.append(Path(str(run_dir)).expanduser().resolve())
+            if expanded:
+                return expanded
+        if isinstance(summary, dict):
+            return [path]
+
+    child_run_dirs = sorted(
+        child for child in path.iterdir() if child.is_dir() and (child / "summary.json").exists()
+    )
+    if child_run_dirs:
+        return child_run_dirs
+    return [path]
+
+
+def summarize_alignment(diag_path: Path) -> Dict[str, Optional[float]]:
+    if not diag_path.exists():
+        return {
+            "row_count": 0,
+            "non_ok_row_count": 0,
+            "alignment_time_median_sec": None,
+            "alignment_time_max_sec": None,
+            "fitness_median": None,
+            "fitness_max": None,
+            "rejected_streak_max": None,
+            "accepted_gap_median_sec": None,
+            "accepted_gap_max_sec": None,
+            "seed_translation_since_accept_median_m": None,
+            "seed_translation_since_accept_max_m": None,
+            "reinitialization_requested_rows": 0,
+            "reinitialization_request_score_max": None,
+            "reinitialization_request_first_trigger_stamp_sec": None,
+            "reinitialization_request_first_trigger_reason": None,
+        }
+
+    rows = list(csv.DictReader(diag_path.open("r", encoding="utf-8", newline="")))
+    alignment_times: List[float] = []
+    fitness_scores: List[float] = []
+    rejected_streaks: List[float] = []
+    accepted_gaps: List[float] = []
+    seed_translations: List[float] = []
+    reinitialization_request_scores: List[float] = []
+    reinitialization_requested_rows = 0
+    reinitialization_request_first_trigger_stamp_sec: Optional[float] = None
+    reinitialization_request_first_trigger_reason: Optional[str] = None
+    non_ok = 0
+
+    for row in rows:
+        if row.get("level") not in ("0", "b'\\x00'"):
+            non_ok += 1
+        try:
+            values = json.loads(row["values_json"])
+        except (KeyError, json.JSONDecodeError):
+            continue
+        alignment_time = safe_float(values.get("alignment_time_sec"))
+        fitness = safe_float(values.get("fitness_score"))
+        rejected_streak = safe_float(values.get("consecutive_rejected_updates"))
+        accepted_gap = safe_float(values.get("accepted_gap_sec"))
+        seed_translation = safe_float(values.get("seed_translation_since_accept_m"))
+        reinitialization_request_score = safe_float(values.get("reinitialization_request_score"))
+        reinitialization_requested = str(values.get("reinitialization_requested", "")).lower() == "true"
+        if alignment_time is not None:
+            alignment_times.append(alignment_time)
+        if fitness is not None:
+            fitness_scores.append(fitness)
+        if rejected_streak is not None:
+            rejected_streaks.append(rejected_streak)
+        if accepted_gap is not None:
+            accepted_gaps.append(accepted_gap)
+        if seed_translation is not None:
+            seed_translations.append(seed_translation)
+        if reinitialization_request_score is not None:
+            reinitialization_request_scores.append(reinitialization_request_score)
+        if reinitialization_requested:
+            reinitialization_requested_rows += 1
+            if reinitialization_request_first_trigger_stamp_sec is None:
+                reinitialization_request_first_trigger_stamp_sec = safe_float(row.get("stamp_sec"))
+                reason = values.get("reinitialization_request_reason")
+                reinitialization_request_first_trigger_reason = (
+                    str(reason) if reason is not None else None
+                )
+
+    return {
+        "row_count": len(rows),
+        "non_ok_row_count": non_ok,
+        "alignment_time_median_sec": median(alignment_times),
+        "alignment_time_max_sec": max(alignment_times) if alignment_times else None,
+        "fitness_median": median(fitness_scores),
+        "fitness_max": max(fitness_scores) if fitness_scores else None,
+        "rejected_streak_max": max(rejected_streaks) if rejected_streaks else None,
+        "accepted_gap_median_sec": median(accepted_gaps),
+        "accepted_gap_max_sec": max(accepted_gaps) if accepted_gaps else None,
+        "seed_translation_since_accept_median_m": median(seed_translations),
+        "seed_translation_since_accept_max_m": max(seed_translations) if seed_translations else None,
+        "reinitialization_requested_rows": reinitialization_requested_rows,
+        "reinitialization_request_score_max": (
+            max(reinitialization_request_scores) if reinitialization_request_scores else None
+        ),
+        "reinitialization_request_first_trigger_stamp_sec": (
+            reinitialization_request_first_trigger_stamp_sec
+        ),
+        "reinitialization_request_first_trigger_reason": (
+            reinitialization_request_first_trigger_reason
+        ),
+    }
+
+
+def summarize_run(run_dir: Path) -> Dict[str, object]:
+    summary = load_json(run_dir / "summary.json")
+    trajectory_eval_path = run_dir / "trajectory_eval.json"
+    if not trajectory_eval_path.exists():
+        trajectory_eval_path = run_dir / "eval.json"
+    trajectory_eval = load_json(trajectory_eval_path) if trajectory_eval_path.exists() else {}
+    alignment = summarize_alignment(run_dir / "alignment_status.csv")
+
+    result = {
+        "run_dir": str(run_dir),
+        "backend_hint": os.path.basename(str(run_dir)),
+        "record_topic": summary.get("record_topic"),
+        "diagnostic_topic": summary.get("diagnostic_topic"),
+        "timing_sec": summary.get("timing_sec", {}),
+        "return_codes": summary.get("return_codes", {}),
+        "resource_monitor": summary.get("resource_monitor", {}).get("stats", {}),
+        "trajectory_eval": trajectory_eval,
+        "alignment": alignment,
+    }
+    return result
+
+
+def print_human_summary(results: List[Dict[str, object]]) -> None:
+    for result in results:
+        resource = result["resource_monitor"]
+        alignment = result["alignment"]
+        trajectory = result["trajectory_eval"]
+        print(result["backend_hint"])
+        print(f"  run_dir: {result['run_dir']}")
+        print(f"  matched_sample_count: {trajectory.get('matched_sample_count')}")
+        print(f"  translation_rmse_m: {trajectory.get('translation_rmse_m')}")
+        print(f"  rotation_rmse_deg: {trajectory.get('rotation_rmse_deg')}")
+        print(f"  alignment_row_count: {alignment.get('row_count')}")
+        print(f"  non_ok_alignment_row_count: {alignment.get('non_ok_row_count')}")
+        print(f"  alignment_time_median_sec: {alignment.get('alignment_time_median_sec')}")
+        print(f"  alignment_time_max_sec: {alignment.get('alignment_time_max_sec')}")
+        print(f"  fitness_median: {alignment.get('fitness_median')}")
+        print(f"  rejected_streak_max: {alignment.get('rejected_streak_max')}")
+        print(f"  accepted_gap_max_sec: {alignment.get('accepted_gap_max_sec')}")
+        print(f"  seed_translation_since_accept_max_m: {alignment.get('seed_translation_since_accept_max_m')}")
+        print(f"  reinitialization_requested_rows: {alignment.get('reinitialization_requested_rows')}")
+        print(
+            "  reinitialization_request_score_max: "
+            f"{alignment.get('reinitialization_request_score_max')}"
+        )
+        print(
+            "  reinitialization_request_first_trigger_reason: "
+            f"{alignment.get('reinitialization_request_first_trigger_reason')}"
+        )
+        print(f"  cpu_percent_max: {resource.get('cpu_percent_max')}")
+        print(f"  rss_mb_max: {resource.get('rss_mb_max')}")
+        print()
+
+
+def main() -> None:
+    args = parse_args()
+    run_dirs: List[Path] = []
+    for item in args.run_dir:
+        run_dirs.extend(expand_run_dirs(Path(item).expanduser().resolve()))
+    results = [summarize_run(run_dir) for run_dir in run_dirs]
+
+    comparison = {
+        "run_count": len(results),
+        "runs": results,
+    }
+
+    print_human_summary(results)
+
+    if args.output_json:
+        output_path = Path(args.output_json).expanduser().resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(comparison, indent=2, sort_keys=True), encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,391 @@
+#!/usr/bin/env python3
+
+import argparse
+import csv
+import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable
+from typing import List
+from typing import Optional
+from typing import Sequence
+from typing import Tuple
+
+import yaml
+from rosbags.typesys import Stores
+from rosbags.typesys import get_typestore
+
+
+@dataclass
+class TopicInfo:
+    topic_id: int
+    name: str
+    msgtype: str
+
+
+@dataclass
+class PoseSample:
+    bag_time_ns: int
+    header_time_sec: float
+    frame_id: str
+    position: Tuple[float, float, float]
+    quaternion: Tuple[float, float, float, float]
+    covariance: Tuple[float, ...]
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Extract a pose reference CSV directly from a rosbag2 sqlite bag."
+    )
+    parser.add_argument("--bag-path", required=True, help="rosbag2 directory or sqlite db3 file")
+    parser.add_argument(
+        "--pose-topic",
+        required=True,
+        help="Pose topic to extract, e.g. /sensing/gnss/pose_with_covariance",
+    )
+    parser.add_argument(
+        "--sample-topic",
+        default="",
+        help="Optional topic whose header timestamps define the output sample times",
+    )
+    parser.add_argument("--output-csv", required=True, help="Destination pose CSV")
+    parser.add_argument(
+        "--output-initial-pose-yaml",
+        default="",
+        help="Optional ROS parameter YAML written from the first exported pose",
+    )
+    parser.add_argument(
+        "--initial-pose-skip-sec",
+        type=float,
+        default=0.0,
+        help="If > 0, choose the first exported pose at least this many seconds after the first exported stamp.",
+    )
+    parser.add_argument(
+        "--bag-start-offset",
+        type=float,
+        default=0.0,
+        help="Seconds to skip from the beginning of the bag, using bag record time",
+    )
+    parser.add_argument(
+        "--bag-duration",
+        type=float,
+        default=0.0,
+        help="Seconds of bag data to export. 0 means until the end of the bag.",
+    )
+    parser.add_argument(
+        "--max-match-diff",
+        type=float,
+        default=0.05,
+        help="Maximum allowed time difference in seconds when resampling to --sample-topic",
+    )
+    parser.add_argument(
+        "--output-stamp-source",
+        choices=["pose_header", "sample_header"],
+        default="sample_header",
+        help="CSV stamp source when --sample-topic is used",
+    )
+    return parser.parse_args()
+
+
+def resolve_db3_path(bag_path: Path) -> Path:
+    if bag_path.is_file():
+        return bag_path
+    metadata_path = bag_path / "metadata.yaml"
+    if metadata_path.exists():
+        metadata = yaml.safe_load(metadata_path.read_text(encoding="utf-8")) or {}
+        info = metadata.get("rosbag2_bagfile_information", {})
+        relative_paths = info.get("relative_file_paths", [])
+        if relative_paths:
+            candidate = bag_path / relative_paths[0]
+            if candidate.exists():
+                return candidate
+    candidates = sorted(bag_path.glob("*.db3"))
+    if len(candidates) == 1:
+        return candidates[0]
+    raise FileNotFoundError(f"Could not resolve a single db3 file under {bag_path}")
+
+
+def load_bag_start_ns(bag_root: Path, conn: sqlite3.Connection) -> int:
+    metadata_path = bag_root / "metadata.yaml"
+    if metadata_path.exists():
+        metadata = yaml.safe_load(metadata_path.read_text(encoding="utf-8")) or {}
+        info = metadata.get("rosbag2_bagfile_information", {})
+        starting_time = info.get("starting_time", {})
+        start_ns = starting_time.get("nanoseconds_since_epoch")
+        if isinstance(start_ns, int):
+            return start_ns
+
+    row = conn.execute("SELECT MIN(timestamp) FROM messages").fetchone()
+    if row is None or row[0] is None:
+        raise RuntimeError("Bag does not contain any messages")
+    return int(row[0])
+
+
+def load_topic_info(conn: sqlite3.Connection, topic_name: str) -> TopicInfo:
+    row = conn.execute(
+        "SELECT id, name, type FROM topics WHERE name = ?",
+        (topic_name,),
+    ).fetchone()
+    if row is None:
+        raise KeyError(f"Topic not found in bag: {topic_name}")
+    return TopicInfo(topic_id=int(row[0]), name=str(row[1]), msgtype=str(row[2]))
+
+
+def iter_topic_rows(
+    conn: sqlite3.Connection,
+    topic_id: int,
+    bag_start_ns: int,
+    bag_end_ns: Optional[int],
+) -> Iterable[Tuple[int, bytes]]:
+    query = "SELECT timestamp, data FROM messages WHERE topic_id = ? AND timestamp >= ?"
+    params: List[object] = [topic_id, bag_start_ns]
+    if bag_end_ns is not None:
+        query += " AND timestamp <= ?"
+        params.append(bag_end_ns)
+    query += " ORDER BY timestamp"
+    for timestamp, raw in conn.execute(query, tuple(params)):
+        yield int(timestamp), bytes(raw)
+
+
+def header_stamp_sec(msg: object) -> float:
+    stamp = msg.header.stamp
+    return float(stamp.sec) + float(stamp.nanosec) * 1e-9
+
+
+def pose_sample_from_message(bag_time_ns: int, msg: object) -> PoseSample:
+    if hasattr(msg.pose, "pose"):
+        pose = msg.pose.pose
+        covariance_values = tuple(float(value) for value in msg.pose.covariance)
+    else:
+        pose = msg.pose
+        covariance_values = tuple(0.0 for _ in range(36))
+    return PoseSample(
+        bag_time_ns=bag_time_ns,
+        header_time_sec=header_stamp_sec(msg),
+        frame_id=str(msg.header.frame_id),
+        position=(float(pose.position.x), float(pose.position.y), float(pose.position.z)),
+        quaternion=(
+            float(pose.orientation.x),
+            float(pose.orientation.y),
+            float(pose.orientation.z),
+            float(pose.orientation.w),
+        ),
+        covariance=covariance_values,
+    )
+
+
+def load_pose_samples(
+    conn: sqlite3.Connection,
+    store: object,
+    topic: TopicInfo,
+    bag_start_ns: int,
+    bag_end_ns: Optional[int],
+) -> List[PoseSample]:
+    samples: List[PoseSample] = []
+    for record_time_ns, raw in iter_topic_rows(conn, topic.topic_id, bag_start_ns, bag_end_ns):
+        msg = store.deserialize_cdr(raw, topic.msgtype)
+        samples.append(pose_sample_from_message(record_time_ns, msg))
+    if not samples:
+        raise RuntimeError(f"No pose samples extracted from {topic.name}")
+    return samples
+
+
+def load_sample_times(
+    conn: sqlite3.Connection,
+    store: object,
+    topic: TopicInfo,
+    bag_start_ns: int,
+    bag_end_ns: Optional[int],
+) -> List[float]:
+    sample_times: List[float] = []
+    for _, raw in iter_topic_rows(conn, topic.topic_id, bag_start_ns, bag_end_ns):
+        msg = store.deserialize_cdr(raw, topic.msgtype)
+        if not hasattr(msg, "header") or not hasattr(msg.header, "stamp"):
+            raise TypeError(f"Topic {topic.name} does not provide header timestamps")
+        sample_times.append(header_stamp_sec(msg))
+    if not sample_times:
+        raise RuntimeError(f"No sample timestamps extracted from {topic.name}")
+    return sample_times
+
+
+def nearest_pose_index(
+    poses: Sequence[PoseSample],
+    target_stamp_sec: float,
+    start_index: int,
+) -> int:
+    best_index = start_index
+    best_dt = abs(poses[start_index].header_time_sec - target_stamp_sec)
+    index = start_index + 1
+    while index < len(poses):
+        dt = abs(poses[index].header_time_sec - target_stamp_sec)
+        if dt <= best_dt:
+            best_index = index
+            best_dt = dt
+            index += 1
+            continue
+        break
+    return best_index
+
+
+def format_covariance(values: Sequence[float]) -> str:
+    return " ".join(f"{value:.10g}" for value in values)
+
+
+def export_pose_csv(path: Path, samples: Sequence[PoseSample], stamps: Sequence[float]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(
+            [
+                "message_index",
+                "stamp_sec",
+                "frame_id",
+                "position_x",
+                "position_y",
+                "position_z",
+                "orientation_x",
+                "orientation_y",
+                "orientation_z",
+                "orientation_w",
+                "covariance",
+            ]
+        )
+        for index, (sample, stamp_sec) in enumerate(zip(samples, stamps)):
+            writer.writerow(
+                [
+                    index,
+                    f"{stamp_sec:.9f}",
+                    sample.frame_id,
+                    f"{sample.position[0]:.10f}",
+                    f"{sample.position[1]:.10f}",
+                    f"{sample.position[2]:.10f}",
+                    f"{sample.quaternion[0]:.10f}",
+                    f"{sample.quaternion[1]:.10f}",
+                    f"{sample.quaternion[2]:.10f}",
+                    f"{sample.quaternion[3]:.10f}",
+                    format_covariance(sample.covariance),
+                ]
+            )
+
+
+def export_initial_pose_yaml(path: Path, sample: PoseSample) -> None:
+    data = {
+        "/**": {
+            "ros__parameters": {
+                "set_initial_pose": True,
+                "initial_pose_x": sample.position[0],
+                "initial_pose_y": sample.position[1],
+                "initial_pose_z": sample.position[2],
+                "initial_pose_qx": sample.quaternion[0],
+                "initial_pose_qy": sample.quaternion[1],
+                "initial_pose_qz": sample.quaternion[2],
+                "initial_pose_qw": sample.quaternion[3],
+            }
+        }
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+
+def select_initial_pose_sample(
+    samples: Sequence[PoseSample],
+    stamps: Sequence[float],
+    skip_sec: float,
+) -> tuple[int, PoseSample]:
+    if not samples:
+        raise RuntimeError("No exported samples available for initial pose selection")
+    if skip_sec <= 0.0:
+        return 0, samples[0]
+
+    threshold = stamps[0] + skip_sec
+    for index, (sample, stamp_sec) in enumerate(zip(samples, stamps)):
+        if stamp_sec >= threshold:
+            return index, sample
+    raise RuntimeError(
+        f"Could not find an initial pose sample after skip {skip_sec:.3f}s in the exported window"
+    )
+
+
+def main() -> int:
+    args = parse_args()
+    bag_path = Path(args.bag_path).resolve()
+    db3_path = resolve_db3_path(bag_path)
+    bag_root = bag_path if bag_path.is_dir() else db3_path.parent
+
+    conn = sqlite3.connect(str(db3_path))
+    try:
+        bag_start_ns = load_bag_start_ns(bag_root, conn)
+        window_start_ns = bag_start_ns + int(round(args.bag_start_offset * 1e9))
+        window_end_ns = None
+        if args.bag_duration > 0.0:
+            window_end_ns = window_start_ns + int(round(args.bag_duration * 1e9))
+
+        store = get_typestore(Stores.ROS2_HUMBLE)
+        pose_topic = load_topic_info(conn, args.pose_topic)
+        pose_samples = load_pose_samples(conn, store, pose_topic, window_start_ns, window_end_ns)
+
+        exported_samples: List[PoseSample] = []
+        exported_stamps: List[float] = []
+
+        if args.sample_topic:
+            sample_topic = load_topic_info(conn, args.sample_topic)
+            sample_times = load_sample_times(conn, store, sample_topic, window_start_ns, window_end_ns)
+
+            pose_index = 0
+            for sample_stamp_sec in sample_times:
+                if pose_index >= len(pose_samples):
+                    break
+                nearest_index = nearest_pose_index(pose_samples, sample_stamp_sec, pose_index)
+                nearest = pose_samples[nearest_index]
+                dt = abs(nearest.header_time_sec - sample_stamp_sec)
+                if dt > args.max_match_diff:
+                    continue
+                exported_samples.append(nearest)
+                if args.output_stamp_source == "sample_header":
+                    exported_stamps.append(sample_stamp_sec)
+                else:
+                    exported_stamps.append(nearest.header_time_sec)
+                pose_index = nearest_index
+        else:
+            exported_samples = pose_samples
+            exported_stamps = [sample.header_time_sec for sample in pose_samples]
+
+        if not exported_samples:
+            raise RuntimeError("No samples were exported")
+
+        output_csv_path = Path(args.output_csv).resolve()
+        export_pose_csv(output_csv_path, exported_samples, exported_stamps)
+        output_initial_pose_path = None
+        initial_pose_index = 0
+        initial_pose_sample = exported_samples[0]
+        if args.output_initial_pose_yaml:
+            initial_pose_index, initial_pose_sample = select_initial_pose_sample(
+                exported_samples,
+                exported_stamps,
+                args.initial_pose_skip_sec,
+            )
+            output_initial_pose_path = Path(args.output_initial_pose_yaml).resolve()
+            export_initial_pose_yaml(output_initial_pose_path, initial_pose_sample)
+
+        window_end_desc = str(window_end_ns) if window_end_ns is not None else "end"
+        print(f"bag_path: {bag_path}")
+        print(f"pose_topic: {pose_topic.name}")
+        print(f"sample_topic: {args.sample_topic or '-'}")
+        print(f"bag_window_ns: [{window_start_ns}, {window_end_desc}]")
+        print(f"pose_samples_loaded: {len(pose_samples)}")
+        print(f"exported_samples: {len(exported_samples)}")
+        print(f"first_export_stamp_sec: {exported_stamps[0]:.9f}")
+        print(f"last_export_stamp_sec: {exported_stamps[-1]:.9f}")
+        print(f"initial_pose_skip_sec: {args.initial_pose_skip_sec:.3f}")
+        print(f"initial_pose_index: {initial_pose_index}")
+        print(f"initial_pose_stamp_sec: {initial_pose_sample.header_time_sec:.9f}")
+        print(f"output_csv: {output_csv_path}")
+        print(f"output_initial_pose_yaml: {output_initial_pose_path or '-'}")
+    finally:
+        conn.close()
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

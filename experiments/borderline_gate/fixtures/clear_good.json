@@ -1,0 +1,15 @@
+{
+  "name": "clear_good",
+  "description": "Real Istanbul accepted sample. Even with a large seed drift, a clearly good measurement should pass.",
+  "source": "artifacts/public/istanbul_60s_rejected_seed_update_r1_repeat_compare/nav2_ndt_urban_rejected_seed_update_r1_r1/alignment_status.csv:91",
+  "expectation": {
+    "expected_reject": false
+  },
+  "sample": {
+    "index": 91,
+    "fitness_score": 4.629636,
+    "effective_score_threshold": 6.0,
+    "seed_translation_since_accept_m": 6.632987,
+    "consecutive_rejected_updates": 2
+  }
+}

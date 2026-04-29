@@ -1,0 +1,54 @@
+/**:
+  ros__parameters:
+    registration_method: NDT_OMP
+    score_threshold: 6.0
+    ndt_resolution: 1.0
+    ndt_step_size: 0.1
+    ndt_num_threads: 4
+    ndt_max_iterations: 35
+    gicp_corr_randomness: 20
+    gicp_max_correspondence_distance: 2.0
+    vgicp_voxel_resolution: 1.0
+    transform_epsilon: 0.01
+    voxel_leaf_size: 0.2
+    scan_max_range: 100.0
+    scan_min_range: 1.0
+    scan_period: 0.1
+    use_pcd_map: true
+    map_path: /absolute/path/to/autoware_istanbul/pointcloud_map.pcd
+    set_initial_pose: true
+    initial_pose_x: 66459.42927936181
+    initial_pose_y: 43620.21239264418
+    initial_pose_z: 41.53427549514439
+    initial_pose_qx: -0.004873999337462572
+    initial_pose_qy: 0.005545974206531707
+    initial_pose_qz: 0.959846363599952
+    initial_pose_qw: -0.2804290366287121
+    use_odom: false
+    use_imu: false
+    enable_debug: false
+    predict_pose_from_previous_delta: false
+    reject_above_score_threshold: false
+    enable_map_odom_tf: false
+    global_frame_id: map
+    odom_frame_id: odom
+    base_frame_id: base_link
+    enable_timer_publishing: false
+    pose_publish_frequency: 30.0
+    use_twist_prediction: false
+    twist_prediction_use_angular_velocity: false
+    max_twist_prediction_dt: 0.5
+    # EKF disabled, GTSAM smoother enabled
+    use_twist_ekf: false
+    use_gtsam_smoother: true
+    # Smoother parameters (Pose2 sliding-window Gauss-Newton)
+    gtsam_odom_sigma_x: 0.05
+    gtsam_odom_sigma_y: 0.02
+    gtsam_odom_sigma_yaw: 0.01
+    gtsam_ndt_sigma_x: 0.1
+    gtsam_ndt_sigma_y: 0.1
+    gtsam_ndt_sigma_yaw: 0.02
+    gtsam_fitness_nominal: 1.0
+    gtsam_fitness_scale_factor: 2.0
+    gtsam_fitness_reject: 50.0
+    gtsam_huber_k: 1.345
