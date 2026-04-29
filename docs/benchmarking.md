@@ -18,6 +18,16 @@ This repository now includes a small benchmark harness so that localization chan
   - Records `diagnostic_msgs/msg/DiagnosticArray` into CSV
 - `benchmark_eval_trajectory`
   - Compares an estimated trajectory CSV against a reference trajectory CSV
+- `benchmark_eval_evo_ape`
+  - Converts the benchmark CSVs to TUM format and evaluates them with `evo_ape`
+  - Useful when you need a paper-style `ATE` workflow instead of only the built-in RMSE JSON
+- `tum_trajectory_to_pose_reference_csv_for_rosbag2.py`
+  - Crops a TUM trajectory to the time window of a rosbag2 bag and exports benchmark `reference.csv`
+  - Useful for split datasets such as Koide `outdoor_hard_01a` / `01b`, where one GT trajectory spans multiple bag files
+- `build_gt_aligned_map_from_reference_csv.py`
+  - Builds a diagnostic map by transforming PointCloud2 scans with benchmark `reference.csv` poses
+  - Writes float32 binary `.ply` output by default so the runtime stack sees `property float x/y/z`
+  - Useful for proving whether a failure is due to map coverage or to registration itself
 - `benchmark_compare_runs`
   - Aggregates `summary.json`, `trajectory_eval.json`, and `alignment_status.csv`
   - Prints a quick human-readable comparison across multiple run directories
@@ -46,6 +56,15 @@ This repository now includes a small benchmark harness so that localization chan
 colcon build --packages-select lidar_localization_ros2
 source install/setup.bash
 ```
+
+## Map Format Notes
+
+- Runtime manifests accept `.ply` and `.pcd` paths, but current benchmark validation in this repo
+  should prefer `.ply`.
+- For generated maps, use binary little-endian float32 PLY fields (`property float x/y/z`).
+- Avoid Open3D's default double-precision PLY output for runtime benchmarking.
+- Generated `.pcd` maps are still useful for inspection tools, but they are not the recommended
+  benchmark/runtime path in this repo today.
 
 ## Run a benchmark
 
@@ -481,6 +500,51 @@ ros2 run lidar_localization_ros2 benchmark_eval_trajectory \
   --reference-csv /path/to/reference_pose.csv \
   --output-json /tmp/lidarloc_benchmark/run_001/trajectory_eval.json
 ```
+
+To run the same pair through `evo_ape`:
+
+```bash
+ros2 run lidar_localization_ros2 benchmark_eval_evo_ape \
+  --estimated-csv /tmp/lidarloc_benchmark/run_001/pose_trace.csv \
+  --reference-csv /path/to/reference_pose.csv \
+  --output-json /tmp/lidarloc_benchmark/run_001/evo_ape_translation.json \
+  --save-results-zip /tmp/lidarloc_benchmark/run_001/evo_ape_translation.zip
+```
+
+Notes:
+
+- default `--pose-relation trans_part` corresponds to translation APE in meters
+- for datasets already expressed in the same map frame, keep the default unaligned evaluation
+- if you need paper-by-paper comparability, make sure the sequence unit and initialization policy also match
+
+To crop a TUM GT trajectory to the time span of a split rosbag2 sequence:
+
+```bash
+ros2 run lidar_localization_ros2 tum_trajectory_to_pose_reference_csv_for_rosbag2.py \
+  --input data/public/koide_hard_localization/gt/traj_lidar_outdoor_hard_01.txt \
+  --bag-path data/public/koide_hard_localization/sequences/outdoor_hard_01b/outdoor_hard_01b \
+  --output-csv data/public/koide_hard_localization/benchmark/outdoor_hard_01b/reference.csv \
+  --output-initial-pose-yaml data/public/koide_hard_localization/benchmark/outdoor_hard_01b/initial_pose.yaml \
+  --initial-pose-skip-sec 0.05
+```
+
+To build a GT-aligned diagnostic map from a PointCloud2 rosbag2 sequence and a
+reference CSV:
+
+```bash
+ros2 run lidar_localization_ros2 build_gt_aligned_map_from_reference_csv.py \
+  --bag-path data/public/koide_hard_localization/sequences/outdoor_hard_01 \
+  --reference-csv data/public/koide_hard_localization/benchmark/outdoor_hard_01/reference.csv \
+  --cloud-topic /livox/points \
+  --point-stride 10 \
+  --voxel-size 0.5 \
+  --output-map /tmp/koide_outdoor01_gt_map_stride10_voxel05.ply
+```
+
+This is useful as an engineering check when you suspect map-coverage mismatch.
+When writing `.ply`, the helper emits a binary little-endian float32 PLY (`property float x/y/z`)
+because the runtime stack does not behave reliably with Open3D's default double-precision PLY fields.
+Do not use a map built from the same evaluation run for external performance claims.
 
 ## Compare multiple runs
 
