@@ -15,7 +15,23 @@ from typing import Optional
 import yaml
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+def _default_repo_root() -> Path:
+    """Resolve repo:// paths: source tree <repo>/ or install share/lidar_localization_ros2/."""
+    script = Path(__file__).resolve()
+    # ament install: <prefix>/lib/lidar_localization_ros2/<script>
+    if script.parent.name == "lidar_localization_ros2" and script.parent.parent.name == "lib":
+        prefix = script.parents[2]
+        return (prefix / "share" / "lidar_localization_ros2").resolve()
+    # dev checkout: <repo>/scripts/<script>
+    return script.parents[1]
+
+
+REPO_ROOT = _default_repo_root()
+
+
+def _script_sibling(name: str) -> Path:
+    """Co-located helper (source repo/scripts/ or install lib/<pkg>/)."""
+    return Path(__file__).resolve().parent / name
 
 
 def parse_args() -> argparse.Namespace:
@@ -216,7 +232,6 @@ def run_single_benchmark(
     manifest_dir: Path,
     print_only: bool,
 ) -> int:
-    repo_root = Path(__file__).resolve().parents[1]
     benchmark = manifest.get("benchmark", {})
     dataset = manifest.get("dataset", {})
     output_dir = resolve_required_path(benchmark, "output_dir", manifest_dir)
@@ -230,7 +245,7 @@ def run_single_benchmark(
     write_yaml(manifest_copy_path, manifest)
 
     bag_path = resolve_required_path(dataset, "bag_path", manifest_dir)
-    runner_script = repo_root / "scripts" / "benchmark_runner"
+    runner_script = _script_sibling("benchmark_runner")
     runner_cmd = [
         str(runner_script),
         "--bag-path",
@@ -278,7 +293,7 @@ def run_single_benchmark(
     if reference_csv_raw:
         reference_csv = resolve_path(str(reference_csv_raw), manifest_dir)
         assert reference_csv is not None
-        eval_script = repo_root / "scripts" / "benchmark_eval_trajectory"
+        eval_script = _script_sibling("benchmark_eval_trajectory")
         eval_json = output_dir / "trajectory_eval.json"
         eval_cmd = [
             str(eval_script),
@@ -307,7 +322,6 @@ def run_sweep_benchmark(
     manifest_dir: Path,
     print_only: bool,
 ) -> int:
-    repo_root = Path(__file__).resolve().parents[1]
     benchmark = manifest.get("benchmark", {})
     dataset = manifest.get("dataset", {})
     output_dir = resolve_required_path(benchmark, "output_dir", manifest_dir)
@@ -323,7 +337,7 @@ def run_sweep_benchmark(
     reference_csv = resolve_required_path(dataset, "reference_csv", manifest_dir)
     config_json = resolve_required_path(benchmark, "config_json", manifest_dir)
 
-    sweep_script = repo_root / "scripts" / "benchmark_sweep_localizer"
+    sweep_script = _script_sibling("benchmark_sweep_localizer")
     sweep_cmd = [
         str(sweep_script),
         "--bag-path",

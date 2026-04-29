@@ -1,0 +1,52 @@
+/**:
+  ros__parameters:
+    # SMALL_GICP with NDT initializer for indoor depth camera data.
+    # NDT initializer provides convergence basin; GICP refines with
+    # point-to-plane matching better suited for planar indoor surfaces.
+    registration_method: SMALL_GICP
+    score_threshold: 15.0
+    ndt_resolution: 0.5
+    ndt_step_size: 0.1
+    ndt_num_threads: 4
+    ndt_max_iterations: 35
+    gicp_corr_randomness: 20
+    # Indoor: correspondence distance must be generous for depth camera noise
+    gicp_max_correspondence_distance: 5.0
+    vgicp_voxel_resolution: 0.5
+    transform_epsilon: 0.01
+    voxel_leaf_size: 0.1
+    enable_scan_voxel_filter: false
+    scan_max_range: 30.0
+    scan_min_range: 0.3
+    scan_period: 0.1
+    use_pcd_map: true
+    map_path: ""
+    set_initial_pose: false
+    initial_pose_x: 0.0
+    initial_pose_y: 0.0
+    initial_pose_z: 0.0
+    initial_pose_qx: 0.0
+    initial_pose_qy: 0.0
+    initial_pose_qz: 0.0
+    initial_pose_qw: 1.0
+    use_odom: false
+    use_twist_prediction: true
+    twist_prediction_use_angular_velocity: false
+    max_twist_prediction_dt: 0.5
+    use_imu: false
+    use_imu_preintegration: false
+    enable_reinitialization_request_output: false
+    enable_debug: false
+    predict_pose_from_previous_delta: true
+    # Local map crop: indoor map 430K pts, crop to 50m for GICP speed
+    enable_local_map_crop: true
+    local_map_radius: 50.0
+    local_map_min_points: 100
+    reject_above_score_threshold: true
+    enable_borderline_seed_rejection_gate: false
+    enable_map_odom_tf: false
+    global_frame_id: map
+    odom_frame_id: odom
+    base_frame_id: base_link
+    enable_timer_publishing: false
+    pose_publish_frequency: 30.0
