@@ -591,9 +591,9 @@ ros2 run lidar_localization_ros2 run_nav2_reinit_supervisor_regression.sh
 
 This writes:
 
-- `artifacts/public/nav2_reinit_supervisor_regression_120/comparison.json`
-- `artifacts/public/nav2_reinit_supervisor_regression_120/summary.md`
-- `artifacts/public/nav2_reinit_supervisor_regression_120/regression_result.json`
+- `artifacts/public/nav2_reinit_supervisor_regression_150/comparison.json`
+- `artifacts/public/nav2_reinit_supervisor_regression_150/summary.md`
+- `artifacts/public/nav2_reinit_supervisor_regression_150/regression_result.json`
 
 Current pass criteria:
 
@@ -617,7 +617,7 @@ This writes:
 and keeps the underlying per-suite artifacts under:
 
 - `artifacts/public/release_regression_suite/public_regression_suite/`
-- `artifacts/public/release_regression_suite/nav2_reinit_supervisor_regression_120/`
+- `artifacts/public/release_regression_suite/nav2_reinit_supervisor_regression_150/`
 
 ## Recommended metrics
 

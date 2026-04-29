@@ -99,7 +99,7 @@ fi
 
 public_output_dir="${work_dir}/public"
 public_report_dir="${report_dir}/public_regression_suite"
-nav2_output_dir="${report_dir}/nav2_reinit_supervisor_regression_120"
+nav2_output_dir="${report_dir}/nav2_reinit_supervisor_regression_150"
 summary_json="${report_dir}/summary.json"
 summary_md="${report_dir}/summary.md"
 

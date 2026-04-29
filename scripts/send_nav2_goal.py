@@ -275,21 +275,6 @@ def main():
         rclpy.shutdown()
         return 1
 
-    if args.use_current_pose and not node.wait_for_pose_motion():
-        node.get_logger().error(
-            "pose topic did not move enough before timeout "
-            f"({args.wait_for_pose_motion_m:.3f} m on {args.pose_topic})"
-        )
-        node.destroy_node()
-        rclpy.shutdown()
-        return 1
-
-    if not node.wait_for_server():
-        node.get_logger().error("navigate_to_pose action server not available")
-        node.destroy_node()
-        rclpy.shutdown()
-        return 1
-
     if not node.wait_for_transform():
         node.get_logger().error(
             "required transform did not become available before timeout "
@@ -303,6 +288,21 @@ def main():
         node.get_logger().error(
             "required lifecycle nodes did not become active before timeout: "
             + ", ".join(args.wait_for_lifecycle_node)
+        )
+        node.destroy_node()
+        rclpy.shutdown()
+        return 1
+
+    if not node.wait_for_server():
+        node.get_logger().error("navigate_to_pose action server not available")
+        node.destroy_node()
+        rclpy.shutdown()
+        return 1
+
+    if args.use_current_pose and not node.wait_for_pose_motion():
+        node.get_logger().error(
+            "pose topic did not move enough before timeout "
+            f"({args.wait_for_pose_motion_m:.3f} m on {args.pose_topic})"
         )
         node.destroy_node()
         rclpy.shutdown()
