@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+
+import argparse
+import csv
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import zipfile
+from pathlib import Path
+from typing import Dict
+from typing import Optional
+
+
+def count_csv_rows(path: Path) -> int:
+    with path.open("r", encoding="utf-8", newline="") as stream:
+        return max(sum(1 for _ in stream) - 1, 0)
+
+
+def write_tum_trajectory(csv_path: Path, tum_path: Path) -> None:
+    with csv_path.open("r", encoding="utf-8", newline="") as stream:
+        reader = csv.DictReader(stream)
+        with tum_path.open("w", encoding="utf-8") as output:
+            for row in reader:
+                output.write(
+                    f"{float(row['stamp_sec']):.9f} "
+                    f"{float(row['position_x']):.10f} "
+                    f"{float(row['position_y']):.10f} "
+                    f"{float(row['position_z']):.10f} "
+                    f"{float(row['orientation_x']):.10f} "
+                    f"{float(row['orientation_y']):.10f} "
+                    f"{float(row['orientation_z']):.10f} "
+                    f"{float(row['orientation_w']):.10f}\n"
+                )
+
+
+def load_zip_json(archive_path: Path, member_name: str) -> Dict[str, object]:
+    with zipfile.ZipFile(archive_path, "r") as archive:
+        with archive.open(member_name, "r") as stream:
+            return json.loads(stream.read().decode("utf-8"))
+
+
+def maybe_load_matched_sample_count(archive_path: Path) -> Optional[int]:
+    try:
+        import numpy as np
+    except ImportError:
+        return None
+
+    with zipfile.ZipFile(archive_path, "r") as archive:
+        with archive.open("timestamps.npy", "r") as stream:
+            timestamps = np.load(stream, allow_pickle=False)
+            return int(timestamps.shape[0])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Evaluate pose/reference CSV files with evo_ape after converting them to TUM format."
+    )
+    parser.add_argument("--estimated-csv", required=True)
+    parser.add_argument("--reference-csv", required=True)
+    parser.add_argument("--output-json", required=True)
+    parser.add_argument(
+        "--max-time-diff",
+        type=float,
+        default=0.05,
+        help="Maximum timestamp difference for evo data association",
+    )
+    parser.add_argument(
+        "--pose-relation",
+        default="trans_part",
+        choices=["full", "trans_part", "rot_part", "angle_deg", "angle_rad", "point_distance"],
+        help="evo_ape pose relation",
+    )
+    parser.add_argument("--align", action="store_true", help="Apply Umeyama alignment in evo_ape")
+    parser.add_argument("--align-origin", action="store_true", help="Align trajectory origin in evo_ape")
+    parser.add_argument("--correct-scale", action="store_true", help="Enable scale correction in evo_ape")
+    parser.add_argument(
+        "--save-results-zip",
+        default="",
+        help="Optional path to copy the evo results zip for later inspection",
+    )
+    parser.add_argument(
+        "--save-estimated-tum",
+        default="",
+        help="Optional path to persist the converted estimated TUM trajectory",
+    )
+    parser.add_argument(
+        "--save-reference-tum",
+        default="",
+        help="Optional path to persist the converted reference TUM trajectory",
+    )
+    parser.add_argument(
+        "--evo-binary",
+        default="evo_ape",
+        help="evo_ape executable name or absolute path",
+    )
+    args = parser.parse_args()
+
+    estimated_csv = Path(args.estimated_csv).expanduser().resolve()
+    reference_csv = Path(args.reference_csv).expanduser().resolve()
+    output_json = Path(args.output_json).expanduser().resolve()
+
+    evo_binary = shutil.which(args.evo_binary) if os.sep not in args.evo_binary else args.evo_binary
+    if not evo_binary:
+        raise RuntimeError(f"Could not find evo binary: {args.evo_binary}")
+
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory(prefix="benchmark_eval_evo_ape_") as temp_dir_raw:
+        temp_dir = Path(temp_dir_raw)
+        estimated_tum = temp_dir / "estimated.tum"
+        reference_tum = temp_dir / "reference.tum"
+        results_zip = temp_dir / "evo_results.zip"
+
+        write_tum_trajectory(estimated_csv, estimated_tum)
+        write_tum_trajectory(reference_csv, reference_tum)
+
+        if args.save_estimated_tum:
+            save_estimated_tum = Path(args.save_estimated_tum).expanduser().resolve()
+            save_estimated_tum.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(estimated_tum, save_estimated_tum)
+        else:
+            save_estimated_tum = None
+
+        if args.save_reference_tum:
+            save_reference_tum = Path(args.save_reference_tum).expanduser().resolve()
+            save_reference_tum.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(reference_tum, save_reference_tum)
+        else:
+            save_reference_tum = None
+
+        command = [
+            evo_binary,
+            "tum",
+            str(reference_tum),
+            str(estimated_tum),
+            "--pose_relation",
+            args.pose_relation,
+            "--t_max_diff",
+            str(args.max_time_diff),
+            "--save_results",
+            str(results_zip),
+            "--no_warnings",
+        ]
+        if args.align:
+            command.append("--align")
+        if args.align_origin:
+            command.append("--align_origin")
+        if args.correct_scale:
+            command.append("--correct_scale")
+
+        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        if completed.returncode != 0:
+            raise RuntimeError(
+                "evo_ape failed:\n"
+                f"command: {' '.join(command)}\n"
+                f"stdout:\n{completed.stdout}\n"
+                f"stderr:\n{completed.stderr}"
+            )
+
+        info_json = load_zip_json(results_zip, "info.json")
+        stats_json = load_zip_json(results_zip, "stats.json")
+        matched_sample_count = maybe_load_matched_sample_count(results_zip)
+
+        saved_results_zip = None
+        if args.save_results_zip:
+            saved_results_zip = Path(args.save_results_zip).expanduser().resolve()
+            saved_results_zip.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(results_zip, saved_results_zip)
+
+    result = {
+        "estimated_csv": str(estimated_csv),
+        "reference_csv": str(reference_csv),
+        "estimated_sample_count": count_csv_rows(estimated_csv),
+        "reference_sample_count": count_csv_rows(reference_csv),
+        "matched_sample_count": matched_sample_count,
+        "pose_relation": args.pose_relation,
+        "max_time_diff": args.max_time_diff,
+        "align": args.align,
+        "align_origin": args.align_origin,
+        "correct_scale": args.correct_scale,
+        "evo_binary": str(evo_binary),
+        "evo_command": command,
+        "evo_stdout": completed.stdout,
+        "evo_stderr": completed.stderr,
+        "info": info_json,
+        "stats": stats_json,
+        "rmse": stats_json.get("rmse"),
+        "saved_results_zip": str(saved_results_zip) if saved_results_zip else None,
+        "saved_estimated_tum": str(save_estimated_tum) if save_estimated_tum else None,
+        "saved_reference_tum": str(save_reference_tum) if save_reference_tum else None,
+    }
+
+    with output_json.open("w", encoding="utf-8") as stream:
+        json.dump(result, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

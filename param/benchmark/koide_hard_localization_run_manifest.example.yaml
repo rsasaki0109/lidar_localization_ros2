@@ -1,0 +1,50 @@
+# Example benchmark manifest: Koide "Hard Point Cloud Localization Dataset" (Zenodo 10122133).
+# Indoor sequence indoor_easy_01: map map_indoor_easy.ply, topics /points2/decompressed + /imu.
+#
+# Prepare data:
+#   scripts/fetch_koide_hard_pointcloud_localization_dataset.sh --with-maps --with-gt --sequence indoor_easy_01
+# Find bag path:
+#   find data/public/koide_hard_localization -path '*/indoor_easy_01*' -name metadata.yaml
+# Reference + initial pose from shipped TUM trajectory:
+#   ros2 run lidar_localization_ros2 tum_trajectory_to_pose_reference_csv.py \
+#     --input  data/public/koide_hard_localization/gt/traj_lidar_indoor_easy_01.txt \
+#     --output-csv /tmp/koide_hard_indoor_easy_01_reference.csv \
+#     --output-initial-pose-yaml /tmp/koide_hard_indoor_easy_01_initial_pose.yaml \
+#     --initial-pose-skip-sec 0.05
+#
+# Copy this file to e.g. param/benchmark/koide_hard_localization.local.yaml and replace paths.
+# Citation: https://doi.org/10.5281/zenodo.10122133
+
+mode: run
+
+dataset:
+  bag_path: /absolute/path/to/indoor_easy_01_rosbag2_directory
+  map_path: /absolute/path/to/map_indoor_easy.ply
+  reference_csv: /absolute/path/to/koide_hard_indoor_easy_01_reference.csv
+  initial_pose_yaml: /absolute/path/to/koide_hard_indoor_easy_01_initial_pose.yaml
+  cloud_topic: /points2/decompressed
+  imu_topic: /imu
+
+localizer:
+  base_param_yaml: repo://param/nav2_ndt_urban.yaml
+  param_overrides:
+    use_imu: true
+    use_imu_preintegration: true
+    use_twist_prediction: true
+    scan_min_range: 0.3
+  launch_args:
+    - use_sim_time:=true
+    - use_dataset_tf_tree:=true
+    - dataset_root_frame:=camera_base
+
+benchmark:
+  output_dir: /tmp/lidarloc_koide_hard_indoor_easy_01
+  ros_domain_id: 133
+  bag_duration: 60
+  bag_start_offset: 0
+  settle_seconds: 5
+  post_roll_seconds: 1
+  max_time_diff: 0.05
+  record_qos_reliability: reliable
+  record_qos_durability: volatile
+  record_use_sim_time: true
