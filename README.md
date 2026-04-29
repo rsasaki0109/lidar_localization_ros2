@@ -166,7 +166,8 @@ and writes a combined summary under `artifacts/public/release_regression_suite/`
 |enable_recovery_retry_from_last_pose|bool|false|when a scan is rejected, optionally retry registration once from the last accepted pose before giving up|
 |recovery_retry_from_last_pose_min_rejections|int|1|minimum consecutive rejects required before `enable_recovery_retry_from_last_pose` can apply|
 |recovery_retry_from_last_pose_max_accepted_gap_sec|double|1.0|maximum open-loop gap allowed before `enable_recovery_retry_from_last_pose` may retry from the last accepted pose[sec]|
-|enable_reinitialization_request_output|bool|true|publish a latched `/reinitialization_requested` flag and include reinit trigger fields in `/alignment_status`|
+|enable_reinitialization_request_output|bool|true|publish `/reinitialization_requested` and include reinit trigger fields in `/alignment_status`|
+|enable_reinitialization_request_latch|bool|true|keep `/reinitialization_requested` true after a trigger until a new `/initialpose` resets the recovery supervisor|
 |reinitialization_trigger_threshold|double|0.95|score threshold for escalating from local recovery to a reinitialization request|
 |reinitialization_trigger_gap_scale_sec|double|30.0|accepted-gap scale used by the reinitialization trigger score[sec]|
 |reinitialization_trigger_seed_translation_scale_m|double|100.0|seed-drift scale used by the reinitialization trigger score[m]|
@@ -191,6 +192,13 @@ It expects:
 - an odom source publishing `odom -> base_link`
 - a twist topic on the configured `twist_topic`
 - an initial pose on `/initialpose`
+
+The localizer also publishes recovery-supervisor observability in `/alignment_status`:
+
+- `recovery_state`: `tracking`, `degraded`, `recovering`, or `reinitialization_requested`
+- `recovery_action`: the selected local action for the current scan, such as rejecting a bad measurement, retrying from the last accepted pose, or requesting reinitialization
+- `recovery_state_age_sec` and `recovery_state_transition_count`
+- `reinitialization_request_latched` and `reinitialization_request_latch_age_sec`
 
 `use_imu_preintegration` is now default-on in the generic and recommended presets. The repo has
 guard rails for it: if IMU messages are present, the localizer can use gyro + accelerometer
