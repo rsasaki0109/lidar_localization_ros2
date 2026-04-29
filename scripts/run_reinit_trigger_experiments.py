@@ -35,6 +35,7 @@ from experiments.reinit_trigger.variants import NeverReinit
 from experiments.reporting import compute_static_metrics
 from experiments.reporting import generate_combined_docs
 from experiments.reporting import overall_score
+from experiments.reporting import repo_relative_path
 
 
 VARIANTS = [
@@ -121,7 +122,7 @@ def main() -> int:
         "problem": "reinit_trigger",
         "title": "Reinitialization Trigger",
         "problem_statement": "Decide when bounded local recovery should stop and the system should escalate to full reinitialization.",
-        "generated_from": str(Path(__file__).resolve()),
+        "generated_from": repo_relative_path(__file__),
         "interface": {
             "methods": [
                 "reset() -> None",
