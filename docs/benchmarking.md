@@ -486,9 +486,13 @@ Each run stores:
 
 If the localizer emits reinitialization diagnostics, `alignment_status.csv` also captures:
 
+- `recovery_state`
+- `recovery_action`
+- `recovery_state_age_sec`
 - `reinitialization_requested`
 - `reinitialization_request_reason`
 - `reinitialization_request_score`
+- `reinitialization_request_latched`
 
 ## Evaluate against reference trajectory
 

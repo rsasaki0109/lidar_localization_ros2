@@ -314,6 +314,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("recovery_retry_from_last_pose_max_accepted_gap_sec", 1.0);
   declare_parameter("recovery_retry_from_last_pose_max_seed_translation_m", 1000000000.0);
   declare_parameter("enable_reinitialization_request_output", true);
+  declare_parameter("enable_reinitialization_request_latch", true);
   declare_parameter("reinitialization_trigger_threshold", 0.95);
   declare_parameter("reinitialization_trigger_gap_scale_sec", 30.0);
   declare_parameter("reinitialization_trigger_seed_translation_scale_m", 100.0);
@@ -558,6 +559,14 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   reinitialization_requested_ = false;
   reinitialization_request_reason_ = "not_requested";
   reinitialization_request_score_ = 0.0;
+  reinitialization_request_latched_ = false;
+  reinitialization_request_latch_reason_ = "not_requested";
+  reinitialization_request_latch_score_ = 0.0;
+  reinitialization_request_latch_stamp_sec_ = 0.0;
+  recovery_supervisor_state_ = RecoverySupervisorState::kTracking;
+  recovery_supervisor_action_ = "idle";
+  recovery_supervisor_state_entered_stamp_sec_ = 0.0;
+  recovery_supervisor_transition_count_ = 0;
   last_imu_stamp_ = 0.0;
   last_scan_stamp_for_imu_ = 0.0;
   recent_source_clouds_.clear();
@@ -749,6 +758,9 @@ void PCLLocalization::initializeParameters()
     "enable_reinitialization_request_output",
     enable_reinitialization_request_output_);
   get_parameter(
+    "enable_reinitialization_request_latch",
+    enable_reinitialization_request_latch_);
+  get_parameter(
     "reinitialization_trigger_threshold",
     reinitialization_trigger_threshold_);
   get_parameter(
@@ -879,6 +891,9 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "enable_reinitialization_request_output: %d",
     enable_reinitialization_request_output_);
+  RCLCPP_INFO(
+    get_logger(), "enable_reinitialization_request_latch: %d",
+    enable_reinitialization_request_latch_);
   RCLCPP_INFO(
     get_logger(), "reinitialization_trigger_threshold: %lf",
     reinitialization_trigger_threshold_);
@@ -1068,6 +1083,13 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   initialpose_recieved_ = true;
   corrent_pose_with_cov_stamped_ptr_ = msg;
   imu_preintegration_fallback_mode_ = false;
+  reinitialization_request_latched_ = false;
+  reinitialization_request_latch_reason_ = "not_requested";
+  reinitialization_request_latch_score_ = 0.0;
+  reinitialization_request_latch_stamp_sec_ = 0.0;
+  recovery_supervisor_state_ = RecoverySupervisorState::kTracking;
+  recovery_supervisor_action_ = "initial_pose_reset";
+  recovery_supervisor_state_entered_stamp_sec_ = stamp_to_sec(msg->header.stamp);
   consecutive_crop_failures_ = 0;
   crop_failure_guard_active_ = false;
   last_crop_out_of_bounds_log_time_ = std::chrono::steady_clock::time_point{};
@@ -2501,6 +2523,143 @@ PCLLocalization::computeReinitializationRequest(
   return decision;
 }
 
+PCLLocalization::ReinitializationRequestDecision
+PCLLocalization::applyReinitializationRequestLatch(
+  const builtin_interfaces::msg::Time & stamp,
+  const ReinitializationRequestDecision & decision)
+{
+  if (!enable_reinitialization_request_latch_) {
+    return decision;
+  }
+
+  if (decision.requested) {
+    if (!reinitialization_request_latched_) {
+      reinitialization_request_latch_stamp_sec_ = stamp_to_sec(stamp);
+      reinitialization_request_latch_reason_ = decision.reason;
+    }
+    reinitialization_request_latched_ = true;
+    reinitialization_request_latch_score_ =
+      std::max(reinitialization_request_latch_score_, decision.score);
+  }
+
+  if (!reinitialization_request_latched_) {
+    return decision;
+  }
+
+  ReinitializationRequestDecision latched_decision = decision;
+  latched_decision.requested = true;
+  latched_decision.reason = reinitialization_request_latch_reason_;
+  latched_decision.score = std::max(reinitialization_request_latch_score_, decision.score);
+  return latched_decision;
+}
+
+const char * PCLLocalization::recoverySupervisorStateName(
+  RecoverySupervisorState state) const
+{
+  switch (state) {
+    case RecoverySupervisorState::kTracking:
+      return "tracking";
+    case RecoverySupervisorState::kDegraded:
+      return "degraded";
+    case RecoverySupervisorState::kRecovering:
+      return "recovering";
+    case RecoverySupervisorState::kReinitializationRequested:
+      return "reinitialization_requested";
+  }
+  return "unknown";
+}
+
+bool PCLLocalization::isRecoveryFailureStatus(const std::string & status_message) const
+{
+  return status_message == "local_map_crop_too_small" ||
+         status_message == "registration_not_converged" ||
+         status_message == "filtered_scan_empty" ||
+         status_message == "scan_missing_xyz_field" ||
+         status_message.rfind("fitness_score_over_", 0) == 0;
+}
+
+PCLLocalization::RecoverySupervisorState
+PCLLocalization::classifyRecoverySupervisorState(
+  uint8_t level,
+  const std::string & status_message,
+  const ReinitializationRequestDecision & reinitialization_request) const
+{
+  if (reinitialization_request.requested) {
+    return RecoverySupervisorState::kReinitializationRequested;
+  }
+  if (
+    status_message == "recovery_retry_from_last_pose_recovered" ||
+    isRecoveryFailureStatus(status_message) ||
+    consecutive_rejected_updates_ > 0)
+  {
+    return RecoverySupervisorState::kRecovering;
+  }
+  if (level != diagnostic_msgs::msg::DiagnosticStatus::OK) {
+    return RecoverySupervisorState::kDegraded;
+  }
+  return RecoverySupervisorState::kTracking;
+}
+
+std::string PCLLocalization::classifyRecoverySupervisorAction(
+  uint8_t level,
+  const std::string & status_message,
+  const ReinitializationRequestDecision & reinitialization_request) const
+{
+  if (reinitialization_request.requested) {
+    return "request_reinitialization";
+  }
+  if (status_message == "recovery_retry_from_last_pose_recovered") {
+    return "retry_from_last_pose";
+  }
+  if (status_message.find("_seeded") != std::string::npos) {
+    return "reuse_rejected_seed_for_prediction";
+  }
+  if (
+    status_message == "local_map_crop_too_small" ||
+    status_message == "registration_not_converged" ||
+    status_message == "filtered_scan_empty" ||
+    status_message == "scan_missing_xyz_field")
+  {
+    return "advance_prediction_without_measurement";
+  }
+  if (
+    status_message.rfind("fitness_score_over_", 0) == 0 &&
+    status_message.find("_rejected") != std::string::npos)
+  {
+    return "reject_measurement";
+  }
+  if (consecutive_rejected_updates_ > 0) {
+    return "accept_measurement_after_recovery";
+  }
+  if (level != diagnostic_msgs::msg::DiagnosticStatus::OK) {
+    return "accept_measurement_with_warning";
+  }
+  return "accept_measurement";
+}
+
+void PCLLocalization::updateRecoverySupervisorState(
+  const builtin_interfaces::msg::Time & stamp,
+  RecoverySupervisorState next_state,
+  const std::string & action)
+{
+  const double stamp_sec = stamp_to_sec(stamp);
+  if (recovery_supervisor_state_entered_stamp_sec_ <= 0.0) {
+    recovery_supervisor_state_entered_stamp_sec_ = stamp_sec;
+  }
+  if (next_state != recovery_supervisor_state_) {
+    RCLCPP_INFO(
+      get_logger(),
+      "Recovery supervisor state transition: %s -> %s (%s)",
+      recoverySupervisorStateName(recovery_supervisor_state_),
+      recoverySupervisorStateName(next_state),
+      action.c_str());
+    recovery_supervisor_state_ = next_state;
+    recovery_supervisor_state_entered_stamp_sec_ = stamp_sec;
+    ++recovery_supervisor_transition_count_;
+  }
+  recovery_supervisor_action_ = action;
+}
+
 void PCLLocalization::publishReinitializationRequest(
   const builtin_interfaces::msg::Time & stamp,
   const ReinitializationRequestDecision & decision)
@@ -2569,13 +2728,27 @@ void PCLLocalization::publishAlignmentStatus(
     fitness_score,
     seed_translation_since_accept_m,
     effective_score_threshold);
-  const ReinitializationRequestDecision reinitialization_request =
+  ReinitializationRequestDecision reinitialization_request =
     computeReinitializationRequest(
-    stamp,
-    message,
-    fitness_score,
-    seed_translation_since_accept_m,
-    accepted_gap_sec);
+      stamp,
+      message,
+      fitness_score,
+      seed_translation_since_accept_m,
+      accepted_gap_sec);
+  reinitialization_request =
+    applyReinitializationRequestLatch(stamp, reinitialization_request);
+  const RecoverySupervisorState recovery_state =
+    classifyRecoverySupervisorState(level, message, reinitialization_request);
+  const std::string recovery_action =
+    classifyRecoverySupervisorAction(level, message, reinitialization_request);
+  updateRecoverySupervisorState(stamp, recovery_state, recovery_action);
+  const double stamp_sec = stamp_to_sec(stamp);
+  const double recovery_state_age_sec =
+    recovery_supervisor_state_entered_stamp_sec_ > 0.0 ?
+    std::max(0.0, stamp_sec - recovery_supervisor_state_entered_stamp_sec_) : 0.0;
+  const double reinitialization_request_latch_age_sec =
+    reinitialization_request_latched_ && reinitialization_request_latch_stamp_sec_ > 0.0 ?
+    std::max(0.0, stamp_sec - reinitialization_request_latch_stamp_sec_) : 0.0;
   append_value("effective_score_threshold", std::to_string(effective_score_threshold));
   append_value(
     "post_reject_strict_score_threshold_active",
@@ -2600,6 +2773,12 @@ void PCLLocalization::publishAlignmentStatus(
   append_value(
     "consecutive_rejected_updates",
     std::to_string(consecutive_rejected_updates_));
+  append_value("recovery_state", recoverySupervisorStateName(recovery_supervisor_state_));
+  append_value("recovery_action", recovery_supervisor_action_);
+  append_value("recovery_state_age_sec", std::to_string(recovery_state_age_sec));
+  append_value(
+    "recovery_state_transition_count",
+    std::to_string(recovery_supervisor_transition_count_));
   append_value(
     "imu_prediction_active",
     imu_prediction_active ? "true" : "false");
@@ -2612,6 +2791,12 @@ void PCLLocalization::publishAlignmentStatus(
   append_value(
     "reinitialization_request_score",
     std::to_string(reinitialization_request.score));
+  append_value(
+    "reinitialization_request_latched",
+    reinitialization_request_latched_ ? "true" : "false");
+  append_value(
+    "reinitialization_request_latch_age_sec",
+    std::to_string(reinitialization_request_latch_age_sec));
   append_value("map_received", map_recieved_ ? "true" : "false");
   append_value("initialpose_received", initialpose_recieved_ ? "true" : "false");
 

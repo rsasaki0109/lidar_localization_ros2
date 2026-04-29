@@ -12,6 +12,7 @@ This document defines what `v1.0.0` means for this repository.
 - Boreas raw-sequence to rosbag2 conversion for the first public `LiDAR + IMU + GT` starter path
 - a recommended Nav2 preset: `param/nav2_ndt_urban.yaml`
 - a runtime-facing reinitialization-request signal on `/reinitialization_requested`
+- recovery-supervisor diagnostics in `/alignment_status` with explicit state/action fields
 - an optional external supervisor that republishes `/initialpose` when `/reinitialization_requested` goes true
 
 ## Validated scope
@@ -71,6 +72,7 @@ Current rationale:
 - more aggressive recovery branches improved some intermediate diagnostics but regressed long-horizon translation in later replay tests
 - when enabling the external reinitialization supervisor, keep `reinitialization_supervisor_use_latest_pose:=false`
   and start with `reinitialization_supervisor_publish_count:=1`
+- `/reinitialization_requested` stays latched after a trigger until a new `/initialpose` clears it
 - the current long replay regression boundary for that policy is `run_nav2_reinit_supervisor_regression.sh`
 - the current one-command release boundary is `run_release_regression_suite.sh`
 

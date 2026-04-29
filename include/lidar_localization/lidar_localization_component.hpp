@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <deque>
 #include <iostream>
 #include <limits>
@@ -266,6 +267,23 @@ public:
   bool reinitialization_requested_{false};
   std::string reinitialization_request_reason_{"not_requested"};
   double reinitialization_request_score_{0.0};
+  bool enable_reinitialization_request_latch_{true};
+  bool reinitialization_request_latched_{false};
+  std::string reinitialization_request_latch_reason_{"not_requested"};
+  double reinitialization_request_latch_score_{0.0};
+  double reinitialization_request_latch_stamp_sec_{0.0};
+
+  enum class RecoverySupervisorState : uint8_t
+  {
+    kTracking = 0,
+    kDegraded = 1,
+    kRecovering = 2,
+    kReinitializationRequested = 3,
+  };
+  RecoverySupervisorState recovery_supervisor_state_{RecoverySupervisorState::kTracking};
+  std::string recovery_supervisor_action_{"idle"};
+  double recovery_supervisor_state_entered_stamp_sec_{0.0};
+  std::size_t recovery_supervisor_transition_count_{0};
 
   rclcpp::TimerBase::SharedPtr pose_publish_timer_;
   void timerPublishPose();
@@ -303,6 +321,23 @@ public:
     double fitness_score,
     double seed_translation_since_accept_m,
     double accepted_gap_sec) const;
+  ReinitializationRequestDecision applyReinitializationRequestLatch(
+    const builtin_interfaces::msg::Time & stamp,
+    const ReinitializationRequestDecision & decision);
+  const char * recoverySupervisorStateName(RecoverySupervisorState state) const;
+  bool isRecoveryFailureStatus(const std::string & status_message) const;
+  RecoverySupervisorState classifyRecoverySupervisorState(
+    uint8_t level,
+    const std::string & status_message,
+    const ReinitializationRequestDecision & reinitialization_request) const;
+  std::string classifyRecoverySupervisorAction(
+    uint8_t level,
+    const std::string & status_message,
+    const ReinitializationRequestDecision & reinitialization_request) const;
+  void updateRecoverySupervisorState(
+    const builtin_interfaces::msg::Time & stamp,
+    RecoverySupervisorState next_state,
+    const std::string & action);
   void publishReinitializationRequest(
     const builtin_interfaces::msg::Time & stamp,
     const ReinitializationRequestDecision & decision);
