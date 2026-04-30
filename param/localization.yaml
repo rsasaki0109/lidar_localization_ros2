@@ -33,6 +33,7 @@
       imu_prediction_correction_guard_translation_m: 2.0
       imu_prediction_correction_guard_yaw_deg: 4.0
       enable_reinitialization_request_output: true
+      enable_reinitialization_request_latch: true
       reinitialization_trigger_threshold: 0.95
       reinitialization_trigger_gap_scale_sec: 30.0
       reinitialization_trigger_seed_translation_scale_m: 100.0
