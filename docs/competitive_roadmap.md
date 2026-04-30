@@ -275,7 +275,7 @@ Dataset shape:
 
 - graph-derived synthetic benchmark
 - source graph directory:
-  - `/media/autoware/aa/20240425_LX300_aoba/2024-04-25-14-38-46/20240718-223557/graph`
+  - `/absolute/path/to/local/graph`
 - 12 graph frames
 - synthetic map built from those frames
 - map point stride: 16
@@ -425,7 +425,7 @@ Artifacts:
 - initial pose YAML: `/tmp/lidarloc_istanbul_init_direct_30s.yaml`
 - run directory: `/tmp/lidarloc_autoware_istanbul_ndt_30s_direct_iso3`
 - public HTML report:
-  - `/media/autoware/aa/ai_coding_ws/lidarloc_ws/artifacts/public/autoware_istanbul_ndt_30s/index.html`
+  - `artifacts/public/autoware_istanbul_ndt_30s/index.html`
 
 Run setup:
 
@@ -475,7 +475,7 @@ Artifacts:
 - sweep summary:
   - `/tmp/lidarloc_istanbul_ndt_quick_sweep/summary.csv`
 - best report:
-  - `/media/autoware/aa/ai_coding_ws/lidarloc_ws/artifacts/public/autoware_istanbul_ndt_30s/index.html`
+  - `artifacts/public/autoware_istanbul_ndt_30s/index.html`
 
 Best run:
 
@@ -509,7 +509,7 @@ Artifacts:
 - stable-init threshold sweep:
   - `/tmp/lidarloc_istanbul_stable_threshold_sweep/summary.csv`
 - current public report:
-  - `/media/autoware/aa/ai_coding_ws/lidarloc_ws/artifacts/public/autoware_istanbul_ndt_30s/index.html`
+  - `artifacts/public/autoware_istanbul_ndt_30s/index.html`
 
 Measured result after stable init:
 
@@ -578,7 +578,7 @@ Artifacts:
 - 60-second drift analysis JSON:
   - `/tmp/lidarloc_autoware_istanbul_twist_linear_thr6_60s/drift_analysis.json`
 - 60-second HTML report:
-  - `/media/autoware/aa/ai_coding_ws/lidarloc_ws/artifacts/public/autoware_istanbul_ndt_60s/index.html`
+  - `artifacts/public/autoware_istanbul_ndt_60s/index.html`
 
 Measured result:
 

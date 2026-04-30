@@ -7,6 +7,17 @@ from pathlib import Path
 from typing import Any
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def repo_relative_path(path: str | Path) -> str:
+    resolved = Path(path).resolve()
+    try:
+        return str(resolved.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(resolved)
+
+
 def clamp_score(value: float) -> float:
     return max(0.0, min(100.0, value))
 
@@ -53,7 +64,7 @@ def compute_static_metrics(variant_cls: type) -> dict[str, Any]:
         + max(0.0, 5.0 - 1.0 * max(0, import_count - 3))
     )
     return {
-        "implementation_file": str(source_file.resolve()),
+        "implementation_file": repo_relative_path(source_file),
         "loc": loc,
         "branch_count": branch_count,
         "max_nesting_depth": max_nesting_depth(class_node),

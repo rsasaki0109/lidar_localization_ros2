@@ -2,7 +2,7 @@
   "problem": "borderline_gate",
   "title": "Borderline Measurement Gate",
   "problem_statement": "Reject truly bad borderline measurements without regressing clean short-gap updates.",
-  "generated_from": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/scripts/run_borderline_gate_experiments.py",
+  "generated_from": "scripts/run_borderline_gate_experiments.py",
   "interface": {
     "methods": [
       "reset() -> None",
@@ -100,7 +100,7 @@
       "readability_score": 56.8,
       "extensibility_score": 94.0,
       "static_metrics": {
-        "implementation_file": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/experiments/borderline_gate/variants/seed_conditioned.py",
+        "implementation_file": "experiments/borderline_gate/variants/seed_conditioned.py",
         "loc": 16,
         "branch_count": 4,
         "max_nesting_depth": 1,
@@ -167,7 +167,7 @@
       "readability_score": 56.8,
       "extensibility_score": 94.0,
       "static_metrics": {
-        "implementation_file": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/experiments/borderline_gate/variants/post_reject_strict.py",
+        "implementation_file": "experiments/borderline_gate/variants/post_reject_strict.py",
         "loc": 16,
         "branch_count": 4,
         "max_nesting_depth": 1,
@@ -234,7 +234,7 @@
       "readability_score": 65.4,
       "extensibility_score": 94.0,
       "static_metrics": {
-        "implementation_file": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/experiments/borderline_gate/variants/fixed_threshold_55.py",
+        "implementation_file": "experiments/borderline_gate/variants/fixed_threshold_55.py",
         "loc": 13,
         "branch_count": 3,
         "max_nesting_depth": 1,

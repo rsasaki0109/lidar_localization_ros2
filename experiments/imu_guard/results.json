@@ -2,7 +2,7 @@
   "problem": "imu_guard",
   "title": "IMU Correction Guard",
   "problem_statement": "Disable the IMU-preintegration path early enough to avoid poisoning localization, without false positives on no-IMU traces.",
-  "generated_from": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/scripts/run_imu_guard_experiments.py",
+  "generated_from": "scripts/run_imu_guard_experiments.py",
   "interface": {
     "methods": [
       "reset() -> None",
@@ -232,7 +232,7 @@
       "readability_score": 58.0,
       "extensibility_score": 94.0,
       "static_metrics": {
-        "implementation_file": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/experiments/imu_guard/variants/absolute_threshold.py",
+        "implementation_file": "experiments/imu_guard/variants/absolute_threshold.py",
         "loc": 15,
         "branch_count": 4,
         "max_nesting_depth": 1,
@@ -428,7 +428,7 @@
       "readability_score": 59.400000000000006,
       "extensibility_score": 94.0,
       "static_metrics": {
-        "implementation_file": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/experiments/imu_guard/variants/score_budget.py",
+        "implementation_file": "experiments/imu_guard/variants/score_budget.py",
         "loc": 18,
         "branch_count": 3,
         "max_nesting_depth": 1,
@@ -624,7 +624,7 @@
       "readability_score": 52.0,
       "extensibility_score": 84.0,
       "static_metrics": {
-        "implementation_file": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/experiments/imu_guard/variants/streak_guard.py",
+        "implementation_file": "experiments/imu_guard/variants/streak_guard.py",
         "loc": 20,
         "branch_count": 4,
         "max_nesting_depth": 1,
