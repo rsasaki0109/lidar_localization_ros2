@@ -1,6 +1,33 @@
 # lidar_localization_ros2
 A ROS2 package of 3D LIDAR-based Localization.
 
+## Quick Start
+
+From this repository in the local workspace:
+
+```bash
+source scripts/setup_local_env.sh
+cd ../build_ws
+colcon build --symlink-install --packages-up-to lidar_localization_ros2
+cd ../repo
+source scripts/setup_local_env.sh
+```
+
+Then choose the path that matches what you want to do:
+
+| Goal | Start here |
+|---|---|
+| Build the package in this workspace | [Local Build](docs/local_build.md) |
+| Launch the LiDAR localizer for Nav2 | [Nav2 launch](#nav2-launch) |
+| Run a self-contained Nav2 smoke path | [Recommended entry points](docs/v1_status.md#recommended-entry-points) |
+| Run public replay/regression checks | [Benchmarking](#benchmarking) |
+| Evaluate a rosbag against reference poses | [Benchmarking guide](docs/benchmarking.md) |
+| Develop or compare recovery behavior | [Experiment-First Development](#experiment-first-development) |
+| Check what `v1.0.0` does and does not claim | [v1 status](docs/v1_status.md) |
+
+For Nav2 use, provide a pointcloud map, matching 2D `map_yaml` when launching the full Nav2 stack,
+an odom source publishing `odom -> base_link`, and an initial pose on `/initialpose`.
+
 ## Status
 
 The repo is now packaged as `v1.0.0`.
@@ -124,7 +151,7 @@ and writes a combined summary under `artifacts/public/release_regression_suite/`
 |enable_scan_voxel_filter|bool|true|apply the built-in `VoxelGrid` downsampling pass to each incoming scan before range filtering|
 |enable_debug|bool|false|whether debug is done or not|
 |predict_pose_from_previous_delta|bool|true|use the previous accepted pose delta as the next registration initial guess|
-|enable_local_map_crop|bool|false|crop the PCD target map around the current seed before registration; useful for large city-scale maps that overflow full-map NDT targets|
+|enable_local_map_crop|bool|false|crop the target map around the current seed before registration; useful for large city-scale maps that overflow full-map NDT targets|
 |local_map_radius|double|150.0|radius of the cropped local map around the current seed[m]|
 |local_map_min_points|int|100|minimum number of cropped map points required before attempting registration|
 |reject_above_score_threshold|bool|true|skip pose updates when `fitness_score` exceeds `score_threshold`|
@@ -175,8 +202,17 @@ early correction guard is also parameterized through
 `imu_prediction_correction_guard_yaw_deg`.
 
 The default Nav2 preset also enables `enable_local_map_crop:=true`, which avoids the
-full-map NDT overflow/crash path on large city-scale PCD maps by rebuilding the NDT target
+full-map NDT overflow/crash path on large city-scale pointcloud maps by rebuilding the NDT target
 around the current seed each scan.
+
+### Map Format Notes
+
+- Runtime `map_path` supports `.ply` and `.pcd`, but the current benchmarked path in this repo
+  should prefer `.ply`.
+- For generated benchmark maps, use binary little-endian float32 PLY (`property float x/y/z`).
+- Avoid Open3D's default double-precision PLY output for runtime benchmarking.
+- Generated `.pcd` maps are fine for inspection tools, but they are not the recommended
+  benchmark/runtime path in this repo today.
 
 The Nav2 presets also set `enable_scan_voxel_filter:=false` because the Autoware Istanbul
 `/localization/util/downsample/pointcloud` topic is already downsampled upstream.

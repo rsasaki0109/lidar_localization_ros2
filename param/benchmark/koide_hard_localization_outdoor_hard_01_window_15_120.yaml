@@ -1,0 +1,50 @@
+# Koide Hard Point Cloud Localization — Outdoor01 failure-onset replay window.
+# This window starts shortly before the first reject streak seen in the full 01a+01b run.
+#
+# Generate the offset-specific reference / initial pose first:
+#   ros2 run lidar_localization_ros2 tum_trajectory_to_pose_reference_csv_for_rosbag2.py \
+#     --input data/public/koide_hard_localization/gt/traj_lidar_outdoor_hard_01.txt \
+#     --bag-path data/public/koide_hard_localization/sequences/outdoor_hard_01 \
+#     --output-csv data/public/koide_hard_localization/benchmark/outdoor_hard_01_window_15_120/reference.csv \
+#     --output-initial-pose-yaml data/public/koide_hard_localization/benchmark/outdoor_hard_01_window_15_120/initial_pose.yaml \
+#     --initial-pose-skip-sec 0.05 \
+#     --bag-start-offset 15 \
+#     --bag-duration 120
+
+mode: sweep
+
+dataset:
+  bag_path: repo://data/public/koide_hard_localization/sequences/outdoor_hard_01
+  map_path: repo://data/public/koide_hard_localization/map_outdoor_hard.ply
+  reference_csv: repo://data/public/koide_hard_localization/benchmark/outdoor_hard_01_window_15_120/reference.csv
+  initial_pose_yaml: repo://data/public/koide_hard_localization/benchmark/outdoor_hard_01_window_15_120/initial_pose.yaml
+  cloud_topic: /livox/points
+  imu_topic: /livox/imu
+
+localizer:
+  base_param_yaml: repo://param/nav2_ndt_urban.yaml
+  param_overrides:
+    use_imu: false
+    use_imu_preintegration: false
+    enable_scan_voxel_filter: true
+    voxel_leaf_size: 0.5
+    base_frame_id: livox_frame
+    scan_min_range: 1.0
+    scan_max_range: 100.0
+    score_threshold: 6.0
+  launch_args:
+    - use_sim_time:=true
+    - lidar_frame_id:=livox_frame
+
+benchmark:
+  output_dir: /tmp/lidarloc_koide_outdoor_hard_01_window_15_120_compare
+  config_json: repo://param/benchmark/koide_hard_localization_outdoor_hard_01_window_15_120_recovery_compare.json
+  ros_domain_base: 140
+  bag_duration: 120
+  bag_start_offset: 15
+  settle_seconds: 5
+  post_roll_seconds: 1
+  max_time_diff: 0.05
+  record_qos_reliability: reliable
+  record_qos_durability: volatile
+  record_use_sim_time: true
