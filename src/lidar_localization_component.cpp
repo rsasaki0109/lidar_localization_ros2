@@ -322,6 +322,8 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("reinitialization_trigger_fitness_explosion_threshold", 1000.0);
   declare_parameter("enable_timer_publishing", false);
   declare_parameter("pose_publish_frequency", 10.0);
+  declare_parameter("viz_downsample", false);
+  declare_parameter("viz_voxel_leaf_size", 0.5);
 }
 
 PCLLocalization::~PCLLocalization()
@@ -420,7 +422,16 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
       map_bounds_valid_ = false;
     }
     sensor_msgs::msg::PointCloud2::SharedPtr map_msg_ptr(new sensor_msgs::msg::PointCloud2);
-    pcl::toROSMsg(*map_cloud_ptr, *map_msg_ptr);
+    if (viz_downsample_) {
+      pcl::PointCloud<pcl::PointXYZI>::Ptr map_viz_ptr(new pcl::PointCloud<pcl::PointXYZI>);
+      pcl::VoxelGrid<pcl::PointXYZI> voxel_viz;
+      voxel_viz.setInputCloud(map_cloud_ptr);
+      voxel_viz.setLeafSize(viz_voxel_leaf_size_, viz_voxel_leaf_size_, viz_voxel_leaf_size_);
+      voxel_viz.filter(*map_viz_ptr);
+      pcl::toROSMsg(*map_viz_ptr, *map_msg_ptr);
+    } else {
+      pcl::toROSMsg(*map_cloud_ptr, *map_msg_ptr);
+    }
     map_msg_ptr->header.frame_id = global_frame_id_;
     initial_map_pub_->publish(*map_msg_ptr);
     RCLCPP_INFO(get_logger(), "Initial Map Published");
@@ -697,6 +708,8 @@ void PCLLocalization::initializeParameters()
     RCLCPP_INFO(get_logger(), "IMU preintegration smoother enabled");
   }
   get_parameter("enable_debug", enable_debug_);
+  get_parameter("viz_downsample", viz_downsample_);
+  get_parameter("viz_voxel_leaf_size", viz_voxel_leaf_size_);
   get_parameter("predict_pose_from_previous_delta", predict_pose_from_previous_delta_);
   get_parameter("enable_local_map_crop", enable_local_map_crop_);
   get_parameter("local_map_radius", local_map_radius_);
