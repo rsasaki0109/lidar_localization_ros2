@@ -1,0 +1,48 @@
+# Koide Hard Point Cloud Localization — outdoor_hard_01a (Zenodo 10122133).
+# Livox LiDAR outdoor sequence. citation: https://doi.org/10.5281/zenodo.10122133
+#
+# Data setup:
+#   ros2 run lidar_localization_ros2 fetch_koide_hard_pointcloud_localization_dataset.sh \
+#     --with-maps --with-gt --sequence outdoor_hard_01a --output-dir data/public/koide_hard_localization
+#   ros2 run lidar_localization_ros2 tum_trajectory_to_pose_reference_csv.py \
+#     --input data/public/koide_hard_localization/gt/traj_lidar_outdoor_hard_01.txt \
+#     --output-csv data/public/koide_hard_localization/benchmark/outdoor_hard_01a/reference.csv \
+#     --output-initial-pose-yaml data/public/koide_hard_localization/benchmark/outdoor_hard_01a/initial_pose.yaml \
+#     --initial-pose-skip-sec 0.05
+
+mode: run
+
+dataset:
+  bag_path: /absolute/path/to/data/public/koide_hard_localization/sequences/outdoor_hard_01a
+  map_path: /absolute/path/to/data/public/koide_hard_localization/map_outdoor_hard.ply
+  reference_csv: /absolute/path/to/data/public/koide_hard_localization/benchmark/outdoor_hard_01a/reference.csv
+  initial_pose_yaml: /absolute/path/to/data/public/koide_hard_localization/benchmark/outdoor_hard_01a/initial_pose.yaml
+  cloud_topic: /livox/points
+  imu_topic: /livox/imu
+
+localizer:
+  base_param_yaml: repo://param/nav2_ndt_urban.yaml
+  param_overrides:
+    use_imu: false
+    use_imu_preintegration: false
+    enable_scan_voxel_filter: true
+    voxel_leaf_size: 0.5
+    base_frame_id: livox_frame
+    scan_min_range: 1.0
+    scan_max_range: 100.0
+    score_threshold: 6.0
+  launch_args:
+    - use_sim_time:=true
+    - lidar_frame_id:=livox_frame
+
+benchmark:
+  output_dir: /tmp/lidarloc_koide_outdoor_hard_01a
+  ros_domain_id: 135
+  bag_duration: 380
+  bag_start_offset: 0
+  settle_seconds: 5
+  post_roll_seconds: 1
+  max_time_diff: 0.05
+  record_qos_reliability: reliable
+  record_qos_durability: volatile
+  record_use_sim_time: true

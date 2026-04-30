@@ -2,6 +2,8 @@
 #include <chrono>
 #include <cstring>
 
+#include <pcl/common/common.h>
+
 namespace
 {
 double stamp_to_sec(const builtin_interfaces::msg::Time & stamp)
@@ -229,6 +231,8 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("scan_max_range", 100.0);
   declare_parameter("scan_min_range", 1.0);
   declare_parameter("scan_period", 0.1);
+  declare_parameter("cloud_queue_depth", 1);
+  declare_parameter("min_scan_interval_sec", 0.0);
   declare_parameter("use_pcd_map", false);
   declare_parameter("map_path", "/map/map.pcd");
   declare_parameter("set_initial_pose", false);
@@ -408,6 +412,12 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     }
 
     RCLCPP_INFO(get_logger(), "Map Size %ld", map_cloud_ptr->size());
+    if (!map_cloud_ptr->empty()) {
+      pcl::getMinMax3D(*map_cloud_ptr, map_min_pt_, map_max_pt_);
+      map_bounds_valid_ = true;
+    } else {
+      map_bounds_valid_ = false;
+    }
     sensor_msgs::msg::PointCloud2::SharedPtr map_msg_ptr(new sensor_msgs::msg::PointCloud2);
     pcl::toROSMsg(*map_cloud_ptr, *map_msg_ptr);
     map_msg_ptr->header.frame_id = global_frame_id_;
@@ -568,6 +578,11 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   } else {
     full_map_cloud_ptr_.reset();
   }
+  map_bounds_valid_ = false;
+  consecutive_crop_failures_ = 0;
+  crop_failure_guard_active_ = false;
+  last_crop_out_of_bounds_log_time_ = std::chrono::steady_clock::time_point{};
+  last_crop_failure_streak_log_time_ = std::chrono::steady_clock::time_point{};
   map_recieved_ = false;
   initialpose_recieved_ = false;
 }
@@ -594,6 +609,8 @@ void PCLLocalization::initializeParameters()
   get_parameter("scan_max_range", scan_max_range_);
   get_parameter("scan_min_range", scan_min_range_);
   get_parameter("scan_period", scan_period_);
+  get_parameter("cloud_queue_depth", cloud_queue_depth_);
+  get_parameter("min_scan_interval_sec", min_scan_interval_sec_);
   get_parameter("use_pcd_map", use_pcd_map_);
   get_parameter("map_path", map_path_);
   get_parameter("set_initial_pose", set_initial_pose_);
@@ -766,6 +783,8 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(),"scan_max_range: %lf", scan_max_range_);
   RCLCPP_INFO(get_logger(),"scan_min_range: %lf", scan_min_range_);
   RCLCPP_INFO(get_logger(),"scan_period: %lf", scan_period_);
+  RCLCPP_INFO(get_logger(),"cloud_queue_depth: %d", cloud_queue_depth_);
+  RCLCPP_INFO(get_logger(),"min_scan_interval_sec: %lf", min_scan_interval_sec_);
   RCLCPP_INFO(get_logger(),"use_pcd_map: %d", use_pcd_map_);
   RCLCPP_INFO(get_logger(),"map_path: %s", map_path_.c_str());
   RCLCPP_INFO(get_logger(),"set_initial_pose: %d", set_initial_pose_);
@@ -926,7 +945,7 @@ void PCLLocalization::initializePubSub()
     std::bind(&PCLLocalization::twistReceived, this, std::placeholders::_1));
 
   cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-    "cloud", rclcpp::SensorDataQoS(),
+    "cloud", rclcpp::SensorDataQoS().keep_last(cloud_queue_depth_),
     std::bind(&PCLLocalization::cloudReceived, this, std::placeholders::_1));
 
   imu_sub_ = create_subscription<sensor_msgs::msg::Imu>(
@@ -1049,6 +1068,10 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   initialpose_recieved_ = true;
   corrent_pose_with_cov_stamped_ptr_ = msg;
   imu_preintegration_fallback_mode_ = false;
+  consecutive_crop_failures_ = 0;
+  crop_failure_guard_active_ = false;
+  last_crop_out_of_bounds_log_time_ = std::chrono::steady_clock::time_point{};
+  last_crop_failure_streak_log_time_ = std::chrono::steady_clock::time_point{};
   resetPredictionState(currentPoseMatrix(), stamp_to_sec(msg->header.stamp));
   publishReinitializationRequest(msg->header.stamp, ReinitializationRequestDecision{});
 
@@ -1290,7 +1313,34 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   last_scan_ptr_ = msg;
 
   if (!map_recieved_ || !initialpose_recieved_) {return;}
+
+  // Skip scans that arrive too soon after the last processed scan.
+  if (min_scan_interval_sec_ > 0.0 && last_cloud_process_time_.nanoseconds() > 0) {
+    const auto now = this->now();
+    const double dt = (now - last_cloud_process_time_).seconds();
+    if (dt < min_scan_interval_sec_) {
+      return;
+    }
+  }
+  last_cloud_process_time_ = this->now();
+
   RCLCPP_INFO(get_logger(), "cloudReceived");
+  const double scan_stamp_sec = stamp_to_sec(msg->header.stamp);
+  if (consecutive_crop_failures_ > 100) {
+    if (!crop_failure_guard_active_) {
+      crop_failure_guard_active_ = true;
+      if (have_last_accepted_pose_) {
+        predicted_pose_matrix_ = last_accepted_pose_matrix_;
+        predicted_pose_time_sec_ = scan_stamp_sec;
+      }
+      RCLCPP_ERROR(
+        get_logger(),
+        "Activating crop failure guard after %d consecutive crop failures; "
+        "dropping subsequent scans until a new initial pose arrives.",
+        consecutive_crop_failures_);
+    }
+    return;
+  }
   const bool cloud_has_intensity = has_field(msg->fields, "intensity");
   if (!cloud_has_intensity) {
     RCLCPP_WARN_THROTTLE(
@@ -1387,29 +1437,30 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       lidar_undistortion_.adjustDistortion(cloud_ptr, received_time);
     }
 
-    pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr;
-    pcl::PointCloud<pcl::PointXYZI>::Ptr range_filter_input_cloud_ptr = cloud_ptr;
-    if (enable_scan_voxel_filter_) {
-      filtered_cloud_ptr.reset(new pcl::PointCloud<pcl::PointXYZI>());
-      pcl::VoxelGrid<pcl::PointXYZI> scan_voxel_grid_filter;
-      scan_voxel_grid_filter.setLeafSize(voxel_leaf_size_, voxel_leaf_size_, voxel_leaf_size_);
-      scan_voxel_grid_filter.setInputCloud(cloud_ptr);
-      scan_voxel_grid_filter.filter(*filtered_cloud_ptr);
-      range_filter_input_cloud_ptr = filtered_cloud_ptr;
-    }
-
     pcl::PointCloud<pcl::PointXYZI> tmp;
-    filtered_point_count = range_filter_input_cloud_ptr->size();
-    tmp.reserve(filtered_point_count);
-    for (const auto & point : range_filter_input_cloud_ptr->points) {
+    tmp.reserve(cloud_ptr->size());
+    for (const auto & point : cloud_ptr->points) {
+      if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+        continue;
+      }
       const double range = std::hypot(point.x, point.y);
       if (scan_min_range_ < range && range < scan_max_range_) {
         tmp.push_back(point);
       }
     }
+    filtered_point_count = tmp.size();
     tmp_ptr.reset(new pcl::PointCloud<pcl::PointXYZI>(tmp));
-    range_filter_input_cloud_ptr.reset();
-    filtered_cloud_ptr.reset();
+
+    if (enable_scan_voxel_filter_ && !tmp_ptr->empty()) {
+      pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(
+        new pcl::PointCloud<pcl::PointXYZI>());
+      pcl::VoxelGrid<pcl::PointXYZI> scan_voxel_grid_filter;
+      scan_voxel_grid_filter.setLeafSize(voxel_leaf_size_, voxel_leaf_size_, voxel_leaf_size_);
+      scan_voxel_grid_filter.setInputCloud(tmp_ptr);
+      scan_voxel_grid_filter.filter(*filtered_cloud_ptr);
+      filtered_point_count = filtered_cloud_ptr->size();
+      tmp_ptr = filtered_cloud_ptr;
+    }
     cloud_ptr.reset();
   }
 
@@ -1437,7 +1488,6 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
 
   Eigen::Matrix4f init_guess = currentPoseMatrix();
   bool init_guess_uses_prediction = false;
-  const double scan_stamp_sec = stamp_to_sec(msg->header.stamp);
   bool imu_prediction_ready =
     use_imu_preintegration_ &&
     !imu_preintegration_fallback_mode_ &&
@@ -1501,6 +1551,42 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
 
       const float cx = center_pose_matrix(0, 3);
       const float cy = center_pose_matrix(1, 3);
+      const float cz = center_pose_matrix(2, 3);
+      const auto steady_now = std::chrono::steady_clock::now();
+      auto maybe_log_crop_failure_streak = [&]() {
+          if (consecutive_crop_failures_ <= 100) {
+            return;
+          }
+          if (
+            last_crop_failure_streak_log_time_ == std::chrono::steady_clock::time_point{} ||
+            steady_now - last_crop_failure_streak_log_time_ >= std::chrono::seconds(5))
+          {
+            last_crop_failure_streak_log_time_ = steady_now;
+            RCLCPP_WARN(
+              get_logger(),
+              "Crop failure streak reached %d while target setup keeps failing.",
+              consecutive_crop_failures_);
+          }
+        };
+      if (
+        map_bounds_valid_ &&
+        (cx < map_min_pt_.x - local_map_radius_ || cx > map_max_pt_.x + local_map_radius_ ||
+        cy < map_min_pt_.y - local_map_radius_ || cy > map_max_pt_.y + local_map_radius_))
+      {
+        ++consecutive_crop_failures_;
+        maybe_log_crop_failure_streak();
+        if (
+          last_crop_out_of_bounds_log_time_ == std::chrono::steady_clock::time_point{} ||
+          steady_now - last_crop_out_of_bounds_log_time_ >= std::chrono::seconds(5))
+        {
+          last_crop_out_of_bounds_log_time_ = steady_now;
+          RCLCPP_WARN(
+            get_logger(),
+            "Crop center (%.1f, %.1f) is outside map bounds + radius, skipping alignment",
+            static_cast<double>(cx), static_cast<double>(cy));
+        }
+        return false;
+      }
       const float r2 = static_cast<float>(local_map_radius_ * local_map_radius_);
       pcl::PointCloud<pcl::PointXYZI>::Ptr local_map(new pcl::PointCloud<pcl::PointXYZI>());
       local_map->reserve(full_map_cloud_ptr_->size() / 10);
@@ -1511,8 +1597,9 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
           local_map->push_back(p);
         }
       }
-
       if (local_map->size() < local_map_min_points_) {
+        ++consecutive_crop_failures_;
+        maybe_log_crop_failure_streak();
         RCLCPP_WARN(
           get_logger(),
           "Local map crop too small (%zu points, min %zu) around (%.3f, %.3f) with radius %.1fm.",
@@ -1537,6 +1624,8 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
         keep_cloud_alive(
           &recent_target_clouds_, local_map, kRegistrationTargetCloudKeepAliveCount);
       }
+      consecutive_crop_failures_ = 0;
+      crop_failure_guard_active_ = false;
       return true;
     };
 

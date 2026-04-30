@@ -130,12 +130,19 @@ public:
   bool map_recieved_{false};
   bool initialpose_recieved_{false};
   pcl::PointCloud<pcl::PointXYZI>::Ptr full_map_cloud_ptr_;
+  pcl::PointXYZI map_min_pt_{};
+  pcl::PointXYZI map_max_pt_{};
+  bool map_bounds_valid_{false};
   std::deque<pcl::PointCloud<pcl::PointXYZI>::Ptr> recent_source_clouds_;
   std::deque<pcl::PointCloud<pcl::PointXYZI>::Ptr> recent_target_clouds_;
   bool use_local_map_crop_{false};
   bool enable_local_map_crop_{false};
   double local_map_radius_{150.0};
   std::size_t local_map_min_points_{100};
+  int consecutive_crop_failures_{0};
+  bool crop_failure_guard_active_{false};
+  std::chrono::steady_clock::time_point last_crop_out_of_bounds_log_time_{};
+  std::chrono::steady_clock::time_point last_crop_failure_streak_log_time_{};
 
   // NDT initializer for GICP-based methods
   bool use_ndt_initializer_{false};
@@ -166,6 +173,9 @@ public:
   double scan_max_range_;
   double scan_min_range_;
   double scan_period_;
+  int cloud_queue_depth_{1};
+  double min_scan_interval_sec_{0.0};
+  rclcpp::Time last_cloud_process_time_{0, 0, RCL_ROS_TIME};
   double score_threshold_;
   double ndt_resolution_;
   double ndt_step_size_;
