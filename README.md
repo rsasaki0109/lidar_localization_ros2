@@ -263,9 +263,9 @@ To re-run the long replay policy check as a pass/fail regression:
 ros2 run lidar_localization_ros2 run_nav2_reinit_supervisor_regression.sh
 ```
 
-That compares `no_supervisor` against `configured_initial_pose_count1` on the same `120 s` replay
+That compares `no_supervisor` against `configured_initial_pose_count1` on the same long replay
 and writes `comparison.json`, `summary.md`, and `regression_result.json` under
-`artifacts/public/nav2_reinit_supervisor_regression_120/`.
+`artifacts/public/nav2_reinit_supervisor_regression_150/`.
 The pass/fail gate is intentionally conservative about goal success and stuck-request reduction,
 not a single observed `ok` recovery row, because that specific post-trigger signal is noisier
 across reruns than the large drop in `reinitialization_requested_rows`.

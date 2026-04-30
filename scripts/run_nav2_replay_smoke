@@ -29,6 +29,7 @@ Optional:
   --goal-z-offset-m VALUE        default: 0.0
   --wait-for-pose-motion-m VALUE default: 0.2
   --launch-timeout-sec VALUE     default: 120
+                                  also used for goal readiness waits
   --goal-timeout-sec VALUE       default: 120
   --goal-start-delay-sec VALUE   default: 3
   --post-goal-observe-sec VALUE  default: 0
@@ -361,13 +362,18 @@ bag_cmd=(
 goal_cmd=(
   ros2 run lidar_localization_ros2 send_nav2_goal.py
   --use-current-pose
+  --pose-timeout-sec "${launch_timeout_sec}"
   --wait-for-pose-motion-m "${wait_for_pose_motion_m}"
+  --pose-motion-timeout-sec "${launch_timeout_sec}"
   --wait-for-transform-target-frame "${odom_frame_id}"
   --wait-for-transform-source-frame "${base_frame_id}"
+  --transform-timeout-sec "${launch_timeout_sec}"
   --wait-for-lifecycle-node controller_server
   --wait-for-lifecycle-node planner_server
   --wait-for-lifecycle-node behavior_server
   --wait-for-lifecycle-node bt_navigator
+  --lifecycle-timeout-sec "${launch_timeout_sec}"
+  --server-timeout-sec "${launch_timeout_sec}"
   --post-ready-delay-sec 1.0
   --forward-m "${goal_forward_m}"
   --left-m "${goal_left_m}"
@@ -394,9 +400,26 @@ bag_pid=""
 
 cleanup() {
   local pid
+  local signal
+  for signal in TERM KILL; do
+    if [[ "${signal}" == "KILL" ]]; then
+      sleep 1
+    fi
+
+    for pid in "${bag_pid:-}" "${launch_pid}" "${relay_pid}" "${diagnostic_pid}"; do
+      if [[ -z "${pid}" ]]; then
+        continue
+      fi
+      if kill -0 -- "-${pid}" 2>/dev/null; then
+        kill "-${signal}" -- "-${pid}" 2>/dev/null || true
+      elif kill -0 "${pid}" 2>/dev/null; then
+        kill "-${signal}" "${pid}" 2>/dev/null || true
+      fi
+    done
+  done
+
   for pid in "${bag_pid:-}" "${launch_pid}" "${relay_pid}" "${diagnostic_pid}"; do
-    if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
-      kill -TERM -- "-${pid}" 2>/dev/null || kill -TERM "${pid}" 2>/dev/null || true
+    if [[ -n "${pid}" ]]; then
       wait "${pid}" 2>/dev/null || true
     fi
   done

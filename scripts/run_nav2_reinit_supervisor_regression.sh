@@ -7,11 +7,11 @@ Usage:
   run_nav2_reinit_supervisor_regression.sh [options]
 
 Options:
-  --output-dir PATH             default: artifacts/public/nav2_reinit_supervisor_regression_120
+  --output-dir PATH             default: artifacts/public/nav2_reinit_supervisor_regression_150
   --map-yaml PATH               default: official Istanbul Nav2 map yaml
   --pcd-map-path PATH           default: official Istanbul pointcloud map
   --bag-path PATH               default: official Istanbul localization rosbag
-  --post-goal-observe-sec SEC   default: 120
+  --post-goal-observe-sec SEC   default: 150
   --ros-domain-base VALUE       default: 151
   --resume                      skip variants whose alignment CSV already exists
   --help
@@ -52,11 +52,11 @@ if [[ ! -f "${repo_root}/scripts/setup_local_env.sh" ]]; then
   exit 2
 fi
 
-output_dir="${ws_root}/artifacts/public/nav2_reinit_supervisor_regression_120"
+output_dir="${ws_root}/artifacts/public/nav2_reinit_supervisor_regression_150"
 map_yaml="${ws_root}/artifacts/public/autoware_istanbul_60s_nav2_map/istanbul_60s_nav2_map.yaml"
 pcd_map_path="${ws_root}/data/official/autoware_istanbul/pointcloud_map.pcd"
 bag_path="${ws_root}/data/official/autoware_istanbul/localization_rosbag"
-post_goal_observe_sec="120"
+post_goal_observe_sec="150"
 ros_domain_base="151"
 resume="0"
 
