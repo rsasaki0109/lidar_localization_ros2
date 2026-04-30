@@ -35,6 +35,7 @@ from experiments.recovery_action.variants import RejectedSeedReuseStrategy
 from experiments.reporting import compute_static_metrics
 from experiments.reporting import generate_combined_docs
 from experiments.reporting import overall_score
+from experiments.reporting import repo_relative_path
 
 
 VARIANTS = [
@@ -123,7 +124,7 @@ def main() -> int:
         "problem": "recovery_action",
         "title": "Recovery Action Selection",
         "problem_statement": "Choose whether to keep open-loop prediction, reuse a rejected seed, or retry from the last accepted pose after a failed measurement.",
-        "generated_from": str(Path(__file__).resolve()),
+        "generated_from": repo_relative_path(__file__),
         "interface": {
             "methods": [
                 "reset() -> None",

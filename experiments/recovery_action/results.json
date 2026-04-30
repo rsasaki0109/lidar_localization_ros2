@@ -2,7 +2,7 @@
   "problem": "recovery_action",
   "title": "Recovery Action Selection",
   "problem_statement": "Choose whether to keep open-loop prediction, reuse a rejected seed, or retry from the last accepted pose after a failed measurement.",
-  "generated_from": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/scripts/run_recovery_action_experiments.py",
+  "generated_from": "scripts/run_recovery_action_experiments.py",
   "interface": {
     "methods": [
       "reset() -> None",
@@ -90,7 +90,7 @@
       "readability_score": 50.599999999999994,
       "extensibility_score": 94.0,
       "static_metrics": {
-        "implementation_file": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/experiments/recovery_action/variants/guarded_last_pose_retry.py",
+        "implementation_file": "experiments/recovery_action/variants/guarded_last_pose_retry.py",
         "loc": 17,
         "branch_count": 5,
         "max_nesting_depth": 1,
@@ -148,7 +148,7 @@
       "readability_score": 91.6,
       "extensibility_score": 85.0,
       "static_metrics": {
-        "implementation_file": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/experiments/recovery_action/variants/conservative_drop.py",
+        "implementation_file": "experiments/recovery_action/variants/conservative_drop.py",
         "loc": 7,
         "branch_count": 0,
         "max_nesting_depth": 0,
@@ -206,7 +206,7 @@
       "readability_score": 43.2,
       "extensibility_score": 94.0,
       "static_metrics": {
-        "implementation_file": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/experiments/recovery_action/variants/rejected_seed_reuse.py",
+        "implementation_file": "experiments/recovery_action/variants/rejected_seed_reuse.py",
         "loc": 19,
         "branch_count": 6,
         "max_nesting_depth": 1,

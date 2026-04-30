@@ -15,7 +15,7 @@
     scan_min_range: 1.0
     scan_period: 0.1
     use_pcd_map: true
-    map_path: /media/autoware/aa/ai_coding_ws/lidarloc_ws/data/official/hdl_localization/map.pcd
+    map_path: /absolute/path/to/hdl_localization/map.pcd
     set_initial_pose: true
     initial_pose_x: 0.0
     initial_pose_y: 0.0

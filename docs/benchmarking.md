@@ -195,7 +195,7 @@ Clean Istanbul 30-second snapshot:
 - stable-init threshold sweep summary CSV: `/tmp/lidarloc_istanbul_stable_threshold_sweep/summary.csv`
 - twist-linear sweep summary CSV: `/tmp/lidarloc_istanbul_twist_linear_threshold_sweep/summary.csv`
 - best current run directory: `/tmp/lidarloc_istanbul_twist_linear_threshold_sweep/twist_linear_thr6`
-- report: `/media/autoware/aa/ai_coding_ws/lidarloc_ws/artifacts/public/autoware_istanbul_ndt_30s/index.html`
+- report: `artifacts/public/autoware_istanbul_ndt_30s/index.html`
 - matched samples: `109 / 238`
 - translation RMSE vs GNSS reference: `1.163 m`
 - rotation RMSE vs GNSS reference: `0.383 deg`
