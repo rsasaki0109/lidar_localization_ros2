@@ -1,6 +1,33 @@
 # lidar_localization_ros2
 A ROS2 package of 3D LIDAR-based Localization.
 
+## Quick Start
+
+From this repository in the local workspace:
+
+```bash
+source scripts/setup_local_env.sh
+cd ../build_ws
+colcon build --symlink-install --packages-up-to lidar_localization_ros2
+cd ../repo
+source scripts/setup_local_env.sh
+```
+
+Then choose the path that matches what you want to do:
+
+| Goal | Start here |
+|---|---|
+| Build the package in this workspace | [Local Build](docs/local_build.md) |
+| Launch the LiDAR localizer for Nav2 | [Nav2 launch](#nav2-launch) |
+| Run a self-contained Nav2 smoke path | [Recommended entry points](docs/v1_status.md#recommended-entry-points) |
+| Run public replay/regression checks | [Benchmarking](#benchmarking) |
+| Evaluate a rosbag against reference poses | [Benchmarking guide](docs/benchmarking.md) |
+| Develop or compare recovery behavior | [Experiment-First Development](#experiment-first-development) |
+| Check what `v1.0.0` does and does not claim | [v1 status](docs/v1_status.md) |
+
+For Nav2 use, provide a pointcloud map, matching 2D `map_yaml` when launching the full Nav2 stack,
+an odom source publishing `odom -> base_link`, and an initial pose on `/initialpose`.
+
 ## Status
 
 The repo is now packaged as `v1.0.0`.
