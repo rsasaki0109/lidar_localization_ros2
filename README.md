@@ -151,7 +151,7 @@ and writes a combined summary under `artifacts/public/release_regression_suite/`
 |enable_scan_voxel_filter|bool|true|apply the built-in `VoxelGrid` downsampling pass to each incoming scan before range filtering|
 |enable_debug|bool|false|whether debug is done or not|
 |predict_pose_from_previous_delta|bool|true|use the previous accepted pose delta as the next registration initial guess|
-|enable_local_map_crop|bool|false|crop the PCD target map around the current seed before registration; useful for large city-scale maps that overflow full-map NDT targets|
+|enable_local_map_crop|bool|false|crop the target map around the current seed before registration; useful for large city-scale maps that overflow full-map NDT targets|
 |local_map_radius|double|150.0|radius of the cropped local map around the current seed[m]|
 |local_map_min_points|int|100|minimum number of cropped map points required before attempting registration|
 |reject_above_score_threshold|bool|true|skip pose updates when `fitness_score` exceeds `score_threshold`|
@@ -202,8 +202,17 @@ early correction guard is also parameterized through
 `imu_prediction_correction_guard_yaw_deg`.
 
 The default Nav2 preset also enables `enable_local_map_crop:=true`, which avoids the
-full-map NDT overflow/crash path on large city-scale PCD maps by rebuilding the NDT target
+full-map NDT overflow/crash path on large city-scale pointcloud maps by rebuilding the NDT target
 around the current seed each scan.
+
+### Map Format Notes
+
+- Runtime `map_path` supports `.ply` and `.pcd`, but the current benchmarked path in this repo
+  should prefer `.ply`.
+- For generated benchmark maps, use binary little-endian float32 PLY (`property float x/y/z`).
+- Avoid Open3D's default double-precision PLY output for runtime benchmarking.
+- Generated `.pcd` maps are fine for inspection tools, but they are not the recommended
+  benchmark/runtime path in this repo today.
 
 The Nav2 presets also set `enable_scan_voxel_filter:=false` because the Autoware Istanbul
 `/localization/util/downsample/pointcloud` topic is already downsampled upstream.
