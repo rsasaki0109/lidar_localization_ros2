@@ -2,7 +2,7 @@
   "problem": "reinit_trigger",
   "title": "Reinitialization Trigger",
   "problem_statement": "Decide when bounded local recovery should stop and the system should escalate to full reinitialization.",
-  "generated_from": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/scripts/run_reinit_trigger_experiments.py",
+  "generated_from": "scripts/run_reinit_trigger_experiments.py",
   "interface": {
     "methods": [
       "reset() -> None",
@@ -101,7 +101,7 @@
       "readability_score": 53.2,
       "extensibility_score": 94.0,
       "static_metrics": {
-        "implementation_file": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/experiments/reinit_trigger/variants/gap_streak_score.py",
+        "implementation_file": "experiments/reinit_trigger/variants/gap_streak_score.py",
         "loc": 19,
         "branch_count": 4,
         "max_nesting_depth": 1,
@@ -168,7 +168,7 @@
       "readability_score": 65.4,
       "extensibility_score": 85.0,
       "static_metrics": {
-        "implementation_file": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/experiments/reinit_trigger/variants/failure_kind_eager.py",
+        "implementation_file": "experiments/reinit_trigger/variants/failure_kind_eager.py",
         "loc": 13,
         "branch_count": 3,
         "max_nesting_depth": 1,
@@ -235,7 +235,7 @@
       "readability_score": 91.6,
       "extensibility_score": 85.0,
       "static_metrics": {
-        "implementation_file": "/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/experiments/reinit_trigger/variants/never_reinit.py",
+        "implementation_file": "experiments/reinit_trigger/variants/never_reinit.py",
         "loc": 7,
         "branch_count": 0,
         "max_nesting_depth": 0,

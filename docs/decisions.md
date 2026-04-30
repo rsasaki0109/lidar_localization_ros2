@@ -15,7 +15,7 @@
 - readability score: `56.8`
 - extensibility score: `94.0`
 - nearest alternative: `post_reject_strict` at `78.16`
-- generated_from: `/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/scripts/run_borderline_gate_experiments.py`
+- generated_from: `scripts/run_borderline_gate_experiments.py`
 
 ## IMU Correction Guard
 
@@ -26,7 +26,7 @@
 - readability score: `58.0`
 - extensibility score: `94.0`
 - nearest alternative: `score_budget` at `70.68`
-- generated_from: `/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/scripts/run_imu_guard_experiments.py`
+- generated_from: `scripts/run_imu_guard_experiments.py`
 
 ## Recovery Action Selection
 
@@ -37,7 +37,7 @@
 - readability score: `50.6`
 - extensibility score: `94.0`
 - nearest alternative: `conservative_drop` at `65.32`
-- generated_from: `/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/scripts/run_recovery_action_experiments.py`
+- generated_from: `scripts/run_recovery_action_experiments.py`
 
 ## Reinitialization Trigger
 
@@ -48,4 +48,4 @@
 - readability score: `53.2`
 - extensibility score: `94.0`
 - nearest alternative: `failure_kind_eager_reinit` at `78.08`
-- generated_from: `/media/autoware/aa/ai_coding_ws/lidarloc_ws/repo/scripts/run_reinit_trigger_experiments.py`
+- generated_from: `scripts/run_reinit_trigger_experiments.py`
