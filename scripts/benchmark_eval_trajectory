@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+
+import argparse
+import csv
+import json
+import math
+import os
+from dataclasses import dataclass
+from typing import List
+from typing import Optional
+
+
+@dataclass
+class PoseSample:
+    stamp_sec: float
+    position: List[float]
+    quaternion: List[float]
+
+
+def clamp(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(upper, value))
+
+
+def normalize_quaternion(values: List[float]) -> List[float]:
+    norm = math.sqrt(sum(value * value for value in values))
+    if norm == 0.0:
+        return [0.0, 0.0, 0.0, 1.0]
+    return [value / norm for value in values]
+
+
+def quaternion_conjugate(values: List[float]) -> List[float]:
+    return [-values[0], -values[1], -values[2], values[3]]
+
+
+def quaternion_multiply(lhs: List[float], rhs: List[float]) -> List[float]:
+    lx, ly, lz, lw = lhs
+    rx, ry, rz, rw = rhs
+    return [
+        lw * rx + lx * rw + ly * rz - lz * ry,
+        lw * ry - lx * rz + ly * rw + lz * rx,
+        lw * rz + lx * ry - ly * rx + lz * rw,
+        lw * rw - lx * rx - ly * ry - lz * rz,
+    ]
+
+
+def quaternion_angle_rad(lhs: List[float], rhs: List[float]) -> float:
+    lhs_normalized = normalize_quaternion(lhs)
+    rhs_normalized = normalize_quaternion(rhs)
+    delta = quaternion_multiply(lhs_normalized, quaternion_conjugate(rhs_normalized))
+    w = clamp(abs(delta[3]), -1.0, 1.0)
+    return 2.0 * math.acos(w)
+
+
+def load_pose_csv(path: str) -> List[PoseSample]:
+    samples: List[PoseSample] = []
+    with open(path, "r", encoding="utf-8") as stream:
+        reader = csv.DictReader(stream)
+        for row in reader:
+            samples.append(
+                PoseSample(
+                    stamp_sec=float(row["stamp_sec"]),
+                    position=[
+                        float(row["position_x"]),
+                        float(row["position_y"]),
+                        float(row["position_z"]),
+                    ],
+                    quaternion=[
+                        float(row["orientation_x"]),
+                        float(row["orientation_y"]),
+                        float(row["orientation_z"]),
+                        float(row["orientation_w"]),
+                    ],
+                )
+            )
+    return samples
+
+
+def nearest_reference(references: List[PoseSample], stamp_sec: float, start_index: int) -> Optional[int]:
+    if not references:
+        return None
+
+    best_index = start_index
+    best_dt = abs(references[start_index].stamp_sec - stamp_sec)
+
+    index = start_index + 1
+    while index < len(references):
+        dt = abs(references[index].stamp_sec - stamp_sec)
+        if dt <= best_dt:
+            best_index = index
+            best_dt = dt
+            index += 1
+            continue
+        break
+
+    return best_index
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Evaluate an estimated trajectory against reference CSV.")
+    parser.add_argument("--estimated-csv", required=True)
+    parser.add_argument("--reference-csv", required=True)
+    parser.add_argument("--output-json", required=True)
+    parser.add_argument(
+        "--max-time-diff",
+        type=float,
+        default=0.05,
+        help="Maximum time difference in seconds allowed for sample matching",
+    )
+    args = parser.parse_args()
+
+    estimated = load_pose_csv(args.estimated_csv)
+    reference = load_pose_csv(args.reference_csv)
+
+    match_count = 0
+    reference_index = 0
+    translational_squared_errors: List[float] = []
+    rotational_squared_errors: List[float] = []
+    time_diffs: List[float] = []
+
+    for sample in estimated:
+        if reference_index >= len(reference):
+            break
+        nearest_index = nearest_reference(reference, sample.stamp_sec, reference_index)
+        if nearest_index is None:
+            break
+
+        candidate = reference[nearest_index]
+        time_diff = abs(candidate.stamp_sec - sample.stamp_sec)
+        if time_diff > args.max_time_diff:
+            continue
+
+        dx = sample.position[0] - candidate.position[0]
+        dy = sample.position[1] - candidate.position[1]
+        dz = sample.position[2] - candidate.position[2]
+        translation_error = math.sqrt(dx * dx + dy * dy + dz * dz)
+        rotation_error = quaternion_angle_rad(sample.quaternion, candidate.quaternion)
+
+        translational_squared_errors.append(translation_error * translation_error)
+        rotational_squared_errors.append(rotation_error * rotation_error)
+        time_diffs.append(time_diff)
+        reference_index = nearest_index
+        match_count += 1
+
+    result = {
+        "estimated_csv": os.path.abspath(args.estimated_csv),
+        "reference_csv": os.path.abspath(args.reference_csv),
+        "max_time_diff": args.max_time_diff,
+        "estimated_sample_count": len(estimated),
+        "reference_sample_count": len(reference),
+        "matched_sample_count": match_count,
+        "translation_rmse_m": math.sqrt(sum(translational_squared_errors) / match_count)
+        if match_count
+        else None,
+        "rotation_rmse_rad": math.sqrt(sum(rotational_squared_errors) / match_count)
+        if match_count
+        else None,
+        "rotation_rmse_deg": math.degrees(math.sqrt(sum(rotational_squared_errors) / match_count))
+        if match_count
+        else None,
+        "mean_time_diff_sec": sum(time_diffs) / match_count if match_count else None,
+    }
+
+    with open(args.output_json, "w", encoding="utf-8") as stream:
+        json.dump(result, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

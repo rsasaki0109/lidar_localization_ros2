@@ -1,0 +1,527 @@
+#!/usr/bin/env python3
+
+import argparse
+import csv
+import json
+import math
+import os
+import signal
+import subprocess
+import sys
+import threading
+import time
+from dataclasses import dataclass
+from datetime import datetime
+from statistics import median
+from typing import Dict
+from typing import List
+from typing import Optional
+
+
+def now_iso() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def percentile(values: List[float], ratio: float) -> Optional[float]:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, math.ceil(ratio * len(ordered)) - 1))
+    return ordered[index]
+
+
+def scan_processes() -> List[Dict[str, object]]:
+    entries: List[Dict[str, object]] = []
+    for name in os.listdir("/proc"):
+        if not name.isdigit():
+            continue
+        pid = int(name)
+        cmdline_path = os.path.join("/proc", name, "cmdline")
+        try:
+            with open(cmdline_path, "rb") as stream:
+                parts = [chunk.decode("utf-8", errors="ignore") for chunk in stream.read().split(b"\0") if chunk]
+            if not parts:
+                continue
+            entries.append({"pid": pid, "cmdline": " ".join(parts)})
+        except OSError:
+            continue
+    return entries
+
+
+def find_latest_pid(pattern: str) -> Optional[int]:
+    matches = [entry["pid"] for entry in scan_processes() if pattern in str(entry["cmdline"])]
+    return max(matches) if matches else None
+
+
+def read_proc_cpu_seconds(pid: int, clock_ticks: int) -> float:
+    stat_path = os.path.join("/proc", str(pid), "stat")
+    with open(stat_path, "r", encoding="utf-8") as stream:
+        fields = stream.read().split()
+    utime = float(fields[13])
+    stime = float(fields[14])
+    return (utime + stime) / float(clock_ticks)
+
+
+def read_proc_memory_mb(pid: int) -> Dict[str, float]:
+    status_path = os.path.join("/proc", str(pid), "status")
+    rss_kb = 0.0
+    hwm_kb = 0.0
+    with open(status_path, "r", encoding="utf-8") as stream:
+        for line in stream:
+            if line.startswith("VmRSS:"):
+                rss_kb = float(line.split()[1])
+            elif line.startswith("VmHWM:"):
+                hwm_kb = float(line.split()[1])
+    return {"rss_mb": rss_kb / 1024.0, "hwm_mb": hwm_kb / 1024.0}
+
+
+@dataclass
+class ManagedProcess:
+    name: str
+    command: str
+    stdout_path: str
+    stderr_path: str
+    process: subprocess.Popen
+    stdout_stream: object
+    stderr_stream: object
+
+
+class ResourceMonitor(threading.Thread):
+    def __init__(self, pid: int, output_path: str, interval_sec: float) -> None:
+        super().__init__(daemon=True)
+        self._pid = pid
+        self._output_path = output_path
+        self._interval_sec = interval_sec
+        self._stop_event = threading.Event()
+        self._samples: List[Dict[str, float]] = []
+
+    @property
+    def samples(self) -> List[Dict[str, float]]:
+        return list(self._samples)
+
+    def stop(self) -> None:
+        self._stop_event.set()
+
+    def run(self) -> None:
+        clock_ticks = os.sysconf("SC_CLK_TCK")
+        os.makedirs(os.path.dirname(os.path.abspath(self._output_path)), exist_ok=True)
+        with open(self._output_path, "w", newline="", encoding="utf-8") as stream:
+            writer = csv.writer(stream)
+            writer.writerow(["wall_time_sec", "cpu_percent", "rss_mb", "hwm_mb"])
+
+            try:
+                last_cpu = read_proc_cpu_seconds(self._pid, clock_ticks)
+            except OSError:
+                return
+            last_wall = time.monotonic()
+
+            while not self._stop_event.wait(self._interval_sec):
+                try:
+                    current_cpu = read_proc_cpu_seconds(self._pid, clock_ticks)
+                    memory = read_proc_memory_mb(self._pid)
+                except OSError:
+                    break
+
+                current_wall = time.monotonic()
+                wall_dt = current_wall - last_wall
+                cpu_dt = current_cpu - last_cpu
+                cpu_percent = 100.0 * cpu_dt / wall_dt if wall_dt > 0.0 else 0.0
+
+                sample = {
+                    "wall_time_sec": current_wall,
+                    "cpu_percent": cpu_percent,
+                    "rss_mb": memory["rss_mb"],
+                    "hwm_mb": memory["hwm_mb"],
+                }
+                writer.writerow(
+                    [
+                        f"{sample['wall_time_sec']:.6f}",
+                        f"{sample['cpu_percent']:.3f}",
+                        f"{sample['rss_mb']:.3f}",
+                        f"{sample['hwm_mb']:.3f}",
+                    ]
+                )
+                stream.flush()
+                self._samples.append(sample)
+                last_cpu = current_cpu
+                last_wall = current_wall
+
+
+def build_stats(samples: List[Dict[str, float]]) -> Dict[str, Optional[float]]:
+    cpu_values = [sample["cpu_percent"] for sample in samples]
+    rss_values = [sample["rss_mb"] for sample in samples]
+    hwm_values = [sample["hwm_mb"] for sample in samples]
+    return {
+        "sample_count": len(samples),
+        "cpu_percent_median": median(cpu_values) if cpu_values else None,
+        "cpu_percent_p95": percentile(cpu_values, 0.95),
+        "cpu_percent_p99": percentile(cpu_values, 0.99),
+        "cpu_percent_max": max(cpu_values) if cpu_values else None,
+        "rss_mb_median": median(rss_values) if rss_values else None,
+        "rss_mb_p95": percentile(rss_values, 0.95),
+        "rss_mb_max": max(rss_values) if rss_values else None,
+        "hwm_mb_max": max(hwm_values) if hwm_values else None,
+    }
+
+
+def launch_process(
+    name: str,
+    command: str,
+    output_dir: str,
+    extra_env: Optional[Dict[str, str]] = None,
+) -> ManagedProcess:
+    stdout_path = os.path.join(output_dir, f"{name}.stdout.log")
+    stderr_path = os.path.join(output_dir, f"{name}.stderr.log")
+    stdout_stream = open(stdout_path, "w", encoding="utf-8")
+    stderr_stream = open(stderr_path, "w", encoding="utf-8")
+    env = os.environ.copy()
+    if extra_env:
+        env.update(extra_env)
+    process = subprocess.Popen(
+        ["bash", "-lc", command],
+        stdout=stdout_stream,
+        stderr=stderr_stream,
+        preexec_fn=os.setsid,
+        env=env,
+    )
+    return ManagedProcess(
+        name=name,
+        command=command,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        process=process,
+        stdout_stream=stdout_stream,
+        stderr_stream=stderr_stream,
+    )
+
+
+def stop_process(managed: ManagedProcess, timeout_sec: float) -> int:
+    if managed.process.poll() is None:
+        os.killpg(os.getpgid(managed.process.pid), signal.SIGINT)
+        try:
+            managed.process.wait(timeout=timeout_sec)
+        except subprocess.TimeoutExpired:
+            os.killpg(os.getpgid(managed.process.pid), signal.SIGTERM)
+            try:
+                managed.process.wait(timeout=timeout_sec)
+            except subprocess.TimeoutExpired:
+                os.killpg(os.getpgid(managed.process.pid), signal.SIGKILL)
+                managed.process.wait(timeout=timeout_sec)
+
+    managed.stdout_stream.close()
+    managed.stderr_stream.close()
+    return int(managed.process.returncode)
+
+
+def detect_process_died_positions(log_path: str, target_process_pattern: str) -> Dict[str, int]:
+    try:
+        with open(log_path, "r", encoding="utf-8") as stream:
+            text = stream.read()
+    except OSError:
+        return {
+            "process_died_pos": -1,
+            "signal_handler_pos": -1,
+            "user_interrupt_pos": -1,
+        }
+
+    process_died_pos = -1
+    if not target_process_pattern:
+        process_died_pos = text.find("process has died")
+    else:
+        offset = 0
+        for line in text.splitlines(keepends=True):
+            if "process has died" in line and target_process_pattern in line:
+                process_died_pos = offset + line.find("process has died")
+                break
+            offset += len(line)
+
+    return {
+        "process_died_pos": process_died_pos,
+        "signal_handler_pos": text.find("signal_handler(SIGINT/SIGTERM)"),
+        "user_interrupt_pos": text.find("user interrupted with ctrl-c (SIGINT)"),
+    }
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run a repeatable localization benchmark.")
+    parser.add_argument("--bag-path", required=True, help="Input rosbag2 directory")
+    parser.add_argument("--output-dir", required=True, help="Benchmark result directory")
+    parser.add_argument(
+        "--system-command",
+        default="ros2 launch lidar_localization_ros2 lidar_localization.launch.py",
+        help="Shell command used to start the system under test",
+    )
+    parser.add_argument(
+        "--record-topic",
+        default="/pcl_pose",
+        help="Pose topic recorded into CSV",
+    )
+    parser.add_argument(
+        "--record-qos-reliability",
+        default="reliable",
+        help="QoS reliability for the pose recorder: reliable or best_effort",
+    )
+    parser.add_argument(
+        "--record-qos-durability",
+        default="transient_local",
+        help="QoS durability for the pose recorder: transient_local or volatile",
+    )
+    parser.add_argument(
+        "--record-use-node-clock",
+        action="store_true",
+        help="Record pose timestamps from the recorder node clock instead of message headers",
+    )
+    parser.add_argument(
+        "--record-use-sim-time",
+        action="store_true",
+        help="Enable use_sim_time for the pose recorder. Useful together with --record-use-node-clock.",
+    )
+    parser.add_argument(
+        "--diagnostic-topic",
+        default="/alignment_status",
+        help="Diagnostic topic recorded into CSV. Set to an empty string to disable.",
+    )
+    parser.add_argument(
+        "--target-process-pattern",
+        default="lidar_localization_node",
+        help="Substring used to find the process to monitor in /proc",
+    )
+    parser.add_argument(
+        "--bag-rate",
+        type=float,
+        default=1.0,
+        help="ros2 bag play rate",
+    )
+    parser.add_argument(
+        "--bag-start-offset",
+        type=float,
+        default=0.0,
+        help="Seconds to skip from the beginning of the bag",
+    )
+    parser.add_argument(
+        "--bag-duration",
+        type=float,
+        default=0.0,
+        help="Optional playback duration in seconds. 0 disables the limit.",
+    )
+    parser.add_argument(
+        "--settle-seconds",
+        type=float,
+        default=5.0,
+        help="Warmup time before starting bag playback",
+    )
+    parser.add_argument(
+        "--post-roll-seconds",
+        type=float,
+        default=3.0,
+        help="Extra wait time after bag playback completes",
+    )
+    parser.add_argument(
+        "--monitor-interval",
+        type=float,
+        default=0.5,
+        help="Resource monitor sample interval in seconds",
+    )
+    parser.add_argument(
+        "--shutdown-timeout",
+        type=float,
+        default=10.0,
+        help="Timeout for graceful shutdown of launched processes",
+    )
+    parser.add_argument(
+        "--bag-command",
+        default="",
+        help="Optional full ros2 bag play command. Overrides the generated command.",
+    )
+    parser.add_argument(
+        "--ros-domain-id",
+        type=int,
+        default=-1,
+        help="Optional ROS_DOMAIN_ID applied to all launched processes. Negative disables the override.",
+    )
+    return parser.parse_args()
+
+
+def build_bag_command(args: argparse.Namespace) -> str:
+    if args.bag_command:
+        return args.bag_command
+
+    parts = [
+        "ros2",
+        "bag",
+        "play",
+        f"\"{args.bag_path}\"",
+        "--clock",
+        f"--rate {args.bag_rate}",
+    ]
+    if args.bag_start_offset > 0.0:
+        parts.append(f"--start-offset {args.bag_start_offset}")
+    return " ".join(parts)
+
+
+def wait_for_pid(pattern: str, timeout_sec: float) -> Optional[int]:
+    deadline = time.monotonic() + timeout_sec
+    while time.monotonic() < deadline:
+        pid = find_latest_pid(pattern)
+        if pid is not None:
+            return pid
+        time.sleep(0.2)
+    return None
+
+
+def main() -> int:
+    args = parse_args()
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    pose_csv_path = os.path.join(args.output_dir, "pose_trace.csv")
+    diagnostic_csv_path = os.path.join(args.output_dir, "alignment_status.csv")
+    resource_csv_path = os.path.join(args.output_dir, "resource_trace.csv")
+    summary_path = os.path.join(args.output_dir, "summary.json")
+
+    system_command = args.system_command
+    bag_command = build_bag_command(args)
+    launch_env: Dict[str, str] = {}
+    if args.ros_domain_id >= 0:
+        launch_env["ROS_DOMAIN_ID"] = str(args.ros_domain_id)
+    recorder_command = (
+        "ros2 run lidar_localization_ros2 benchmark_pose_recorder "
+        f"--ros-args -p topic:={args.record_topic} -p output_path:={pose_csv_path} "
+        f"-p qos_reliability:={args.record_qos_reliability} "
+        f"-p qos_durability:={args.record_qos_durability}"
+    )
+    if args.record_use_node_clock:
+        recorder_command += " -p use_node_clock:=true"
+    if args.record_use_sim_time:
+        recorder_command += " -p use_sim_time:=true"
+    diagnostic_recorder_command = (
+        "ros2 run lidar_localization_ros2 benchmark_diagnostic_recorder "
+        f"--ros-args -p topic:={args.diagnostic_topic} -p output_path:={diagnostic_csv_path}"
+    )
+
+    started_at = now_iso()
+    settle_start_monotonic = time.monotonic()
+    system = launch_process("system", system_command, args.output_dir, launch_env)
+    recorder = launch_process("pose_recorder", recorder_command, args.output_dir, launch_env)
+    diagnostic_recorder = (
+        launch_process("diagnostic_recorder", diagnostic_recorder_command, args.output_dir, launch_env)
+        if args.diagnostic_topic
+        else None
+    )
+
+    monitor: Optional[ResourceMonitor] = None
+    monitored_pid = wait_for_pid(args.target_process_pattern, args.settle_seconds)
+    if monitored_pid is not None:
+        monitor = ResourceMonitor(monitored_pid, resource_csv_path, args.monitor_interval)
+        monitor.start()
+
+    settle_elapsed = time.monotonic() - settle_start_monotonic
+    time.sleep(max(0.0, args.settle_seconds - settle_elapsed))
+
+    bag_started_monotonic = time.monotonic()
+    bag = launch_process("bag_play", bag_command, args.output_dir, launch_env)
+    bag_stopped_by_runner = False
+    if args.bag_duration > 0.0:
+        deadline = bag_started_monotonic + args.bag_duration
+        while bag.process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.1)
+        if bag.process.poll() is None:
+            bag_stopped_by_runner = True
+            bag_return_code = stop_process(bag, args.shutdown_timeout)
+        else:
+            bag_return_code = int(bag.process.returncode)
+    else:
+        bag_return_code = bag.process.wait()
+    bag_finished_monotonic = time.monotonic()
+
+    time.sleep(max(0.0, args.post_roll_seconds))
+
+    if monitor is not None:
+        monitor.stop()
+        monitor.join(timeout=2.0)
+
+    bag_stdout = bag.stdout_path
+    bag_stderr = bag.stderr_path
+    stop_process(recorder, args.shutdown_timeout)
+    if diagnostic_recorder is not None:
+        stop_process(diagnostic_recorder, args.shutdown_timeout)
+    stop_process(system, args.shutdown_timeout)
+    stop_process(bag, args.shutdown_timeout)
+    process_died_positions = detect_process_died_positions(
+        system.stdout_path, args.target_process_pattern)
+    shutdown_markers = [
+        pos for pos in (
+            process_died_positions["signal_handler_pos"],
+            process_died_positions["user_interrupt_pos"],
+        ) if pos >= 0
+    ]
+    first_shutdown_pos = min(shutdown_markers) if shutdown_markers else -1
+    target_process_died_during_run = (
+        process_died_positions["process_died_pos"] >= 0 and
+        (first_shutdown_pos < 0 or process_died_positions["process_died_pos"] < first_shutdown_pos)
+    )
+    target_process_died_after_signal = (
+        process_died_positions["process_died_pos"] >= 0 and
+        first_shutdown_pos >= 0 and
+        process_died_positions["process_died_pos"] > first_shutdown_pos
+    )
+
+    summary = {
+        "started_at": started_at,
+        "finished_at": now_iso(),
+        "bag_path": args.bag_path,
+        "output_dir": os.path.abspath(args.output_dir),
+        "record_topic": args.record_topic,
+        "record_qos_reliability": args.record_qos_reliability,
+        "record_qos_durability": args.record_qos_durability,
+        "record_use_node_clock": args.record_use_node_clock,
+        "record_use_sim_time": args.record_use_sim_time,
+        "diagnostic_topic": args.diagnostic_topic,
+        "system_command": system_command,
+        "bag_command": bag_command,
+        "target_process_pattern": args.target_process_pattern,
+        "ros_domain_id": args.ros_domain_id if args.ros_domain_id >= 0 else None,
+        "timing_sec": {
+            "settle_seconds": args.settle_seconds,
+            "bag_play_seconds": bag_finished_monotonic - bag_started_monotonic,
+            "requested_bag_duration_seconds": args.bag_duration if args.bag_duration > 0.0 else None,
+            "post_roll_seconds": args.post_roll_seconds,
+        },
+        "return_codes": {
+            "system": system.process.returncode,
+            "pose_recorder": recorder.process.returncode,
+            "diagnostic_recorder": diagnostic_recorder.process.returncode if diagnostic_recorder is not None else None,
+            "bag_play": bag_return_code,
+        },
+        "bag_stopped_by_runner": bag_stopped_by_runner,
+        "target_process_died_during_run": target_process_died_during_run,
+        "target_process_died_after_signal": target_process_died_after_signal,
+        "artifacts": {
+            "pose_trace_csv": pose_csv_path,
+            "alignment_status_csv": diagnostic_csv_path if diagnostic_recorder is not None else None,
+            "resource_trace_csv": resource_csv_path if monitor is not None else None,
+            "system_stdout_log": system.stdout_path,
+            "system_stderr_log": system.stderr_path,
+            "pose_recorder_stdout_log": recorder.stdout_path,
+            "pose_recorder_stderr_log": recorder.stderr_path,
+            "diagnostic_recorder_stdout_log": diagnostic_recorder.stdout_path if diagnostic_recorder is not None else None,
+            "diagnostic_recorder_stderr_log": diagnostic_recorder.stderr_path if diagnostic_recorder is not None else None,
+            "bag_stdout_log": bag_stdout,
+            "bag_stderr_log": bag_stderr,
+        },
+        "resource_monitor": {
+            "pid": monitored_pid,
+            "stats": build_stats(monitor.samples if monitor is not None else []),
+        },
+    }
+
+    with open(summary_path, "w", encoding="utf-8") as stream:
+        json.dump(summary, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    bag_ok = bag_return_code == 0 or bag_stopped_by_runner
+    return 0 if bag_ok and not target_process_died_during_run else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

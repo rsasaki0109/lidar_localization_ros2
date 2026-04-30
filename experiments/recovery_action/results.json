@@ -1,0 +1,224 @@
+{
+  "problem": "recovery_action",
+  "title": "Recovery Action Selection",
+  "problem_statement": "Choose whether to keep open-loop prediction, reuse a rejected seed, or retry from the last accepted pose after a failed measurement.",
+  "generated_from": "scripts/run_recovery_action_experiments.py",
+  "interface": {
+    "methods": [
+      "reset() -> None",
+      "step(sample: RecoverySample) -> RecoveryDecision"
+    ],
+    "sample_type": "RecoverySample",
+    "sample_fields": [
+      "index",
+      "failure_kind",
+      "fitness_score",
+      "correction_translation_m",
+      "correction_yaw_deg",
+      "seed_translation_since_accept_m",
+      "accepted_gap_sec",
+      "consecutive_rejected_updates"
+    ],
+    "decision_type": "RecoveryDecision",
+    "decision_fields": [
+      "action",
+      "reason",
+      "score"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "long_gap_collapse_should_not_retry",
+      "description": "Real 180 s collapse window. Once the open-loop gap and drift have exploded, retrying from the last accepted pose should be suppressed."
+    },
+    {
+      "name": "seed_reuse_candidate_should_not_promote",
+      "description": "Real 60 s borderline reject that satisfied the experimental seed-reuse rule, but later benchmarking showed seed-only reuse should not be the chosen action here."
+    },
+    {
+      "name": "short_gap_rejected_measurement_retryable",
+      "description": "Distilled from the 60 s retry-success window. After a short reject streak with a bounded open-loop gap, retrying from the last accepted pose is the desired action."
+    },
+    {
+      "name": "short_gap_target_unavailable_retryable",
+      "description": "Distilled short-gap local-map-crop failure. The predicted seed has drifted, but the last accepted pose is still recent enough that a retry is preferable to blind open-loop continuation."
+    }
+  ],
+  "variants": [
+    {
+      "name": "guarded_last_pose_retry",
+      "design": "guarded retry rule table",
+      "fixture_results": [
+        {
+          "fixture": "long_gap_collapse_should_not_retry",
+          "passed": true,
+          "outcome": "matched_expected_action",
+          "decision": "advance_prediction_only",
+          "decision_reason": "accepted_gap_too_large",
+          "decision_score": null,
+          "expected_action": "advance_prediction_only"
+        },
+        {
+          "fixture": "seed_reuse_candidate_should_not_promote",
+          "passed": true,
+          "outcome": "matched_expected_action",
+          "decision": "advance_prediction_only",
+          "decision_reason": "insufficient_reject_streak",
+          "decision_score": null,
+          "expected_action": "advance_prediction_only"
+        },
+        {
+          "fixture": "short_gap_rejected_measurement_retryable",
+          "passed": true,
+          "outcome": "matched_expected_action",
+          "decision": "retry_from_last_pose",
+          "decision_reason": "within_retry_guard",
+          "decision_score": null,
+          "expected_action": "retry_from_last_pose"
+        },
+        {
+          "fixture": "short_gap_target_unavailable_retryable",
+          "passed": true,
+          "outcome": "matched_expected_action",
+          "decision": "retry_from_last_pose",
+          "decision_reason": "within_retry_guard",
+          "decision_score": null,
+          "expected_action": "retry_from_last_pose"
+        }
+      ],
+      "benchmark_score": 100.0,
+      "readability_score": 50.599999999999994,
+      "extensibility_score": 94.0,
+      "static_metrics": {
+        "implementation_file": "experiments/recovery_action/variants/guarded_last_pose_retry.py",
+        "loc": 17,
+        "branch_count": 5,
+        "max_nesting_depth": 1,
+        "state_field_count": 1,
+        "public_method_count": 2,
+        "import_count": 4,
+        "has_config_dataclass": true,
+        "readability_score": 50.599999999999994,
+        "extensibility_score": 94.0
+      },
+      "overall_score": 88.92
+    },
+    {
+      "name": "conservative_drop",
+      "design": "minimal baseline",
+      "fixture_results": [
+        {
+          "fixture": "long_gap_collapse_should_not_retry",
+          "passed": true,
+          "outcome": "matched_expected_action",
+          "decision": "advance_prediction_only",
+          "decision_reason": "no_recovery",
+          "decision_score": null,
+          "expected_action": "advance_prediction_only"
+        },
+        {
+          "fixture": "seed_reuse_candidate_should_not_promote",
+          "passed": true,
+          "outcome": "matched_expected_action",
+          "decision": "advance_prediction_only",
+          "decision_reason": "no_recovery",
+          "decision_score": null,
+          "expected_action": "advance_prediction_only"
+        },
+        {
+          "fixture": "short_gap_rejected_measurement_retryable",
+          "passed": false,
+          "outcome": "mismatched_expected_action",
+          "decision": "advance_prediction_only",
+          "decision_reason": "no_recovery",
+          "decision_score": null,
+          "expected_action": "retry_from_last_pose"
+        },
+        {
+          "fixture": "short_gap_target_unavailable_retryable",
+          "passed": false,
+          "outcome": "mismatched_expected_action",
+          "decision": "advance_prediction_only",
+          "decision_reason": "no_recovery",
+          "decision_score": null,
+          "expected_action": "retry_from_last_pose"
+        }
+      ],
+      "benchmark_score": 50.0,
+      "readability_score": 91.6,
+      "extensibility_score": 85.0,
+      "static_metrics": {
+        "implementation_file": "experiments/recovery_action/variants/conservative_drop.py",
+        "loc": 7,
+        "branch_count": 0,
+        "max_nesting_depth": 0,
+        "state_field_count": 0,
+        "public_method_count": 2,
+        "import_count": 3,
+        "has_config_dataclass": false,
+        "readability_score": 91.6,
+        "extensibility_score": 85.0
+      },
+      "overall_score": 65.32
+    },
+    {
+      "name": "rejected_seed_reuse",
+      "design": "seed-reuse rule table",
+      "fixture_results": [
+        {
+          "fixture": "long_gap_collapse_should_not_retry",
+          "passed": true,
+          "outcome": "matched_expected_action",
+          "decision": "advance_prediction_only",
+          "decision_reason": "not_rejected_measurement",
+          "decision_score": null,
+          "expected_action": "advance_prediction_only"
+        },
+        {
+          "fixture": "seed_reuse_candidate_should_not_promote",
+          "passed": false,
+          "outcome": "mismatched_expected_action",
+          "decision": "reuse_rejected_seed",
+          "decision_reason": "within_seed_reuse_limits",
+          "decision_score": null,
+          "expected_action": "advance_prediction_only"
+        },
+        {
+          "fixture": "short_gap_rejected_measurement_retryable",
+          "passed": false,
+          "outcome": "mismatched_expected_action",
+          "decision": "reuse_rejected_seed",
+          "decision_reason": "within_seed_reuse_limits",
+          "decision_score": null,
+          "expected_action": "retry_from_last_pose"
+        },
+        {
+          "fixture": "short_gap_target_unavailable_retryable",
+          "passed": false,
+          "outcome": "mismatched_expected_action",
+          "decision": "advance_prediction_only",
+          "decision_reason": "not_rejected_measurement",
+          "decision_score": null,
+          "expected_action": "retry_from_last_pose"
+        }
+      ],
+      "benchmark_score": 25.0,
+      "readability_score": 43.2,
+      "extensibility_score": 94.0,
+      "static_metrics": {
+        "implementation_file": "experiments/recovery_action/variants/rejected_seed_reuse.py",
+        "loc": 19,
+        "branch_count": 6,
+        "max_nesting_depth": 1,
+        "state_field_count": 1,
+        "public_method_count": 2,
+        "import_count": 4,
+        "has_config_dataclass": true,
+        "readability_score": 43.2,
+        "extensibility_score": 94.0
+      },
+      "overall_score": 42.44
+    }
+  ],
+  "benchmark_score_mean": 58.333333333333336
+}

@@ -1,0 +1,16 @@
+{
+  "name": "long_gap_hopeless_reject_should_reinit",
+  "description": "Real 180 s run just before crop failure. The open-loop gap and drift have already exploded, so the system should request reinitialization even before the crop fully fails.",
+  "source": "artifacts/public/istanbul_180s_recovery_retry_from_last_pose_r3_gap1_seed15_compare_seeded/nav2_ndt_urban_recovery_retry_from_last_pose_r3_gap1_seed15_120s/alignment_status.csv:1005",
+  "expectation": {
+    "expected_trigger_reinitialization": true
+  },
+  "sample": {
+    "index": 1005,
+    "failure_kind": "rejected_measurement",
+    "fitness_score": 23696.739347,
+    "seed_translation_since_accept_m": 690.196289,
+    "accepted_gap_sec": 105.400017,
+    "consecutive_rejected_updates": 833
+  }
+}

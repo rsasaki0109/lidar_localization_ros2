@@ -1,3 +1,11 @@
 .vscode
 build
+/install
+/log
+__pycache__/
+*.pyc
 map/bin_tc-2017-10-15--ndmap.pcd
+/data/public/
+param/benchmark/*.local.yaml
+param/benchmark/private/
+param/benchmark/boreas_localization_120s.yaml

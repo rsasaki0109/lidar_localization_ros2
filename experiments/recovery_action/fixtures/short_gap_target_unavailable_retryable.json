@@ -1,0 +1,18 @@
+{
+  "name": "short_gap_target_unavailable_retryable",
+  "description": "Distilled short-gap local-map-crop failure. The predicted seed has drifted, but the last accepted pose is still recent enough that a retry is preferable to blind open-loop continuation.",
+  "source": "distilled_from_local_map_crop_failure_path",
+  "expectation": {
+    "expected_action": "retry_from_last_pose"
+  },
+  "sample": {
+    "index": 0,
+    "failure_kind": "target_unavailable",
+    "fitness_score": 0.0,
+    "correction_translation_m": 0.0,
+    "correction_yaw_deg": 0.0,
+    "seed_translation_since_accept_m": 11.5,
+    "accepted_gap_sec": 0.8,
+    "consecutive_rejected_updates": 3
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "name": "hdl_healthy_candidate_r01",
+  "description": "Healthy HDL IMU-enabled trace excerpt. The guard may cut IMU around the observed divergence event, but it must not fire before sample 3.",
+  "source": "/tmp/lidarloc_public_regression_suite_20260402_repeat2/hdl/imu_preintegration_with_disable_fallback/r01/alignment_status.csv",
+  "expectation": {
+    "must_not_trigger_before_index": 3,
+    "should_trigger_by_index": 3
+  },
+  "samples": [
+    {
+      "index": 0,
+      "status": "ok",
+      "fitness_score": 0.015817,
+      "alignment_time_sec": 1.1106,
+      "imu_prediction_active": false,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.0,
+      "seed_yaw_since_accept_deg": 0.0,
+      "accepted_gap_sec": 0.0,
+      "correction_translation_m": 1.792523,
+      "correction_yaw_deg": 0.260788
+    },
+    {
+      "index": 1,
+      "status": "ok",
+      "fitness_score": 0.01288,
+      "alignment_time_sec": 0.047574,
+      "imu_prediction_active": true,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.0,
+      "seed_yaw_since_accept_deg": 0.0,
+      "accepted_gap_sec": 0.100063,
+      "correction_translation_m": 0.017638,
+      "correction_yaw_deg": 0.06543
+    },
+    {
+      "index": 2,
+      "status": "ok",
+      "fitness_score": 0.014888,
+      "alignment_time_sec": 0.173373,
+      "imu_prediction_active": true,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.0,
+      "seed_yaw_since_accept_deg": 0.0,
+      "accepted_gap_sec": 0.500433,
+      "correction_translation_m": 0.103067,
+      "correction_yaw_deg": 1.674284
+    },
+    {
+      "index": 3,
+      "status": "imu_smoother_diverged_imu_disabled",
+      "fitness_score": 0.078394,
+      "alignment_time_sec": 0.299433,
+      "imu_prediction_active": true,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 1.588691,
+      "seed_yaw_since_accept_deg": 0.380318,
+      "accepted_gap_sec": 0.700692,
+      "correction_translation_m": 1.664837,
+      "correction_yaw_deg": 4.400888
+    },
+    {
+      "index": 4,
+      "status": "ok",
+      "fitness_score": 0.018497,
+      "alignment_time_sec": 0.150442,
+      "imu_prediction_active": false,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.0,
+      "seed_yaw_since_accept_deg": 0.0,
+      "accepted_gap_sec": 0.300164,
+      "correction_translation_m": 0.212785,
+      "correction_yaw_deg": 1.61083
+    },
+    {
+      "index": 5,
+      "status": "ok",
+      "fitness_score": 0.032799,
+      "alignment_time_sec": 0.116587,
+      "imu_prediction_active": false,
+      "consecutive_rejected_updates": 0,
+      "seed_translation_since_accept_m": 0.0,
+      "seed_yaw_since_accept_deg": 0.0,
+      "accepted_gap_sec": 0.400337,
+      "correction_translation_m": 0.217715,
+      "correction_yaw_deg": 2.093907
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "common_params": {
+    "registration_method": "NDT_OMP",
+    "ndt_resolution": 1.0,
+    "voxel_leaf_size": 0.2,
+    "scan_min_range": 1.0,
+    "scan_max_range": 100.0,
+    "predict_pose_from_previous_delta": true,
+    "reject_above_score_threshold": true,
+    "use_imu": false,
+    "use_odom": false,
+    "enable_debug": false,
+    "use_twist_prediction": true,
+    "twist_prediction_use_angular_velocity": false,
+    "max_twist_prediction_dt": 0.5
+  },
+  "runs": [
+    {
+      "name": "twist_linear_thr6",
+      "params": {
+        "score_threshold": 6.0,
+        "enable_consistency_recovery_gate": false
+      }
+    },
+    {
+      "name": "twist_linear_thr5p5",
+      "params": {
+        "score_threshold": 5.5,
+        "enable_consistency_recovery_gate": false
+      }
+    }
+  ]
+}
