@@ -1,0 +1,39 @@
+# Koide Hard Point Cloud Localization -- late Outdoor01 window on a GT-aligned diagnostic map.
+# This variant uses a float32 PCD map to avoid Open3D's double-precision PLY encoding.
+
+mode: run
+
+dataset:
+  bag_path: repo://data/public/koide_hard_localization/sequences/outdoor_hard_01
+  map_path: repo://data/public/koide_hard_localization/map_outdoor_hard_full_gt_stride10_voxel05.pcd
+  reference_csv: repo://data/public/koide_hard_localization/benchmark/outdoor_hard_01_window_300_120/reference.csv
+  initial_pose_yaml: repo://data/public/koide_hard_localization/benchmark/outdoor_hard_01_window_300_120/initial_pose.yaml
+  cloud_topic: /livox/points
+  imu_topic: /livox/imu
+
+localizer:
+  base_param_yaml: repo://param/nav2_ndt_urban.yaml
+  param_overrides:
+    use_imu: false
+    use_imu_preintegration: false
+    enable_scan_voxel_filter: true
+    voxel_leaf_size: 0.5
+    base_frame_id: livox_frame
+    scan_min_range: 1.0
+    scan_max_range: 100.0
+    score_threshold: 6.0
+  launch_args:
+    - use_sim_time:=true
+    - lidar_frame_id:=livox_frame
+
+benchmark:
+  output_dir: /tmp/lidarloc_koide_outdoor_hard_01_window_300_120_gt_diag_map_pcd
+  ros_domain_id: 155
+  bag_duration: 120
+  bag_start_offset: 300
+  settle_seconds: 5
+  post_roll_seconds: 1
+  max_time_diff: 0.05
+  record_qos_reliability: reliable
+  record_qos_durability: volatile
+  record_use_sim_time: true

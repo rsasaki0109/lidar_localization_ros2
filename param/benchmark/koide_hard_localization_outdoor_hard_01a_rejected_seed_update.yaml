@@ -1,0 +1,45 @@
+# Koide Hard Point Cloud Localization — outdoor_hard_01a with rejected-seed-update recovery.
+# This candidate came from the Outdoor01 failure-onset replay sweep and is meant to
+# test whether we can extend tracking beyond the current ~22 s wall on 01a.
+
+mode: run
+
+dataset:
+  bag_path: repo://data/public/koide_hard_localization/sequences/outdoor_hard_01a
+  map_path: repo://data/public/koide_hard_localization/map_outdoor_hard.ply
+  reference_csv: repo://data/public/koide_hard_localization/benchmark/outdoor_hard_01a/reference.csv
+  initial_pose_yaml: repo://data/public/koide_hard_localization/benchmark/outdoor_hard_01a/initial_pose.yaml
+  cloud_topic: /livox/points
+  imu_topic: /livox/imu
+
+localizer:
+  base_param_yaml: repo://param/nav2_ndt_urban.yaml
+  param_overrides:
+    use_imu: false
+    use_imu_preintegration: false
+    enable_scan_voxel_filter: true
+    voxel_leaf_size: 0.5
+    base_frame_id: livox_frame
+    scan_min_range: 1.0
+    scan_max_range: 100.0
+    score_threshold: 6.0
+    enable_rejected_seed_update: true
+    rejected_seed_update_min_rejections: 3
+    rejected_seed_update_max_fitness: 10.0
+    rejected_seed_update_max_correction_translation_m: 3.0
+    rejected_seed_update_max_correction_yaw_deg: 8.0
+  launch_args:
+    - use_sim_time:=true
+    - lidar_frame_id:=livox_frame
+
+benchmark:
+  output_dir: /tmp/lidarloc_koide_outdoor_hard_01a_rejected_seed_update
+  ros_domain_id: 146
+  bag_duration: 380
+  bag_start_offset: 0
+  settle_seconds: 5
+  post_roll_seconds: 1
+  max_time_diff: 0.05
+  record_qos_reliability: reliable
+  record_qos_durability: volatile
+  record_use_sim_time: true
