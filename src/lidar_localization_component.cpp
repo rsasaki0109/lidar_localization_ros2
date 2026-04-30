@@ -423,14 +423,14 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     }
     sensor_msgs::msg::PointCloud2::SharedPtr map_msg_ptr(new sensor_msgs::msg::PointCloud2);
     if (viz_downsample_) {
-      pcl::PointCloud<pcl::PointXYZI>::Ptr map_viz_ptr(new pcl::PointCloud<pcl::PointXYZI>);
-      pcl::VoxelGrid<pcl::PointXYZI> voxel_viz;
-      voxel_viz.setInputCloud(map_cloud_ptr);
+      pcl::PCLPointCloud2 map_cloud_viz_filtered;
+      pcl::VoxelGrid<pcl::PCLPointCloud2> voxel_viz;
+      voxel_viz.setInputCloud(std::make_shared<pcl::PCLPointCloud2>(raw_map_cloud));
       voxel_viz.setLeafSize(viz_voxel_leaf_size_, viz_voxel_leaf_size_, viz_voxel_leaf_size_);
-      voxel_viz.filter(*map_viz_ptr);
-      pcl::toROSMsg(*map_viz_ptr, *map_msg_ptr);
+      voxel_viz.filter(map_cloud_viz_filtered);
+      pcl_conversions::moveFromPCL(map_cloud_viz_filtered, *map_msg_ptr);
     } else {
-      pcl::toROSMsg(*map_cloud_ptr, *map_msg_ptr);
+      pcl_conversions::moveFromPCL(raw_map_cloud, *map_msg_ptr);
     }
     map_msg_ptr->header.frame_id = global_frame_id_;
     initial_map_pub_->publish(*map_msg_ptr);
