@@ -207,6 +207,8 @@ public:
   bool use_gtsam_smoother_{false};
   bool enable_debug_{false};
   bool enable_map_odom_tf_{false};
+  bool viz_downsample_{false};
+  double viz_voxel_leaf_size_{0.5};
   bool predict_pose_from_previous_delta_{true};
   bool reject_above_score_threshold_{true};
   bool enable_consistency_recovery_gate_{false};
