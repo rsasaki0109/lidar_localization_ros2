@@ -118,10 +118,959 @@ def validate_manifest_for_execution(manifest_path: Path, manifest: Dict[str, Any
 
 
 def run_command(command: list[str], print_only: bool) -> None:
-    print(" ".join(quote(part) for part in command))
+    print(" ".join(quote(part) for part in command), flush=True)
     if print_only:
         return
     subprocess.run(command, check=True)
+
+
+def csv_arg(value: Any) -> str:
+    if isinstance(value, (list, tuple)):
+        return ",".join(str(item) for item in value)
+    return str(value)
+
+
+def run_health_summary(
+    benchmark: Dict[str, Any],
+    output_dir: Path,
+    eval_json: Optional[Path],
+    print_only: bool,
+) -> None:
+    if not bool(benchmark.get("write_health_summary", True)):
+        return
+
+    alignment_csv = output_dir / "alignment_status.csv"
+    if not print_only and not alignment_csv.exists():
+        raise RuntimeError(f"alignment_status.csv does not exist: {alignment_csv}")
+
+    health_script = _script_sibling("summarize_localization_health.py")
+    health_cmd = [
+        str(health_script),
+        "--alignment-csv",
+        str(alignment_csv),
+        "--output-json",
+        str(output_dir / "health_summary.json"),
+        "--output-md",
+        str(output_dir / "health_summary.md"),
+        "--stable-ok-rows",
+        str(int(benchmark.get("health_stable_ok_rows", 5))),
+        "--recovery-window-sec",
+        str(float(benchmark.get("health_recovery_window_sec", 10.0))),
+        "--false-recovery-rmse-threshold-m",
+        str(float(benchmark.get("health_false_recovery_rmse_threshold_m", 5.0))),
+    ]
+    if eval_json is not None:
+        health_cmd.extend(["--trajectory-eval-json", str(eval_json)])
+    run_command(health_cmd, print_only)
+
+
+def resolve_relocalization_attempts_csv(
+    benchmark: Dict[str, Any],
+    output_dir: Path,
+) -> Path:
+    attempts_csv_raw = benchmark.get("relocalization_attempts_csv")
+    attempts_csv = (
+        resolve_path(str(attempts_csv_raw), output_dir)
+        if attempts_csv_raw
+        else output_dir / "relocalization_attempts.csv"
+    )
+    assert attempts_csv is not None
+    return attempts_csv
+
+
+def resolve_relocalization_candidates_csv(
+    benchmark: Dict[str, Any],
+    output_dir: Path,
+) -> Path:
+    candidates_csv_raw = benchmark.get("relocalization_candidates_csv")
+    candidates_csv = (
+        resolve_path(str(candidates_csv_raw), output_dir)
+        if candidates_csv_raw
+        else output_dir / "relocalization_candidates.csv"
+    )
+    assert candidates_csv is not None
+    return candidates_csv
+
+
+def run_disabled_relocalization_attempt_baseline(
+    benchmark: Dict[str, Any],
+    output_dir: Path,
+    print_only: bool,
+) -> None:
+    if not bool(benchmark.get("write_disabled_relocalization_attempts", False)):
+        return
+
+    alignment_csv = output_dir / "alignment_status.csv"
+    if not print_only and not alignment_csv.exists():
+        raise RuntimeError(f"alignment_status.csv does not exist: {alignment_csv}")
+
+    attempts_csv = resolve_relocalization_attempts_csv(benchmark, output_dir)
+    if attempts_csv.exists() and not bool(
+        benchmark.get("overwrite_relocalization_attempts_csv", False)
+    ):
+        print(f"relocalization_attempts_csv_exists: {attempts_csv}")
+        return
+
+    baseline_script = _script_sibling("make_disabled_relocalization_attempts.py")
+    baseline_cmd = [
+        str(baseline_script),
+        "--alignment-csv",
+        str(alignment_csv),
+        "--output-csv",
+        str(attempts_csv),
+        "--source",
+        str(benchmark.get("disabled_relocalization_attempt_source", "disabled")),
+        "--mode",
+        str(benchmark.get("disabled_relocalization_attempt_mode", "diagnostic_request")),
+        "--roi-type",
+        str(benchmark.get("disabled_relocalization_attempt_roi_type", "none")),
+        "--rejection-reason",
+        str(
+            benchmark.get(
+                "disabled_relocalization_attempt_rejection_reason",
+                "candidate_generator_disabled",
+            )
+        ),
+    ]
+    if bool(benchmark.get("overwrite_relocalization_attempts_csv", False)):
+        baseline_cmd.append("--overwrite")
+    run_command(baseline_cmd, print_only)
+
+
+def run_route_grid_relocalization_attempts(
+    benchmark: Dict[str, Any],
+    dataset: Dict[str, Any],
+    manifest_dir: Path,
+    output_dir: Path,
+    print_only: bool,
+) -> None:
+    if not bool(benchmark.get("write_route_grid_relocalization_attempts", False)):
+        return
+
+    alignment_csv = output_dir / "alignment_status.csv"
+    if not print_only and not alignment_csv.exists():
+        raise RuntimeError(f"alignment_status.csv does not exist: {alignment_csv}")
+
+    reference_csv_raw = benchmark.get("route_grid_reference_csv") or dataset.get("reference_csv")
+    if not reference_csv_raw:
+        raise RuntimeError(
+            "write_route_grid_relocalization_attempts requires dataset.reference_csv "
+            "or benchmark.route_grid_reference_csv"
+        )
+    reference_csv = resolve_path(str(reference_csv_raw), manifest_dir)
+    assert reference_csv is not None
+    if not print_only and not reference_csv.exists():
+        raise RuntimeError(f"reference CSV does not exist: {reference_csv}")
+
+    attempts_csv = resolve_relocalization_attempts_csv(benchmark, output_dir)
+    if attempts_csv.exists() and not bool(
+        benchmark.get("overwrite_relocalization_attempts_csv", False)
+    ):
+        print(f"relocalization_attempts_csv_exists: {attempts_csv}")
+        return
+
+    candidates_csv = resolve_relocalization_candidates_csv(benchmark, output_dir)
+
+    route_script = _script_sibling("make_route_grid_relocalization_attempts.py")
+    route_cmd = [
+        str(route_script),
+        "--alignment-csv",
+        str(alignment_csv),
+        "--reference-csv",
+        str(reference_csv),
+        "--output-csv",
+        str(attempts_csv),
+        "--output-candidates-csv",
+        str(candidates_csv),
+        "--source",
+        str(benchmark.get("route_grid_relocalization_attempt_source", "route_grid")),
+        "--mode",
+        str(benchmark.get("route_grid_relocalization_attempt_mode", "offline_route_roi")),
+        "--roi-type",
+        str(benchmark.get("route_grid_relocalization_attempt_roi_type", "route_corridor")),
+        "--route-time-radius-sec",
+        str(float(benchmark.get("route_grid_time_radius_sec", 15.0))),
+        "--route-min-spacing-m",
+        str(float(benchmark.get("route_grid_min_spacing_m", 10.0))),
+        "--max-route-poses",
+        str(int(benchmark.get("route_grid_max_route_poses", 32))),
+        "--max-candidates",
+        str(int(benchmark.get("route_grid_max_candidates", 256))),
+        "--yaw-offsets-deg="
+        + csv_arg(benchmark.get("route_grid_yaw_offsets_deg", [0])),
+        "--lateral-offsets-m="
+        + csv_arg(benchmark.get("route_grid_lateral_offsets_m", [0])),
+        "--longitudinal-offsets-m="
+        + csv_arg(benchmark.get("route_grid_longitudinal_offsets_m", [0])),
+        "--rejection-reason",
+        str(
+            benchmark.get(
+                "route_grid_relocalization_attempt_rejection_reason",
+                "candidate_scoring_not_implemented",
+            )
+        ),
+    ]
+    if bool(benchmark.get("overwrite_relocalization_attempts_csv", False)):
+        route_cmd.append("--overwrite")
+    run_command(route_cmd, print_only)
+
+
+def run_reference_oracle_relocalization_scoring(
+    benchmark: Dict[str, Any],
+    dataset: Dict[str, Any],
+    manifest_dir: Path,
+    output_dir: Path,
+    print_only: bool,
+) -> None:
+    if not bool(benchmark.get("write_reference_oracle_relocalization_scores", False)):
+        return
+
+    reference_csv_raw = (
+        benchmark.get("reference_oracle_reference_csv")
+        or benchmark.get("route_grid_reference_csv")
+        or dataset.get("reference_csv")
+    )
+    if not reference_csv_raw:
+        raise RuntimeError(
+            "write_reference_oracle_relocalization_scores requires dataset.reference_csv "
+            "or benchmark.reference_oracle_reference_csv"
+        )
+    reference_csv = resolve_path(str(reference_csv_raw), manifest_dir)
+    assert reference_csv is not None
+    if not print_only and not reference_csv.exists():
+        raise RuntimeError(f"reference CSV does not exist: {reference_csv}")
+
+    attempts_csv = resolve_relocalization_attempts_csv(benchmark, output_dir)
+    candidates_csv = resolve_relocalization_candidates_csv(benchmark, output_dir)
+    if not print_only:
+        if not attempts_csv.exists():
+            raise RuntimeError(f"relocalization attempts CSV does not exist: {attempts_csv}")
+        if not candidates_csv.exists():
+            raise RuntimeError(f"relocalization candidates CSV does not exist: {candidates_csv}")
+
+    scored_candidates_raw = benchmark.get("relocalization_candidate_scores_csv")
+    scored_candidates_csv = (
+        resolve_path(str(scored_candidates_raw), output_dir)
+        if scored_candidates_raw
+        else output_dir / "relocalization_candidate_scores.csv"
+    )
+    assert scored_candidates_csv is not None
+
+    scorer_script = _script_sibling("score_relocalization_candidates_with_reference.py")
+    scorer_cmd = [
+        str(scorer_script),
+        "--attempts-csv",
+        str(attempts_csv),
+        "--candidates-csv",
+        str(candidates_csv),
+        "--reference-csv",
+        str(reference_csv),
+        "--output-attempts-csv",
+        str(attempts_csv),
+        "--output-scored-candidates-csv",
+        str(scored_candidates_csv),
+        "--translation-threshold-m",
+        str(float(benchmark.get("reference_oracle_translation_threshold_m", 2.0))),
+        "--yaw-threshold-deg",
+        str(float(benchmark.get("reference_oracle_yaw_threshold_deg", 15.0))),
+        "--yaw-weight-m-per-rad",
+        str(float(benchmark.get("reference_oracle_yaw_weight_m_per_rad", 1.0))),
+        "--rejection-reason",
+        str(
+            benchmark.get(
+                "reference_oracle_relocalization_attempt_rejection_reason",
+                "offline_oracle_scored_no_reset",
+            )
+        ),
+    ]
+    if bool(benchmark.get("overwrite_relocalization_attempts_csv", False)):
+        scorer_cmd.append("--overwrite")
+    run_command(scorer_cmd, print_only)
+
+
+def run_registration_relocalization_jobs(
+    benchmark: Dict[str, Any],
+    dataset: Dict[str, Any],
+    manifest_dir: Path,
+    output_dir: Path,
+    print_only: bool,
+) -> None:
+    if not bool(benchmark.get("write_registration_relocalization_jobs", False)):
+        return
+
+    bag_path = resolve_required_path(dataset, "bag_path", manifest_dir)
+    map_path = resolve_required_path(dataset, "map_path", manifest_dir)
+    cloud_topic = str(dataset.get("cloud_topic", "/velodyne_points"))
+    attempts_csv = resolve_relocalization_attempts_csv(benchmark, output_dir)
+
+    scored_candidates = output_dir / "relocalization_candidate_scores.csv"
+    if benchmark.get("registration_jobs_candidates_csv"):
+        candidates_csv = resolve_path(
+            str(benchmark.get("registration_jobs_candidates_csv")), output_dir
+        )
+        assert candidates_csv is not None
+    elif scored_candidates.exists() or bool(
+        benchmark.get("write_reference_oracle_relocalization_scores", False)
+    ):
+        candidates_csv = scored_candidates
+    else:
+        candidates_csv = resolve_relocalization_candidates_csv(benchmark, output_dir)
+
+    if not print_only:
+        if not attempts_csv.exists():
+            raise RuntimeError(f"relocalization attempts CSV does not exist: {attempts_csv}")
+        if not candidates_csv.exists():
+            raise RuntimeError(f"relocalization candidates CSV does not exist: {candidates_csv}")
+
+    jobs_csv_raw = benchmark.get("registration_relocalization_jobs_csv")
+    jobs_csv = (
+        resolve_path(str(jobs_csv_raw), output_dir)
+        if jobs_csv_raw
+        else output_dir / "relocalization_registration_jobs.csv"
+    )
+    assert jobs_csv is not None
+
+    jobs_script = _script_sibling("make_registration_relocalization_jobs.py")
+    jobs_cmd = [
+        str(jobs_script),
+        "--attempts-csv",
+        str(attempts_csv),
+        "--candidates-csv",
+        str(candidates_csv),
+        "--bag-path",
+        str(bag_path),
+        "--map-path",
+        str(map_path),
+        "--cloud-topic",
+        cloud_topic,
+        "--output-csv",
+        str(jobs_csv),
+        "--registration-method",
+        str(benchmark.get("registration_jobs_method", "NDT_OMP")),
+        "--max-candidates-per-attempt",
+        str(int(benchmark.get("registration_jobs_max_candidates_per_attempt", 32))),
+        "--selection-source",
+        str(benchmark.get("registration_jobs_selection_source", "candidate_index")),
+        "--voxel-leaf-size",
+        str(float(benchmark.get("registration_jobs_voxel_leaf_size", 1.0))),
+        "--local-map-radius",
+        str(float(benchmark.get("registration_jobs_local_map_radius", 150.0))),
+        "--timeout-sec",
+        str(float(benchmark.get("registration_jobs_timeout_sec", 1.0))),
+    ]
+    if bool(benchmark.get("overwrite_relocalization_attempts_csv", False)):
+        jobs_cmd.append("--overwrite")
+    run_command(jobs_cmd, print_only)
+
+
+def run_registration_relocalization_scan_resolution(
+    benchmark: Dict[str, Any],
+    output_dir: Path,
+    print_only: bool,
+) -> None:
+    if not bool(benchmark.get("write_registration_relocalization_scan_scores", False)):
+        return
+
+    jobs_csv_raw = benchmark.get("registration_relocalization_jobs_csv")
+    jobs_csv = (
+        resolve_path(str(jobs_csv_raw), output_dir)
+        if jobs_csv_raw
+        else output_dir / "relocalization_registration_jobs.csv"
+    )
+    assert jobs_csv is not None
+    if not print_only and not jobs_csv.exists():
+        raise RuntimeError(f"relocalization registration jobs CSV does not exist: {jobs_csv}")
+
+    scores_csv_raw = benchmark.get("registration_relocalization_scores_csv")
+    scores_csv = (
+        resolve_path(str(scores_csv_raw), output_dir)
+        if scores_csv_raw
+        else output_dir / "relocalization_registration_scores.csv"
+    )
+    assert scores_csv is not None
+
+    resolver_script = _script_sibling("resolve_registration_relocalization_scans.py")
+    resolver_cmd = [
+        str(resolver_script),
+        "--jobs-csv",
+        str(jobs_csv),
+        "--output-csv",
+        str(scores_csv),
+        "--max-scan-time-diff",
+        str(float(benchmark.get("registration_scores_max_scan_time_diff", 0.25))),
+        "--min-range",
+        str(float(benchmark.get("registration_scores_min_range", 1.0))),
+        "--max-range",
+        str(float(benchmark.get("registration_scores_max_range", 120.0))),
+        "--max-jobs",
+        str(int(benchmark.get("registration_scores_max_jobs", 0))),
+    ]
+    export_scan_pcd_dir = benchmark.get("registration_scores_export_scan_pcd_dir")
+    if export_scan_pcd_dir:
+        resolved_export_dir = resolve_path(str(export_scan_pcd_dir), output_dir)
+        assert resolved_export_dir is not None
+        resolver_cmd.extend(["--export-scan-pcd-dir", str(resolved_export_dir)])
+    if bool(benchmark.get("overwrite_relocalization_attempts_csv", False)):
+        resolver_cmd.append("--overwrite")
+    run_command(resolver_cmd, print_only)
+
+
+def run_ndt_relocalization_scoring(
+    benchmark: Dict[str, Any],
+    output_dir: Path,
+    print_only: bool,
+) -> None:
+    if not bool(benchmark.get("write_ndt_relocalization_scores", False)):
+        return
+
+    input_scores_raw = benchmark.get("ndt_relocalization_input_scores_csv")
+    input_scores_csv = (
+        resolve_path(str(input_scores_raw), output_dir)
+        if input_scores_raw
+        else output_dir / "relocalization_registration_scores.csv"
+    )
+    assert input_scores_csv is not None
+    if not print_only and not input_scores_csv.exists():
+        raise RuntimeError(
+            f"relocalization registration scores CSV does not exist: {input_scores_csv}"
+        )
+
+    output_scores_raw = benchmark.get("ndt_relocalization_output_scores_csv")
+    output_scores_csv = (
+        resolve_path(str(output_scores_raw), output_dir)
+        if output_scores_raw
+        else output_dir / "relocalization_registration_scores_ndt.csv"
+    )
+    assert output_scores_csv is not None
+
+    ndt_cmd = [
+        "ros2",
+        "run",
+        "lidar_localization_ros2",
+        "relocalization_ndt_score_jobs",
+        "--input-csv",
+        str(input_scores_csv),
+        "--output-csv",
+        str(output_scores_csv),
+        "--max-jobs",
+        str(int(benchmark.get("ndt_relocalization_max_jobs", 1))),
+        "--ndt-resolution",
+        str(float(benchmark.get("ndt_relocalization_resolution", 1.0))),
+        "--ndt-step-size",
+        str(float(benchmark.get("ndt_relocalization_step_size", 0.1))),
+        "--transform-epsilon",
+        str(float(benchmark.get("ndt_relocalization_transform_epsilon", 0.01))),
+        "--max-iterations",
+        str(int(benchmark.get("ndt_relocalization_max_iterations", 30))),
+        "--num-threads",
+        str(int(benchmark.get("ndt_relocalization_num_threads", 1))),
+        "--scan-voxel-leaf-size",
+        str(float(benchmark.get("ndt_relocalization_scan_voxel_leaf_size", 1.0))),
+        "--target-voxel-leaf-size",
+        str(float(benchmark.get("ndt_relocalization_target_voxel_leaf_size", 1.0))),
+        "--local-map-radius",
+        str(float(benchmark.get("ndt_relocalization_local_map_radius", 150.0))),
+        "--min-target-points",
+        str(int(benchmark.get("ndt_relocalization_min_target_points", 100))),
+        "--score-gate-threshold",
+        str(float(benchmark.get("ndt_relocalization_score_gate_threshold", 6.0))),
+        "--refinement-delta-gate-m",
+        str(float(benchmark.get("ndt_relocalization_refinement_delta_gate_m", 2.0))),
+        "--refinement-yaw-gate-rad",
+        str(float(benchmark.get("ndt_relocalization_refinement_yaw_gate_rad", 0.7853981633974483))),
+    ]
+    run_command(ndt_cmd, print_only)
+
+
+def run_registration_relocalization_score_summary(
+    benchmark: Dict[str, Any],
+    output_dir: Path,
+    print_only: bool,
+) -> None:
+    if not bool(benchmark.get("write_registration_relocalization_score_summary", True)):
+        return
+
+    if not bool(benchmark.get("write_ndt_relocalization_scores", False)):
+        return
+
+    scores_raw = benchmark.get("registration_score_summary_scores_csv")
+    if scores_raw:
+        scores_csv = resolve_path(str(scores_raw), output_dir)
+    elif benchmark.get("ndt_relocalization_output_scores_csv"):
+        scores_csv = resolve_path(
+            str(benchmark.get("ndt_relocalization_output_scores_csv")), output_dir
+        )
+    else:
+        scores_csv = output_dir / "relocalization_registration_scores_ndt.csv"
+    assert scores_csv is not None
+    if not print_only and not scores_csv.exists():
+        raise RuntimeError(f"registration score CSV does not exist: {scores_csv}")
+
+    summary_script = _script_sibling("summarize_registration_relocalization_scores.py")
+    summary_cmd = [
+        str(summary_script),
+        "--scores-csv",
+        str(scores_csv),
+        "--output-json",
+        str(output_dir / "relocalization_registration_score_summary.json"),
+        "--output-md",
+        str(output_dir / "relocalization_registration_score_summary.md"),
+    ]
+    run_command(summary_cmd, print_only)
+
+
+def run_registration_ordering_comparison(
+    benchmark: Dict[str, Any],
+    dataset: Dict[str, Any],
+    manifest_dir: Path,
+    output_dir: Path,
+    print_only: bool,
+) -> None:
+    if not bool(benchmark.get("write_registration_ordering_comparison", False)):
+        return
+
+    bag_path = resolve_required_path(dataset, "bag_path", manifest_dir)
+    map_path = resolve_required_path(dataset, "map_path", manifest_dir)
+    cloud_topic = str(dataset.get("cloud_topic", "/velodyne_points"))
+    attempts_csv = resolve_relocalization_attempts_csv(benchmark, output_dir)
+
+    candidates_raw = benchmark.get("registration_ordering_candidates_csv")
+    if candidates_raw:
+        candidates_csv = resolve_path(str(candidates_raw), output_dir)
+    elif (output_dir / "relocalization_candidate_scores.csv").exists() or bool(
+        benchmark.get("write_reference_oracle_relocalization_scores", False)
+    ):
+        candidates_csv = output_dir / "relocalization_candidate_scores.csv"
+    else:
+        candidates_csv = resolve_relocalization_candidates_csv(benchmark, output_dir)
+    assert candidates_csv is not None
+
+    if not print_only:
+        if not attempts_csv.exists():
+            raise RuntimeError(f"relocalization attempts CSV does not exist: {attempts_csv}")
+        if not candidates_csv.exists():
+            raise RuntimeError(f"relocalization candidates CSV does not exist: {candidates_csv}")
+
+    ordering_output_raw = benchmark.get("registration_ordering_output_dir")
+    ordering_output_dir = (
+        resolve_path(str(ordering_output_raw), output_dir)
+        if ordering_output_raw
+        else output_dir / "registration_ordering_comparison"
+    )
+    assert ordering_output_dir is not None
+
+    runner_script = _script_sibling("run_registration_ordering_comparison.py")
+    runner_cmd = [
+        str(runner_script),
+        "--attempts-csv",
+        str(attempts_csv),
+        "--candidates-csv",
+        str(candidates_csv),
+        "--bag-path",
+        str(bag_path),
+        "--map-path",
+        str(map_path),
+        "--cloud-topic",
+        cloud_topic,
+        "--output-dir",
+        str(ordering_output_dir),
+        "--top-k",
+        str(int(benchmark.get("registration_ordering_top_k", 5))),
+        "--registration-method",
+        str(benchmark.get("registration_jobs_method", "NDT_OMP")),
+        "--local-map-radius",
+        str(
+            float(
+                benchmark.get(
+                    "registration_ordering_local_map_radius",
+                    benchmark.get("registration_jobs_local_map_radius", 150.0),
+                )
+            )
+        ),
+        "--voxel-leaf-size",
+        str(
+            float(
+                benchmark.get(
+                    "registration_ordering_voxel_leaf_size",
+                    benchmark.get("registration_jobs_voxel_leaf_size", 1.0),
+                )
+            )
+        ),
+        "--scan-min-range",
+        str(float(benchmark.get("registration_scores_min_range", 1.0))),
+        "--scan-max-range",
+        str(float(benchmark.get("registration_scores_max_range", 120.0))),
+        "--max-scan-time-diff",
+        str(float(benchmark.get("registration_scores_max_scan_time_diff", 0.25))),
+        "--ndt-resolution",
+        str(float(benchmark.get("ndt_relocalization_resolution", 1.0))),
+        "--ndt-step-size",
+        str(float(benchmark.get("ndt_relocalization_step_size", 0.1))),
+        "--transform-epsilon",
+        str(float(benchmark.get("ndt_relocalization_transform_epsilon", 0.01))),
+        "--max-iterations",
+        str(int(benchmark.get("ndt_relocalization_max_iterations", 30))),
+        "--num-threads",
+        str(int(benchmark.get("ndt_relocalization_num_threads", 1))),
+        "--score-gate-threshold",
+        str(float(benchmark.get("ndt_relocalization_score_gate_threshold", 6.0))),
+        "--refinement-delta-gate-m",
+        str(float(benchmark.get("ndt_relocalization_refinement_delta_gate_m", 2.0))),
+        "--refinement-yaw-gate-rad",
+        str(float(benchmark.get("ndt_relocalization_refinement_yaw_gate_rad", 0.7853981633974483))),
+    ]
+    if bool(benchmark.get("registration_ordering_overwrite", True)):
+        runner_cmd.append("--overwrite")
+    run_command(runner_cmd, print_only)
+
+
+def run_relocalization_reset_candidate_plan(
+    benchmark: Dict[str, Any],
+    output_dir: Path,
+    print_only: bool,
+) -> None:
+    if not bool(benchmark.get("write_relocalization_reset_candidate_plan", False)):
+        return
+
+    scores_raw = benchmark.get("relocalization_reset_candidate_plan_scores_csv")
+    if scores_raw:
+        scores_csv = resolve_path(str(scores_raw), output_dir)
+    elif bool(benchmark.get("write_registration_ordering_comparison", False)):
+        ordering_output_raw = benchmark.get("registration_ordering_output_dir")
+        ordering_output_dir = (
+            resolve_path(str(ordering_output_raw), output_dir)
+            if ordering_output_raw
+            else output_dir / "registration_ordering_comparison"
+        )
+        assert ordering_output_dir is not None
+        top_k = int(benchmark.get("registration_ordering_top_k", 5))
+        scores_csv = (
+            ordering_output_dir
+            / f"relocalization_registration_scores_ndt_candidate_index_top{top_k}.csv"
+        )
+    elif benchmark.get("ndt_relocalization_output_scores_csv"):
+        scores_csv = resolve_path(
+            str(benchmark.get("ndt_relocalization_output_scores_csv")), output_dir
+        )
+    else:
+        scores_csv = output_dir / "relocalization_registration_scores_ndt.csv"
+    assert scores_csv is not None
+    if not print_only and not scores_csv.exists():
+        raise RuntimeError(f"reset candidate plan scores CSV does not exist: {scores_csv}")
+
+    output_csv_raw = benchmark.get("relocalization_reset_candidate_plan_csv")
+    output_csv = (
+        resolve_path(str(output_csv_raw), output_dir)
+        if output_csv_raw
+        else output_dir / "relocalization_reset_candidate_plan.csv"
+    )
+    assert output_csv is not None
+    output_json = output_csv.with_suffix(".json")
+    output_md = output_csv.with_suffix(".md")
+
+    selector_script = _script_sibling("select_relocalization_reset_candidates.py")
+    selector_cmd = [
+        str(selector_script),
+        "--scores-csv",
+        str(scores_csv),
+        "--output-csv",
+        str(output_csv),
+        "--output-json",
+        str(output_json),
+        "--output-md",
+        str(output_md),
+        "--policy-name",
+        str(
+            benchmark.get(
+                "relocalization_reset_candidate_plan_policy",
+                "lowest_registration_score_with_gate",
+            )
+        ),
+        "--max-score",
+        str(
+            float(
+                benchmark.get(
+                    "relocalization_reset_candidate_plan_max_score",
+                    benchmark.get("ndt_relocalization_score_gate_threshold", 6.0),
+                )
+            )
+        ),
+        "--max-refinement-delta-m",
+        str(
+            float(
+                benchmark.get(
+                    "relocalization_reset_candidate_plan_max_refinement_delta_m",
+                    benchmark.get("ndt_relocalization_refinement_delta_gate_m", 2.0),
+                )
+            )
+        ),
+        "--max-refinement-yaw-rad",
+        str(
+            float(
+                benchmark.get(
+                    "relocalization_reset_candidate_plan_max_refinement_yaw_rad",
+                    benchmark.get(
+                        "ndt_relocalization_refinement_yaw_gate_rad",
+                        0.7853981633974483,
+                    ),
+                )
+            )
+        ),
+        "--min-score-margin",
+        str(float(benchmark.get("relocalization_reset_candidate_plan_min_score_margin", 0.0))),
+    ]
+    if not bool(benchmark.get("relocalization_reset_candidate_plan_require_gate", True)):
+        selector_cmd.append("--no-require-registration-gate")
+    if bool(benchmark.get("relocalization_reset_candidate_plan_overwrite", True)):
+        selector_cmd.append("--overwrite")
+    run_command(selector_cmd, print_only)
+
+
+def run_relocalization_reset_candidate_plan_validation(
+    benchmark: Dict[str, Any],
+    output_dir: Path,
+    print_only: bool,
+) -> None:
+    if not bool(benchmark.get("validate_relocalization_reset_candidate_plan", False)):
+        return
+
+    plan_raw = benchmark.get("relocalization_reset_candidate_plan_csv")
+    plan_csv = (
+        resolve_path(str(plan_raw), output_dir)
+        if plan_raw
+        else output_dir / "relocalization_reset_candidate_plan.csv"
+    )
+    assert plan_csv is not None
+    if not print_only and not plan_csv.exists():
+        raise RuntimeError(f"reset candidate plan CSV does not exist: {plan_csv}")
+
+    scores_raw = benchmark.get("relocalization_reset_candidate_plan_scores_csv")
+    if scores_raw:
+        scores_csv = resolve_path(str(scores_raw), output_dir)
+    elif bool(benchmark.get("write_registration_ordering_comparison", False)):
+        ordering_output_raw = benchmark.get("registration_ordering_output_dir")
+        ordering_output_dir = (
+            resolve_path(str(ordering_output_raw), output_dir)
+            if ordering_output_raw
+            else output_dir / "registration_ordering_comparison"
+        )
+        assert ordering_output_dir is not None
+        top_k = int(benchmark.get("registration_ordering_top_k", 5))
+        scores_csv = (
+            ordering_output_dir
+            / f"relocalization_registration_scores_ndt_candidate_index_top{top_k}.csv"
+        )
+    elif benchmark.get("ndt_relocalization_output_scores_csv"):
+        scores_csv = resolve_path(
+            str(benchmark.get("ndt_relocalization_output_scores_csv")), output_dir
+        )
+    else:
+        scores_csv = output_dir / "relocalization_registration_scores_ndt.csv"
+    assert scores_csv is not None
+    if not print_only and not scores_csv.exists():
+        raise RuntimeError(f"reset candidate plan scores CSV does not exist: {scores_csv}")
+
+    validator_script = _script_sibling("validate_relocalization_reset_candidate_plan.py")
+    validation_json = output_dir / "relocalization_reset_candidate_plan_validation.json"
+    validation_md = output_dir / "relocalization_reset_candidate_plan_validation.md"
+    validator_cmd = [
+        str(validator_script),
+        "--plan-csv",
+        str(plan_csv),
+        "--scores-csv",
+        str(scores_csv),
+        "--output-json",
+        str(validation_json),
+        "--output-md",
+        str(validation_md),
+        "--max-score",
+        str(
+            float(
+                benchmark.get(
+                    "relocalization_reset_candidate_plan_max_score",
+                    benchmark.get("ndt_relocalization_score_gate_threshold", 6.0),
+                )
+            )
+        ),
+        "--max-refinement-delta-m",
+        str(
+            float(
+                benchmark.get(
+                    "relocalization_reset_candidate_plan_max_refinement_delta_m",
+                    benchmark.get("ndt_relocalization_refinement_delta_gate_m", 2.0),
+                )
+            )
+        ),
+        "--max-refinement-yaw-rad",
+        str(
+            float(
+                benchmark.get(
+                    "relocalization_reset_candidate_plan_max_refinement_yaw_rad",
+                    benchmark.get(
+                        "ndt_relocalization_refinement_yaw_gate_rad",
+                        0.7853981633974483,
+                    ),
+                )
+            )
+        ),
+        "--min-selected-count",
+        str(int(benchmark.get("relocalization_reset_candidate_plan_min_selected_count", 0))),
+        "--max-selected-count",
+        str(int(benchmark.get("relocalization_reset_candidate_plan_max_selected_count", -1))),
+        "--overwrite",
+    ]
+    if bool(benchmark.get("relocalization_reset_candidate_plan_allow_accepted", False)):
+        validator_cmd.append("--allow-accepted")
+    if bool(benchmark.get("relocalization_reset_candidate_plan_allow_oracle_selection", False)):
+        validator_cmd.append("--allow-oracle-selection")
+    run_command(validator_cmd, print_only)
+
+
+def run_relocalization_reset_command_dry_run(
+    benchmark: Dict[str, Any],
+    output_dir: Path,
+    print_only: bool,
+) -> None:
+    if not bool(benchmark.get("write_relocalization_reset_command_dry_run", False)):
+        return
+
+    plan_raw = benchmark.get("relocalization_reset_candidate_plan_csv")
+    plan_csv = (
+        resolve_path(str(plan_raw), output_dir)
+        if plan_raw
+        else output_dir / "relocalization_reset_candidate_plan.csv"
+    )
+    assert plan_csv is not None
+    if not print_only and not plan_csv.exists():
+        raise RuntimeError(f"reset candidate plan CSV does not exist: {plan_csv}")
+
+    commands_raw = benchmark.get("relocalization_reset_commands_csv")
+    commands_csv = (
+        resolve_path(str(commands_raw), output_dir)
+        if commands_raw
+        else output_dir / "relocalization_reset_commands.csv"
+    )
+    assert commands_csv is not None
+    commands_json = commands_csv.with_suffix(".json")
+    commands_md = commands_csv.with_suffix(".md")
+
+    command_script = _script_sibling("make_relocalization_reset_commands.py")
+    command_cmd = [
+        str(command_script),
+        "--plan-csv",
+        str(plan_csv),
+        "--output-csv",
+        str(commands_csv),
+        "--output-json",
+        str(commands_json),
+        "--output-md",
+        str(commands_md),
+        "--publish-topic",
+        str(benchmark.get("relocalization_reset_publish_topic", "/initialpose")),
+        "--frame-id",
+        str(benchmark.get("relocalization_reset_frame_id", "map")),
+        "--stamp-source",
+        str(benchmark.get("relocalization_reset_stamp_source", "trigger")),
+    ]
+    if bool(benchmark.get("relocalization_reset_allow_accepted_plan", False)):
+        command_cmd.append("--allow-accepted-plan")
+    if bool(benchmark.get("relocalization_reset_commands_overwrite", True)):
+        command_cmd.append("--overwrite")
+    run_command(command_cmd, print_only)
+
+
+def run_relocalization_reset_command_validation(
+    benchmark: Dict[str, Any],
+    output_dir: Path,
+    print_only: bool,
+) -> None:
+    if not bool(benchmark.get("validate_relocalization_reset_commands", False)):
+        return
+
+    commands_raw = benchmark.get("relocalization_reset_commands_csv")
+    commands_csv = (
+        resolve_path(str(commands_raw), output_dir)
+        if commands_raw
+        else output_dir / "relocalization_reset_commands.csv"
+    )
+    assert commands_csv is not None
+    summary_json = commands_csv.with_suffix(".json")
+    if not print_only and not commands_csv.exists():
+        raise RuntimeError(f"reset commands CSV does not exist: {commands_csv}")
+    if not print_only and not summary_json.exists():
+        raise RuntimeError(f"reset commands summary JSON does not exist: {summary_json}")
+
+    validation_json = output_dir / "relocalization_reset_commands_validation.json"
+    validation_md = output_dir / "relocalization_reset_commands_validation.md"
+    validator_script = _script_sibling("validate_relocalization_reset_commands.py")
+    validator_cmd = [
+        str(validator_script),
+        "--commands-csv",
+        str(commands_csv),
+        "--summary-json",
+        str(summary_json),
+        "--output-json",
+        str(validation_json),
+        "--output-md",
+        str(validation_md),
+        "--expected-topic",
+        str(benchmark.get("relocalization_reset_publish_topic", "/initialpose")),
+        "--expected-frame-id",
+        str(benchmark.get("relocalization_reset_frame_id", "map")),
+        "--quaternion-norm-tolerance",
+        str(float(benchmark.get("relocalization_reset_quaternion_norm_tolerance", 1e-3))),
+        "--min-generated-count",
+        str(int(benchmark.get("relocalization_reset_commands_min_generated_count", 0))),
+        "--max-generated-count",
+        str(int(benchmark.get("relocalization_reset_commands_max_generated_count", -1))),
+        "--overwrite",
+    ]
+    if bool(benchmark.get("relocalization_reset_commands_allow_published", False)):
+        validator_cmd.append("--allow-published")
+    if bool(benchmark.get("relocalization_reset_commands_allow_accepted_source_plan", False)):
+        validator_cmd.append("--allow-accepted-source-plan")
+    if bool(benchmark.get("relocalization_reset_commands_allow_oracle_selection", False)):
+        validator_cmd.append("--allow-oracle-selection")
+    run_command(validator_cmd, print_only)
+
+
+def run_relocalization_attempt_summary(
+    benchmark: Dict[str, Any],
+    output_dir: Path,
+    eval_json: Optional[Path],
+    print_only: bool,
+) -> None:
+    if not bool(benchmark.get("write_relocalization_attempt_summary", True)):
+        return
+
+    alignment_csv = output_dir / "alignment_status.csv"
+    if not print_only and not alignment_csv.exists():
+        raise RuntimeError(f"alignment_status.csv does not exist: {alignment_csv}")
+
+    attempts_csv = resolve_relocalization_attempts_csv(benchmark, output_dir)
+
+    summary_script = _script_sibling("summarize_relocalization_attempts.py")
+    summary_cmd = [
+        str(summary_script),
+        "--alignment-csv",
+        str(alignment_csv),
+        "--attempts-csv",
+        str(attempts_csv),
+        "--allow-missing-attempts",
+        "--output-json",
+        str(output_dir / "relocalization_attempt_summary.json"),
+        "--output-md",
+        str(output_dir / "relocalization_attempt_summary.md"),
+        "--request-match-window-sec",
+        str(float(benchmark.get("relocalization_request_match_window_sec", 10.0))),
+        "--post-reset-stable-ok-rows",
+        str(int(benchmark.get("relocalization_post_reset_stable_ok_rows", 5))),
+        "--false-recovery-rmse-threshold-m",
+        str(float(benchmark.get("health_false_recovery_rmse_threshold_m", 5.0))),
+    ]
+    if eval_json is not None:
+        summary_cmd.extend(["--trajectory-eval-json", str(eval_json)])
+    run_command(summary_cmd, print_only)
 
 
 def infer_mode(manifest: Dict[str, Any], mode_override: str) -> str:
@@ -290,6 +1239,7 @@ def run_single_benchmark(
     run_command(runner_cmd, print_only)
 
     reference_csv_raw = dataset.get("reference_csv")
+    eval_json: Optional[Path] = None
     if reference_csv_raw:
         reference_csv = resolve_path(str(reference_csv_raw), manifest_dir)
         assert reference_csv is not None
@@ -309,6 +1259,30 @@ def run_single_benchmark(
         run_command(eval_cmd, print_only)
         if not print_only:
             (output_dir / "eval.json").write_text(eval_json.read_text(encoding="utf-8"), encoding="utf-8")
+
+    run_health_summary(benchmark, output_dir, eval_json, print_only)
+    if not bool(benchmark.get("write_route_grid_relocalization_attempts", False)):
+        run_disabled_relocalization_attempt_baseline(benchmark, output_dir, print_only)
+    run_route_grid_relocalization_attempts(
+        benchmark, dataset, manifest_dir, output_dir, print_only
+    )
+    run_reference_oracle_relocalization_scoring(
+        benchmark, dataset, manifest_dir, output_dir, print_only
+    )
+    run_registration_relocalization_jobs(
+        benchmark, dataset, manifest_dir, output_dir, print_only
+    )
+    run_registration_relocalization_scan_resolution(benchmark, output_dir, print_only)
+    run_ndt_relocalization_scoring(benchmark, output_dir, print_only)
+    run_registration_relocalization_score_summary(benchmark, output_dir, print_only)
+    run_registration_ordering_comparison(
+        benchmark, dataset, manifest_dir, output_dir, print_only
+    )
+    run_relocalization_reset_candidate_plan(benchmark, output_dir, print_only)
+    run_relocalization_reset_candidate_plan_validation(benchmark, output_dir, print_only)
+    run_relocalization_reset_command_dry_run(benchmark, output_dir, print_only)
+    run_relocalization_reset_command_validation(benchmark, output_dir, print_only)
+    run_relocalization_attempt_summary(benchmark, output_dir, eval_json, print_only)
 
     print(f"manifest_copy: {manifest_copy_path}")
     print(f"generated_param_yaml: {generated_yaml}")

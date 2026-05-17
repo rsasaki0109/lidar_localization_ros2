@@ -22,6 +22,7 @@ Then choose the path that matches what you want to do:
 | Run a self-contained Nav2 smoke path | [Recommended entry points](docs/v1_status.md#recommended-entry-points) |
 | Run public replay/regression checks | [Benchmarking](#benchmarking) |
 | Evaluate a rosbag against reference poses | [Benchmarking guide](docs/benchmarking.md) |
+| Plan the next relocalization/recovery work | [v1.1 relocalization plan](docs/v1_1_relocalization.md) |
 | Develop or compare recovery behavior | [Experiment-First Development](#experiment-first-development) |
 | Check what `v1.0.0` does and does not claim | [v1 status](docs/v1_status.md) |
 
@@ -97,6 +98,15 @@ This aggregates:
 - `run_nav2_reinit_supervisor_regression.sh`
 
 and writes a combined summary under `artifacts/public/release_regression_suite/`.
+
+The v1.1 relocalization work is documented in
+[docs/v1_1_relocalization.md](docs/v1_1_relocalization.md). Its public endpoint is a validated
+dry-run `/initialpose` command artifact, not automatic reset publication. The guarded publisher and
+post-reset observation helpers are experimental controlled-test utilities and are outside the default
+public benchmark path.
+
+Detailed health, relocalization, registration-scoring, and dry-run reset artifact commands live in
+[docs/benchmarking.md](docs/benchmarking.md#run-a-manifest-with-health-summary).
 
 ## IO
 - input  

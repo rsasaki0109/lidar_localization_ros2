@@ -83,6 +83,17 @@ target_link_libraries(lidar_localization_node
   ${rclcpp_lifecycle_LIBRARIES}
   ${std_msgs_LIBRARIES}
 )
+
+add_executable(relocalization_ndt_score_jobs src/relocalization_ndt_score_jobs.cpp)
+ament_target_dependencies(relocalization_ndt_score_jobs
+  ndt_omp_ros2
+)
+target_link_libraries(relocalization_ndt_score_jobs
+  -Wl,--start-group
+  ${ndt_omp_ros2_LIBRARIES}
+  ${PCL_LIBRARIES}
+  -Wl,--end-group
+)
 link_directories(
   ${PCL_LIBRARY_DIRS}
 )
@@ -92,6 +103,7 @@ ament_export_libraries(lidar_localization_component)
 
 install(TARGETS
   lidar_localization_node
+  relocalization_ndt_score_jobs
   DESTINATION lib/${PROJECT_NAME})
 
 install(TARGETS
@@ -115,6 +127,10 @@ install(PROGRAMS
   scripts/benchmark_eval_trajectory
   scripts/benchmark_eval_evo_ape
   scripts/augment_pointcloud_intensity.py
+  scripts/make_disabled_relocalization_attempts.py
+  scripts/observe_relocalization_reset_execution.py
+  scripts/make_route_grid_relocalization_attempts.py
+  scripts/make_registration_relocalization_jobs.py
   scripts/scaffold_mapless_public_dataset_bundle.py
   scripts/fetch_official_autoware_istanbul_dataset.sh
   scripts/fetch_koide_hard_pointcloud_localization_dataset.sh
@@ -129,6 +145,7 @@ install(PROGRAMS
   scripts/publish_odom_from_localization.py
   scripts/publish_odom_from_twist.py
   scripts/publish_pose_from_odom.py
+  scripts/publish_relocalization_reset_commands.py
   scripts/republish_initialpose_on_reinit.py
   scripts/relay_localization_inputs_with_current_stamp.py
   scripts/record_hdl_localization_outputs.py
@@ -144,6 +161,17 @@ install(PROGRAMS
   scripts/run_nav2_demo_smoke
   scripts/run_nav2_replay_smoke
   scripts/send_nav2_goal.py
+  scripts/summarize_localization_health.py
+  scripts/summarize_relocalization_attempts.py
+  scripts/summarize_registration_relocalization_scores.py
+  scripts/compare_registration_relocalization_score_summaries.py
+  scripts/run_registration_ordering_comparison.py
+  scripts/make_relocalization_reset_commands.py
+  scripts/select_relocalization_reset_candidates.py
+  scripts/validate_relocalization_reset_commands.py
+  scripts/validate_relocalization_reset_candidate_plan.py
+  scripts/score_relocalization_candidates_with_reference.py
+  scripts/resolve_registration_relocalization_scans.py
   scripts/run_autoware_istanbul_60s_predictor_compare.sh
   scripts/run_hdl_localization_docker_benchmark.sh
   DESTINATION lib/${PROJECT_NAME})
