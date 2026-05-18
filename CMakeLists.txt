@@ -122,6 +122,7 @@ install(PROGRAMS
   scripts/benchmark_make_graph_dataset
   scripts/benchmark_pose_recorder
   scripts/benchmark_diagnostic_recorder
+  scripts/build_relocalization_demo_report.py
   scripts/benchmark_runner
   scripts/benchmark_sweep_localizer
   scripts/benchmark_eval_trajectory

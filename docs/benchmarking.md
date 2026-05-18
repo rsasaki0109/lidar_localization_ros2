@@ -91,6 +91,10 @@ This repository now includes a small benchmark harness so that localization chan
   - Observes post-reset recovery from reset execution CSV and `alignment_status.csv`
   - Counts post-reset `ok` rows, stable ok streak, reject streak, and first-ok latency
   - Sets `accepted=true` only when a published command is followed by enough stable `ok` rows
+- `build_relocalization_demo_report.py`
+  - Builds a self-contained HTML demo report from relocalization artifacts
+  - Shows candidate map, NDT score ranking, health timeline, dry-run commands, guarded execution rows, and post-reset observations
+  - Is read-only; it never publishes `/initialpose`
 - `benchmark_eval_evo_ape`
   - Converts the benchmark CSVs to TUM format and evaluates them with `evo_ape`
   - Useful when you need a paper-style `ATE` workflow instead of only the built-in RMSE JSON
@@ -322,6 +326,19 @@ Set `write_relocalization_reset_command_dry_run: true` to write
 
 Set `validate_relocalization_reset_commands: true` to write
 `relocalization_reset_commands_validation.json/md` and fail if a command artifact is not dry-run safe.
+
+Turn an artifact directory into a visual demo report with:
+
+```bash
+ros2 run lidar_localization_ros2 build_relocalization_demo_report.py \
+  --artifact-dir /absolute/path/to/relocalization_artifacts \
+  --output-html /absolute/path/to/relocalization_artifacts/demo_report.html \
+  --output-json /absolute/path/to/relocalization_artifacts/demo_report.json
+```
+
+The report is read-only. It does not publish `/initialpose`. If guarded execution or post-reset
+observation artifacts are missing, those stages are shown as missing while candidate, score, and
+health views still render.
 
 The v1.1 example manifests are starter manifests. They stop before NDT scoring and reset-command
 generation by default so a normal public replay remains lightweight and cannot publish. To exercise
