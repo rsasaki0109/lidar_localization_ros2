@@ -1,0 +1,110 @@
+# v1.1 Boreas localizer-only public regression starter.
+#
+# Copy this file to a non-.example.yaml path and replace /absolute/path/to values before running.
+# The benchmark_from_manifest wrapper intentionally refuses to execute .example.yaml manifests.
+#
+# Intended role:
+#   - add non-Istanbul public dataset coverage
+#   - record localization health/recovery metrics before adding global relocalization
+#   - keep Nav2 out of the first Boreas pass
+#   - stop before NDT relocalization scoring and dry-run reset command generation by default
+#
+# Suggested flow:
+#   ros2 run lidar_localization_ros2 convert_boreas_sequence_to_rosbag2.py ...
+#   ros2 run lidar_localization_ros2 benchmark_from_manifest --manifest /path/to/v1_1_boreas_localizer_only.yaml
+#   ros2 run lidar_localization_ros2 summarize_localization_health.py \
+#     --alignment-csv /tmp/lidarloc_v1_1_boreas_localizer_only/alignment_status.csv \
+#     --trajectory-eval-json /tmp/lidarloc_v1_1_boreas_localizer_only/trajectory_eval.json \
+#     --output-json /tmp/lidarloc_v1_1_boreas_localizer_only/health_summary.json \
+#     --output-md /tmp/lidarloc_v1_1_boreas_localizer_only/health_summary.md
+
+mode: run
+
+dataset:
+  bag_path: /absolute/path/to/data/boreas/localization_sequence_rosbag2
+  map_path: /absolute/path/to/data/boreas/mapping_sequence_map.pcd
+  reference_csv: /absolute/path/to/data/boreas/localization_sequence_reference.csv
+  initial_pose_yaml: /absolute/path/to/data/boreas/localization_sequence_initial_pose.yaml
+  cloud_topic: /velodyne_points
+  imu_topic: /imu/data
+  twist_topic: /vehicle/twist
+
+localizer:
+  base_param_yaml: repo://param/nav2_ndt_urban.yaml
+  param_overrides:
+    registration_method: NDT_OMP
+    use_imu: false
+    use_imu_preintegration: false
+    use_twist_prediction: true
+    enable_scan_voxel_filter: true
+    enable_local_map_crop: true
+    voxel_leaf_size: 1.0
+    local_map_radius: 150.0
+    score_threshold: 6.0
+  launch_args:
+    - use_sim_time:=true
+
+benchmark:
+  output_dir: /tmp/lidarloc_v1_1_boreas_localizer_only
+  ros_domain_id: 170
+  bag_duration: 120
+  bag_start_offset: 0
+  settle_seconds: 10
+  post_roll_seconds: 3
+  max_time_diff: 0.5
+  record_qos_reliability: reliable
+  record_qos_durability: volatile
+  record_use_sim_time: true
+  write_health_summary: true
+  health_stable_ok_rows: 5
+  health_recovery_window_sec: 10.0
+  health_false_recovery_rmse_threshold_m: 5.0
+  write_route_grid_relocalization_attempts: true
+  route_grid_time_radius_sec: 15.0
+  route_grid_min_spacing_m: 10.0
+  route_grid_max_route_poses: 32
+  route_grid_max_candidates: 256
+  route_grid_yaw_offsets_deg: [-15, 0, 15]
+  route_grid_lateral_offsets_m: [-2.0, 0.0, 2.0]
+  route_grid_longitudinal_offsets_m: [0.0]
+  write_reference_oracle_relocalization_scores: true
+  reference_oracle_translation_threshold_m: 2.0
+  reference_oracle_yaw_threshold_deg: 15.0
+  reference_oracle_yaw_weight_m_per_rad: 1.0
+  write_registration_relocalization_jobs: true
+  registration_jobs_method: NDT_OMP
+  registration_jobs_max_candidates_per_attempt: 32
+  registration_jobs_selection_source: candidate_index
+  registration_jobs_voxel_leaf_size: 1.0
+  registration_jobs_local_map_radius: 150.0
+  registration_jobs_timeout_sec: 1.0
+  write_registration_relocalization_scan_scores: true
+  registration_scores_max_scan_time_diff: 0.25
+  registration_scores_min_range: 1.0
+  registration_scores_max_range: 120.0
+  registration_scores_max_jobs: 32
+  registration_scores_export_scan_pcd_dir: manifest://registration_scans
+  write_ndt_relocalization_scores: false
+  ndt_relocalization_max_jobs: 1
+  ndt_relocalization_score_gate_threshold: 6.0
+  ndt_relocalization_refinement_delta_gate_m: 2.0
+  ndt_relocalization_refinement_yaw_gate_rad: 0.7853981633974483
+  write_registration_relocalization_score_summary: true
+  write_registration_ordering_comparison: false
+  registration_ordering_top_k: 5
+  registration_ordering_output_dir: manifest://registration_ordering_comparison
+  write_relocalization_reset_candidate_plan: false
+  relocalization_reset_candidate_plan_csv: manifest://relocalization_reset_candidate_plan.csv
+  relocalization_reset_candidate_plan_min_score_margin: 0.0
+  validate_relocalization_reset_candidate_plan: false
+  relocalization_reset_candidate_plan_min_selected_count: 0
+  write_relocalization_reset_command_dry_run: false
+  relocalization_reset_commands_csv: manifest://relocalization_reset_commands.csv
+  relocalization_reset_publish_topic: /initialpose
+  relocalization_reset_frame_id: map
+  validate_relocalization_reset_commands: false
+  relocalization_reset_commands_min_generated_count: 0
+  write_disabled_relocalization_attempts: false
+  write_relocalization_attempt_summary: true
+  relocalization_request_match_window_sec: 10.0
+  relocalization_post_reset_stable_ok_rows: 5
