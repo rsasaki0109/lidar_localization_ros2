@@ -1,0 +1,125 @@
+# v1.1 Koide Outdoor01 public-map failure-boundary diagnostic starter.
+#
+# Copy this file to a non-.example.yaml path and replace /absolute/path/to values before running.
+# This manifest intentionally uses the original public map, not the GT-aligned diagnostic map.
+#
+# Intended role:
+#   - diagnose map coverage/alignment and recovery behavior on a public map
+#   - record request/recovery/lost-window artifacts
+#   - avoid claiming robust full-route tracking until the original public-map path supports it
+#   - stop before NDT relocalization scoring and dry-run reset command generation by default
+#
+# Suggested flow:
+#   ros2 run lidar_localization_ros2 fetch_koide_hard_pointcloud_localization_dataset.sh \
+#     --with-maps --with-gt --sequence outdoor_hard_01a --sequence outdoor_hard_01b \
+#     --output-dir data/public/koide_hard_localization
+#
+#   # Generate reference and initial pose for the merged Outdoor01 rosbag2.
+#   ros2 run lidar_localization_ros2 tum_trajectory_to_pose_reference_csv_for_rosbag2.py \
+#     --input data/public/koide_hard_localization/gt/traj_lidar_outdoor_hard_01.txt \
+#     --bag-path data/public/koide_hard_localization/sequences/outdoor_hard_01 \
+#     --output-csv data/public/koide_hard_localization/benchmark/outdoor_hard_01/reference.csv \
+#     --output-initial-pose-yaml data/public/koide_hard_localization/benchmark/outdoor_hard_01/initial_pose.yaml \
+#     --initial-pose-skip-sec 0.05
+#
+#   ros2 run lidar_localization_ros2 benchmark_from_manifest \
+#     --manifest /path/to/v1_1_koide_outdoor01_public_map_failure_boundary.yaml
+#
+#   ros2 run lidar_localization_ros2 summarize_localization_health.py \
+#     --alignment-csv /tmp/lidarloc_v1_1_koide_outdoor01_public_map_failure_boundary/alignment_status.csv \
+#     --trajectory-eval-json /tmp/lidarloc_v1_1_koide_outdoor01_public_map_failure_boundary/trajectory_eval.json \
+#     --output-json /tmp/lidarloc_v1_1_koide_outdoor01_public_map_failure_boundary/health_summary.json \
+#     --output-md /tmp/lidarloc_v1_1_koide_outdoor01_public_map_failure_boundary/health_summary.md
+
+mode: run
+
+dataset:
+  bag_path: /absolute/path/to/data/public/koide_hard_localization/sequences/outdoor_hard_01
+  map_path: /absolute/path/to/data/public/koide_hard_localization/map_outdoor_hard.ply
+  reference_csv: /absolute/path/to/data/public/koide_hard_localization/benchmark/outdoor_hard_01/reference.csv
+  initial_pose_yaml: /absolute/path/to/data/public/koide_hard_localization/benchmark/outdoor_hard_01/initial_pose.yaml
+  cloud_topic: /livox/points
+  imu_topic: /livox/imu
+
+localizer:
+  base_param_yaml: repo://param/nav2_ndt_urban.yaml
+  param_overrides:
+    registration_method: NDT_OMP
+    use_imu: false
+    use_imu_preintegration: false
+    enable_scan_voxel_filter: true
+    enable_local_map_crop: true
+    voxel_leaf_size: 0.5
+    local_map_radius: 150.0
+    base_frame_id: livox_frame
+    scan_min_range: 1.0
+    scan_max_range: 100.0
+    score_threshold: 6.0
+  launch_args:
+    - use_sim_time:=true
+    - lidar_frame_id:=livox_frame
+
+benchmark:
+  output_dir: /tmp/lidarloc_v1_1_koide_outdoor01_public_map_failure_boundary
+  ros_domain_id: 172
+  bag_duration: 0
+  bag_start_offset: 0
+  settle_seconds: 5
+  post_roll_seconds: 1
+  max_time_diff: 0.05
+  record_qos_reliability: reliable
+  record_qos_durability: volatile
+  record_use_sim_time: true
+  write_health_summary: true
+  health_stable_ok_rows: 5
+  health_recovery_window_sec: 10.0
+  health_false_recovery_rmse_threshold_m: 5.0
+  write_route_grid_relocalization_attempts: true
+  route_grid_time_radius_sec: 15.0
+  route_grid_min_spacing_m: 5.0
+  route_grid_max_route_poses: 32
+  route_grid_max_candidates: 256
+  route_grid_yaw_offsets_deg: [-15, 0, 15]
+  route_grid_lateral_offsets_m: [-1.0, 0.0, 1.0]
+  route_grid_longitudinal_offsets_m: [0.0]
+  write_reference_oracle_relocalization_scores: true
+  reference_oracle_translation_threshold_m: 2.0
+  reference_oracle_yaw_threshold_deg: 15.0
+  reference_oracle_yaw_weight_m_per_rad: 1.0
+  write_registration_relocalization_jobs: true
+  registration_jobs_method: NDT_OMP
+  registration_jobs_max_candidates_per_attempt: 32
+  registration_jobs_selection_source: candidate_index
+  registration_jobs_voxel_leaf_size: 1.0
+  registration_jobs_local_map_radius: 120.0
+  registration_jobs_timeout_sec: 1.0
+  write_registration_relocalization_scan_scores: true
+  registration_scores_max_scan_time_diff: 0.25
+  registration_scores_min_range: 1.0
+  registration_scores_max_range: 120.0
+  registration_scores_max_jobs: 32
+  registration_scores_export_scan_pcd_dir: manifest://registration_scans
+  write_ndt_relocalization_scores: false
+  ndt_relocalization_max_jobs: 1
+  ndt_relocalization_score_gate_threshold: 6.0
+  ndt_relocalization_refinement_delta_gate_m: 2.0
+  ndt_relocalization_refinement_yaw_gate_rad: 0.7853981633974483
+  write_registration_relocalization_score_summary: true
+  write_registration_ordering_comparison: false
+  registration_ordering_top_k: 5
+  registration_ordering_output_dir: manifest://registration_ordering_comparison
+  write_relocalization_reset_candidate_plan: false
+  relocalization_reset_candidate_plan_csv: manifest://relocalization_reset_candidate_plan.csv
+  relocalization_reset_candidate_plan_min_score_margin: 0.0
+  validate_relocalization_reset_candidate_plan: false
+  relocalization_reset_candidate_plan_min_selected_count: 0
+  write_relocalization_reset_command_dry_run: false
+  relocalization_reset_commands_csv: manifest://relocalization_reset_commands.csv
+  relocalization_reset_publish_topic: /initialpose
+  relocalization_reset_frame_id: map
+  validate_relocalization_reset_commands: false
+  relocalization_reset_commands_min_generated_count: 0
+  write_disabled_relocalization_attempts: false
+  write_relocalization_attempt_summary: true
+  relocalization_request_match_window_sec: 10.0
+  relocalization_post_reset_stable_ok_rows: 5

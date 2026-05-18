@@ -105,6 +105,7 @@ istanbul_pose_topic="/sensing/gnss/pose_with_covariance"
 istanbul_base_template="${repo_root}/param/public_istanbul_60s_benchmark.yaml"
 
 hdl_bag="${ws_root}/data/official/hdl_localization/hdl_400_ros2"
+hdl_map="${ws_root}/data/official/hdl_localization/map.pcd"
 hdl_cloud_topic="/velodyne_points"
 hdl_imu_topic="/gpsimu_driver/imu_data"
 
@@ -115,7 +116,7 @@ for required_dir in "${istanbul_bag}" "${hdl_bag}"; do
   fi
 done
 
-for required_file in "${istanbul_map}" "${istanbul_base_template}" "${repo_root}/param/hdl_imu_preint.yaml"; do
+for required_file in "${istanbul_map}" "${hdl_map}" "${istanbul_base_template}" "${repo_root}/param/hdl_imu_preint.yaml"; do
   if [[ ! -f "${required_file}" ]]; then
     echo "Required file not found: ${required_file}" >&2
     exit 1
@@ -142,6 +143,7 @@ istanbul_initial_pose_yaml="${inputs_dir}/autoware_istanbul_initial_pose_60s.yam
 istanbul_param_yaml="${inputs_dir}/autoware_istanbul_public_benchmark_60s.yaml"
 istanbul_run_dir="${istanbul_dir}/default_on_no_imu"
 hdl_no_imu_yaml="${inputs_dir}/hdl_imu_preint_false.yaml"
+hdl_imu_yaml="${inputs_dir}/hdl_imu_preint_true.yaml"
 summary_json="${report_dir}/summary.json"
 summary_md="${report_dir}/summary.md"
 
@@ -175,17 +177,22 @@ output_path.parent.mkdir(parents=True, exist_ok=True)
 output_path.write_text(yaml.safe_dump(base, sort_keys=False), encoding="utf-8")
 PY
 
-python3 - "${repo_root}/param/hdl_imu_preint.yaml" "${hdl_no_imu_yaml}" <<'PY'
+python3 - "${repo_root}/param/hdl_imu_preint.yaml" "${hdl_no_imu_yaml}" "${hdl_imu_yaml}" "${hdl_map}" <<'PY'
 import sys
 from pathlib import Path
 import yaml
 
 src = Path(sys.argv[1])
-dst = Path(sys.argv[2])
+false_dst = Path(sys.argv[2])
+true_dst = Path(sys.argv[3])
+map_path = str(Path(sys.argv[4]).resolve())
 data = yaml.safe_load(src.read_text(encoding="utf-8"))
-data["/**"]["ros__parameters"]["use_imu_preintegration"] = False
-dst.parent.mkdir(parents=True, exist_ok=True)
-dst.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+params = data["/**"]["ros__parameters"]
+params["map_path"] = map_path
+true_dst.parent.mkdir(parents=True, exist_ok=True)
+true_dst.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+params["use_imu_preintegration"] = False
+false_dst.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 PY
 
 if [[ "${resume}" != "1" || ! -f "${istanbul_run_dir}/summary.json" ]]; then
@@ -248,7 +255,7 @@ for ((repeat_index=1; repeat_index<=hdl_repeat_count; repeat_index++)); do
       --target-process-pattern lidar_localization_node \
       --record-topic /pcl_pose \
       --diagnostic-topic /alignment_status \
-      --system-command "ros2 launch lidar_localization_ros2 lidar_localization.launch.py localization_param_dir:=${repo_root}/param/hdl_imu_preint.yaml cloud_topic:=${hdl_cloud_topic} imu_topic:=${hdl_imu_topic}"
+      --system-command "ros2 launch lidar_localization_ros2 lidar_localization.launch.py localization_param_dir:=${hdl_imu_yaml} cloud_topic:=${hdl_cloud_topic} imu_topic:=${hdl_imu_topic}"
   fi
 done
 
@@ -305,6 +312,12 @@ def as_float(value):
     if value in (None, "", "None"):
         return None
     return float(value)
+
+
+def fmt_float(value, digits=6):
+    if value is None:
+        return "None"
+    return f"{float(value):.{digits}f}"
 
 
 def collect_run_dirs(group_dir: Path):
@@ -496,7 +509,7 @@ summary_md.write_text(
             f"- pass: `{hdl_pass}`",
             f"- runs: `{len(hdl_false_runs)} baseline / {len(hdl_true_runs)} candidate`",
             f"- pose_rows_median: `{hdl_false_pose_rows} -> {hdl_true_pose_rows}`",
-            f"- alignment_time_median_sec_median: `{hdl_false_align_median:.6f} -> {hdl_true_align_median:.6f}`",
+            f"- alignment_time_median_sec_median: `{fmt_float(hdl_false_align_median)} -> {fmt_float(hdl_true_align_median)}`",
             f"- imu_prediction_active_rows_median(true): `{hdl_true_imu_active}`",
             f"- imu_smoother_diverged_imu_disabled_max: `{hdl_fallback_events}`",
             "",

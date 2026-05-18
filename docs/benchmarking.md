@@ -18,6 +18,79 @@ This repository now includes a small benchmark harness so that localization chan
   - Records `diagnostic_msgs/msg/DiagnosticArray` into CSV
 - `benchmark_eval_trajectory`
   - Compares an estimated trajectory CSV against a reference trajectory CSV
+- `summarize_localization_health.py`
+  - Summarizes `alignment_status.csv` into recovery/reinitialization health metrics
+  - Writes `health_summary.json` and `health_summary.md`
+  - Tracks ok rate, failure-like rows, request windows, recovered/unrecovered windows, max accepted gap, and reject streaks
+  - `benchmark_from_manifest` writes this automatically for single-run manifests unless `benchmark.write_health_summary: false`
+- `summarize_relocalization_attempts.py`
+  - Summarizes experimental `relocalization_attempts.csv` artifacts and matches them to request windows from `alignment_status.csv`
+  - Writes `relocalization_attempt_summary.json` and `relocalization_attempt_summary.md`
+  - Records request-window coverage, accepted/rejected attempt counts, candidate counts, runtime stats, and false-recovery observability
+  - Treats a missing attempts CSV as zero attempts when run through `benchmark_from_manifest`, which makes "no global relocalization yet" explicit in artifacts
+- `make_disabled_relocalization_attempts.py`
+  - Converts each reinitialization request window in `alignment_status.csv` into one rejected baseline attempt
+  - Writes `candidate_count=0`, `accepted=false`, and `rejection_reason=candidate_generator_disabled`
+  - Useful for v1.1 public artifacts before a real candidate generator is enabled
+- `make_route_grid_relocalization_attempts.py`
+  - Converts each request window into route-corridor candidate poses from a reference trajectory
+  - Writes `relocalization_attempts.csv` plus per-candidate `relocalization_candidates.csv`
+  - Does not score candidates, call registration, or reset pose; attempts remain rejected with `candidate_scoring_not_implemented`
+  - Useful as the first non-zero-candidate artifact for the v1.1 relocalization pipeline
+- `score_relocalization_candidates_with_reference.py`
+  - Scores candidate poses against a reference trajectory as an offline oracle
+  - Writes `relocalization_candidate_scores.csv` and fills attempt `best_score`, `second_score`, and `candidate_margin`
+  - Does not call registration or reset pose; attempts remain rejected with `offline_oracle_scored_no_reset`
+  - Useful for separating "candidate set contains a plausible pose" from "runtime relocalization works"
+- `make_registration_relocalization_jobs.py`
+  - Converts candidate artifacts into a fixed registration-scoring job CSV
+  - Writes bag path, cloud topic, map path, candidate pose, backend label, local-map radius, voxel size, and timeout per job
+  - Does not run registration or reset pose; it freezes the input contract for the next scorer implementation
+- `resolve_registration_relocalization_scans.py`
+  - Resolves the nearest PointCloud2 scan for each registration job
+  - Writes `relocalization_registration_scores.csv` with scan timestamps, time deltas, point counts, and scan bounds
+  - Does not run registration or reset pose; rows are marked `scan_resolved_no_registration` when scan lookup succeeds
+- `relocalization_ndt_score_jobs`
+  - Runs NDT_OMP for rows that already have resolved scan PCDs
+  - Fills registration score, convergence, refinement delta, final pose, source point count, and target crop point count
+  - Fills `registration_gate_passed` and `registration_gate_reason` from score/refinement thresholds
+  - Does not accept or reset pose; scored rows are marked `registration_scored_no_reset`
+- `summarize_registration_relocalization_scores.py`
+  - Summarizes `relocalization_registration_scores*.csv`
+  - Writes scored/converged/gate-passed coverage plus score, refinement, runtime, source-point, and target-point stats
+  - Keeps reset acceptance explicitly out of scope
+- `compare_registration_relocalization_score_summaries.py`
+  - Compares two or more registration score summary JSON files
+  - Useful for comparing candidate ordering strategies such as `candidate_index` versus `oracle_rank`
+  - Treats `oracle_rank` comparisons as offline upper-bound diagnostics only
+- `run_registration_ordering_comparison.py`
+  - Runs the bounded candidate-ordering diagnostic pipeline for `candidate_index` and `oracle_rank`
+  - Generates jobs, resolves scans, runs NDT_OMP scoring, summarizes each order, and writes one comparison artifact
+  - Still never accepts or resets pose; it is for top-K ordering diagnostics before any reset policy exists
+- `select_relocalization_reset_candidates.py`
+  - Selects one gate-passing registration-scored candidate per attempt for a dry-run reset plan
+  - Uses registration score/gate fields, not `oracle_rank`, in the default policy
+  - Writes `accepted=false`; it is still a reset-plan artifact, not runtime reset execution
+- `validate_relocalization_reset_candidate_plan.py`
+  - Validates reset-plan artifacts before they are used by any executor
+  - Fails by default if any row has `accepted=true` or uses `oracle_rank` selection
+  - Can cross-check selected job/candidate rows against the registration score CSV
+- `make_relocalization_reset_commands.py`
+  - Converts selected reset-plan rows into dry-run `/initialpose` command artifacts
+  - Uses `selected_final_pose_*` as the command pose; `selected_initial_pose_*` remains candidate-seed provenance
+  - Does not publish or execute resets
+- `validate_relocalization_reset_commands.py`
+  - Validates dry-run reset command artifacts
+  - Requires `dry_run=true`, finite pose fields, near-unit quaternion, and zero published count by default
+  - Rejects accepted source plans and `oracle_rank` provenance by default
+- `publish_relocalization_reset_commands.py`
+  - Experimental guarded utility for `geometry_msgs/PoseWithCovarianceStamped` reset commands
+  - Requires `--execute` for actual publishing
+  - Without `--execute`, writes only an execution report with `published_count=0`
+- `observe_relocalization_reset_execution.py`
+  - Observes post-reset recovery from reset execution CSV and `alignment_status.csv`
+  - Counts post-reset `ok` rows, stable ok streak, reject streak, and first-ok latency
+  - Sets `accepted=true` only when a published command is followed by enough stable `ok` rows
 - `benchmark_eval_evo_ape`
   - Converts the benchmark CSVs to TUM format and evaluates them with `evo_ape`
   - Useful when you need a paper-style `ATE` workflow instead of only the built-in RMSE JSON
@@ -97,6 +170,163 @@ Interpretation:
 
 - Istanbul has no accelerometer stream, so it is only a default-on no-IMU safety check, not an IMU benefit benchmark
 - HDL has no strong public ground truth and single-run pose-row ratios are noisy, so the suite uses broad smoke bounds there rather than a strict acceptance benchmark
+
+### Run a manifest with health summary
+
+Single-run manifests use `benchmark_from_manifest`. After replay and trajectory evaluation, the
+wrapper writes recovery diagnostics by default:
+
+- `health_summary.json`
+- `health_summary.md`
+
+Relevant manifest knobs:
+
+```yaml
+benchmark:
+  write_health_summary: true
+  health_stable_ok_rows: 5
+  health_recovery_window_sec: 10.0
+  health_false_recovery_rmse_threshold_m: 5.0
+  write_route_grid_relocalization_attempts: true
+  route_grid_time_radius_sec: 15.0
+  route_grid_min_spacing_m: 10.0
+  route_grid_yaw_offsets_deg: [-15, 0, 15]
+  route_grid_lateral_offsets_m: [-2.0, 0.0, 2.0]
+  route_grid_longitudinal_offsets_m: [0.0]
+  write_reference_oracle_relocalization_scores: true
+  reference_oracle_translation_threshold_m: 2.0
+  reference_oracle_yaw_threshold_deg: 15.0
+  reference_oracle_yaw_weight_m_per_rad: 1.0
+  write_registration_relocalization_jobs: true
+  registration_jobs_method: NDT_OMP
+  registration_jobs_max_candidates_per_attempt: 32
+  registration_jobs_selection_source: candidate_index
+  registration_jobs_voxel_leaf_size: 1.0
+  registration_jobs_local_map_radius: 150.0
+  registration_jobs_timeout_sec: 1.0
+  write_registration_relocalization_scan_scores: true
+  registration_scores_max_scan_time_diff: 0.25
+  registration_scores_min_range: 1.0
+  registration_scores_max_range: 120.0
+  registration_scores_max_jobs: 32
+  registration_scores_export_scan_pcd_dir: manifest://registration_scans
+  write_ndt_relocalization_scores: false
+  ndt_relocalization_max_jobs: 1
+  ndt_relocalization_score_gate_threshold: 6.0
+  ndt_relocalization_refinement_delta_gate_m: 2.0
+  ndt_relocalization_refinement_yaw_gate_rad: 0.7853981633974483
+  write_registration_relocalization_score_summary: true
+  write_registration_ordering_comparison: false
+  registration_ordering_top_k: 5
+  registration_ordering_output_dir: manifest://registration_ordering_comparison
+  write_relocalization_reset_candidate_plan: false
+  relocalization_reset_candidate_plan_csv: manifest://relocalization_reset_candidate_plan.csv
+  relocalization_reset_candidate_plan_min_score_margin: 0.0
+  validate_relocalization_reset_candidate_plan: false
+  relocalization_reset_candidate_plan_min_selected_count: 0
+  write_relocalization_reset_command_dry_run: false
+  relocalization_reset_commands_csv: manifest://relocalization_reset_commands.csv
+  relocalization_reset_publish_topic: /initialpose
+  relocalization_reset_frame_id: map
+  validate_relocalization_reset_commands: false
+  relocalization_reset_commands_min_generated_count: 0
+  write_disabled_relocalization_attempts: false
+  write_relocalization_attempt_summary: true
+  relocalization_request_match_window_sec: 10.0
+  relocalization_post_reset_stable_ok_rows: 5
+```
+
+Disable it with `write_health_summary: false` only when the run intentionally has no
+`/alignment_status` recording.
+
+Relocalization helpers write `relocalization_attempts.csv` into the output directory, and
+`benchmark_from_manifest` includes it in `relocalization_attempt_summary.json/md`.
+
+The v1.1 relocalization endpoint is a validated dry-run `/initialpose` command artifact. Actual
+publication is guarded, opt-in, and outside the default public benchmark path. The minimal CSV schema
+is:
+
+```csv
+attempt_id,trigger_stamp_sec,source,candidate_count,accepted,rejection_reason,runtime_sec
+```
+
+Recommended optional fields are:
+
+```csv
+start_stamp_sec,end_stamp_sec,mode,roi_type,accepted_candidate_rank,best_score,second_score,candidate_margin,overlap,converged,refinement_delta_m,refinement_delta_yaw_rad,post_reset_ok_rows,post_reset_window_sec,false_recovery
+```
+
+`write_disabled_relocalization_attempts: true` generates a baseline attempts CSV only when one does
+not already exist. This preserves real candidate-generator output once the experimental relocalizer
+starts writing the same file.
+
+`write_route_grid_relocalization_attempts: true` generates non-zero route-corridor candidates from
+`dataset.reference_csv` or `benchmark.route_grid_reference_csv`. The generated attempts still set
+`accepted=false`; the artifact only proves candidate coverage and keeps scoring/refinement/reset
+work separate from the public regression contract.
+
+`write_reference_oracle_relocalization_scores: true` scores those candidates against the same
+reference trajectory and writes `relocalization_candidate_scores.csv`. This is an offline upper-bound
+diagnostic, not a runtime relocalization claim; it leaves attempts rejected and only fills score and
+oracle coverage fields.
+
+`write_registration_relocalization_jobs: true` writes `relocalization_registration_jobs.csv` for the
+registration scorer. The default `registration_jobs_selection_source: candidate_index` avoids using
+oracle ordering in runtime-like jobs. Use `oracle_rank` only for offline upper-bound diagnostics.
+
+`write_registration_relocalization_scan_scores: true` reads those jobs and resolves the nearest scan
+from the rosbag2 input. The resulting `relocalization_registration_scores.csv` is still a pre-scorer
+artifact: it verifies scan availability and timing, but keeps `converged=false` and score fields
+empty until a real registration backend is wired in.
+
+The NDT scorer is intentionally explicit for now:
+
+```bash
+ros2 run lidar_localization_ros2 relocalization_ndt_score_jobs \
+  --input-csv /tmp/run/relocalization_registration_scores.csv \
+  --output-csv /tmp/run/relocalization_registration_scores_ndt.csv \
+  --max-jobs 1
+```
+
+Use small `--max-jobs` values first. The scorer loads map crops and scan PCDs and can be much heavier
+than the CSV-only artifact steps.
+
+In manifests, keep `write_ndt_relocalization_scores: false` for normal public replay artifacts and
+enable it only for bounded scorer smoke runs. Even when the gate passes, the row remains
+`registration_scored_no_reset`; accepted reset execution is outside the default public path.
+
+When NDT scoring is enabled, `benchmark_from_manifest` also writes
+`relocalization_registration_score_summary.json/md` by default.
+
+Set `write_registration_ordering_comparison: true` only for bounded diagnostic runs. It invokes
+`run_registration_ordering_comparison.py` after candidate artifacts exist and writes a separate
+`registration_ordering_comparison/` directory by default. This compares `candidate_index` and
+`oracle_rank` top-K ordering with NDT_OMP scoring, but still does not accept or reset pose.
+
+After a scored CSV exists, `select_relocalization_reset_candidates.py` can produce the next artifact
+boundary: `relocalization_reset_candidate_plan.csv/json/md`. The default policy selects the
+lowest-score candidate that converged and passed the registration gate for each attempt. The plan
+keeps `accepted=false`; it is the handoff contract for the dry-run reset command artifact.
+
+Set `write_relocalization_reset_candidate_plan: true` to emit that handoff artifact from a manifest.
+When ordering comparison is also enabled, the default input is the `candidate_index_topK` scored CSV,
+not the `oracle_rank` CSV. Otherwise the default input is `relocalization_registration_scores_ndt.csv`.
+
+Set `validate_relocalization_reset_candidate_plan: true` to write
+`relocalization_reset_candidate_plan_validation.json/md` and fail the manifest run if the plan breaks
+the artifact-only safety contract.
+
+Set `write_relocalization_reset_command_dry_run: true` to write
+`relocalization_reset_commands.csv/json/md`. These rows are publish-intent artifacts only:
+`published_count` remains zero, and the command pose is taken from `selected_final_pose_*`.
+
+Set `validate_relocalization_reset_commands: true` to write
+`relocalization_reset_commands_validation.json/md` and fail if a command artifact is not dry-run safe.
+
+The v1.1 example manifests are starter manifests. They stop before NDT scoring and reset-command
+generation by default so a normal public replay remains lightweight and cannot publish. To exercise
+the full v1.1 endpoint, run a bounded scorer smoke first, then explicitly enable reset-plan,
+dry-run command, and command-validation artifacts.
 
 ### Fetch a real benchmark dataset from hdl_localization
 
