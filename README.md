@@ -590,9 +590,10 @@ Interpretation:
 Latest recorded public replay snapshot:
 
 - [docs/public_validation_log.md](docs/public_validation_log.md)
-- `2026-05-22`, commit `b22dc5d`, `overall_pass=true`
-- Istanbul `60 s`: `1.458 m` translation RMSE, `0.397 deg` rotation RMSE, `106` matched samples
-- HDL `60 s` two-repeat median: pose rows `531.5 -> 550.5`, IMU-enabled alignment time `0.046874 s`
+- `2026-05-22`, commit `2a5f11f`, release regression `overall_pass=true`
+- Istanbul `60 s`: `1.176 m` translation RMSE, `0.393 deg` rotation RMSE, `104` matched samples
+- HDL `60 s` two-repeat median: pose rows `558.5 -> 553.5`, IMU-enabled alignment time `0.042911 s`
+- Nav2 reinitialization supervisor `150 s`: requested rows `944 -> 7`, recommended run `configured_initial_pose_count1`
 
 This is not a Jetson + MID-360 hardware result. The MID-360 path is launch/configuration/build
 validated and covered by public replay regression, but real sensor, thermal, vibration, and measured

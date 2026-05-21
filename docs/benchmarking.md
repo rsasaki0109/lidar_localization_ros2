@@ -178,10 +178,11 @@ Interpretation:
 Latest recorded public validation snapshot:
 
 - [public_validation_log.md](public_validation_log.md)
-- `2026-05-22`, commit `b22dc5d`, `overall_pass=true`
-- Istanbul `60 s`: `translation_rmse_m=1.458`, `rotation_rmse_deg=0.397`, `matched_sample_count=106`
-- HDL `60 s`, two repeats: median pose rows `531.5 -> 550.5`, IMU-enabled median alignment time `0.046874 s`
-- scope note: this is public rosbag replay validation, not Jetson + MID-360 hardware validation
+- `2026-05-22`, commit `2a5f11f`, release regression `overall_pass=true`
+- Istanbul `60 s`: `translation_rmse_m=1.176`, `rotation_rmse_deg=0.393`, `matched_sample_count=104`
+- HDL `60 s`, two repeats: median pose rows `558.5 -> 553.5`, IMU-enabled median alignment time `0.042911 s`
+- Nav2 reinitialization supervisor `150 s`: requested rows `944 -> 7`, recommended run `configured_initial_pose_count1`
+- scope note: this is public replay and controlled Nav2 regression validation, not Jetson + MID-360 hardware validation
 
 ### Run a manifest with health summary
 
