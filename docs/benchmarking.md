@@ -175,6 +175,14 @@ Interpretation:
 - Istanbul has no accelerometer stream, so it is only a default-on no-IMU safety check, not an IMU benefit benchmark
 - HDL has no strong public ground truth and single-run pose-row ratios are noisy, so the suite uses broad smoke bounds there rather than a strict acceptance benchmark
 
+Latest recorded public validation snapshot:
+
+- [public_validation_log.md](public_validation_log.md)
+- `2026-05-22`, commit `b22dc5d`, `overall_pass=true`
+- Istanbul `60 s`: `translation_rmse_m=1.458`, `rotation_rmse_deg=0.397`, `matched_sample_count=106`
+- HDL `60 s`, two repeats: median pose rows `531.5 -> 550.5`, IMU-enabled median alignment time `0.046874 s`
+- scope note: this is public rosbag replay validation, not Jetson + MID-360 hardware validation
+
 ### Run a manifest with health summary
 
 Single-run manifests use `benchmark_from_manifest`. After replay and trajectory evaluation, the
