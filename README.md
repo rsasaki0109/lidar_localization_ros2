@@ -22,6 +22,7 @@ Then choose the path that matches what you want to do:
 | Bring up Jetson + MID-360 on a legged robot | [MID-360 legged bringup](docs/mid360_legged_jetson.md) |
 | Run a self-contained Nav2 smoke path | [Recommended entry points](docs/v1_status.md#recommended-entry-points) |
 | Run public replay/regression checks | [Benchmarking](#benchmarking) |
+| Check the latest public validation snapshot | [Public validation log](docs/public_validation_log.md) |
 | Evaluate a rosbag against reference poses | [Benchmarking guide](docs/benchmarking.md) |
 | Plan the next relocalization/recovery work | [v1.1 relocalization plan](docs/v1_1_relocalization.md) |
 | Develop or compare recovery behavior | [Experiment-First Development](#experiment-first-development) |
@@ -585,6 +586,17 @@ Interpretation:
 
 - Istanbul has no IMU acceleration stream, so it is only used to confirm that the default-on IMU-capable preset does not regress a no-IMU public dataset
 - HDL is the public IMU smoke path; because it has no strong public GT and single-run throughput is noisy, the suite uses broad safety / throughput bounds there
+
+Latest recorded public replay snapshot:
+
+- [docs/public_validation_log.md](docs/public_validation_log.md)
+- `2026-05-22`, commit `b22dc5d`, `overall_pass=true`
+- Istanbul `60 s`: `1.458 m` translation RMSE, `0.397 deg` rotation RMSE, `106` matched samples
+- HDL `60 s` two-repeat median: pose rows `531.5 -> 550.5`, IMU-enabled alignment time `0.046874 s`
+
+This is not a Jetson + MID-360 hardware result. The MID-360 path is launch/configuration/build
+validated and covered by public replay regression, but real sensor, thermal, vibration, and measured
+extrinsics validation remains separate.
 
 For private or NC datasets, keep the raw bag paths outside the repository and use the manifest wrapper instead:
 
