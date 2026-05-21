@@ -36,6 +36,7 @@
     use_imu: false
     # Disable IMU preintegration: Koide IMU calibration unknown, diverges immediately
     use_imu_preintegration: false
+    imu_preintegration_use_base_frame_transform: false
     enable_reinitialization_request_output: true
     reinitialization_trigger_threshold: 0.95
     reinitialization_trigger_gap_scale_sec: 30.0

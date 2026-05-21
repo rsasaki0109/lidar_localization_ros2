@@ -19,6 +19,7 @@ Then choose the path that matches what you want to do:
 |---|---|
 | Build the package in this workspace | [Local Build](docs/local_build.md) |
 | Launch the LiDAR localizer for Nav2 | [Nav2 launch](#nav2-launch) |
+| Bring up Jetson + MID-360 on a legged robot | [MID-360 legged bringup](docs/mid360_legged_jetson.md) |
 | Run a self-contained Nav2 smoke path | [Recommended entry points](docs/v1_status.md#recommended-entry-points) |
 | Run public replay/regression checks | [Benchmarking](#benchmarking) |
 | Evaluate a rosbag against reference poses | [Benchmarking guide](docs/benchmarking.md) |
@@ -156,6 +157,7 @@ Detailed health, relocalization, registration-scoring, and dry-run reset artifac
 |max_twist_prediction_dt|double|0.5|maximum time span integrated in one twist-based prediction step[sec]|
 |use_imu|bool|false|whether 9-axis imu is used or not for point cloud distortion correction|
 |use_imu_preintegration|bool|true|enable IMU preintegration for seed prediction; if no new IMU samples have arrived, the node falls back to the twist/previous-delta seed path, and if the IMU smoother diverges it disables IMU preintegration for the remainder of the run|
+|imu_preintegration_use_base_frame_transform|bool|false|rotate IMU gyro and acceleration samples into `base_frame_id` with TF before preintegration|
 |imu_prediction_correction_guard_translation_m|double|2.0|disable IMU preintegration for the remainder of the run when an IMU-predicted scan needs a larger translation correction than this threshold[m]|
 |imu_prediction_correction_guard_yaw_deg|double|4.0|disable IMU preintegration for the remainder of the run when an IMU-predicted scan needs a larger yaw correction than this threshold[deg]|
 |enable_scan_voxel_filter|bool|true|apply the built-in `VoxelGrid` downsampling pass to each incoming scan before range filtering|
@@ -185,6 +187,23 @@ Detailed health, relocalization, registration-scoring, and dry-run reset artifac
 |reinitialization_trigger_fitness_explosion_threshold|double|1000.0|fitness threshold treated as a catastrophic divergence for reinitialization scoring|
 |enable_timer_publishing|bool|false|if true, publish tf and pose on a set timer frequency|
 |pose_publish_frequency|double|10.0|publishing frequency if enable_timer_publishing is true|
+
+## MID-360 legged launch
+
+For Jetson + Livox MID-360 on quadruped or biped robots, start from:
+
+```bash
+ros2 launch lidar_localization_ros2 mid360_legged_localization.launch.py \
+  map_path:=/absolute/path/to/map.pcd \
+  cloud_topic:=/livox/points \
+  imu_topic:=/livox/imu
+```
+
+This uses `param/mid360_legged.yaml`, publishes `map -> odom` by default, and assumes the robot
+state estimator publishes `odom -> base_link`. See
+[docs/mid360_legged_jetson.md](docs/mid360_legged_jetson.md) for frame, IMU, and Jetson tuning notes.
+After launch, `ros2 run lidar_localization_ros2 check_mid360_legged_bringup.py` checks the MID-360
+topics, required TFs, and localizer output.
 
 ## Nav2 launch
 

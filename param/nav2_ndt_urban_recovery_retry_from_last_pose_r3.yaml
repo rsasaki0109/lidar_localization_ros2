@@ -31,6 +31,7 @@
     max_twist_prediction_dt: 0.5
     use_imu: false
     use_imu_preintegration: false
+    imu_preintegration_use_base_frame_transform: false
     enable_debug: false
     predict_pose_from_previous_delta: true
     enable_local_map_crop: true
