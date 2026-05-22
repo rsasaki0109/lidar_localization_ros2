@@ -11,6 +11,7 @@ endif()
 
 SET(CMAKE_CXX_FLAGS "-O2 -g ${CMAKE_CXX_FLAGS}")
 
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
@@ -116,6 +117,7 @@ install(TARGETS
 install(PROGRAMS
   scripts/benchmark_analyze_drift_window
   scripts/benchmark_compare_runs
+  scripts/check_mid360_legged_bringup.py
   scripts/compare_nav2_reinit_supervisor_runs.py
   scripts/convert_boreas_sequence_to_rosbag2.py
   scripts/benchmark_extract_pose_reference_from_rosbag2
@@ -177,6 +179,11 @@ install(PROGRAMS
   scripts/run_autoware_istanbul_60s_predictor_compare.sh
   scripts/run_hdl_localization_docker_benchmark.sh
   DESTINATION lib/${PROJECT_NAME})
+
+install(DIRECTORY
+  scripts/lidar_localization_mid360
+  DESTINATION lib/${PROJECT_NAME}
+  PATTERN "__pycache__" EXCLUDE)
 
 install(DIRECTORY
   launch
@@ -472,6 +479,10 @@ if(BUILD_TESTING)
   add_test(
     NAME recovery_supervisor
     COMMAND test_recovery_supervisor
+  )
+  add_test(
+    NAME mid360_bringup_model
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_mid360_bringup_model.py
   )
 endif()
 
