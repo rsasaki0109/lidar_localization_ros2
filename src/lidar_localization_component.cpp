@@ -1,6 +1,32 @@
 #include <lidar_localization/lidar_localization_component.hpp>
+
+#include "lidar_localization/alignment_attempt_policy.hpp"
+#include "lidar_localization/alignment_diagnostic_ros_adapter.hpp"
+#include "lidar_localization/alignment_pipeline_policy.hpp"
+#include "lidar_localization/alignment_retry_policy.hpp"
+#include "lidar_localization/alignment_diagnostics_policy.hpp"
+#include "lidar_localization/alignment_status_policy.hpp"
+#include "lidar_localization/imu_preintegration_guard_policy.hpp"
+#include "lidar_localization/local_map_target_policy.hpp"
+#include "lidar_localization/localization_update_policy.hpp"
+#include "lidar_localization/map_initialization_policy.hpp"
+#include "lidar_localization/measurement_gate_policy.hpp"
+#include "lidar_localization/ndt_initializer_policy.hpp"
+#include "lidar_localization/parameter_validation_policy.hpp"
+#include "lidar_localization/point_cloud_conversion.hpp"
+#include "lidar_localization/pose_covariance_policy.hpp"
+#include "lidar_localization/pose_publish_policy.hpp"
+#include "lidar_localization/pose_backend_selection_policy.hpp"
+#include "lidar_localization/pose_backend_result_policy.hpp"
+#include "lidar_localization/recovery_supervisor_state_policy.hpp"
+#include "lidar_localization/reinitialization_latch_policy.hpp"
+#include "lidar_localization/reinitialization_request_output_policy.hpp"
+#include "lidar_localization/registration_backend_policy.hpp"
+#include "lidar_localization/registration_observation_policy.hpp"
+#include "lidar_localization/prediction_state_policy.hpp"
+#include "lidar_localization/scan_admission_policy.hpp"
+
 #include <chrono>
-#include <cstring>
 
 #include <pcl/common/common.h>
 
@@ -11,22 +37,8 @@ double stamp_to_sec(const builtin_interfaces::msg::Time & stamp)
   return static_cast<double>(stamp.sec) + static_cast<double>(stamp.nanosec) * 1e-9;
 }
 
-bool uses_filtered_target(const std::string & registration_method)
-{
-  return registration_method == "GICP" || registration_method == "GICP_OMP" ||
-         registration_method == "SMALL_GICP" || registration_method == "SMALL_VGICP";
-}
-
-bool supports_ndt_initializer(const std::string & registration_method)
-{
-  return registration_method == "GICP" || registration_method == "GICP_OMP" ||
-         registration_method == "SMALL_GICP" || registration_method == "SMALL_VGICP";
-}
-
 constexpr std::size_t kRegistrationSourceCloudKeepAliveCount = 4096;
 constexpr std::size_t kRegistrationTargetCloudKeepAliveCount = 4096;
-constexpr double kImuSmootherMeasurementTranslationGuardM = 2.0;
-constexpr double kImuSmootherMeasurementRotationGuardDeg = 10.0;
 
 void keep_cloud_alive(
   std::deque<pcl::PointCloud<pcl::PointXYZI>::Ptr> * recent_clouds,
@@ -42,167 +54,25 @@ void keep_cloud_alive(
   }
 }
 
-double rotation_delta_deg(
-  const Eigen::Matrix3f & reference_rotation,
-  const Eigen::Matrix3f & candidate_rotation)
+lidar_localization::PredictionStateSnapshot make_prediction_state_snapshot(
+  bool have_last_accepted_pose,
+  const Eigen::Matrix4f & last_accepted_pose_matrix,
+  const Eigen::Matrix4f & predicted_pose_matrix,
+  const Eigen::Matrix4f & last_relative_motion_matrix,
+  std::size_t consecutive_rejected_updates,
+  double last_accepted_pose_time_sec,
+  double predicted_pose_time_sec)
 {
-  const Eigen::Matrix3d relative_rotation =
-    reference_rotation.cast<double>().transpose() * candidate_rotation.cast<double>();
-  const double trace =
-    std::clamp((relative_rotation.trace() - 1.0) * 0.5, -1.0, 1.0);
-  return std::acos(trace) * 180.0 / M_PI;
+  return {
+    have_last_accepted_pose,
+    last_accepted_pose_matrix,
+    predicted_pose_matrix,
+    last_relative_motion_matrix,
+    consecutive_rejected_updates,
+    last_accepted_pose_time_sec,
+    predicted_pose_time_sec};
 }
 
-template<typename FieldContainerT>
-bool has_field(const FieldContainerT & fields, const std::string & field_name)
-{
-  return std::any_of(
-    fields.begin(), fields.end(),
-    [&field_name](const auto & field) {
-      return field.name == field_name;
-    });
-}
-
-const sensor_msgs::msg::PointField * find_field(
-  const std::vector<sensor_msgs::msg::PointField> & fields,
-  const std::string & field_name)
-{
-  const auto it = std::find_if(
-    fields.begin(), fields.end(),
-    [&field_name](const auto & field) {
-      return field.name == field_name;
-    });
-  return it == fields.end() ? nullptr : &(*it);
-}
-
-bool read_field_as_float(
-  const uint8_t * point_data,
-  const sensor_msgs::msg::PointField & field,
-  float * value)
-{
-  const uint8_t * field_ptr = point_data + field.offset;
-  switch (field.datatype) {
-    case sensor_msgs::msg::PointField::INT8:
-      *value = static_cast<float>(*reinterpret_cast<const int8_t *>(field_ptr));
-      return true;
-    case sensor_msgs::msg::PointField::UINT8:
-      *value = static_cast<float>(*reinterpret_cast<const uint8_t *>(field_ptr));
-      return true;
-    case sensor_msgs::msg::PointField::INT16: {
-      int16_t raw;
-      std::memcpy(&raw, field_ptr, sizeof(raw));
-      *value = static_cast<float>(raw);
-      return true;
-    }
-    case sensor_msgs::msg::PointField::UINT16: {
-      uint16_t raw;
-      std::memcpy(&raw, field_ptr, sizeof(raw));
-      *value = static_cast<float>(raw);
-      return true;
-    }
-    case sensor_msgs::msg::PointField::INT32: {
-      int32_t raw;
-      std::memcpy(&raw, field_ptr, sizeof(raw));
-      *value = static_cast<float>(raw);
-      return true;
-    }
-    case sensor_msgs::msg::PointField::UINT32: {
-      uint32_t raw;
-      std::memcpy(&raw, field_ptr, sizeof(raw));
-      *value = static_cast<float>(raw);
-      return true;
-    }
-    case sensor_msgs::msg::PointField::FLOAT32:
-      std::memcpy(value, field_ptr, sizeof(float));
-      return true;
-    case sensor_msgs::msg::PointField::FLOAT64: {
-      double raw;
-      std::memcpy(&raw, field_ptr, sizeof(raw));
-      *value = static_cast<float>(raw);
-      return true;
-    }
-    default:
-      return false;
-  }
-}
-
-void copy_xyz_to_xyzi(
-  const pcl::PointCloud<pcl::PointXYZ> & input,
-  pcl::PointCloud<pcl::PointXYZI> & output)
-{
-  output.clear();
-  output.reserve(input.size());
-  output.header = input.header;
-  output.width = input.width;
-  output.height = input.height;
-  output.is_dense = input.is_dense;
-
-  for (const auto & point : input.points) {
-    pcl::PointXYZI converted;
-    converted.x = point.x;
-    converted.y = point.y;
-    converted.z = point.z;
-    converted.intensity = 0.0f;
-    output.push_back(converted);
-  }
-}
-
-void convert_sensor_cloud_to_xyzi(
-  const sensor_msgs::msg::PointCloud2 & input,
-  pcl::PointCloud<pcl::PointXYZI> & output)
-{
-  const auto * x_field = find_field(input.fields, "x");
-  const auto * y_field = find_field(input.fields, "y");
-  const auto * z_field = find_field(input.fields, "z");
-  const auto * intensity_field = find_field(input.fields, "intensity");
-  if (!x_field || !y_field || !z_field) {
-    output.clear();
-    output.width = 0;
-    output.height = 1;
-    output.is_dense = false;
-    pcl_conversions::toPCL(input.header, output.header);
-    return;
-  }
-
-  output.clear();
-  output.reserve(static_cast<std::size_t>(input.width) * static_cast<std::size_t>(input.height));
-  pcl_conversions::toPCL(input.header, output.header);
-  output.is_dense = input.is_dense;
-
-  const std::size_t point_count =
-    static_cast<std::size_t>(input.width) * static_cast<std::size_t>(input.height);
-  for (std::size_t point_idx = 0; point_idx < point_count; ++point_idx) {
-    const uint8_t * point_data = input.data.data() + point_idx * input.point_step;
-    pcl::PointXYZI point;
-    float intensity = 0.0f;
-    if (!read_field_as_float(point_data, *x_field, &point.x) ||
-      !read_field_as_float(point_data, *y_field, &point.y) ||
-      !read_field_as_float(point_data, *z_field, &point.z))
-    {
-      continue;
-    }
-    if (intensity_field) {
-      read_field_as_float(point_data, *intensity_field, &intensity);
-    }
-    point.intensity = intensity;
-    output.push_back(point);
-  }
-}
-
-bool convert_pcl_cloud_to_xyzi(
-  const pcl::PCLPointCloud2 & input,
-  pcl::PointCloud<pcl::PointXYZI> & output)
-{
-  if (has_field(input.fields, "intensity")) {
-    pcl::fromPCLPointCloud2(input, output);
-    return true;
-  }
-
-  pcl::PointCloud<pcl::PointXYZ> xyz_cloud;
-  pcl::fromPCLPointCloud2(input, xyz_cloud);
-  copy_xyz_to_xyzi(xyz_cloud, output);
-  return false;
-}
 }  // namespace
 
 PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
@@ -272,6 +142,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("gtsam_huber_k", 1.345);
   // IMU preintegration parameters
   declare_parameter("use_imu_preintegration", true);
+  declare_parameter("imu_preintegration_use_base_frame_transform", false);
   declare_parameter("imu_gyro_noise_density", 0.01);
   declare_parameter("imu_accel_noise_density", 0.1);
   declare_parameter("imu_gyro_random_walk", 0.0001);
@@ -387,14 +258,14 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::PCLPointCloud2 raw_map_cloud;
     bool map_has_intensity = true;
-    // load a pcd or ply file
-    if (map_path_.rfind(".pcd") != std::string::npos) {
+    const auto map_file_format = lidar_localization::detectMapFileFormat(map_path_);
+    if (map_file_format == lidar_localization::MapFileFormat::kPcd) {
       RCLCPP_INFO(get_logger(), "Loading pcd map from: %s", map_path_.c_str());
       if (pcl::io::loadPCDFile(map_path_, raw_map_cloud) == -1) {
         RCLCPP_ERROR(get_logger(), "Failed to load pcd file: %s", map_path_.c_str());
         return CallbackReturn::FAILURE;
       }
-    } else if (map_path_.rfind(".ply") != std::string::npos) {
+    } else if (map_file_format == lidar_localization::MapFileFormat::kPly) {
       RCLCPP_INFO(get_logger(), "Loading ply map from: %s", map_path_.c_str());
       if (pcl::io::loadPLYFile(map_path_, raw_map_cloud) == -1) {
         RCLCPP_ERROR(get_logger(), "Failed to load ply file: %s", map_path_.c_str());
@@ -402,12 +273,13 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
       }
     } else {
       RCLCPP_ERROR(
-          get_logger(), "Unsupported map file format. Please use .pcd or .ply: %s",
-          map_path_.c_str());
+        get_logger(), "Unsupported map file format. Please use .pcd or .ply: %s",
+        map_path_.c_str());
       return CallbackReturn::FAILURE;
     }
 
-    map_has_intensity = convert_pcl_cloud_to_xyzi(raw_map_cloud, *map_cloud_ptr);
+    map_has_intensity =
+      lidar_localization::convertPclCloudToXyzi(raw_map_cloud, *map_cloud_ptr);
     if (!map_has_intensity) {
       RCLCPP_WARN(
         get_logger(),
@@ -415,36 +287,28 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     }
 
     RCLCPP_INFO(get_logger(), "Map Size %ld", map_cloud_ptr->size());
-    if (!map_cloud_ptr->empty()) {
-      pcl::getMinMax3D(*map_cloud_ptr, map_min_pt_, map_max_pt_);
-      map_bounds_valid_ = true;
-    } else {
-      map_bounds_valid_ = false;
-    }
-    sensor_msgs::msg::PointCloud2::SharedPtr map_msg_ptr(new sensor_msgs::msg::PointCloud2);
-    if (viz_downsample_) {
-      pcl::PCLPointCloud2 map_cloud_viz_filtered;
-      pcl::VoxelGrid<pcl::PCLPointCloud2> voxel_viz;
-      voxel_viz.setInputCloud(std::make_shared<pcl::PCLPointCloud2>(raw_map_cloud));
-      voxel_viz.setLeafSize(viz_voxel_leaf_size_, viz_voxel_leaf_size_, viz_voxel_leaf_size_);
-      voxel_viz.filter(map_cloud_viz_filtered);
-      pcl_conversions::moveFromPCL(map_cloud_viz_filtered, *map_msg_ptr);
-    } else {
-      pcl_conversions::moveFromPCL(raw_map_cloud, *map_msg_ptr);
-    }
-    map_msg_ptr->header.frame_id = global_frame_id_;
-    initial_map_pub_->publish(*map_msg_ptr);
+    const auto map_bounds = lidar_localization::computeMapBounds(*map_cloud_ptr);
+    map_bounds_valid_ = map_bounds.valid;
+    map_min_pt_ = map_bounds.min_point;
+    map_max_pt_ = map_bounds.max_point;
+
+    const auto map_msg = lidar_localization::makeInitialMapMessage(
+      raw_map_cloud, global_frame_id_, viz_downsample_, viz_voxel_leaf_size_);
+    initial_map_pub_->publish(map_msg);
     RCLCPP_INFO(get_logger(), "Initial Map Published");
 
-    // Store full map for local cropping (GICP methods)
-    use_local_map_crop_ = enable_local_map_crop_ || uses_filtered_target(registration_method_);
+    const auto target_setup =
+      lidar_localization::planInitialMapTargetSetup(
+        enable_local_map_crop_, registration_method_);
+    use_local_map_crop_ = target_setup.use_local_map_crop;
     if (use_local_map_crop_) {
       // Keep the raw full map and only voxel-filter the cropped local target per scan.
       full_map_cloud_ptr_ = map_cloud_ptr;
-      RCLCPP_INFO(get_logger(), "Local map cropping enabled. Full map: %ld pts, radius: %.0fm",
-                  full_map_cloud_ptr_->size(), local_map_radius_);
+      RCLCPP_INFO(
+        get_logger(), "Local map cropping enabled. Full map: %ld pts, radius: %.0fm",
+        full_map_cloud_ptr_->size(), local_map_radius_);
       // Avoid building a full-map NDT target here. It can overflow on city-scale maps.
-      if (supports_ndt_initializer(registration_method_)) {
+      if (target_setup.create_ndt_initializer) {
         use_ndt_initializer_ = true;
         ndt_init_scan_count_ = 0;
         ndt_initializer_.reset(
@@ -453,7 +317,8 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
         ndt_initializer_->setResolution(ndt_resolution_);
         ndt_initializer_->setTransformationEpsilon(transform_epsilon_);
         ndt_initializer_->setNumThreads(
-          ndt_num_threads_ > 0 ? ndt_num_threads_ : omp_get_max_threads());
+          lidar_localization::resolveRegistrationThreadCount(
+            ndt_num_threads_, omp_get_max_threads()));
         ndt_initializer_->setInputTarget(map_cloud_ptr);
         RCLCPP_INFO(get_logger(), "NDT initializer created (%d scans before GICP switch)",
                     ndt_init_scans_required_);
@@ -461,7 +326,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
         use_ndt_initializer_ = false;
         ndt_initializer_.reset();
       }
-    } else {
+    } else if (target_setup.set_full_map_as_registration_target) {
       registration_->setInputTarget(map_cloud_ptr);
     }
 
@@ -615,7 +480,7 @@ void PCLLocalization::initializeParameters()
   get_parameter("base_frame_id", base_frame_id_);
   get_parameter("enable_map_odom_tf", enable_map_odom_tf_);
   get_parameter("registration_method", registration_method_);
-  get_parameter("score_threshold", score_threshold_);
+  get_parameter("score_threshold", measurement_gate_config_.score_threshold);
   get_parameter("ndt_resolution", ndt_resolution_);
   get_parameter("ndt_step_size", ndt_step_size_);
   get_parameter("ndt_num_threads", ndt_num_threads_);
@@ -629,7 +494,15 @@ void PCLLocalization::initializeParameters()
   get_parameter("scan_max_range", scan_max_range_);
   get_parameter("scan_min_range", scan_min_range_);
   get_parameter("scan_period", scan_period_);
-  get_parameter("cloud_queue_depth", cloud_queue_depth_);
+  int requested_cloud_queue_depth = cloud_queue_depth_;
+  get_parameter("cloud_queue_depth", requested_cloud_queue_depth);
+  const auto cloud_queue_depth =
+    lidar_localization::normalizePositiveIntParameter(requested_cloud_queue_depth);
+  cloud_queue_depth_ = cloud_queue_depth.value;
+  if (cloud_queue_depth.was_adjusted) {
+    RCLCPP_WARN(
+      get_logger(), "cloud_queue_depth must be positive; using %d", cloud_queue_depth_);
+  }
   get_parameter("min_scan_interval_sec", min_scan_interval_sec_);
   get_parameter("use_pcd_map", use_pcd_map_);
   get_parameter("map_path", map_path_);
@@ -679,6 +552,9 @@ void PCLLocalization::initializeParameters()
     gtsam_smoother_.reset();
   }
   get_parameter("use_imu_preintegration", use_imu_preintegration_);
+  get_parameter(
+    "imu_preintegration_use_base_frame_transform",
+    imu_preintegration_use_base_frame_transform_);
   if (use_imu_preintegration_) {
     ImuGtsamSmoother::Params imu_params;
     // Reuse GTSAM NDT sigmas for x, y, yaw
@@ -713,60 +589,67 @@ void PCLLocalization::initializeParameters()
   get_parameter("predict_pose_from_previous_delta", predict_pose_from_previous_delta_);
   get_parameter("enable_local_map_crop", enable_local_map_crop_);
   get_parameter("local_map_radius", local_map_radius_);
-  int local_map_min_points = static_cast<int>(local_map_min_points_);
-  get_parameter("local_map_min_points", local_map_min_points);
-  local_map_min_points_ = static_cast<std::size_t>(std::max(local_map_min_points, 1));
-  get_parameter("reject_above_score_threshold", reject_above_score_threshold_);
-  get_parameter("enable_consistency_recovery_gate", enable_consistency_recovery_gate_);
-  get_parameter("consistency_recovery_min_rejections", consistency_recovery_min_rejections_);
-  get_parameter("consistency_recovery_score_margin", consistency_recovery_score_margin_);
+  int requested_local_map_min_points = static_cast<int>(local_map_min_points_);
+  get_parameter("local_map_min_points", requested_local_map_min_points);
+  const auto local_map_min_points =
+    lidar_localization::normalizeLocalMapMinPoints(requested_local_map_min_points);
+  local_map_min_points_ = local_map_min_points.value;
+  if (local_map_min_points.was_adjusted) {
+    RCLCPP_WARN(
+      get_logger(), "local_map_min_points must be positive; using %zu",
+      local_map_min_points_);
+  }
+  get_parameter("reject_above_score_threshold", measurement_gate_config_.reject_above_score_threshold);
+  get_parameter("enable_consistency_recovery_gate", measurement_gate_config_.enable_consistency_recovery_gate);
+  get_parameter("consistency_recovery_min_rejections", measurement_gate_config_.consistency_recovery_min_rejections);
+  get_parameter("consistency_recovery_score_margin", measurement_gate_config_.consistency_recovery_score_margin);
   get_parameter(
     "consistency_recovery_max_translation_m",
-    consistency_recovery_max_translation_m_);
-  get_parameter("consistency_recovery_max_yaw_deg", consistency_recovery_max_yaw_deg_);
+    measurement_gate_config_.consistency_recovery_max_translation_m);
+  get_parameter("consistency_recovery_max_yaw_deg", measurement_gate_config_.consistency_recovery_max_yaw_deg);
   get_parameter(
     "enable_post_reject_strict_score_threshold",
-    enable_post_reject_strict_score_threshold_);
-  get_parameter("post_reject_strict_min_rejections", post_reject_strict_min_rejections_);
-  get_parameter("post_reject_strict_score_threshold", post_reject_strict_score_threshold_);
+    measurement_gate_config_.enable_post_reject_strict_score_threshold);
+  get_parameter("post_reject_strict_min_rejections", measurement_gate_config_.post_reject_strict_min_rejections);
+  get_parameter("post_reject_strict_score_threshold", measurement_gate_config_.post_reject_strict_score_threshold);
   get_parameter(
     "enable_open_loop_strict_score_threshold",
-    enable_open_loop_strict_score_threshold_);
+    measurement_gate_config_.enable_open_loop_strict_score_threshold);
   get_parameter(
     "open_loop_strict_min_accepted_gap_sec",
-    open_loop_strict_min_accepted_gap_sec_);
+    measurement_gate_config_.open_loop_strict_min_accepted_gap_sec);
   get_parameter(
     "open_loop_strict_min_seed_translation_m",
-    open_loop_strict_min_seed_translation_m_);
-  get_parameter("open_loop_strict_score_threshold", open_loop_strict_score_threshold_);
+    measurement_gate_config_.open_loop_strict_min_seed_translation_m);
+  get_parameter("open_loop_strict_score_threshold", measurement_gate_config_.open_loop_strict_score_threshold);
   get_parameter(
     "enable_borderline_seed_rejection_gate",
-    enable_borderline_seed_rejection_gate_);
-  get_parameter("borderline_seed_gate_score_threshold", borderline_seed_gate_score_threshold_);
+    measurement_gate_config_.enable_borderline_seed_rejection_gate);
+  get_parameter("borderline_seed_gate_score_threshold", measurement_gate_config_.borderline_seed_gate_score_threshold);
   get_parameter(
     "borderline_seed_gate_min_seed_translation_m",
-    borderline_seed_gate_min_seed_translation_m_);
-  get_parameter("enable_rejected_seed_update", enable_rejected_seed_update_);
-  get_parameter("rejected_seed_update_min_rejections", rejected_seed_update_min_rejections_);
-  get_parameter("rejected_seed_update_max_fitness", rejected_seed_update_max_fitness_);
+    measurement_gate_config_.borderline_seed_gate_min_seed_translation_m);
+  get_parameter("enable_rejected_seed_update", measurement_gate_config_.enable_rejected_seed_update);
+  get_parameter("rejected_seed_update_min_rejections", measurement_gate_config_.rejected_seed_update_min_rejections);
+  get_parameter("rejected_seed_update_max_fitness", measurement_gate_config_.rejected_seed_update_max_fitness);
   get_parameter(
     "rejected_seed_update_max_correction_translation_m",
-    rejected_seed_update_max_correction_translation_m_);
+    measurement_gate_config_.rejected_seed_update_max_correction_translation_m);
   get_parameter(
     "rejected_seed_update_max_correction_yaw_deg",
-    rejected_seed_update_max_correction_yaw_deg_);
+    measurement_gate_config_.rejected_seed_update_max_correction_yaw_deg);
   get_parameter(
     "enable_recovery_retry_from_last_pose",
-    enable_recovery_retry_from_last_pose_);
+    recovery_retry_from_last_pose_config_.enable);
   get_parameter(
     "recovery_retry_from_last_pose_min_rejections",
-    recovery_retry_from_last_pose_min_rejections_);
+    recovery_retry_from_last_pose_config_.min_rejections);
   get_parameter(
     "recovery_retry_from_last_pose_max_accepted_gap_sec",
-    recovery_retry_from_last_pose_max_accepted_gap_sec_);
+    recovery_retry_from_last_pose_config_.max_accepted_gap_sec);
   get_parameter(
     "recovery_retry_from_last_pose_max_seed_translation_m",
-    recovery_retry_from_last_pose_max_seed_translation_m_);
+    recovery_retry_from_last_pose_config_.max_seed_translation_m);
   get_parameter(
     "enable_reinitialization_request_output",
     enable_reinitialization_request_output_);
@@ -775,21 +658,30 @@ void PCLLocalization::initializeParameters()
     enable_reinitialization_request_latch_);
   get_parameter(
     "reinitialization_trigger_threshold",
-    reinitialization_trigger_threshold_);
+    reinitialization_trigger_config_.threshold);
   get_parameter(
     "reinitialization_trigger_gap_scale_sec",
-    reinitialization_trigger_gap_scale_sec_);
+    reinitialization_trigger_config_.gap_scale_sec);
   get_parameter(
     "reinitialization_trigger_seed_translation_scale_m",
-    reinitialization_trigger_seed_translation_scale_m_);
+    reinitialization_trigger_config_.seed_translation_scale_m);
   get_parameter(
     "reinitialization_trigger_reject_streak_scale",
-    reinitialization_trigger_reject_streak_scale_);
+    reinitialization_trigger_config_.reject_streak_scale);
   get_parameter(
     "reinitialization_trigger_fitness_explosion_threshold",
-    reinitialization_trigger_fitness_explosion_threshold_);
+    reinitialization_trigger_config_.fitness_explosion_threshold);
   get_parameter("enable_timer_publishing", enable_timer_publishing_);
-  get_parameter("pose_publish_frequency", pose_publish_frequency_);
+  double requested_pose_publish_frequency = pose_publish_frequency_;
+  get_parameter("pose_publish_frequency", requested_pose_publish_frequency);
+  const auto pose_publish_frequency =
+    lidar_localization::normalizePosePublishFrequencyHz(requested_pose_publish_frequency);
+  pose_publish_frequency_ = pose_publish_frequency.value;
+  if (pose_publish_frequency.was_adjusted) {
+    RCLCPP_WARN(
+      get_logger(), "pose_publish_frequency must be finite and positive; using %lf",
+      pose_publish_frequency_);
+  }
 
   RCLCPP_INFO(get_logger(),"global_frame_id: %s", global_frame_id_.c_str());
   RCLCPP_INFO(get_logger(),"odom_frame_id: %s", odom_frame_id_.c_str());
@@ -820,6 +712,10 @@ void PCLLocalization::initializeParameters()
     twist_prediction_use_angular_velocity_);
   RCLCPP_INFO(get_logger(),"max_twist_prediction_dt: %lf", max_twist_prediction_dt_);
   RCLCPP_INFO(get_logger(),"use_imu: %d", use_imu_);
+  RCLCPP_INFO(get_logger(),"use_imu_preintegration: %d", use_imu_preintegration_);
+  RCLCPP_INFO(
+    get_logger(), "imu_preintegration_use_base_frame_transform: %d",
+    imu_preintegration_use_base_frame_transform_);
   RCLCPP_INFO(get_logger(),"use_twist_ekf: %d", use_twist_ekf_);
   RCLCPP_INFO(get_logger(),"use_gtsam_smoother: %d", use_gtsam_smoother_);
   RCLCPP_INFO(get_logger(),"enable_debug: %d", enable_debug_);
@@ -830,77 +726,77 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "local_map_min_points: %zu", local_map_min_points_);
   RCLCPP_INFO(
-    get_logger(), "reject_above_score_threshold: %d", reject_above_score_threshold_);
+    get_logger(), "reject_above_score_threshold: %d", measurement_gate_config_.reject_above_score_threshold);
   RCLCPP_INFO(
     get_logger(), "enable_consistency_recovery_gate: %d",
-    enable_consistency_recovery_gate_);
+    measurement_gate_config_.enable_consistency_recovery_gate);
   RCLCPP_INFO(
     get_logger(), "consistency_recovery_min_rejections: %d",
-    consistency_recovery_min_rejections_);
+    measurement_gate_config_.consistency_recovery_min_rejections);
   RCLCPP_INFO(
     get_logger(), "consistency_recovery_score_margin: %lf",
-    consistency_recovery_score_margin_);
+    measurement_gate_config_.consistency_recovery_score_margin);
   RCLCPP_INFO(
     get_logger(), "consistency_recovery_max_translation_m: %lf",
-    consistency_recovery_max_translation_m_);
+    measurement_gate_config_.consistency_recovery_max_translation_m);
   RCLCPP_INFO(
     get_logger(), "consistency_recovery_max_yaw_deg: %lf",
-    consistency_recovery_max_yaw_deg_);
+    measurement_gate_config_.consistency_recovery_max_yaw_deg);
   RCLCPP_INFO(
     get_logger(), "enable_post_reject_strict_score_threshold: %d",
-    enable_post_reject_strict_score_threshold_);
+    measurement_gate_config_.enable_post_reject_strict_score_threshold);
   RCLCPP_INFO(
     get_logger(), "post_reject_strict_min_rejections: %d",
-    post_reject_strict_min_rejections_);
+    measurement_gate_config_.post_reject_strict_min_rejections);
   RCLCPP_INFO(
     get_logger(), "post_reject_strict_score_threshold: %lf",
-    post_reject_strict_score_threshold_);
+    measurement_gate_config_.post_reject_strict_score_threshold);
   RCLCPP_INFO(
     get_logger(), "enable_open_loop_strict_score_threshold: %d",
-    enable_open_loop_strict_score_threshold_);
+    measurement_gate_config_.enable_open_loop_strict_score_threshold);
   RCLCPP_INFO(
     get_logger(), "open_loop_strict_min_accepted_gap_sec: %lf",
-    open_loop_strict_min_accepted_gap_sec_);
+    measurement_gate_config_.open_loop_strict_min_accepted_gap_sec);
   RCLCPP_INFO(
     get_logger(), "open_loop_strict_min_seed_translation_m: %lf",
-    open_loop_strict_min_seed_translation_m_);
+    measurement_gate_config_.open_loop_strict_min_seed_translation_m);
   RCLCPP_INFO(
     get_logger(), "open_loop_strict_score_threshold: %lf",
-    open_loop_strict_score_threshold_);
+    measurement_gate_config_.open_loop_strict_score_threshold);
   RCLCPP_INFO(
     get_logger(), "enable_borderline_seed_rejection_gate: %d",
-    enable_borderline_seed_rejection_gate_);
+    measurement_gate_config_.enable_borderline_seed_rejection_gate);
   RCLCPP_INFO(
     get_logger(), "borderline_seed_gate_score_threshold: %lf",
-    borderline_seed_gate_score_threshold_);
+    measurement_gate_config_.borderline_seed_gate_score_threshold);
   RCLCPP_INFO(
     get_logger(), "borderline_seed_gate_min_seed_translation_m: %lf",
-    borderline_seed_gate_min_seed_translation_m_);
-  RCLCPP_INFO(get_logger(), "enable_rejected_seed_update: %d", enable_rejected_seed_update_);
+    measurement_gate_config_.borderline_seed_gate_min_seed_translation_m);
+  RCLCPP_INFO(get_logger(), "enable_rejected_seed_update: %d", measurement_gate_config_.enable_rejected_seed_update);
   RCLCPP_INFO(
     get_logger(), "rejected_seed_update_min_rejections: %d",
-    rejected_seed_update_min_rejections_);
+    measurement_gate_config_.rejected_seed_update_min_rejections);
   RCLCPP_INFO(
     get_logger(), "rejected_seed_update_max_fitness: %lf",
-    rejected_seed_update_max_fitness_);
+    measurement_gate_config_.rejected_seed_update_max_fitness);
   RCLCPP_INFO(
     get_logger(), "rejected_seed_update_max_correction_translation_m: %lf",
-    rejected_seed_update_max_correction_translation_m_);
+    measurement_gate_config_.rejected_seed_update_max_correction_translation_m);
   RCLCPP_INFO(
     get_logger(), "rejected_seed_update_max_correction_yaw_deg: %lf",
-    rejected_seed_update_max_correction_yaw_deg_);
+    measurement_gate_config_.rejected_seed_update_max_correction_yaw_deg);
   RCLCPP_INFO(
     get_logger(), "enable_recovery_retry_from_last_pose: %d",
-    enable_recovery_retry_from_last_pose_);
+    recovery_retry_from_last_pose_config_.enable);
   RCLCPP_INFO(
     get_logger(), "recovery_retry_from_last_pose_min_rejections: %d",
-    recovery_retry_from_last_pose_min_rejections_);
+    recovery_retry_from_last_pose_config_.min_rejections);
   RCLCPP_INFO(
     get_logger(), "recovery_retry_from_last_pose_max_accepted_gap_sec: %lf",
-    recovery_retry_from_last_pose_max_accepted_gap_sec_);
+    recovery_retry_from_last_pose_config_.max_accepted_gap_sec);
   RCLCPP_INFO(
     get_logger(), "recovery_retry_from_last_pose_max_seed_translation_m: %lf",
-    recovery_retry_from_last_pose_max_seed_translation_m_);
+    recovery_retry_from_last_pose_config_.max_seed_translation_m);
   RCLCPP_INFO(
     get_logger(), "enable_reinitialization_request_output: %d",
     enable_reinitialization_request_output_);
@@ -909,19 +805,19 @@ void PCLLocalization::initializeParameters()
     enable_reinitialization_request_latch_);
   RCLCPP_INFO(
     get_logger(), "reinitialization_trigger_threshold: %lf",
-    reinitialization_trigger_threshold_);
+    reinitialization_trigger_config_.threshold);
   RCLCPP_INFO(
     get_logger(), "reinitialization_trigger_gap_scale_sec: %lf",
-    reinitialization_trigger_gap_scale_sec_);
+    reinitialization_trigger_config_.gap_scale_sec);
   RCLCPP_INFO(
     get_logger(), "reinitialization_trigger_seed_translation_scale_m: %lf",
-    reinitialization_trigger_seed_translation_scale_m_);
+    reinitialization_trigger_config_.seed_translation_scale_m);
   RCLCPP_INFO(
     get_logger(), "reinitialization_trigger_reject_streak_scale: %lf",
-    reinitialization_trigger_reject_streak_scale_);
+    reinitialization_trigger_config_.reject_streak_scale);
   RCLCPP_INFO(
     get_logger(), "reinitialization_trigger_fitness_explosion_threshold: %lf",
-    reinitialization_trigger_fitness_explosion_threshold_);
+    reinitialization_trigger_config_.fitness_explosion_threshold);
   RCLCPP_INFO(
     get_logger(), "imu_prediction_correction_guard_translation_m: %lf",
     imu_prediction_correction_guard_translation_m_);
@@ -981,9 +877,8 @@ void PCLLocalization::initializePubSub()
     std::bind(&PCLLocalization::imuReceived, this, std::placeholders::_1));
 
   if (enable_timer_publishing_) {
-    auto period = std::chrono::duration<double>(1.0 / pose_publish_frequency_);
     pose_publish_timer_ = create_wall_timer(
-      std::chrono::duration_cast<std::chrono::nanoseconds>(period),
+      lidar_localization::posePublishPeriodFromFrequencyHz(pose_publish_frequency_),
       std::bind(&PCLLocalization::timerPublishPose, this));
   }
 
@@ -1004,7 +899,9 @@ void PCLLocalization::initializeRegistration()
   recent_source_clouds_.clear();
   recent_target_clouds_.clear();
 
-  if (registration_method_ == "GICP") {
+  const auto registration_backend =
+    lidar_localization::parseRegistrationBackend(registration_method_);
+  if (registration_backend == lidar_localization::RegistrationBackend::kPclGicp) {
     pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp(
       new pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>());
     gicp->setTransformationEpsilon(transform_epsilon_);
@@ -1013,7 +910,7 @@ void PCLLocalization::initializeRegistration()
     pcl_registration_ = gicp;
     registration_ = pcl_registration_.get();
   }
-  else if (registration_method_ == "NDT") {
+  else if (registration_backend == lidar_localization::RegistrationBackend::kPclNdt) {
     pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt(
       new pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
     ndt->setStepSize(ndt_step_size_);
@@ -1022,21 +919,19 @@ void PCLLocalization::initializeRegistration()
     pcl_registration_ = ndt;
     registration_ = pcl_registration_.get();
   }
-  else if (registration_method_ == "NDT_OMP") {
+  else if (registration_backend == lidar_localization::RegistrationBackend::kNdtOmp) {
     pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp(
       new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
     ndt_omp->setStepSize(ndt_step_size_);
     ndt_omp->setResolution(ndt_resolution_);
     ndt_omp->setTransformationEpsilon(transform_epsilon_);
-    if (ndt_num_threads_ > 0) {
-      ndt_omp->setNumThreads(ndt_num_threads_);
-    } else {
-      ndt_omp->setNumThreads(omp_get_max_threads());
-    }
+    ndt_omp->setNumThreads(
+      lidar_localization::resolveRegistrationThreadCount(
+        ndt_num_threads_, omp_get_max_threads()));
     ndt_omp_registration_ = ndt_omp;
     registration_ = ndt_omp_registration_.get();
   }
-  else if (registration_method_ == "GICP_OMP") {
+  else if (registration_backend == lidar_localization::RegistrationBackend::kGicpOmp) {
     pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp_omp(
       new pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>());
     gicp_omp->setTransformationEpsilon(transform_epsilon_);
@@ -1046,24 +941,23 @@ void PCLLocalization::initializeRegistration()
     registration_ = gicp_omp_registration_.get();
   }
 #ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
-  else if (registration_method_ == "SMALL_GICP" || registration_method_ == "SMALL_VGICP") {
+  else if (lidar_localization::isSmallGicpBackend(registration_backend)) {
     small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>::Ptr reg(
       new small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>());
     reg->setTransformationEpsilon(transform_epsilon_);
     reg->setCorrespondenceRandomness(gicp_corr_randomness_);
     reg->setMaxCorrespondenceDistance(gicp_max_correspondence_distance_);
     reg->setVoxelResolution(vgicp_voxel_resolution_);
-    reg->setRegistrationType(registration_method_ == "SMALL_VGICP" ? "VGICP" : "GICP");
-    if (ndt_num_threads_ > 0) {
-      reg->setNumThreads(ndt_num_threads_);
-    } else {
-      reg->setNumThreads(omp_get_max_threads());
-    }
+    reg->setRegistrationType(
+      lidar_localization::smallGicpRegistrationType(registration_backend));
+    reg->setNumThreads(
+      lidar_localization::resolveRegistrationThreadCount(
+        ndt_num_threads_, omp_get_max_threads()));
     small_gicp_registration_ = reg;
     registration_ = small_gicp_registration_.get();
   }
 #else
-  else if (registration_method_ == "SMALL_GICP" || registration_method_ == "SMALL_VGICP") {
+  else if (lidar_localization::isSmallGicpBackend(registration_backend)) {
     RCLCPP_ERROR(
       get_logger(),
       "small_gicp backend requested but support is not available. Install small_gicp and rebuild.");
@@ -1179,16 +1073,21 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
 
   pcl::fromROSMsg(*msg, *map_cloud_ptr);
 
-  if (uses_filtered_target(registration_method_)) {
-    pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>());
+  const auto map_target_choice = lidar_localization::chooseMapSubscriptionTargetCloud(
+    lidar_localization::usesFilteredTarget(registration_method_));
+  if (map_target_choice == lidar_localization::LocalMapTargetCloud::kFilteredLocalMap) {
+    pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(
+      new pcl::PointCloud<pcl::PointXYZI>());
     voxel_grid_filter_.setInputCloud(map_cloud_ptr);
     voxel_grid_filter_.filter(*filtered_cloud_ptr);
     registration_->setInputTarget(filtered_cloud_ptr);
-    keep_cloud_alive(&recent_target_clouds_, filtered_cloud_ptr, kRegistrationTargetCloudKeepAliveCount);
+    keep_cloud_alive(
+      &recent_target_clouds_, filtered_cloud_ptr, kRegistrationTargetCloudKeepAliveCount);
 
   } else {
     registration_->setInputTarget(map_cloud_ptr);
-    keep_cloud_alive(&recent_target_clouds_, map_cloud_ptr, kRegistrationTargetCloudKeepAliveCount);
+    keep_cloud_alive(
+      &recent_target_clouds_, map_cloud_ptr, kRegistrationTargetCloudKeepAliveCount);
   }
 
   map_recieved_ = true;
@@ -1266,18 +1165,61 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
 {
   if (shutting_down_) {return;}
   // IMU preintegration buffering (always runs if enabled, independent of use_imu_)
-  if (use_imu_preintegration_ && !imu_preintegration_fallback_mode_) {
+  Eigen::Vector3d preintegration_gyro(
+    msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
+  Eigen::Vector3d preintegration_accel(
+    msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
+  bool preintegration_sample_ready = true;
+
+  if (
+    use_imu_preintegration_ &&
+    !imu_preintegration_fallback_mode_ &&
+    imu_preintegration_use_base_frame_transform_ &&
+    msg->header.frame_id != base_frame_id_) {
+    try {
+      const geometry_msgs::msg::TransformStamped transform = tfbuffer_.lookupTransform(
+        base_frame_id_, msg->header.frame_id, tf2::TimePointZero);
+
+      geometry_msgs::msg::Vector3Stamped angular_velocity;
+      geometry_msgs::msg::Vector3Stamped linear_acceleration;
+      geometry_msgs::msg::Vector3Stamped transformed_angular_velocity;
+      geometry_msgs::msg::Vector3Stamped transformed_linear_acceleration;
+      angular_velocity.header = msg->header;
+      angular_velocity.vector = msg->angular_velocity;
+      linear_acceleration.header = msg->header;
+      linear_acceleration.vector = msg->linear_acceleration;
+
+      tf2::doTransform(angular_velocity, transformed_angular_velocity, transform);
+      tf2::doTransform(linear_acceleration, transformed_linear_acceleration, transform);
+
+      preintegration_gyro = Eigen::Vector3d(
+        transformed_angular_velocity.vector.x,
+        transformed_angular_velocity.vector.y,
+        transformed_angular_velocity.vector.z);
+      preintegration_accel = Eigen::Vector3d(
+        transformed_linear_acceleration.vector.x,
+        transformed_linear_acceleration.vector.y,
+        transformed_linear_acceleration.vector.z);
+    } catch (tf2::TransformException & ex) {
+      preintegration_sample_ready = false;
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "Failed to transform IMU preintegration sample from %s to %s: %s",
+        msg->header.frame_id.c_str(), base_frame_id_.c_str(), ex.what());
+    }
+  }
+
+  if (
+    use_imu_preintegration_ &&
+    !imu_preintegration_fallback_mode_ &&
+    preintegration_sample_ready) {
     double stamp_sec = stamp_to_sec(msg->header.stamp);
-    const Eigen::Vector3d gyro(
-      msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
-    const Eigen::Vector3d accel(
-      msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
 
     // Feed to smoother for dead-reckoning
     if (imu_smoother_.isInitialized() && last_imu_stamp_ > 0.0) {
       double dt = stamp_sec - last_imu_stamp_;
       if (dt > 0.0 && dt < 0.5) {
-        imu_smoother_.integrateImu(gyro, accel, dt);
+        imu_smoother_.integrateImu(preintegration_gyro, preintegration_accel, dt);
       }
     }
     last_imu_stamp_ = stamp_sec;
@@ -1339,78 +1281,152 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
 
 void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
 {
-  if (shutting_down_) {return;}
-  if (!msg) {
-    RCLCPP_WARN(get_logger(), "Received null point cloud message");
+  double scan_stamp_sec = 0.0;
+  if (!admitScanMessage(msg, &scan_stamp_sec)) {
+    return;
+  }
+  const PreparedScanCloud prepared_scan = prepareScanForRegistration(msg, scan_stamp_sec);
+  if (!lidar_localization::isPreparedScanReady(prepared_scan.status)) {
+    handleScanPreparationFailure(msg->header.stamp, prepared_scan, scan_stamp_sec);
+    return;
+  }
+  const std::size_t filtered_point_count = prepared_scan.filtered_point_count;
+  const pcl::PointCloud<pcl::PointXYZI>::Ptr tmp_ptr = prepared_scan.cloud;
+  setRegistrationSourceCloud(tmp_ptr);
+
+  const SelectedRegistrationSeed selected_seed = selectRegistrationSeed(scan_stamp_sec);
+  const bool imu_prediction_ready = selected_seed.imu_prediction_ready;
+  Eigen::Matrix4f init_guess =
+    refineSeedWithNdtInitializer(tmp_ptr, selected_seed.init_guess);
+  const auto pipeline_result = runAlignmentPipelineForScan(init_guess, scan_stamp_sec);
+
+  logAlignmentPipelineRecovery(pipeline_result);
+  if (handleTerminalAlignmentPipelineResult(
+      msg->header.stamp,
+      pipeline_result,
+      filtered_point_count,
+      scan_stamp_sec,
+      imu_prediction_ready))
+  {
+    return;
+  }
+  if (!applyAcceptedAlignmentPipelineResult(
+      msg->header.stamp,
+      pipeline_result,
+      filtered_point_count,
+      scan_stamp_sec,
+      imu_prediction_ready))
+  {
     return;
   }
 
-  last_scan_ptr_ = msg;
+  printAlignmentDebugInfo(init_guess, pipeline_result.selected_attempt, filtered_point_count);
+}
 
-  if (!map_recieved_ || !initialpose_recieved_) {return;}
-
-  // Skip scans that arrive too soon after the last processed scan.
-  if (min_scan_interval_sec_ > 0.0 && last_cloud_process_time_.nanoseconds() > 0) {
-    const auto now = this->now();
-    const double dt = (now - last_cloud_process_time_).seconds();
-    if (dt < min_scan_interval_sec_) {
-      return;
+bool PCLLocalization::admitScanMessage(
+  const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg,
+  double * scan_stamp_sec)
+{
+  const bool timing_relevant =
+    !shutting_down_ && static_cast<bool>(msg) && map_recieved_ && initialpose_recieved_;
+  rclcpp::Time now;
+  bool has_last_process_time = false;
+  double elapsed_since_last_process_sec = 0.0;
+  if (timing_relevant) {
+    now = this->now();
+    has_last_process_time = last_cloud_process_time_.nanoseconds() > 0;
+    if (has_last_process_time) {
+      elapsed_since_last_process_sec = (now - last_cloud_process_time_).seconds();
     }
   }
-  last_cloud_process_time_ = this->now();
 
-  RCLCPP_DEBUG(get_logger(), "cloudReceived");
-  const double scan_stamp_sec = stamp_to_sec(msg->header.stamp);
-  if (consecutive_crop_failures_ > 100) {
-    if (!crop_failure_guard_active_) {
+  const auto admission = lidar_localization::decideScanAdmission(
+    lidar_localization::ScanAdmissionInput{
+      shutting_down_,
+      static_cast<bool>(msg),
+      map_recieved_,
+      initialpose_recieved_,
+      min_scan_interval_sec_,
+      has_last_process_time,
+      elapsed_since_last_process_sec,
+      consecutive_crop_failures_,
+      crop_failure_guard_active_,
+      have_last_accepted_pose_});
+
+  if (admission.should_warn_null_scan) {
+    RCLCPP_WARN(get_logger(), "Received null point cloud message");
+  }
+  if (admission.should_store_last_scan) {
+    last_scan_ptr_ = msg;
+  }
+  if (admission.should_update_last_process_time) {
+    last_cloud_process_time_ = now;
+  }
+
+  if (admission.status == lidar_localization::ScanAdmissionStatus::kCropFailureGuard) {
+    const double current_scan_stamp_sec = stamp_to_sec(msg->header.stamp);
+    if (scan_stamp_sec) {
+      *scan_stamp_sec = current_scan_stamp_sec;
+    }
+    if (admission.should_activate_crop_failure_guard) {
       crop_failure_guard_active_ = true;
-      if (have_last_accepted_pose_) {
+      if (admission.should_reset_prediction_to_last_accepted_pose) {
         predicted_pose_matrix_ = last_accepted_pose_matrix_;
-        predicted_pose_time_sec_ = scan_stamp_sec;
+        predicted_pose_time_sec_ = current_scan_stamp_sec;
       }
+    }
+    if (admission.should_log_crop_failure_guard_activation) {
       RCLCPP_ERROR(
         get_logger(),
         "Activating crop failure guard after %d consecutive crop failures; "
         "dropping subsequent scans until a new initial pose arrives.",
         consecutive_crop_failures_);
     }
-    return;
   }
-  const bool cloud_has_intensity = has_field(msg->fields, "intensity");
+
+  if (!admission.accepted) {
+    return false;
+  }
+
+  if (scan_stamp_sec) {
+    *scan_stamp_sec = stamp_to_sec(msg->header.stamp);
+  }
+  RCLCPP_DEBUG(get_logger(), "cloudReceived");
+  return true;
+}
+
+PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
+  const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg,
+  double scan_stamp_sec)
+{
+  PreparedScanCloud prepared_scan;
+
+  const bool cloud_has_intensity = lidar_localization::hasPointField(msg->fields, "intensity");
   if (!cloud_has_intensity) {
     RCLCPP_WARN_THROTTLE(
       get_logger(), *get_clock(), 5000,
       "Input cloud does not contain intensity. Falling back to xyz with zero intensity.");
   }
   const bool can_direct_range_filter =
-    !enable_scan_voxel_filter_ &&
-    !use_imu_ &&
-    msg->header.frame_id == base_frame_id_;
-  std::size_t filtered_point_count = 0;
-  pcl::PointCloud<pcl::PointXYZI>::Ptr tmp_ptr;
+    lidar_localization::shouldUseDirectRangeFilter(
+    lidar_localization::ScanPreprocessingPathInput{
+      enable_scan_voxel_filter_,
+      use_imu_,
+      msg->header.frame_id,
+      base_frame_id_});
+
   if (can_direct_range_filter) {
-    const auto * x_field = find_field(msg->fields, "x");
-    const auto * y_field = find_field(msg->fields, "y");
-    const auto * z_field = find_field(msg->fields, "z");
-    const auto * intensity_field = find_field(msg->fields, "intensity");
-    if (!x_field || !y_field || !z_field) {
-      publishAlignmentStatus(
-        msg->header.stamp,
-        diagnostic_msgs::msg::DiagnosticStatus::ERROR,
-        "scan_missing_xyz_field",
-        false,
-        std::numeric_limits<double>::quiet_NaN(),
-        0.0,
-        0,
-        std::numeric_limits<double>::quiet_NaN(),
-        std::numeric_limits<double>::quiet_NaN(),
-        std::numeric_limits<double>::quiet_NaN(),
-        std::numeric_limits<double>::quiet_NaN(),
-        std::numeric_limits<double>::quiet_NaN(),
-        false);
-      RCLCPP_ERROR(get_logger(), "Input scan is missing x/y/z fields.");
-      advancePredictionWithoutMeasurement(stamp_to_sec(msg->header.stamp));
-      return;
+    const auto * x_field = lidar_localization::findPointField(msg->fields, "x");
+    const auto * y_field = lidar_localization::findPointField(msg->fields, "y");
+    const auto * z_field = lidar_localization::findPointField(msg->fields, "z");
+    const auto * intensity_field = lidar_localization::findPointField(msg->fields, "intensity");
+    if (!lidar_localization::hasRequiredXyzFields(
+        lidar_localization::ScanXyzFieldAvailability{
+          x_field != nullptr, y_field != nullptr, z_field != nullptr}))
+    {
+      prepared_scan.status =
+        lidar_localization::classifyPreparedScan(false, true, false);
+      return prepared_scan;
     }
 
     pcl::PointCloud<pcl::PointXYZI> tmp;
@@ -1421,42 +1437,45 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       const uint8_t * point_data = msg->data.data() + point_idx * msg->point_step;
       pcl::PointXYZI point;
       float intensity = 0.0f;
-      if (!read_field_as_float(point_data, *x_field, &point.x) ||
-        !read_field_as_float(point_data, *y_field, &point.y) ||
-        !read_field_as_float(point_data, *z_field, &point.z))
+      if (!lidar_localization::readPointFieldAsFloat(point_data, *x_field, &point.x) ||
+        !lidar_localization::readPointFieldAsFloat(point_data, *y_field, &point.y) ||
+        !lidar_localization::readPointFieldAsFloat(point_data, *z_field, &point.z))
       {
         continue;
       }
       if (intensity_field) {
-        read_field_as_float(point_data, *intensity_field, &intensity);
+        lidar_localization::readPointFieldAsFloat(point_data, *intensity_field, &intensity);
       }
       point.intensity = intensity;
-      ++filtered_point_count;
-      const double range = std::hypot(point.x, point.y);
-      if (scan_min_range_ < range && range < scan_max_range_) {
+      ++prepared_scan.filtered_point_count;
+      if (lidar_localization::isPointInScanRange(
+          point.x, point.y, point.z, scan_min_range_, scan_max_range_))
+      {
         tmp.push_back(point);
       }
     }
-    tmp_ptr.reset(new pcl::PointCloud<pcl::PointXYZI>(tmp));
+    prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(tmp));
   } else {
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
-    convert_sensor_cloud_to_xyzi(*msg, *cloud_ptr);
+    lidar_localization::convertSensorCloudToXyzi(*msg, *cloud_ptr);
 
     // If your cloud is not robot-centric, convert to base_frame.
     if (msg->header.frame_id != base_frame_id_) {
       RCLCPP_DEBUG(
-          this->get_logger(), "Transforming point cloud from %s to %s",
-          msg->header.frame_id.c_str(), base_frame_id_.c_str());
+        this->get_logger(), "Transforming point cloud from %s to %s",
+        msg->header.frame_id.c_str(), base_frame_id_.c_str());
       geometry_msgs::msg::TransformStamped base_to_lidar_stamped;
       try {
         base_to_lidar_stamped = tfbuffer_.lookupTransform(
-            base_frame_id_, msg->header.frame_id, msg->header.stamp,
-            rclcpp::Duration::from_seconds(0.1));
+          base_frame_id_, msg->header.frame_id, msg->header.stamp,
+          rclcpp::Duration::from_seconds(0.1));
       } catch (const tf2::TransformException & ex) {
+        prepared_scan.status =
+          lidar_localization::classifyPreparedScan(true, false, false);
         RCLCPP_ERROR(
-            this->get_logger(), "Could not transform %s to %s: %s",
-            msg->header.frame_id.c_str(), base_frame_id_.c_str(), ex.what());
-        return;
+          this->get_logger(), "Could not transform %s to %s: %s",
+          msg->header.frame_id.c_str(), base_frame_id_.c_str(), ex.what());
+        return prepared_scan;
       }
 
       Eigen::Matrix4f initial_transformation =
@@ -1467,741 +1486,502 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     }
 
     if (use_imu_) {
-      double received_time = msg->header.stamp.sec +
-        msg->header.stamp.nanosec * 1e-9;
-      lidar_undistortion_.adjustDistortion(cloud_ptr, received_time);
+      lidar_undistortion_.adjustDistortion(cloud_ptr, scan_stamp_sec);
     }
 
     pcl::PointCloud<pcl::PointXYZI> tmp;
     tmp.reserve(cloud_ptr->size());
     for (const auto & point : cloud_ptr->points) {
-      if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
-        continue;
-      }
-      const double range = std::hypot(point.x, point.y);
-      if (scan_min_range_ < range && range < scan_max_range_) {
+      if (lidar_localization::isPointInScanRange(
+          point.x, point.y, point.z, scan_min_range_, scan_max_range_))
+      {
         tmp.push_back(point);
       }
     }
-    filtered_point_count = tmp.size();
-    tmp_ptr.reset(new pcl::PointCloud<pcl::PointXYZI>(tmp));
+    prepared_scan.filtered_point_count = tmp.size();
+    prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(tmp));
 
-    if (enable_scan_voxel_filter_ && !tmp_ptr->empty()) {
+    if (enable_scan_voxel_filter_ && !prepared_scan.cloud->empty()) {
       pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(
         new pcl::PointCloud<pcl::PointXYZI>());
       pcl::VoxelGrid<pcl::PointXYZI> scan_voxel_grid_filter;
       scan_voxel_grid_filter.setLeafSize(voxel_leaf_size_, voxel_leaf_size_, voxel_leaf_size_);
-      scan_voxel_grid_filter.setInputCloud(tmp_ptr);
+      scan_voxel_grid_filter.setInputCloud(prepared_scan.cloud);
       scan_voxel_grid_filter.filter(*filtered_cloud_ptr);
-      filtered_point_count = filtered_cloud_ptr->size();
-      tmp_ptr = filtered_cloud_ptr;
+      prepared_scan.filtered_point_count = filtered_cloud_ptr->size();
+      prepared_scan.cloud = filtered_cloud_ptr;
     }
-    cloud_ptr.reset();
   }
 
-  if (tmp_ptr->empty()) {
-    publishAlignmentStatus(
-      msg->header.stamp,
-      diagnostic_msgs::msg::DiagnosticStatus::ERROR,
-      "filtered_scan_empty",
-      false,
-      std::numeric_limits<double>::quiet_NaN(),
-      0.0,
-      filtered_point_count,
-      std::numeric_limits<double>::quiet_NaN(),
-      std::numeric_limits<double>::quiet_NaN(),
-      std::numeric_limits<double>::quiet_NaN(),
-      std::numeric_limits<double>::quiet_NaN(),
-      std::numeric_limits<double>::quiet_NaN(),
-      false);
+  prepared_scan.status = lidar_localization::classifyPreparedScan(
+    true,
+    true,
+    !prepared_scan.cloud || prepared_scan.cloud->empty());
+  return prepared_scan;
+}
+
+void PCLLocalization::handleScanPreparationFailure(
+  const builtin_interfaces::msg::Time & stamp,
+  const PreparedScanCloud & prepared_scan,
+  double scan_stamp_sec)
+{
+  if (prepared_scan.status == lidar_localization::ScanPreparationStatus::kTransformUnavailable) {
+    return;
+  }
+
+  publishAlignmentStatus(
+    stamp,
+    diagnostic_msgs::msg::DiagnosticStatus::ERROR,
+    lidar_localization::scanPreparationStatusMessage(prepared_scan.status),
+    false,
+    std::numeric_limits<double>::quiet_NaN(),
+    0.0,
+    prepared_scan.filtered_point_count,
+    std::numeric_limits<double>::quiet_NaN(),
+    std::numeric_limits<double>::quiet_NaN(),
+    std::numeric_limits<double>::quiet_NaN(),
+    std::numeric_limits<double>::quiet_NaN(),
+    std::numeric_limits<double>::quiet_NaN(),
+    false);
+
+  if (prepared_scan.status == lidar_localization::ScanPreparationStatus::kMissingXyzField) {
+    RCLCPP_ERROR(get_logger(), "Input scan is missing x/y/z fields.");
+  } else if (prepared_scan.status == lidar_localization::ScanPreparationStatus::kFilteredScanEmpty) {
     RCLCPP_WARN(get_logger(), "Filtered scan is empty after range filtering.");
-	    advancePredictionWithoutMeasurement(stamp_to_sec(msg->header.stamp));
-	    return;
   }
-  registration_->setInputSource(tmp_ptr);
-  keep_cloud_alive(&recent_source_clouds_, tmp_ptr, kRegistrationSourceCloudKeepAliveCount);
 
-  Eigen::Matrix4f init_guess = currentPoseMatrix();
-  bool init_guess_uses_prediction = false;
-  bool imu_prediction_ready =
+  if (lidar_localization::shouldAdvancePredictionAfterScanPreparationFailure(
+      prepared_scan.status))
+  {
+    advancePredictionWithoutMeasurement(scan_stamp_sec);
+  }
+}
+
+PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSeed(
+  double scan_stamp_sec)
+{
+  SelectedRegistrationSeed selected_seed;
+  selected_seed.init_guess = currentPoseMatrix();
+
+  const bool imu_has_new_samples =
+    lidar_localization::hasNewImuSamples(last_imu_stamp_, last_scan_stamp_for_imu_);
+  const bool imu_candidate_ready =
     use_imu_preintegration_ &&
     !imu_preintegration_fallback_mode_ &&
     imu_smoother_.isInitialized() &&
-    last_imu_stamp_ > last_scan_stamp_for_imu_;
-  if (imu_prediction_ready) {
-    const Eigen::Matrix4f imu_init_guess = imu_smoother_.predictedPoseMatrix();
-    if (imu_init_guess.allFinite()) {
-      init_guess = imu_init_guess;
-    } else {
-      imu_prediction_ready = false;
-      RCLCPP_WARN(
-        get_logger(),
-        "Ignoring non-finite IMU predicted pose and falling back to non-IMU seed.");
-    }
-  } else if (use_gtsam_smoother_ && gtsam_smoother_.isInitialized()) {
-    init_guess = gtsam_smoother_.predictedPoseMatrix(last_ndt_roll_, last_ndt_pitch_);
-  } else if (use_twist_ekf_ && twist_ekf_.isInitialized()) {
-    init_guess = twist_ekf_.poseMatrix(last_ndt_roll_, last_ndt_pitch_);
-  } else if (use_twist_prediction_ && have_last_accepted_pose_ && latest_twist_msg_) {
-    const double dt = std::clamp(
-      scan_stamp_sec - predicted_pose_time_sec_, 0.0, max_twist_prediction_dt_);
-    init_guess = applyTwistPrediction(predicted_pose_matrix_, dt);
-    init_guess_uses_prediction = true;
-  } else if (predict_pose_from_previous_delta_ && have_last_accepted_pose_) {
-    init_guess = predicted_pose_matrix_;
-    init_guess_uses_prediction = true;
+    imu_has_new_samples;
+  Eigen::Matrix4f imu_init_guess = Eigen::Matrix4f::Identity();
+  bool imu_prediction_finite = false;
+  if (imu_candidate_ready) {
+    imu_init_guess = imu_smoother_.predictedPoseMatrix();
+    imu_prediction_finite = imu_init_guess.allFinite();
   }
 
-  struct AlignmentAttempt
-  {
-    bool target_ready{false};
-    bool has_converged{false};
-    double alignment_time_sec{0.0};
-    double fitness_score{std::numeric_limits<double>::quiet_NaN()};
-    Eigen::Matrix4f init_guess{Eigen::Matrix4f::Identity()};
-    Eigen::Matrix4f final_transformation{Eigen::Matrix4f::Identity()};
-    double correction_translation_m{std::numeric_limits<double>::quiet_NaN()};
-    double correction_yaw_deg{std::numeric_limits<double>::quiet_NaN()};
-    double seed_translation_since_accept_m{std::numeric_limits<double>::quiet_NaN()};
-    double seed_yaw_since_accept_deg{std::numeric_limits<double>::quiet_NaN()};
-    double accepted_gap_sec{std::numeric_limits<double>::quiet_NaN()};
-  };
+  const lidar_localization::RegistrationSeedPolicyDecision seed_decision =
+    lidar_localization::chooseRegistrationSeed(
+    lidar_localization::RegistrationSeedPolicyInput{
+      use_imu_preintegration_,
+      imu_preintegration_fallback_mode_,
+      imu_smoother_.isInitialized(),
+      imu_has_new_samples,
+      imu_prediction_finite,
+      use_gtsam_smoother_,
+      gtsam_smoother_.isInitialized(),
+      use_twist_ekf_,
+      twist_ekf_.isInitialized(),
+      use_twist_prediction_,
+      have_last_accepted_pose_,
+      static_cast<bool>(latest_twist_msg_),
+      predict_pose_from_previous_delta_});
+  selected_seed.imu_prediction_ready = seed_decision.imu_prediction_ready;
 
-  struct MeasurementGateResult
-  {
-    uint8_t status_level{diagnostic_msgs::msg::DiagnosticStatus::OK};
-    std::string status_message{"ok"};
-    bool reject_measurement{false};
-    bool post_reject_strict_active{false};
-    bool open_loop_strict_active{false};
-    bool borderline_seed_gate_active{false};
-    bool rejected_seed_update_applied{false};
-    double effective_score_threshold{0.0};
-  };
+  switch (seed_decision.source) {
+    case lidar_localization::RegistrationSeedSource::kImuPreintegration:
+      selected_seed.init_guess = imu_init_guess;
+      break;
+    case lidar_localization::RegistrationSeedSource::kGtsamSmoother:
+      selected_seed.init_guess =
+        gtsam_smoother_.predictedPoseMatrix(last_ndt_roll_, last_ndt_pitch_);
+      break;
+    case lidar_localization::RegistrationSeedSource::kTwistEkf:
+      selected_seed.init_guess = twist_ekf_.poseMatrix(last_ndt_roll_, last_ndt_pitch_);
+      break;
+    case lidar_localization::RegistrationSeedSource::kTwistPrediction: {
+      const double dt = lidar_localization::clampPredictionDt(
+        scan_stamp_sec, predicted_pose_time_sec_, max_twist_prediction_dt_);
+      selected_seed.init_guess = applyTwistPrediction(predicted_pose_matrix_, dt);
+      break;
+    }
+    case lidar_localization::RegistrationSeedSource::kPreviousDelta:
+      selected_seed.init_guess = predicted_pose_matrix_;
+      break;
+    case lidar_localization::RegistrationSeedSource::kCurrentPose:
+      break;
+  }
 
-  auto set_input_target_for_pose = [&](const Eigen::Matrix4f & center_pose_matrix) -> bool {
-      if (!use_local_map_crop_ || !full_map_cloud_ptr_) {
-        return true;
-      }
+  if (seed_decision.ignored_non_finite_imu_prediction) {
+    RCLCPP_WARN(
+      get_logger(),
+      "Ignoring non-finite IMU predicted pose and falling back to non-IMU seed.");
+  }
+  return selected_seed;
+}
 
-      const float cx = center_pose_matrix(0, 3);
-      const float cy = center_pose_matrix(1, 3);
-      const float cz = center_pose_matrix(2, 3);
-      const auto steady_now = std::chrono::steady_clock::now();
-      auto maybe_log_crop_failure_streak = [&]() {
-          if (consecutive_crop_failures_ <= 100) {
-            return;
-          }
-          if (
-            last_crop_failure_streak_log_time_ == std::chrono::steady_clock::time_point{} ||
-            steady_now - last_crop_failure_streak_log_time_ >= std::chrono::seconds(5))
-          {
-            last_crop_failure_streak_log_time_ = steady_now;
-            RCLCPP_WARN(
-              get_logger(),
-              "Crop failure streak reached %d while target setup keeps failing.",
-              consecutive_crop_failures_);
-          }
-        };
-      if (
-        map_bounds_valid_ &&
-        (cx < map_min_pt_.x - local_map_radius_ || cx > map_max_pt_.x + local_map_radius_ ||
-        cy < map_min_pt_.y - local_map_radius_ || cy > map_max_pt_.y + local_map_radius_))
-      {
-        ++consecutive_crop_failures_;
-        maybe_log_crop_failure_streak();
-        if (
-          last_crop_out_of_bounds_log_time_ == std::chrono::steady_clock::time_point{} ||
-          steady_now - last_crop_out_of_bounds_log_time_ >= std::chrono::seconds(5))
-        {
-          last_crop_out_of_bounds_log_time_ = steady_now;
-          RCLCPP_WARN(
-            get_logger(),
-            "Crop center (%.1f, %.1f) is outside map bounds + radius, skipping alignment",
-            static_cast<double>(cx), static_cast<double>(cy));
-        }
-        return false;
-      }
-      const float r2 = static_cast<float>(local_map_radius_ * local_map_radius_);
-      pcl::PointCloud<pcl::PointXYZI>::Ptr local_map(new pcl::PointCloud<pcl::PointXYZI>());
-      local_map->reserve(full_map_cloud_ptr_->size() / 10);
-      for (const auto & p : full_map_cloud_ptr_->points) {
-        const float dx = p.x - cx;
-        const float dy = p.y - cy;
-        if (dx * dx + dy * dy <= r2) {
-          local_map->push_back(p);
-        }
-      }
-      if (local_map->size() < local_map_min_points_) {
-        ++consecutive_crop_failures_;
-        maybe_log_crop_failure_streak();
+Eigen::Matrix4f PCLLocalization::refineSeedWithNdtInitializer(
+  const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud,
+  const Eigen::Matrix4f & init_guess)
+{
+  const auto run_input = lidar_localization::NdtInitializerRunInput{
+    use_ndt_initializer_,
+    static_cast<bool>(ndt_initializer_) && static_cast<bool>(source_cloud),
+    ndt_init_scan_count_,
+    ndt_init_scans_required_};
+  if (!lidar_localization::shouldRunNdtInitializer(run_input)) {
+    return init_guess;
+  }
+
+  ndt_initializer_->setInputSource(source_cloud);
+  pcl::PointCloud<pcl::PointXYZI>::Ptr ndt_output(new pcl::PointCloud<pcl::PointXYZI>);
+  ndt_initializer_->align(*ndt_output, init_guess);
+  const auto progress_decision =
+    lidar_localization::updateNdtInitializerProgress(
+    lidar_localization::NdtInitializerProgressInput{
+      run_input,
+      ndt_initializer_->hasConverged()});
+  if (!progress_decision.should_accept_refined_seed) {
+    return init_guess;
+  }
+
+  Eigen::Matrix4f refined_seed = ndt_initializer_->getFinalTransformation();
+  ndt_init_scan_count_ = progress_decision.next_scan_count;
+  RCLCPP_INFO(
+    get_logger(), "NDT init scan %d/%d fitness=%.3f",
+    ndt_init_scan_count_, ndt_init_scans_required_, ndt_initializer_->getFitnessScore());
+  if (progress_decision.should_reset_initializer) {
+    RCLCPP_INFO(get_logger(), "NDT init complete, switching to %s", registration_method_.c_str());
+    ndt_initializer_.reset();
+  }
+  return refined_seed;
+}
+
+bool PCLLocalization::setInputTargetForPose(const Eigen::Matrix4f & center_pose_matrix)
+{
+  if (!use_local_map_crop_ || !full_map_cloud_ptr_) {
+    return true;
+  }
+
+  const float cx = center_pose_matrix(0, 3);
+  const float cy = center_pose_matrix(1, 3);
+  const lidar_localization::LocalMapCropRequest crop_request{
+    cx,
+    cy,
+    local_map_radius_,
+    local_map_min_points_,
+    lidar_localization::LocalMapBounds2d{
+      map_bounds_valid_,
+      map_min_pt_.x,
+      map_max_pt_.x,
+      map_min_pt_.y,
+      map_max_pt_.y}};
+  const auto steady_now = std::chrono::steady_clock::now();
+
+  auto handle_crop_failure = [&](lidar_localization::LocalMapTargetFailure failure) {
+      const bool has_last_streak_log =
+        last_crop_failure_streak_log_time_ != std::chrono::steady_clock::time_point{};
+      const auto elapsed_since_streak_log =
+        has_last_streak_log ?
+        steady_now - last_crop_failure_streak_log_time_ :
+        std::chrono::steady_clock::duration::zero();
+      const bool has_last_bounds_log =
+        last_crop_out_of_bounds_log_time_ != std::chrono::steady_clock::time_point{};
+      const auto elapsed_since_bounds_log =
+        has_last_bounds_log ?
+        steady_now - last_crop_out_of_bounds_log_time_ :
+        std::chrono::steady_clock::duration::zero();
+      const auto decision = lidar_localization::handleLocalMapTargetFailure(
+        lidar_localization::LocalMapTargetFailureHandlingInput{
+          failure,
+          consecutive_crop_failures_,
+          has_last_streak_log,
+          elapsed_since_streak_log,
+          has_last_bounds_log,
+          elapsed_since_bounds_log});
+      consecutive_crop_failures_ = decision.consecutive_crop_failures;
+      if (decision.should_log_failure_streak) {
+        last_crop_failure_streak_log_time_ = steady_now;
         RCLCPP_WARN(
           get_logger(),
-          "Local map crop too small (%zu points, min %zu) around (%.3f, %.3f) with radius %.1fm.",
-          local_map->size(),
-          local_map_min_points_,
-          static_cast<double>(cx),
-          static_cast<double>(cy),
-          local_map_radius_);
-        return false;
+          "Crop failure streak reached %d while target setup keeps failing.",
+          consecutive_crop_failures_);
       }
-
-      pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_local_map(
-        new pcl::PointCloud<pcl::PointXYZI>());
-      voxel_grid_filter_.setInputCloud(local_map);
-      voxel_grid_filter_.filter(*filtered_local_map);
-      if (filtered_local_map->size() >= local_map_min_points_) {
-        registration_->setInputTarget(filtered_local_map);
-        keep_cloud_alive(
-          &recent_target_clouds_, filtered_local_map, kRegistrationTargetCloudKeepAliveCount);
-      } else {
-        registration_->setInputTarget(local_map);
-        keep_cloud_alive(
-          &recent_target_clouds_, local_map, kRegistrationTargetCloudKeepAliveCount);
+      if (decision.should_log_out_of_bounds) {
+        last_crop_out_of_bounds_log_time_ = steady_now;
       }
-      consecutive_crop_failures_ = 0;
-      crop_failure_guard_active_ = false;
-      return true;
+      return decision;
     };
 
-  auto run_alignment_attempt = [&](const Eigen::Matrix4f & attempt_init_guess,
-                                   const Eigen::Matrix4f & crop_center_pose_matrix) {
-      AlignmentAttempt attempt;
-      attempt.init_guess = attempt_init_guess;
-      if (!set_input_target_for_pose(crop_center_pose_matrix)) {
-        return attempt;
-      }
-      attempt.target_ready = true;
-
-      pcl::PointCloud<pcl::PointXYZI> output_cloud;
-      rclcpp::Clock system_clock;
-      const rclcpp::Time time_align_start = system_clock.now();
-      registration_->align(output_cloud, attempt_init_guess);
-      const rclcpp::Time time_align_end = system_clock.now();
-      attempt.alignment_time_sec = time_align_end.seconds() - time_align_start.seconds();
-      attempt.has_converged = registration_->hasConverged();
-      attempt.fitness_score = registration_->getFitnessScore();
-
-      if (have_last_accepted_pose_) {
-        const Eigen::Matrix4f seed_delta_matrix =
-          last_accepted_pose_matrix_.inverse() * attempt_init_guess;
-        attempt.seed_translation_since_accept_m = static_cast<double>(
-          seed_delta_matrix.block<3, 1>(0, 3).norm());
-        attempt.seed_yaw_since_accept_deg = std::abs(std::atan2(
-          static_cast<double>(seed_delta_matrix(1, 0)),
-          static_cast<double>(seed_delta_matrix(0, 0)))) * 180.0 / M_PI;
-        attempt.accepted_gap_sec = std::max(0.0, scan_stamp_sec - last_accepted_pose_time_sec_);
-      }
-
-      if (attempt.has_converged) {
-        attempt.final_transformation = registration_->getFinalTransformation();
-        const Eigen::Matrix4f correction_matrix =
-          attempt_init_guess.inverse() * attempt.final_transformation;
-        attempt.correction_translation_m = static_cast<double>(
-          correction_matrix.block<3, 1>(0, 3).norm());
-        attempt.correction_yaw_deg = std::abs(std::atan2(
-          static_cast<double>(correction_matrix(1, 0)),
-          static_cast<double>(correction_matrix(0, 0)))) * 180.0 / M_PI;
-      }
-
-      return attempt;
-    };
-
-  auto evaluate_measurement_gate = [&](const AlignmentAttempt & attempt) {
-      MeasurementGateResult gate;
-      gate.effective_score_threshold = computeEffectiveScoreThreshold(
-        attempt.accepted_gap_sec,
-        attempt.seed_translation_since_accept_m,
-        &gate.post_reject_strict_active,
-        &gate.open_loop_strict_active);
-      gate.borderline_seed_gate_active = computeBorderlineSeedGateActive(
-        attempt.fitness_score,
-        attempt.seed_translation_since_accept_m,
-        gate.effective_score_threshold);
-
-      if (attempt.fitness_score > gate.effective_score_threshold || gate.borderline_seed_gate_active) {
-        gate.status_level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
-        if (gate.borderline_seed_gate_active) {
-          gate.status_message = reject_above_score_threshold_ ?
-            "fitness_score_over_borderline_seed_gate_rejected" :
-            "fitness_score_over_borderline_seed_gate";
-        } else if (
-          gate.open_loop_strict_active &&
-          gate.effective_score_threshold == open_loop_strict_score_threshold_)
-        {
-          gate.status_message = reject_above_score_threshold_ ?
-            "fitness_score_over_open_loop_strict_threshold_rejected" :
-            "fitness_score_over_open_loop_strict_threshold";
-        } else if (gate.post_reject_strict_active) {
-          gate.status_message = reject_above_score_threshold_ ?
-            "fitness_score_over_post_reject_strict_threshold_rejected" :
-            "fitness_score_over_post_reject_strict_threshold";
-        } else {
-          gate.status_message = reject_above_score_threshold_ ?
-            "fitness_score_over_threshold_rejected" :
-            "fitness_score_over_threshold";
-        }
-        gate.reject_measurement = reject_above_score_threshold_;
-
-        const bool recovery_candidate =
-          enable_consistency_recovery_gate_ &&
-          gate.reject_measurement &&
-          static_cast<int>(consecutive_rejected_updates_) >= consistency_recovery_min_rejections_ &&
-          attempt.fitness_score <= score_threshold_ + consistency_recovery_score_margin_ &&
-          attempt.correction_translation_m <= consistency_recovery_max_translation_m_ &&
-          attempt.correction_yaw_deg <= consistency_recovery_max_yaw_deg_;
-        if (recovery_candidate) {
-          gate.reject_measurement = false;
-          gate.status_message = "fitness_score_over_threshold_consistency_recovered";
-        }
-
-        const bool rejected_seed_update_candidate =
-          enable_rejected_seed_update_ &&
-          gate.reject_measurement &&
-          static_cast<int>(consecutive_rejected_updates_) >= rejected_seed_update_min_rejections_ &&
-          attempt.fitness_score <= rejected_seed_update_max_fitness_ &&
-          attempt.correction_translation_m <=
-            rejected_seed_update_max_correction_translation_m_ &&
-          attempt.correction_yaw_deg <= rejected_seed_update_max_correction_yaw_deg_;
-        if (rejected_seed_update_candidate) {
-          gate.rejected_seed_update_applied = true;
-          gate.status_message += "_seeded";
-        }
-        RCLCPP_WARN(get_logger(), "The fitness score is over %lf.", gate.effective_score_threshold);
-      }
-
-      return gate;
-    };
-
-  // NDT initializer phase: use NDT for first N scans, then switch to GICP
-  if (use_ndt_initializer_ && ndt_init_scan_count_ < ndt_init_scans_required_) {
-    ndt_initializer_->setInputSource(tmp_ptr);
-    pcl::PointCloud<pcl::PointXYZI>::Ptr ndt_output(new pcl::PointCloud<pcl::PointXYZI>);
-    ndt_initializer_->align(*ndt_output, init_guess);
-    if (ndt_initializer_->hasConverged()) {
-      init_guess = ndt_initializer_->getFinalTransformation();
-      ++ndt_init_scan_count_;
-      RCLCPP_INFO(get_logger(), "NDT init scan %d/%d fitness=%.3f",
-                  ndt_init_scan_count_, ndt_init_scans_required_,
-                  ndt_initializer_->getFitnessScore());
-      if (ndt_init_scan_count_ >= ndt_init_scans_required_) {
-        RCLCPP_INFO(get_logger(), "NDT init complete, switching to %s", registration_method_.c_str());
-        ndt_initializer_.reset();
-      }
-    }
-  }
-
-  AlignmentAttempt selected_attempt = run_alignment_attempt(init_guess, init_guess);
-  MeasurementGateResult gate_result;
-  bool recovered_by_retry_from_last_pose = false;
-  const double recovery_accepted_gap_sec =
-    have_last_accepted_pose_ ? std::max(0.0, scan_stamp_sec - last_accepted_pose_time_sec_) :
-    std::numeric_limits<double>::quiet_NaN();
-  const bool allow_recovery_retry_from_last_pose =
-    enable_recovery_retry_from_last_pose_ &&
-    have_last_accepted_pose_ &&
-    static_cast<int>(consecutive_rejected_updates_) >=
-      recovery_retry_from_last_pose_min_rejections_;
-
-  auto try_recovery_retry_from_last_pose = [&]() -> bool {
-      if (!allow_recovery_retry_from_last_pose) {
-        return false;
-      }
-      const double accepted_gap_sec = std::isfinite(selected_attempt.accepted_gap_sec) ?
-        selected_attempt.accepted_gap_sec : recovery_accepted_gap_sec;
-      if (
-        !std::isfinite(accepted_gap_sec) ||
-        accepted_gap_sec >
-        recovery_retry_from_last_pose_max_accepted_gap_sec_)
-      {
-        return false;
-      }
-      if (
-        std::isfinite(selected_attempt.seed_translation_since_accept_m) &&
-        selected_attempt.seed_translation_since_accept_m >
-        recovery_retry_from_last_pose_max_seed_translation_m_)
-      {
-        return false;
-      }
-
-      const AlignmentAttempt retry_attempt = run_alignment_attempt(
-        last_accepted_pose_matrix_,
-        last_accepted_pose_matrix_);
-      if (!retry_attempt.target_ready || !retry_attempt.has_converged) {
-        return false;
-      }
-
-      const MeasurementGateResult retry_gate = evaluate_measurement_gate(retry_attempt);
-      if (retry_gate.reject_measurement) {
-        return false;
-      }
-
-      selected_attempt = retry_attempt;
-      gate_result = retry_gate;
-      gate_result.status_level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
-      gate_result.status_message = "recovery_retry_from_last_pose_recovered";
-      gate_result.reject_measurement = false;
-      gate_result.rejected_seed_update_applied = false;
-      recovered_by_retry_from_last_pose = true;
-      RCLCPP_INFO(
+  const auto crop_validation =
+    lidar_localization::validateLocalMapCropRequest(crop_request);
+  if (!crop_validation.can_crop) {
+    const auto failure_decision = handle_crop_failure(crop_validation.failure);
+    if (failure_decision.should_log_out_of_bounds) {
+      RCLCPP_WARN(
         get_logger(),
-        "Recovery retry from last pose succeeded after %zu rejects: fitness=%.6f",
-        consecutive_rejected_updates_,
-        retry_attempt.fitness_score);
-      return true;
-    };
-
-  if (!selected_attempt.target_ready) {
-    if (!try_recovery_retry_from_last_pose()) {
-      publishAlignmentStatus(
-        msg->header.stamp,
-        diagnostic_msgs::msg::DiagnosticStatus::ERROR,
-        "local_map_crop_too_small",
-        false,
-        std::numeric_limits<double>::quiet_NaN(),
-        0.0,
-        filtered_point_count,
-        std::numeric_limits<double>::quiet_NaN(),
-        std::numeric_limits<double>::quiet_NaN(),
-        std::numeric_limits<double>::quiet_NaN(),
-        std::numeric_limits<double>::quiet_NaN(),
-        std::numeric_limits<double>::quiet_NaN(),
-        imu_prediction_ready);
-      advancePredictionWithoutMeasurement(scan_stamp_sec);
-      return;
+        "Crop center (%.1f, %.1f) is outside map bounds + radius, skipping alignment",
+        static_cast<double>(cx), static_cast<double>(cy));
     }
+    return false;
   }
 
-  if (!selected_attempt.has_converged) {
-    if (!try_recovery_retry_from_last_pose()) {
-      publishAlignmentStatus(
-        msg->header.stamp,
-        diagnostic_msgs::msg::DiagnosticStatus::ERROR,
-        "registration_not_converged",
-        selected_attempt.has_converged,
-        selected_attempt.fitness_score,
-        selected_attempt.alignment_time_sec,
-        filtered_point_count,
-        selected_attempt.correction_translation_m,
-        selected_attempt.correction_yaw_deg,
-        selected_attempt.seed_translation_since_accept_m,
-        selected_attempt.seed_yaw_since_accept_deg,
-        selected_attempt.accepted_gap_sec,
-        imu_prediction_ready);
-      RCLCPP_WARN(get_logger(), "The registration didn't converge.");
-      advancePredictionWithoutMeasurement(scan_stamp_sec);
-      return;
-    }
+  pcl::PointCloud<pcl::PointXYZI>::Ptr local_map =
+    lidar_localization::cropLocalMapByRadius(
+      *full_map_cloud_ptr_,
+      crop_request.center_x,
+      crop_request.center_y,
+      crop_request.radius_m);
+  const auto crop_size_validation =
+    lidar_localization::validateLocalMapCropSize(
+      local_map->size(), crop_request.min_points);
+  if (!crop_size_validation.target_ready) {
+    handle_crop_failure(crop_size_validation.failure);
+    RCLCPP_WARN(
+      get_logger(),
+      "Local map crop too small (%zu points, min %zu) around (%.3f, %.3f) with radius %.1fm.",
+      local_map->size(),
+      local_map_min_points_,
+      static_cast<double>(cx),
+      static_cast<double>(cy),
+      local_map_radius_);
+    return false;
+  }
+
+  pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_local_map(
+    new pcl::PointCloud<pcl::PointXYZI>());
+  voxel_grid_filter_.setInputCloud(local_map);
+  voxel_grid_filter_.filter(*filtered_local_map);
+  const auto target_selection = lidar_localization::chooseTargetAfterLocalMapCrop(
+    local_map->size(),
+    filtered_local_map->size(),
+    crop_request.min_points);
+  if (target_selection.target_cloud ==
+    lidar_localization::LocalMapTargetCloud::kFilteredLocalMap)
+  {
+    registration_->setInputTarget(filtered_local_map);
+    keep_cloud_alive(
+      &recent_target_clouds_, filtered_local_map, kRegistrationTargetCloudKeepAliveCount);
   } else {
-    gate_result = evaluate_measurement_gate(selected_attempt);
-    if (gate_result.reject_measurement) {
-      (void)try_recovery_retry_from_last_pose();
-    }
+    registration_->setInputTarget(local_map);
+    keep_cloud_alive(
+      &recent_target_clouds_, local_map, kRegistrationTargetCloudKeepAliveCount);
   }
 
-  bool has_converged = selected_attempt.has_converged;
-  double fitness_score = selected_attempt.fitness_score;
-  double correction_translation_m = selected_attempt.correction_translation_m;
-  double correction_yaw_deg = selected_attempt.correction_yaw_deg;
-  double seed_translation_since_accept_m = selected_attempt.seed_translation_since_accept_m;
-  double seed_yaw_since_accept_deg = selected_attempt.seed_yaw_since_accept_deg;
-  double accepted_gap_sec = selected_attempt.accepted_gap_sec;
-  uint8_t status_level = gate_result.status_level;
-  std::string status_message = gate_result.status_message;
-  bool reject_measurement = gate_result.reject_measurement;
-  bool rejected_seed_update_applied = gate_result.rejected_seed_update_applied;
-  Eigen::Matrix4f final_transformation = selected_attempt.final_transformation;
+  const auto success_decision = lidar_localization::handleLocalMapTargetSuccess();
+  consecutive_crop_failures_ = success_decision.consecutive_crop_failures;
+  crop_failure_guard_active_ = success_decision.crop_failure_guard_active;
+  return true;
+}
 
-  if (!has_converged) {
-    publishAlignmentStatus(
-      msg->header.stamp,
-      diagnostic_msgs::msg::DiagnosticStatus::ERROR,
-      "registration_not_converged",
-      has_converged,
-      fitness_score,
-      selected_attempt.alignment_time_sec,
-      filtered_point_count,
-      correction_translation_m,
-      correction_yaw_deg,
-      seed_translation_since_accept_m,
-      seed_yaw_since_accept_deg,
-      accepted_gap_sec,
-      imu_prediction_ready);
-    RCLCPP_WARN(get_logger(), "The registration didn't converge.");
-    advancePredictionWithoutMeasurement(scan_stamp_sec);
+lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
+  const Eigen::Matrix4f & attempt_init_guess,
+  const Eigen::Matrix4f & crop_center_pose_matrix,
+  double scan_stamp_sec)
+{
+  lidar_localization::AlignmentAttempt attempt;
+  attempt.init_guess = attempt_init_guess;
+  if (!setInputTargetForPose(crop_center_pose_matrix)) {
+    return attempt;
+  }
+  attempt.target_ready = true;
+
+  pcl::PointCloud<pcl::PointXYZI> output_cloud;
+  rclcpp::Clock system_clock;
+  const rclcpp::Time time_align_start = system_clock.now();
+  registration_->align(output_cloud, attempt_init_guess);
+  const rclcpp::Time time_align_end = system_clock.now();
+  attempt.alignment_time_sec = time_align_end.seconds() - time_align_start.seconds();
+  attempt.has_converged = registration_->hasConverged();
+  attempt.fitness_score = registration_->getFitnessScore();
+
+  const auto seed_metrics = lidar_localization::computeAlignmentSeedMetrics(
+    have_last_accepted_pose_,
+    last_accepted_pose_matrix_,
+    attempt_init_guess,
+    scan_stamp_sec,
+    last_accepted_pose_time_sec_);
+  attempt.seed_translation_since_accept_m = seed_metrics.translation_since_accept_m;
+  attempt.seed_yaw_since_accept_deg = seed_metrics.yaw_since_accept_deg;
+  attempt.accepted_gap_sec = seed_metrics.accepted_gap_sec;
+
+  if (attempt.has_converged) {
+    attempt.final_transformation = registration_->getFinalTransformation();
+    const auto correction_metrics =
+      lidar_localization::computeAlignmentCorrectionMetrics(
+      attempt_init_guess,
+      attempt.final_transformation);
+    attempt.correction_translation_m = correction_metrics.translation_m;
+    attempt.correction_yaw_deg = correction_metrics.yaw_deg;
+  }
+
+  return attempt;
+}
+
+lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelineForScan(
+  const Eigen::Matrix4f & init_guess,
+  double scan_stamp_sec)
+{
+  const lidar_localization::AlignmentAttempt primary_attempt =
+    runAlignmentAttempt(init_guess, init_guess, scan_stamp_sec);
+  return lidar_localization::runAlignmentPipeline(
+    primary_attempt,
+    lidar_localization::AlignmentPipelineInput{
+      have_last_accepted_pose_,
+      consecutive_rejected_updates_,
+      scan_stamp_sec,
+      last_accepted_pose_time_sec_,
+      recoveryRetryFromLastPoseParams()},
+    [&]() {
+      return runAlignmentAttempt(
+        last_accepted_pose_matrix_, last_accepted_pose_matrix_, scan_stamp_sec);
+    },
+    [this](const lidar_localization::AlignmentAttempt & attempt) {
+      return evaluateMeasurementGateForAttempt(attempt);
+    });
+}
+
+lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurementGateForAttempt(
+  const lidar_localization::AlignmentAttempt & attempt)
+{
+  const auto gate_input = lidar_localization::makeMeasurementGateInput(
+    attempt.fitness_score,
+    attempt.accepted_gap_sec,
+    attempt.seed_translation_since_accept_m,
+    attempt.correction_translation_m,
+    attempt.correction_yaw_deg,
+    consecutive_rejected_updates_);
+  auto gate =
+    lidar_localization::evaluateMeasurementGate(measurementGateParams(), gate_input);
+  if (gate.status_level == lidar_localization::kMeasurementGateWarn) {
+    RCLCPP_WARN(
+      get_logger(), "The fitness score is over %lf.", gate.effective_score_threshold);
+  }
+
+  return gate;
+}
+
+void PCLLocalization::logAlignmentPipelineRecovery(
+  const lidar_localization::AlignmentPipelineResult & pipeline_result)
+{
+  const auto handling = lidar_localization::decideAlignmentPipelineHandling(pipeline_result);
+  if (!handling.log_recovery_retry_success) {
     return;
   }
-  if (recovered_by_retry_from_last_pose && status_level == diagnostic_msgs::msg::DiagnosticStatus::OK) {
-    status_level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+
+  RCLCPP_INFO(
+    get_logger(),
+    "Recovery retry from last pose succeeded after %zu rejects: fitness=%.6f",
+    consecutive_rejected_updates_,
+    pipeline_result.selected_attempt.fitness_score);
+}
+
+bool PCLLocalization::handleTerminalAlignmentPipelineResult(
+  const builtin_interfaces::msg::Time & stamp,
+  const lidar_localization::AlignmentPipelineResult & pipeline_result,
+  std::size_t filtered_point_count,
+  double scan_stamp_sec,
+  bool imu_prediction_ready)
+{
+  const auto handling = lidar_localization::decideAlignmentPipelineHandling(pipeline_result);
+  if (!handling.publish_terminal_status) {
+    return false;
   }
 
-  if (use_gtsam_smoother_) {
-    // Extract roll, pitch, yaw from NDT rotation matrix
-    Eigen::Matrix3f ndt_rot = final_transformation.block<3, 3>(0, 0);
-    last_ndt_pitch_ = std::asin(-ndt_rot(2, 0));
-    last_ndt_roll_ = std::atan2(ndt_rot(2, 1), ndt_rot(2, 2));
-    double ndt_yaw = static_cast<double>(std::atan2(ndt_rot(1, 0), ndt_rot(0, 0)));
-    double ndt_px = static_cast<double>(final_transformation(0, 3));
-    double ndt_py = static_cast<double>(final_transformation(1, 3));
-    double ndt_pz = static_cast<double>(final_transformation(2, 3));
-
-    if (!gtsam_smoother_.isInitialized()) {
-      gtsam_smoother_.initialize(ndt_px, ndt_py, ndt_pz, ndt_yaw, scan_stamp_sec);
-    }
-
-    bool gtsam_updated = gtsam_smoother_.update(
-      ndt_px, ndt_py, ndt_pz, ndt_yaw, fitness_score, scan_stamp_sec);
-
-    // Use smoothed state for published pose
-    Eigen::Matrix4f gtsam_pose = gtsam_smoother_.poseMatrix(last_ndt_roll_, last_ndt_pitch_);
-    Eigen::Matrix3d gtsam_rot_mat = gtsam_pose.block<3, 3>(0, 0).cast<double>();
-    Eigen::Quaterniond quat_eig(gtsam_rot_mat);
-    geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
-
-    corrent_pose_with_cov_stamped_ptr_->header.stamp = msg->header.stamp;
-    corrent_pose_with_cov_stamped_ptr_->header.frame_id = global_frame_id_;
-    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x = gtsam_smoother_.px();
-    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y = gtsam_smoother_.py();
-    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z = gtsam_smoother_.pz();
-    corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
-
-    fillPoseCovariance(fitness_score);
-    updatePredictionState(gtsam_pose, scan_stamp_sec);
-
-    if (!gtsam_updated) {
-      status_level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
-      status_message = "gtsam_update_rejected";
-    }
-    publishAlignmentStatus(
-      msg->header.stamp, status_level, status_message,
-      has_converged, fitness_score, selected_attempt.alignment_time_sec,
-      filtered_point_count,
-      correction_translation_m,
-      correction_yaw_deg,
-      seed_translation_since_accept_m,
-      seed_yaw_since_accept_deg,
-      accepted_gap_sec,
-      imu_prediction_ready);
-  } else if (use_imu_preintegration_ && last_imu_stamp_ > 0.0) {
-    // Extract full 6DOF from registration result
-    Eigen::Matrix3f ndt_rot = final_transformation.block<3, 3>(0, 0);
-    double ndt_roll = static_cast<double>(std::atan2(ndt_rot(2, 1), ndt_rot(2, 2)));
-    double ndt_pitch = static_cast<double>(std::asin(-std::clamp(ndt_rot(2, 0), -1.0f, 1.0f)));
-    double ndt_yaw = static_cast<double>(std::atan2(ndt_rot(1, 0), ndt_rot(0, 0)));
-    double ndt_px = static_cast<double>(final_transformation(0, 3));
-    double ndt_py = static_cast<double>(final_transformation(1, 3));
-    double ndt_pz = static_cast<double>(final_transformation(2, 3));
-
-    if (!imu_smoother_.isInitialized()) {
-      imu_smoother_.initialize(
-        ndt_px, ndt_py, ndt_pz, ndt_roll, ndt_pitch, ndt_yaw,
-        0.0, 0.0, 0.0, scan_stamp_sec);
-    }
-
-    bool imu_updated = true;
-    bool imu_state_reset = false;
-    bool imu_correction_guard_tripped = false;
-    Eigen::Matrix4f imu_pose = final_transformation;
-    if (
-      !imu_preintegration_fallback_mode_ &&
-      imu_prediction_ready &&
-      (
-        (std::isfinite(correction_translation_m) &&
-        correction_translation_m > imu_prediction_correction_guard_translation_m_) ||
-        (std::isfinite(correction_yaw_deg) &&
-        correction_yaw_deg > imu_prediction_correction_guard_yaw_deg_)))
-    {
-      RCLCPP_WARN(
-        get_logger(),
-        "IMU prediction required a large measurement correction (translation=%.3f m, yaw=%.3f deg). Disabling IMU preintegration for the remainder of this run.",
-        correction_translation_m,
-        correction_yaw_deg);
-      imu_preintegration_fallback_mode_ = true;
-      imu_state_reset = true;
-      imu_correction_guard_tripped = true;
-    }
-
-    if (!imu_preintegration_fallback_mode_) {
-      imu_updated = imu_smoother_.update(
-        ndt_px, ndt_py, ndt_pz, ndt_roll, ndt_pitch, ndt_yaw,
-        fitness_score, scan_stamp_sec);
-
-      imu_pose = imu_smoother_.poseMatrix();
-      double imu_measurement_translation_delta_m = std::numeric_limits<double>::quiet_NaN();
-      double imu_measurement_rotation_delta_deg = std::numeric_limits<double>::quiet_NaN();
-      if (imu_pose.allFinite()) {
-        imu_measurement_translation_delta_m = static_cast<double>(
-          (imu_pose.block<3, 1>(0, 3) - final_transformation.block<3, 1>(0, 3)).norm());
-        imu_measurement_rotation_delta_deg = rotation_delta_deg(
-          final_transformation.block<3, 3>(0, 0),
-          imu_pose.block<3, 3>(0, 0));
-      }
-
-      const bool imu_pose_diverged =
-        !imu_pose.allFinite() ||
-        !std::isfinite(imu_measurement_translation_delta_m) ||
-        !std::isfinite(imu_measurement_rotation_delta_deg) ||
-        imu_measurement_translation_delta_m > kImuSmootherMeasurementTranslationGuardM ||
-        imu_measurement_rotation_delta_deg > kImuSmootherMeasurementRotationGuardDeg;
-      if (imu_pose_diverged) {
-        RCLCPP_WARN(
-          get_logger(),
-          "IMU smoother diverged from measurement (translation=%.3f m, rotation=%.3f deg). Disabling IMU preintegration for the remainder of this run.",
-          imu_measurement_translation_delta_m,
-          imu_measurement_rotation_delta_deg);
-        imu_preintegration_fallback_mode_ = true;
-        imu_state_reset = true;
-      }
-    }
-
-    if (imu_preintegration_fallback_mode_) {
-      imu_pose = final_transformation;
-      imu_updated = true;
-    }
-
-    Eigen::Matrix3d imu_rot_mat = imu_pose.block<3, 3>(0, 0).cast<double>();
-    Eigen::Quaterniond quat_eig(imu_rot_mat);
-    geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
-
-    corrent_pose_with_cov_stamped_ptr_->header.stamp = msg->header.stamp;
-    corrent_pose_with_cov_stamped_ptr_->header.frame_id = global_frame_id_;
-    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x = imu_pose(0, 3);
-    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y = imu_pose(1, 3);
-    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z = imu_pose(2, 3);
-    corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
-
-    fillPoseCovariance(fitness_score);
-    updatePredictionState(imu_pose, scan_stamp_sec);
-    last_scan_stamp_for_imu_ = scan_stamp_sec;
-
-    if (imu_state_reset) {
-      status_level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
-      status_message = imu_correction_guard_tripped ?
-        "imu_prediction_correction_guard_imu_disabled" :
-        "imu_smoother_diverged_imu_disabled";
-    } else if (!imu_updated) {
-      status_level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
-      status_message = "imu_smoother_update_rejected";
-    }
-    publishAlignmentStatus(
-      msg->header.stamp, status_level, status_message,
-      has_converged, fitness_score, selected_attempt.alignment_time_sec,
-      filtered_point_count,
-      correction_translation_m,
-      correction_yaw_deg,
-      seed_translation_since_accept_m,
-      seed_yaw_since_accept_deg,
-      accepted_gap_sec,
-      imu_prediction_ready);
-  } else if (use_twist_ekf_) {
-    // Extract roll, pitch, yaw from NDT rotation matrix using atan2
-    // (eulerAngles() has gimbal-lock ambiguity)
-    Eigen::Matrix3f ndt_rot = final_transformation.block<3, 3>(0, 0);
-    last_ndt_pitch_ = std::asin(-ndt_rot(2, 0));
-    last_ndt_roll_ = std::atan2(ndt_rot(2, 1), ndt_rot(2, 2));
-    double ndt_yaw = static_cast<double>(
-      std::atan2(ndt_rot(1, 0), ndt_rot(0, 0)));
-    double ndt_px = static_cast<double>(final_transformation(0, 3));
-    double ndt_py = static_cast<double>(final_transformation(1, 3));
-    double ndt_pz = static_cast<double>(final_transformation(2, 3));
-
-    if (!twist_ekf_.isInitialized()) {
-      twist_ekf_.initialize(ndt_px, ndt_py, ndt_pz, ndt_yaw, scan_stamp_sec);
-    }
-
-    // EKF update with NDT measurement (not gated by score_threshold)
-    // The EKF adaptively scales measurement noise by fitness
-    bool ekf_updated = twist_ekf_.update(ndt_px, ndt_py, ndt_pz, ndt_yaw, fitness_score);
-
-    // Use EKF state for published pose
-    Eigen::Matrix4f ekf_pose = twist_ekf_.poseMatrix(last_ndt_roll_, last_ndt_pitch_);
-    Eigen::Matrix3d ekf_rot_mat = ekf_pose.block<3, 3>(0, 0).cast<double>();
-    Eigen::Quaterniond quat_eig(ekf_rot_mat);
-    geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
-
-    corrent_pose_with_cov_stamped_ptr_->header.stamp = msg->header.stamp;
-    corrent_pose_with_cov_stamped_ptr_->header.frame_id = global_frame_id_;
-    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x = twist_ekf_.px();
-    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y = twist_ekf_.py();
-    corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z = twist_ekf_.pz();
-    corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
-
-    // Also update prediction state for compatibility
-    fillPoseCovariance(fitness_score);
-    updatePredictionState(ekf_pose, scan_stamp_sec);
-
-    // Publish diagnostics with EKF info
-    if (!ekf_updated) {
-      status_level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
-      status_message = "ekf_update_rejected";
-    }
-    publishAlignmentStatus(
-      msg->header.stamp, status_level, status_message,
-      has_converged, fitness_score, selected_attempt.alignment_time_sec,
-      filtered_point_count,
-      correction_translation_m,
-      correction_yaw_deg,
-      seed_translation_since_accept_m,
-      seed_yaw_since_accept_deg,
-      accepted_gap_sec,
-      imu_prediction_ready);
-  } else {
-    // Original flow
-    publishAlignmentStatus(
-      msg->header.stamp, status_level, status_message,
-      has_converged, fitness_score, selected_attempt.alignment_time_sec,
-      filtered_point_count,
-      correction_translation_m,
-      correction_yaw_deg,
-      seed_translation_since_accept_m,
-      seed_yaw_since_accept_deg,
-      accepted_gap_sec,
-      imu_prediction_ready);
-
-    if (reject_measurement) {
-      if (rejected_seed_update_applied) {
-        updatePredictionFromRejectedMeasurement(final_transformation, scan_stamp_sec);
-      } else {
-        advancePredictionWithoutMeasurement(scan_stamp_sec);
-      }
-      return;
-    }
-
-    setCurrentPoseFromMatrix(final_transformation, msg->header.stamp);
-    fillPoseCovariance(fitness_score);
-    updatePredictionState(final_transformation, scan_stamp_sec);
+  publishAlignmentStatusForAttempt(
+    stamp,
+    pipeline_result.status_level,
+    pipeline_result.status_message,
+    pipeline_result.selected_attempt,
+    filtered_point_count,
+    imu_prediction_ready);
+  if (handling.warn_registration_not_converged) {
+    RCLCPP_WARN(get_logger(), "The registration didn't converge.");
   }
-    
-  // publish here if timer is not enabled
+  if (handling.advance_prediction_without_measurement) {
+    advancePredictionWithoutMeasurement(scan_stamp_sec);
+  }
+  return true;
+}
 
-  if (!enable_timer_publishing_){
-    publishCurrentPose(msg->header.stamp);
+bool PCLLocalization::applyAcceptedAlignmentPipelineResult(
+  const builtin_interfaces::msg::Time & stamp,
+  const lidar_localization::AlignmentPipelineResult & pipeline_result,
+  std::size_t filtered_point_count,
+  double scan_stamp_sec,
+  bool imu_prediction_ready)
+{
+  const auto handling = lidar_localization::decideAlignmentPipelineHandling(pipeline_result);
+  if (!handling.continue_to_backend) {
+    return false;
   }
 
-  if (enable_debug_) {
-    std::cout << "number of filtered cloud points: " << filtered_point_count << std::endl;
-    std::cout << "align time:" << selected_attempt.alignment_time_sec <<
-      "[sec]" << std::endl;
-    std::cout << "has converged: " << has_converged << std::endl;
-    std::cout << "fitness score: " << fitness_score << std::endl;
-    std::cout << "final transformation:" << std::endl;
-    std::cout << final_transformation << std::endl;
-    /* delta_angle check
-     * trace(RotationMatrix) = 2(cos(theta) + 1)
-     */
-    double init_cos_angle = 0.5 *
-      (init_guess.coeff(0, 0) + init_guess.coeff(1, 1) + init_guess.coeff(2, 2) - 1);
-    double cos_angle = 0.5 *
-      (final_transformation.coeff(0,
-      0) + final_transformation.coeff(1, 1) + final_transformation.coeff(2, 2) - 1);
-    double init_angle = acos(init_cos_angle);
-    double angle = acos(cos_angle);
-    // Ref:https://twitter.com/Atsushi_twi/status/1185868416864808960
-    double delta_angle = abs(atan2(sin(init_angle - angle), cos(init_angle - angle)));
-    std::cout << "delta_angle:" << delta_angle * 180 / M_PI << "[deg]" << std::endl;
-    std::cout << "-----------------------------------------------------" << std::endl;
+  const auto registration_observation =
+    lidar_localization::makeRegistrationObservation(
+    pipeline_result.selected_attempt.final_transformation);
+  if (!applyRegistrationPoseBackend(
+      registration_observation,
+      pipeline_result.selected_attempt,
+      pipeline_result.gate_result,
+      stamp,
+      filtered_point_count,
+      scan_stamp_sec,
+      imu_prediction_ready))
+  {
+    return false;
   }
 
+  if (!enable_timer_publishing_) {
+    publishCurrentPose(stamp);
+  }
+  return true;
+}
+
+void PCLLocalization::setRegistrationSourceCloud(
+  const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud)
+{
+  registration_->setInputSource(source_cloud);
+  keep_cloud_alive(&recent_source_clouds_, source_cloud, kRegistrationSourceCloudKeepAliveCount);
+}
+
+void PCLLocalization::printAlignmentDebugInfo(
+  const Eigen::Matrix4f & init_guess,
+  const lidar_localization::AlignmentAttempt & selected_attempt,
+  std::size_t filtered_point_count) const
+{
+  if (!enable_debug_) {
+    return;
+  }
+
+  std::cout << "number of filtered cloud points: " << filtered_point_count << std::endl;
+  std::cout << "align time:" << selected_attempt.alignment_time_sec <<
+    "[sec]" << std::endl;
+  std::cout << "has converged: " << selected_attempt.has_converged << std::endl;
+  std::cout << "fitness score: " << selected_attempt.fitness_score << std::endl;
+  std::cout << "final transformation:" << std::endl;
+  std::cout << selected_attempt.final_transformation << std::endl;
+  /* delta_angle check
+   * trace(RotationMatrix) = 2(cos(theta) + 1)
+   */
+  double init_cos_angle = 0.5 *
+    (init_guess.coeff(0, 0) + init_guess.coeff(1, 1) + init_guess.coeff(2, 2) - 1);
+  double cos_angle = 0.5 *
+    (selected_attempt.final_transformation.coeff(0,
+    0) + selected_attempt.final_transformation.coeff(1, 1) +
+    selected_attempt.final_transformation.coeff(2, 2) - 1);
+  double init_angle = acos(init_cos_angle);
+  double angle = acos(cos_angle);
+  // Ref:https://twitter.com/Atsushi_twi/status/1185868416864808960
+  double delta_angle = abs(atan2(sin(init_angle - angle), cos(init_angle - angle)));
+  std::cout << "delta_angle:" << delta_angle * 180 / M_PI << "[deg]" << std::endl;
+  std::cout << "-----------------------------------------------------" << std::endl;
 }
 
 Eigen::Matrix4f PCLLocalization::currentPoseMatrix() const
@@ -2253,287 +2033,536 @@ Eigen::Matrix4f PCLLocalization::applyTwistPrediction(
 
 void PCLLocalization::resetPredictionState(const Eigen::Matrix4f & pose_matrix, double stamp_sec)
 {
-  have_last_accepted_pose_ = true;
-  last_accepted_pose_matrix_ = pose_matrix;
-  predicted_pose_matrix_ = pose_matrix;
-  last_relative_motion_matrix_ = Eigen::Matrix4f::Identity();
-  consecutive_rejected_updates_ = 0;
-  last_accepted_pose_time_sec_ = stamp_sec;
-  predicted_pose_time_sec_ = stamp_sec;
+  const auto state = lidar_localization::resetPredictionState(pose_matrix, stamp_sec);
+  have_last_accepted_pose_ = state.have_last_accepted_pose;
+  last_accepted_pose_matrix_ = state.last_accepted_pose_matrix;
+  predicted_pose_matrix_ = state.predicted_pose_matrix;
+  last_relative_motion_matrix_ = state.last_relative_motion_matrix;
+  consecutive_rejected_updates_ = state.consecutive_rejected_updates;
+  last_accepted_pose_time_sec_ = state.last_accepted_pose_time_sec;
+  predicted_pose_time_sec_ = state.predicted_pose_time_sec;
 }
 
 void PCLLocalization::updatePredictionState(
   const Eigen::Matrix4f & accepted_pose_matrix,
   double stamp_sec)
 {
-  if (!have_last_accepted_pose_) {
-    resetPredictionState(accepted_pose_matrix, stamp_sec);
-    return;
-  }
-
-  if (consecutive_rejected_updates_ == 0) {
-    last_relative_motion_matrix_ = last_accepted_pose_matrix_.inverse() * accepted_pose_matrix;
-  }
-
-  last_accepted_pose_matrix_ = accepted_pose_matrix;
-  predicted_pose_matrix_ = accepted_pose_matrix * last_relative_motion_matrix_;
-  have_last_accepted_pose_ = true;
-  consecutive_rejected_updates_ = 0;
-  last_accepted_pose_time_sec_ = stamp_sec;
-  predicted_pose_time_sec_ = stamp_sec;
+  const auto state = lidar_localization::updatePredictionStateFromAcceptedMeasurement(
+    make_prediction_state_snapshot(
+      have_last_accepted_pose_,
+      last_accepted_pose_matrix_,
+      predicted_pose_matrix_,
+      last_relative_motion_matrix_,
+      consecutive_rejected_updates_,
+      last_accepted_pose_time_sec_,
+      predicted_pose_time_sec_),
+    accepted_pose_matrix,
+    stamp_sec);
+  have_last_accepted_pose_ = state.have_last_accepted_pose;
+  last_accepted_pose_matrix_ = state.last_accepted_pose_matrix;
+  predicted_pose_matrix_ = state.predicted_pose_matrix;
+  last_relative_motion_matrix_ = state.last_relative_motion_matrix;
+  consecutive_rejected_updates_ = state.consecutive_rejected_updates;
+  last_accepted_pose_time_sec_ = state.last_accepted_pose_time_sec;
+  predicted_pose_time_sec_ = state.predicted_pose_time_sec;
 }
 
 void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
 {
-  if (!have_last_accepted_pose_) {
-    return;
-  }
-
-  if (use_twist_prediction_ && latest_twist_msg_) {
+  const auto advance_mode = lidar_localization::choosePredictionAdvanceMode(
+    have_last_accepted_pose_,
+    use_twist_prediction_,
+    static_cast<bool>(latest_twist_msg_),
+    predict_pose_from_previous_delta_);
+  Eigen::Matrix4f twist_predicted_pose_matrix = Eigen::Matrix4f::Identity();
+  if (advance_mode == lidar_localization::PredictionAdvanceMode::kTwistPrediction) {
     const double dt = std::clamp(stamp_sec - predicted_pose_time_sec_, 0.0, max_twist_prediction_dt_);
-    predicted_pose_matrix_ = applyTwistPrediction(predicted_pose_matrix_, dt);
-    predicted_pose_time_sec_ = stamp_sec;
-  } else if (predict_pose_from_previous_delta_) {
-    predicted_pose_matrix_ = predicted_pose_matrix_ * last_relative_motion_matrix_;
-    predicted_pose_time_sec_ = stamp_sec;
-  } else {
-    return;
+    twist_predicted_pose_matrix = applyTwistPrediction(predicted_pose_matrix_, dt);
   }
-  ++consecutive_rejected_updates_;
+  const auto state = lidar_localization::advancePredictionWithoutMeasurement(
+    make_prediction_state_snapshot(
+      have_last_accepted_pose_,
+      last_accepted_pose_matrix_,
+      predicted_pose_matrix_,
+      last_relative_motion_matrix_,
+      consecutive_rejected_updates_,
+      last_accepted_pose_time_sec_,
+      predicted_pose_time_sec_),
+    stamp_sec,
+    advance_mode,
+    twist_predicted_pose_matrix);
+  have_last_accepted_pose_ = state.have_last_accepted_pose;
+  last_accepted_pose_matrix_ = state.last_accepted_pose_matrix;
+  predicted_pose_matrix_ = state.predicted_pose_matrix;
+  last_relative_motion_matrix_ = state.last_relative_motion_matrix;
+  consecutive_rejected_updates_ = state.consecutive_rejected_updates;
+  last_accepted_pose_time_sec_ = state.last_accepted_pose_time_sec;
+  predicted_pose_time_sec_ = state.predicted_pose_time_sec;
 }
 
 void PCLLocalization::updatePredictionFromRejectedMeasurement(
   const Eigen::Matrix4f & rejected_pose_matrix,
   double stamp_sec)
 {
-  if (!have_last_accepted_pose_) {
+  const auto state = lidar_localization::updatePredictionFromRejectedMeasurement(
+    make_prediction_state_snapshot(
+      have_last_accepted_pose_,
+      last_accepted_pose_matrix_,
+      predicted_pose_matrix_,
+      last_relative_motion_matrix_,
+      consecutive_rejected_updates_,
+      last_accepted_pose_time_sec_,
+      predicted_pose_time_sec_),
+    rejected_pose_matrix,
+    stamp_sec);
+  have_last_accepted_pose_ = state.have_last_accepted_pose;
+  last_accepted_pose_matrix_ = state.last_accepted_pose_matrix;
+  predicted_pose_matrix_ = state.predicted_pose_matrix;
+  last_relative_motion_matrix_ = state.last_relative_motion_matrix;
+  consecutive_rejected_updates_ = state.consecutive_rejected_updates;
+  last_accepted_pose_time_sec_ = state.last_accepted_pose_time_sec;
+  predicted_pose_time_sec_ = state.predicted_pose_time_sec;
+}
+
+bool PCLLocalization::applyRegistrationPoseBackend(
+  const lidar_localization::RegistrationObservation & observation,
+  const lidar_localization::AlignmentAttempt & attempt,
+  const lidar_localization::MeasurementGateDecision & gate_result,
+  const builtin_interfaces::msg::Time & stamp,
+  std::size_t filtered_point_count,
+  double stamp_sec,
+  bool imu_prediction_ready)
+{
+  const PoseBackendApplyContext context{
+    observation,
+    attempt,
+    gate_result,
+    stamp,
+    filtered_point_count,
+    stamp_sec,
+    imu_prediction_ready};
+  return dispatchRegistrationPoseBackend(selectRegistrationPoseBackend(), context);
+}
+
+lidar_localization::PoseBackendKind PCLLocalization::selectRegistrationPoseBackend() const
+{
+  return lidar_localization::selectPoseBackend(
+    lidar_localization::PoseBackendSelectionInput{
+      use_gtsam_smoother_,
+      use_imu_preintegration_,
+      last_imu_stamp_ > 0.0,
+      use_twist_ekf_});
+}
+
+bool PCLLocalization::dispatchRegistrationPoseBackend(
+  lidar_localization::PoseBackendKind backend,
+  const PoseBackendApplyContext & context)
+{
+  switch (backend) {
+    case lidar_localization::PoseBackendKind::kGtsamSmoother:
+      return applyGtsamPoseBackend(context);
+
+    case lidar_localization::PoseBackendKind::kImuPreintegration:
+      return applyImuPreintegrationPoseBackend(context);
+
+    case lidar_localization::PoseBackendKind::kTwistEkf:
+      return applyTwistEkfPoseBackend(context);
+
+    case lidar_localization::PoseBackendKind::kRawRegistration:
+      return applyRawRegistrationPoseBackend(context);
+  }
+
+  return applyRawRegistrationPoseBackend(context);
+}
+
+bool PCLLocalization::applyGtsamPoseBackend(const PoseBackendApplyContext & context)
+{
+  updateBackendRollPitch(context.observation);
+  return applyPlanarSmootherPoseBackendUpdate(
+    updateGtsamPoseBackend(context.observation, context.attempt, context.stamp_sec),
+    context);
+}
+
+void PCLLocalization::updateBackendRollPitch(
+  const lidar_localization::RegistrationObservation & observation)
+{
+  last_ndt_roll_ = static_cast<float>(observation.roll);
+  last_ndt_pitch_ = static_cast<float>(observation.pitch);
+}
+
+PCLLocalization::PlanarSmootherBackendUpdate
+PCLLocalization::updateGtsamPoseBackend(
+  const lidar_localization::RegistrationObservation & observation,
+  const lidar_localization::AlignmentAttempt & attempt,
+  double stamp_sec)
+{
+  if (!gtsam_smoother_.isInitialized()) {
+    gtsam_smoother_.initialize(
+      observation.x, observation.y, observation.z, observation.yaw, stamp_sec);
+  }
+
+  PlanarSmootherBackendUpdate update;
+  update.updated = gtsam_smoother_.update(
+    observation.x, observation.y, observation.z, observation.yaw,
+    attempt.fitness_score, stamp_sec);
+  update.pose = gtsam_smoother_.poseMatrix(last_ndt_roll_, last_ndt_pitch_);
+  update.rejected_status_message = "gtsam_update_rejected";
+  return update;
+}
+
+PCLLocalization::PlanarSmootherBackendUpdate
+PCLLocalization::updateTwistEkfPoseBackend(
+  const lidar_localization::RegistrationObservation & observation,
+  const lidar_localization::AlignmentAttempt & attempt,
+  double stamp_sec)
+{
+  if (!twist_ekf_.isInitialized()) {
+    twist_ekf_.initialize(
+      observation.x, observation.y, observation.z, observation.yaw, stamp_sec);
+  }
+
+  PlanarSmootherBackendUpdate update;
+  update.updated = twist_ekf_.update(
+    observation.x, observation.y, observation.z, observation.yaw, attempt.fitness_score);
+  update.pose = twist_ekf_.poseMatrix(last_ndt_roll_, last_ndt_pitch_);
+  update.rejected_status_message = "ekf_update_rejected";
+  return update;
+}
+
+bool PCLLocalization::applyPlanarSmootherPoseBackendUpdate(
+  const PlanarSmootherBackendUpdate & update,
+  const PoseBackendApplyContext & context)
+{
+  const auto backend_result = lidar_localization::applyPoseBackendUpdateStatus(
+    lidar_localization::makePoseBackendResult(
+      update.pose, context.gate_result.status_level, context.gate_result.status_message),
+    update.updated,
+    diagnostic_msgs::msg::DiagnosticStatus::WARN,
+    update.rejected_status_message);
+  applyPoseBackendResult(
+    backend_result, context.stamp, context.stamp_sec, context.attempt.fitness_score);
+  publishAlignmentStatusForAttempt(
+    context.stamp,
+    backend_result.status_level,
+    backend_result.status_message,
+    context.attempt,
+    context.filtered_point_count,
+    context.imu_prediction_ready);
+  return true;
+}
+
+bool PCLLocalization::applyImuPreintegrationPoseBackend(
+  const PoseBackendApplyContext & context)
+{
+  const auto imu_update = updateImuPreintegrationBackend(
+    context.observation, context.attempt, context.stamp_sec, context.imu_prediction_ready);
+  logImuPreintegrationBackendWarnings(imu_update, context.attempt);
+
+  const auto backend_result = makeImuPreintegrationPoseBackendResult(
+    imu_update, context.gate_result.status_level, context.gate_result.status_message);
+  applyPoseBackendResult(
+    backend_result, context.stamp, context.stamp_sec, context.attempt.fitness_score);
+  publishAlignmentStatusForAttempt(
+    context.stamp,
+    backend_result.status_level,
+    backend_result.status_message,
+    context.attempt,
+    context.filtered_point_count,
+    context.imu_prediction_ready);
+  return true;
+}
+
+lidar_localization::ImuPreintegrationGuardParams
+PCLLocalization::imuPreintegrationGuardParams() const
+{
+  return {
+    imu_prediction_correction_guard_translation_m_,
+    imu_prediction_correction_guard_yaw_deg_,
+    lidar_localization::kDefaultImuSmootherMeasurementTranslationGuardM,
+    lidar_localization::kDefaultImuSmootherMeasurementRotationGuardDeg};
+}
+
+void PCLLocalization::initializeImuPreintegrationSmootherIfNeeded(
+  const lidar_localization::RegistrationObservation & observation,
+  double stamp_sec)
+{
+  if (imu_smoother_.isInitialized()) {
     return;
   }
 
-  predicted_pose_matrix_ = rejected_pose_matrix;
-  predicted_pose_time_sec_ = stamp_sec;
-  ++consecutive_rejected_updates_;
+  imu_smoother_.initialize(
+    observation.x, observation.y, observation.z,
+    observation.roll, observation.pitch, observation.yaw,
+    0.0, 0.0, 0.0, stamp_sec);
+}
+
+PCLLocalization::ImuPreintegrationBackendUpdate
+PCLLocalization::updateImuPreintegrationBackend(
+  const lidar_localization::RegistrationObservation & observation,
+  const lidar_localization::AlignmentAttempt & attempt,
+  double stamp_sec,
+  bool imu_prediction_ready)
+{
+  initializeImuPreintegrationSmootherIfNeeded(observation, stamp_sec);
+
+  ImuPreintegrationBackendUpdate update;
+  update.pose = observation.pose_matrix;
+
+  const auto guard_params = imuPreintegrationGuardParams();
+  update.state = lidar_localization::beginImuPreintegrationBackendState(
+    guard_params,
+    lidar_localization::ImuPredictionCorrectionGuardInput{
+      imu_preintegration_fallback_mode_,
+      imu_prediction_ready,
+      attempt.correction_translation_m,
+      attempt.correction_yaw_deg});
+
+  if (update.state.should_update_smoother) {
+    update.updated = imu_smoother_.update(
+      observation.x, observation.y, observation.z,
+      observation.roll, observation.pitch, observation.yaw,
+      attempt.fitness_score, stamp_sec);
+
+    update.pose = imu_smoother_.poseMatrix();
+    if (update.pose.allFinite()) {
+      update.smoother_measurement_translation_delta_m = static_cast<double>(
+        (update.pose.block<3, 1>(0, 3) -
+        observation.pose_matrix.block<3, 1>(0, 3)).norm());
+      update.smoother_measurement_rotation_delta_deg =
+        lidar_localization::rotationDeltaDeg(observation.pose_matrix, update.pose);
+    }
+
+    update.state = lidar_localization::applyImuSmootherDivergenceDecision(
+      update.state,
+      guard_params,
+      lidar_localization::ImuSmootherDivergenceInput{
+        update.pose.allFinite(),
+        update.smoother_measurement_translation_delta_m,
+        update.smoother_measurement_rotation_delta_deg});
+  }
+
+  imu_preintegration_fallback_mode_ = update.state.fallback_mode;
+  if (lidar_localization::shouldUseImuMeasurementPose(update.state)) {
+    update.pose = observation.pose_matrix;
+    update.updated = true;
+  }
+
+  last_scan_stamp_for_imu_ = stamp_sec;
+  return update;
+}
+
+void PCLLocalization::logImuPreintegrationBackendWarnings(
+  const ImuPreintegrationBackendUpdate & update,
+  const lidar_localization::AlignmentAttempt & attempt)
+{
+  if (update.state.correction_guard_tripped) {
+    RCLCPP_WARN(
+      get_logger(),
+      "IMU prediction required a large measurement correction (translation=%.3f m, yaw=%.3f deg). Disabling IMU preintegration for the remainder of this run.",
+      attempt.correction_translation_m,
+      attempt.correction_yaw_deg);
+  }
+
+  if (update.state.smoother_diverged) {
+    RCLCPP_WARN(
+      get_logger(),
+      "IMU smoother diverged from measurement (translation=%.3f m, rotation=%.3f deg). Disabling IMU preintegration for the remainder of this run.",
+      update.smoother_measurement_translation_delta_m,
+      update.smoother_measurement_rotation_delta_deg);
+  }
+}
+
+lidar_localization::PoseBackendResult
+PCLLocalization::makeImuPreintegrationPoseBackendResult(
+  const ImuPreintegrationBackendUpdate & update,
+  uint8_t status_level,
+  const std::string & status_message) const
+{
+  const auto imu_status = lidar_localization::decideImuPreintegrationStatus(
+    update.state, update.updated);
+  return lidar_localization::applyPoseBackendWarningStatus(
+    lidar_localization::makePoseBackendResult(
+      update.pose, status_level, status_message),
+    imu_status.warning,
+    diagnostic_msgs::msg::DiagnosticStatus::WARN,
+    imu_status.status_message);
+}
+
+bool PCLLocalization::applyTwistEkfPoseBackend(
+  const PoseBackendApplyContext & context)
+{
+  updateBackendRollPitch(context.observation);
+  return applyPlanarSmootherPoseBackendUpdate(
+    updateTwistEkfPoseBackend(context.observation, context.attempt, context.stamp_sec),
+    context);
+}
+
+bool PCLLocalization::applyRawRegistrationPoseBackend(
+  const PoseBackendApplyContext & context)
+{
+  const auto localization_update =
+    lidar_localization::decideLocalizationUpdate(context.gate_result);
+  const auto backend_result =
+    lidar_localization::makePoseBackendResultFromLocalizationUpdate(
+      context.attempt.final_transformation,
+      context.gate_result.status_level,
+      context.gate_result.status_message,
+      localization_update);
+  publishAlignmentStatusForAttempt(
+    context.stamp,
+    backend_result.status_level,
+    backend_result.status_message,
+    context.attempt,
+    context.filtered_point_count,
+    context.imu_prediction_ready);
+
+  return applyPoseBackendResult(
+    backend_result, context.stamp, context.stamp_sec, context.attempt.fitness_score);
+}
+
+bool PCLLocalization::applyPoseBackendResult(
+  const lidar_localization::PoseBackendResult & result,
+  const builtin_interfaces::msg::Time & stamp,
+  double stamp_sec,
+  double fitness_score)
+{
+  if (
+    result.advance_prediction_without_measurement ||
+    result.update_prediction_from_rejected_measurement)
+  {
+    return applyPoseBackendPredictionOnlyResult(result, stamp_sec);
+  }
+
+  applyAcceptedPoseBackendResult(result, stamp, stamp_sec, fitness_score);
+  return result.continue_to_pose_publish;
+}
+
+bool PCLLocalization::applyPoseBackendPredictionOnlyResult(
+  const lidar_localization::PoseBackendResult & result,
+  double stamp_sec)
+{
+  if (result.advance_prediction_without_measurement) {
+    advancePredictionWithoutMeasurement(stamp_sec);
+    return result.continue_to_pose_publish;
+  }
+  if (result.update_prediction_from_rejected_measurement) {
+    updatePredictionFromRejectedMeasurement(result.pose_matrix, stamp_sec);
+    return result.continue_to_pose_publish;
+  }
+  return result.continue_to_pose_publish;
+}
+
+void PCLLocalization::applyAcceptedPoseBackendResult(
+  const lidar_localization::PoseBackendResult & result,
+  const builtin_interfaces::msg::Time & stamp,
+  double stamp_sec,
+  double fitness_score)
+{
+  if (result.update_current_pose) {
+    setCurrentPoseFromMatrix(result.pose_matrix, stamp);
+  }
+  if (result.fill_pose_covariance) {
+    fillPoseCovariance(fitness_score);
+  }
+  if (result.update_prediction_state) {
+    updatePredictionState(result.pose_matrix, stamp_sec);
+  }
 }
 
 void PCLLocalization::setCurrentPoseFromMatrix(
   const Eigen::Matrix4f & pose_matrix,
   const builtin_interfaces::msg::Time & stamp)
 {
-  Eigen::Matrix3d rot_mat = pose_matrix.block<3, 3>(0, 0).cast<double>();
-  Eigen::Quaterniond quat_eig(rot_mat);
-  geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
-
   corrent_pose_with_cov_stamped_ptr_->header.stamp = stamp;
   corrent_pose_with_cov_stamped_ptr_->header.frame_id = global_frame_id_;
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x = static_cast<double>(pose_matrix(0, 3));
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y = static_cast<double>(pose_matrix(1, 3));
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z = static_cast<double>(pose_matrix(2, 3));
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
+  corrent_pose_with_cov_stamped_ptr_->pose.pose =
+    lidar_localization::poseFromMatrix(pose_matrix);
 }
 
 void PCLLocalization::publishCurrentPose(const builtin_interfaces::msg::Time & stamp)
 {
   if (shutting_down_ || !pose_pub_ || !corrent_pose_with_cov_stamped_ptr_) {return;}
-  pose_pub_->publish(*corrent_pose_with_cov_stamped_ptr_);
-
-  geometry_msgs::msg::TransformStamped map_to_base_link_stamped;
-  map_to_base_link_stamped.header.stamp = stamp;
-  map_to_base_link_stamped.header.frame_id = global_frame_id_;
-  map_to_base_link_stamped.child_frame_id = base_frame_id_;
-  map_to_base_link_stamped.transform.translation.x = corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x;
-  map_to_base_link_stamped.transform.translation.y = corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y;
-  map_to_base_link_stamped.transform.translation.z = corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z;
-  map_to_base_link_stamped.transform.rotation = corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation;
-  if (!enable_map_odom_tf_) {
-    broadcaster_.sendTransform(map_to_base_link_stamped);
-  } else {
-    tf2::Transform map_to_base_link_tf;
-    tf2::fromMsg(map_to_base_link_stamped.transform, map_to_base_link_tf);
-
-    geometry_msgs::msg::TransformStamped odom_to_base_link_msg;
-    try {
-      odom_to_base_link_msg = tfbuffer_.lookupTransform(
-        odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(0.1));
-    } catch (tf2::TransformException & ex) {
-      RCLCPP_WARN(
-        this->get_logger(), "Could not get transform %s to %s: %s",
-        base_frame_id_.c_str(), odom_frame_id_.c_str(), ex.what());
-      return;
-    }
-    tf2::Transform odom_to_base_link_tf;
-    tf2::fromMsg(odom_to_base_link_msg.transform, odom_to_base_link_tf);
-
-    tf2::Transform map_to_odom_tf = map_to_base_link_tf * odom_to_base_link_tf.inverse();
-    geometry_msgs::msg::TransformStamped map_to_odom_stamped;
-    map_to_odom_stamped.header.stamp = stamp;
-    map_to_odom_stamped.header.frame_id = global_frame_id_;
-    map_to_odom_stamped.child_frame_id = odom_frame_id_;
-    map_to_odom_stamped.transform = tf2::toMsg(map_to_odom_tf);
-    broadcaster_.sendTransform(map_to_odom_stamped);
+  publishPoseMessage(*corrent_pose_with_cov_stamped_ptr_);
+  if (!publishPoseTransform(stamp, corrent_pose_with_cov_stamped_ptr_->pose.pose)) {
+    return;
   }
 
-  geometry_msgs::msg::PoseStamped pose_stamped;
-  pose_stamped.header.stamp = stamp;
-  pose_stamped.header.frame_id = global_frame_id_;
-  pose_stamped.pose = corrent_pose_with_cov_stamped_ptr_->pose.pose;
-  path_ptr_->poses.push_back(pose_stamped);
+  appendCurrentPoseToPath(stamp, corrent_pose_with_cov_stamped_ptr_->pose.pose);
+  publishPathMessage();
+}
+
+void PCLLocalization::publishPoseMessage(
+  const geometry_msgs::msg::PoseWithCovarianceStamped & pose)
+{
+  pose_pub_->publish(pose);
+}
+
+void PCLLocalization::appendCurrentPoseToPath(
+  const builtin_interfaces::msg::Time & stamp,
+  const geometry_msgs::msg::Pose & pose)
+{
+  lidar_localization::appendPoseToPath(
+    *path_ptr_,
+    lidar_localization::makePoseStamped(stamp, global_frame_id_, pose));
+}
+
+void PCLLocalization::publishPathMessage()
+{
   path_pub_->publish(*path_ptr_);
+}
+
+bool PCLLocalization::publishPoseTransform(
+  const builtin_interfaces::msg::Time & stamp,
+  const geometry_msgs::msg::Pose & pose)
+{
+  const geometry_msgs::msg::TransformStamped map_to_base_link_stamped =
+    lidar_localization::makeMapToBaseTransform(
+      stamp,
+      global_frame_id_,
+      base_frame_id_,
+      pose);
+  if (!enable_map_odom_tf_) {
+    broadcaster_.sendTransform(map_to_base_link_stamped);
+    return true;
+  }
+
+  return publishMapToOdomTransform(stamp, map_to_base_link_stamped);
+}
+
+bool PCLLocalization::publishMapToOdomTransform(
+  const builtin_interfaces::msg::Time & stamp,
+  const geometry_msgs::msg::TransformStamped & map_to_base_link_stamped)
+{
+  geometry_msgs::msg::TransformStamped odom_to_base_link_msg;
+  try {
+    odom_to_base_link_msg = tfbuffer_.lookupTransform(
+      odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(0.1));
+  } catch (tf2::TransformException & ex) {
+    RCLCPP_WARN(
+      this->get_logger(), "Could not get transform %s to %s: %s",
+      base_frame_id_.c_str(), odom_frame_id_.c_str(), ex.what());
+    return false;
+  }
+  broadcaster_.sendTransform(
+    lidar_localization::composeMapToOdomTransform(
+      stamp,
+      global_frame_id_,
+      odom_frame_id_,
+      map_to_base_link_stamped,
+      odom_to_base_link_msg));
+  return true;
 }
 
 void PCLLocalization::fillPoseCovariance(double fitness_score)
 {
-  // Nav2 PoseWithCovarianceStamped.pose.covariance: 6x6 row-major [36]
-  // Indices: [0]=xx, [7]=yy, [14]=zz, [21]=roll, [28]=pitch, [35]=yaw
-  auto & cov = corrent_pose_with_cov_stamped_ptr_->pose.covariance;
-  std::fill(cov.begin(), cov.end(), 0.0);
-
-  // Use EKF covariance matrix if available (most accurate)
   if (use_twist_ekf_ && twist_ekf_.isInitialized()) {
-    const auto & P = twist_ekf_.covariance();
-    // EKF state: [px,py,pz,vx,vy,vz,yaw,gyro_bias,speed_bias]
-    cov[0] = P(0, 0);    // xx
-    cov[1] = P(0, 1);    // xy
-    cov[6] = P(1, 0);    // yx
-    cov[7] = P(1, 1);    // yy
-    cov[14] = P(2, 2);   // zz
-    cov[35] = P(6, 6);   // yaw-yaw
-    // roll/pitch not estimated by EKF — use fitness-based estimate
-    double scale = std::max(1.0, fitness_score);
-    cov[21] = 0.001 * scale;
-    cov[28] = 0.001 * scale;
+    corrent_pose_with_cov_stamped_ptr_->pose.covariance =
+      lidar_localization::makeEkfPoseCovariance(twist_ekf_.covariance(), fitness_score);
     return;
   }
 
-  // Fitness-based covariance for smoother / standard paths
-  double scale = std::max(1.0, fitness_score);
-  cov[0] = 0.01 * scale;    // x
-  cov[7] = 0.01 * scale;    // y
-  cov[14] = 0.05 * scale;   // z
-  cov[21] = 0.001 * scale;  // roll
-  cov[28] = 0.001 * scale;  // pitch
-  cov[35] = 0.0005 * scale; // yaw
-}
-
-double PCLLocalization::computeEffectiveScoreThreshold(
-  double accepted_gap_sec,
-  double seed_translation_since_accept_m,
-  bool * post_reject_strict_active,
-  bool * open_loop_strict_active) const
-{
-  const bool post_reject_active =
-    enable_post_reject_strict_score_threshold_ &&
-    static_cast<int>(consecutive_rejected_updates_) >= post_reject_strict_min_rejections_ &&
-    post_reject_strict_score_threshold_ < score_threshold_;
-  const bool open_loop_active =
-    enable_open_loop_strict_score_threshold_ &&
-    accepted_gap_sec >= open_loop_strict_min_accepted_gap_sec_ &&
-    seed_translation_since_accept_m >= open_loop_strict_min_seed_translation_m_ &&
-    open_loop_strict_score_threshold_ < score_threshold_;
-
-  if (post_reject_strict_active != nullptr) {
-    *post_reject_strict_active = post_reject_active;
-  }
-  if (open_loop_strict_active != nullptr) {
-    *open_loop_strict_active = open_loop_active;
-  }
-
-  double effective_score_threshold = score_threshold_;
-  if (post_reject_active && post_reject_strict_score_threshold_ < effective_score_threshold) {
-    effective_score_threshold = post_reject_strict_score_threshold_;
-  }
-  if (open_loop_active && open_loop_strict_score_threshold_ < effective_score_threshold) {
-    effective_score_threshold = open_loop_strict_score_threshold_;
-  }
-  return effective_score_threshold;
-}
-
-bool PCLLocalization::computeBorderlineSeedGateActive(
-  double fitness_score,
-  double seed_translation_since_accept_m,
-  double effective_score_threshold) const
-{
-  return enable_borderline_seed_rejection_gate_ &&
-         borderline_seed_gate_score_threshold_ < effective_score_threshold &&
-         fitness_score > borderline_seed_gate_score_threshold_ &&
-         fitness_score <= effective_score_threshold &&
-         seed_translation_since_accept_m >= borderline_seed_gate_min_seed_translation_m_;
-}
-
-PCLLocalization::ReinitializationRequestDecision
-PCLLocalization::computeReinitializationRequest(
-  const builtin_interfaces::msg::Time & stamp,
-  const std::string & status_message,
-  double fitness_score,
-  double seed_translation_since_accept_m,
-  double accepted_gap_sec) const
-{
-  ReinitializationRequestDecision decision;
-
-  double effective_gap_sec = accepted_gap_sec;
-  if (!std::isfinite(effective_gap_sec) && have_last_accepted_pose_) {
-    effective_gap_sec = std::max(0.0, stamp_to_sec(stamp) - last_accepted_pose_time_sec_);
-  }
-
-  double effective_seed_translation_m = seed_translation_since_accept_m;
-  if (!std::isfinite(effective_seed_translation_m) && have_last_accepted_pose_) {
-    const Eigen::Matrix4f seed_delta_matrix =
-      last_accepted_pose_matrix_.inverse() * predicted_pose_matrix_;
-    effective_seed_translation_m = static_cast<double>(
-      seed_delta_matrix.block<3, 1>(0, 3).norm());
-  }
-
-  const bool target_unavailable = status_message == "local_map_crop_too_small";
-  const bool not_converged = status_message == "registration_not_converged";
-  const bool rejected_measurement = status_message.rfind("fitness_score_over_", 0) == 0;
-  const bool failure = target_unavailable || not_converged || rejected_measurement;
-
-  if (!failure) {
-    decision.reason = "not_failure";
-    return decision;
-  }
-
-  const double gap_component =
-    std::isfinite(effective_gap_sec) && reinitialization_trigger_gap_scale_sec_ > 0.0 ?
-    std::min(1.0, effective_gap_sec / reinitialization_trigger_gap_scale_sec_) : 0.0;
-  const double seed_component =
-    std::isfinite(effective_seed_translation_m) &&
-    reinitialization_trigger_seed_translation_scale_m_ > 0.0 ?
-    std::min(1.0, effective_seed_translation_m / reinitialization_trigger_seed_translation_scale_m_) : 0.0;
-  const double streak_component =
-    reinitialization_trigger_reject_streak_scale_ > 0.0 ?
-    std::min(
-      1.0,
-      static_cast<double>(consecutive_rejected_updates_) /
-      reinitialization_trigger_reject_streak_scale_) : 0.0;
-  const bool fitness_exploded =
-    std::isfinite(fitness_score) &&
-    fitness_score >= reinitialization_trigger_fitness_explosion_threshold_;
-
-  decision.score =
-    0.45 * gap_component +
-    0.30 * seed_component +
-    0.20 * streak_component +
-    (target_unavailable ? 0.15 : 0.0) +
-    (fitness_exploded ? 0.15 : 0.0);
-
-  if (decision.score < reinitialization_trigger_threshold_) {
-    decision.reason = "reinit_not_requested";
-    return decision;
-  }
-
-  decision.requested = true;
-  if (target_unavailable) {
-    decision.reason = "target_unavailable_reinit_requested";
-  } else if (fitness_exploded) {
-    decision.reason = "fitness_exploded_reinit_requested";
-  } else if (gap_component >= 1.0) {
-    decision.reason = "accepted_gap_reinit_requested";
-  } else if (streak_component >= 1.0) {
-    decision.reason = "reject_streak_reinit_requested";
-  } else {
-    decision.reason = "reinit_score_exceeded";
-  }
-  return decision;
+  corrent_pose_with_cov_stamped_ptr_->pose.covariance =
+    lidar_localization::makeFitnessPoseCovariance(fitness_score);
 }
 
 PCLLocalization::ReinitializationRequestDecision
@@ -2541,113 +2570,22 @@ PCLLocalization::applyReinitializationRequestLatch(
   const builtin_interfaces::msg::Time & stamp,
   const ReinitializationRequestDecision & decision)
 {
-  if (!enable_reinitialization_request_latch_) {
-    return decision;
-  }
+  const auto latch_result = lidar_localization::applyReinitializationRequestLatch(
+    lidar_localization::ReinitializationRequestLatchInput{
+      enable_reinitialization_request_latch_,
+      lidar_localization::ReinitializationRequestLatchState{
+        reinitialization_request_latched_,
+        reinitialization_request_latch_reason_,
+        reinitialization_request_latch_score_,
+        reinitialization_request_latch_stamp_sec_},
+      decision,
+      stamp_to_sec(stamp)});
 
-  if (decision.requested) {
-    if (!reinitialization_request_latched_) {
-      reinitialization_request_latch_stamp_sec_ = stamp_to_sec(stamp);
-      reinitialization_request_latch_reason_ = decision.reason;
-    }
-    reinitialization_request_latched_ = true;
-    reinitialization_request_latch_score_ =
-      std::max(reinitialization_request_latch_score_, decision.score);
-  }
-
-  if (!reinitialization_request_latched_) {
-    return decision;
-  }
-
-  ReinitializationRequestDecision latched_decision = decision;
-  latched_decision.requested = true;
-  latched_decision.reason = reinitialization_request_latch_reason_;
-  latched_decision.score = std::max(reinitialization_request_latch_score_, decision.score);
-  return latched_decision;
-}
-
-const char * PCLLocalization::recoverySupervisorStateName(
-  RecoverySupervisorState state) const
-{
-  switch (state) {
-    case RecoverySupervisorState::kTracking:
-      return "tracking";
-    case RecoverySupervisorState::kDegraded:
-      return "degraded";
-    case RecoverySupervisorState::kRecovering:
-      return "recovering";
-    case RecoverySupervisorState::kReinitializationRequested:
-      return "reinitialization_requested";
-  }
-  return "unknown";
-}
-
-bool PCLLocalization::isRecoveryFailureStatus(const std::string & status_message) const
-{
-  return status_message == "local_map_crop_too_small" ||
-         status_message == "registration_not_converged" ||
-         status_message == "filtered_scan_empty" ||
-         status_message == "scan_missing_xyz_field" ||
-         status_message.rfind("fitness_score_over_", 0) == 0;
-}
-
-PCLLocalization::RecoverySupervisorState
-PCLLocalization::classifyRecoverySupervisorState(
-  uint8_t level,
-  const std::string & status_message,
-  const ReinitializationRequestDecision & reinitialization_request) const
-{
-  if (reinitialization_request.requested) {
-    return RecoverySupervisorState::kReinitializationRequested;
-  }
-  if (
-    status_message == "recovery_retry_from_last_pose_recovered" ||
-    isRecoveryFailureStatus(status_message) ||
-    consecutive_rejected_updates_ > 0)
-  {
-    return RecoverySupervisorState::kRecovering;
-  }
-  if (level != diagnostic_msgs::msg::DiagnosticStatus::OK) {
-    return RecoverySupervisorState::kDegraded;
-  }
-  return RecoverySupervisorState::kTracking;
-}
-
-std::string PCLLocalization::classifyRecoverySupervisorAction(
-  uint8_t level,
-  const std::string & status_message,
-  const ReinitializationRequestDecision & reinitialization_request) const
-{
-  if (reinitialization_request.requested) {
-    return "request_reinitialization";
-  }
-  if (status_message == "recovery_retry_from_last_pose_recovered") {
-    return "retry_from_last_pose";
-  }
-  if (status_message.find("_seeded") != std::string::npos) {
-    return "reuse_rejected_seed_for_prediction";
-  }
-  if (
-    status_message == "local_map_crop_too_small" ||
-    status_message == "registration_not_converged" ||
-    status_message == "filtered_scan_empty" ||
-    status_message == "scan_missing_xyz_field")
-  {
-    return "advance_prediction_without_measurement";
-  }
-  if (
-    status_message.rfind("fitness_score_over_", 0) == 0 &&
-    status_message.find("_rejected") != std::string::npos)
-  {
-    return "reject_measurement";
-  }
-  if (consecutive_rejected_updates_ > 0) {
-    return "accept_measurement_after_recovery";
-  }
-  if (level != diagnostic_msgs::msg::DiagnosticStatus::OK) {
-    return "accept_measurement_with_warning";
-  }
-  return "accept_measurement";
+  reinitialization_request_latched_ = latch_result.state.latched;
+  reinitialization_request_latch_reason_ = latch_result.state.reason;
+  reinitialization_request_latch_score_ = latch_result.state.score;
+  reinitialization_request_latch_stamp_sec_ = latch_result.state.stamp_sec;
+  return latch_result.decision;
 }
 
 void PCLLocalization::updateRecoverySupervisorState(
@@ -2656,42 +2594,97 @@ void PCLLocalization::updateRecoverySupervisorState(
   const std::string & action)
 {
   const double stamp_sec = stamp_to_sec(stamp);
-  if (recovery_supervisor_state_entered_stamp_sec_ <= 0.0) {
-    recovery_supervisor_state_entered_stamp_sec_ = stamp_sec;
-  }
-  if (next_state != recovery_supervisor_state_) {
+  const auto update = lidar_localization::updateRecoverySupervisorRuntimeState(
+    lidar_localization::RecoverySupervisorStateUpdateInput{
+      lidar_localization::RecoverySupervisorRuntimeState{
+        recovery_supervisor_state_,
+        recovery_supervisor_action_,
+        recovery_supervisor_state_entered_stamp_sec_,
+        recovery_supervisor_transition_count_},
+      next_state,
+      action,
+      stamp_sec});
+
+  if (update.transitioned) {
     RCLCPP_INFO(
       get_logger(),
       "Recovery supervisor state transition: %s -> %s (%s)",
-      recoverySupervisorStateName(recovery_supervisor_state_),
-      recoverySupervisorStateName(next_state),
+      lidar_localization::recoverySupervisorStateName(update.previous_state),
+      lidar_localization::recoverySupervisorStateName(update.state.state),
       action.c_str());
-    recovery_supervisor_state_ = next_state;
-    recovery_supervisor_state_entered_stamp_sec_ = stamp_sec;
-    ++recovery_supervisor_transition_count_;
   }
-  recovery_supervisor_action_ = action;
+
+  recovery_supervisor_state_ = update.state.state;
+  recovery_supervisor_action_ = update.state.action;
+  recovery_supervisor_state_entered_stamp_sec_ = update.state.entered_stamp_sec;
+  recovery_supervisor_transition_count_ = update.state.transition_count;
 }
 
 void PCLLocalization::publishReinitializationRequest(
   const builtin_interfaces::msg::Time & stamp,
   const ReinitializationRequestDecision & decision)
 {
-  reinitialization_requested_ = decision.requested;
-  reinitialization_request_reason_ = decision.reason;
-  reinitialization_request_score_ = decision.score;
+  (void)stamp;
+  const bool publisher_ready =
+    reinitialization_request_pub_ && reinitialization_request_pub_->is_activated();
+  const auto output = lidar_localization::prepareReinitializationRequestOutput(
+    lidar_localization::ReinitializationRequestOutputInput{
+      enable_reinitialization_request_output_,
+      publisher_ready,
+      decision});
 
-  if (
-    !enable_reinitialization_request_output_ ||
-    !reinitialization_request_pub_ ||
-    !reinitialization_request_pub_->is_activated())
-  {
+  reinitialization_requested_ = output.state.requested;
+  reinitialization_request_reason_ = output.state.reason;
+  reinitialization_request_score_ = output.state.score;
+
+  if (!output.should_publish) {
     return;
   }
 
   std_msgs::msg::Bool msg;
-  msg.data = decision.requested;
+  msg.data = output.message_value;
   reinitialization_request_pub_->publish(msg);
+}
+
+lidar_localization::MeasurementGateParams PCLLocalization::measurementGateParams() const
+{
+  return lidar_localization::makeMeasurementGateParams(measurement_gate_config_);
+}
+
+lidar_localization::ReinitializationTriggerParams
+PCLLocalization::reinitializationTriggerParams() const
+{
+  return reinitialization_trigger_config_;
+}
+
+lidar_localization::RecoveryRetryFromLastPoseParams
+PCLLocalization::recoveryRetryFromLastPoseParams() const
+{
+  return recovery_retry_from_last_pose_config_;
+}
+
+void PCLLocalization::publishAlignmentStatusForAttempt(
+  const builtin_interfaces::msg::Time & stamp,
+  uint8_t level,
+  const std::string & message,
+  const lidar_localization::AlignmentAttempt & attempt,
+  std::size_t filtered_point_count,
+  bool imu_prediction_active)
+{
+  publishAlignmentStatus(
+    stamp,
+    level,
+    message,
+    attempt.has_converged,
+    attempt.fitness_score,
+    attempt.alignment_time_sec,
+    filtered_point_count,
+    attempt.correction_translation_m,
+    attempt.correction_yaw_deg,
+    attempt.seed_translation_since_accept_m,
+    attempt.seed_yaw_since_accept_deg,
+    attempt.accepted_gap_sec,
+    imu_prediction_active);
 }
 
 void PCLLocalization::publishAlignmentStatus(
@@ -2711,169 +2704,175 @@ void PCLLocalization::publishAlignmentStatus(
 {
   if (!status_pub_) {return;}
 
-  diagnostic_msgs::msg::DiagnosticStatus status;
-  status.level = level;
-  status.name = "lidar_localization_ros2/alignment";
-  status.message = message;
-  status.hardware_id = registration_method_;
-
-  auto append_value =
-    [&status](const std::string & key, const std::string & value)
-    {
-      diagnostic_msgs::msg::KeyValue kv;
-      kv.key = key;
-      kv.value = value;
-      status.values.push_back(kv);
-    };
-
-  append_value("registration_method", registration_method_);
-  append_value("has_converged", has_converged ? "true" : "false");
-  append_value("fitness_score", std::to_string(fitness_score));
-  append_value("score_threshold", std::to_string(score_threshold_));
-  bool post_reject_strict_active = false;
-  bool open_loop_strict_active = false;
-  const double effective_score_threshold = computeEffectiveScoreThreshold(
-    accepted_gap_sec,
-    seed_translation_since_accept_m,
-    &post_reject_strict_active,
-    &open_loop_strict_active);
-  const bool borderline_seed_gate_active = computeBorderlineSeedGateActive(
+  const AlignmentStatusPublishInput publish_input{
+    stamp,
+    level,
+    message,
+    has_converged,
     fitness_score,
+    alignment_time_sec,
+    filtered_point_count,
+    correction_translation_m,
+    correction_yaw_deg,
     seed_translation_since_accept_m,
-    effective_score_threshold);
-  ReinitializationRequestDecision reinitialization_request =
-    computeReinitializationRequest(
-      stamp,
-      message,
-      fitness_score,
-      seed_translation_since_accept_m,
-      accepted_gap_sec);
-  reinitialization_request =
-    applyReinitializationRequestLatch(stamp, reinitialization_request);
-  const RecoverySupervisorState recovery_state =
-    classifyRecoverySupervisorState(level, message, reinitialization_request);
-  const std::string recovery_action =
-    classifyRecoverySupervisorAction(level, message, reinitialization_request);
-  updateRecoverySupervisorState(stamp, recovery_state, recovery_action);
-  const double stamp_sec = stamp_to_sec(stamp);
-  const double recovery_state_age_sec =
-    recovery_supervisor_state_entered_stamp_sec_ > 0.0 ?
-    std::max(0.0, stamp_sec - recovery_supervisor_state_entered_stamp_sec_) : 0.0;
-  const double reinitialization_request_latch_age_sec =
-    reinitialization_request_latched_ && reinitialization_request_latch_stamp_sec_ > 0.0 ?
-    std::max(0.0, stamp_sec - reinitialization_request_latch_stamp_sec_) : 0.0;
-  append_value("effective_score_threshold", std::to_string(effective_score_threshold));
-  append_value(
-    "post_reject_strict_score_threshold_active",
-    post_reject_strict_active ? "true" : "false");
-  append_value(
-    "open_loop_strict_score_threshold_active",
-    open_loop_strict_active ? "true" : "false");
-  append_value(
-    "borderline_seed_rejection_gate_active",
-    borderline_seed_gate_active ? "true" : "false");
-  append_value("alignment_time_sec", std::to_string(alignment_time_sec));
-  append_value("filtered_point_count", std::to_string(filtered_point_count));
-  append_value("correction_translation_m", std::to_string(correction_translation_m));
-  append_value("correction_yaw_deg", std::to_string(correction_yaw_deg));
-  append_value(
-    "seed_translation_since_accept_m",
-    std::to_string(seed_translation_since_accept_m));
-  append_value(
-    "seed_yaw_since_accept_deg",
-    std::to_string(seed_yaw_since_accept_deg));
-  append_value("accepted_gap_sec", std::to_string(accepted_gap_sec));
-  append_value(
-    "consecutive_rejected_updates",
-    std::to_string(consecutive_rejected_updates_));
-  append_value("recovery_state", recoverySupervisorStateName(recovery_supervisor_state_));
-  append_value("recovery_action", recovery_supervisor_action_);
-  append_value("recovery_state_age_sec", std::to_string(recovery_state_age_sec));
-  append_value(
-    "recovery_state_transition_count",
-    std::to_string(recovery_supervisor_transition_count_));
-  append_value(
-    "imu_prediction_active",
-    imu_prediction_active ? "true" : "false");
-  append_value(
-    "reinitialization_requested",
-    reinitialization_request.requested ? "true" : "false");
-  append_value(
-    "reinitialization_request_reason",
-    reinitialization_request.reason);
-  append_value(
-    "reinitialization_request_score",
-    std::to_string(reinitialization_request.score));
-  append_value(
-    "reinitialization_request_latched",
-    reinitialization_request_latched_ ? "true" : "false");
-  append_value(
-    "reinitialization_request_latch_age_sec",
-    std::to_string(reinitialization_request_latch_age_sec));
-  append_value("map_received", map_recieved_ ? "true" : "false");
-  append_value("initialpose_received", initialpose_recieved_ ? "true" : "false");
+    seed_yaw_since_accept_deg,
+    accepted_gap_sec,
+    imu_prediction_active};
 
+  const auto evaluation = evaluateAlignmentStatus(stamp, publish_input);
+  auto status = makeAlignmentDiagnosticStatus(evaluation.status_input);
+
+  appendAlignmentDiagnosticValues(
+    status,
+    prepareAlignmentDiagnosticValuesInput(
+      evaluation.status_input,
+      evaluation.status_preparation,
+      evaluation.reinitialization_request));
+  publishAlignmentDiagnosticStatus(stamp, status);
+  publishReinitializationRequest(stamp, evaluation.reinitialization_request);
+}
+
+lidar_localization::AlignmentStatusInput PCLLocalization::makeAlignmentStatusInput(
+  const AlignmentStatusPublishInput & input) const
+{
+  const double stamp_sec = stamp_to_sec(input.stamp);
+  return lidar_localization::makeAlignmentStatusInput(
+    lidar_localization::AlignmentStatusObservation{
+      input.level,
+      input.message,
+      input.has_converged,
+      input.fitness_score,
+      input.alignment_time_sec,
+      input.filtered_point_count,
+      input.correction_translation_m,
+      input.correction_yaw_deg,
+      input.seed_translation_since_accept_m,
+      input.seed_yaw_since_accept_deg,
+      input.accepted_gap_sec,
+      input.imu_prediction_active},
+    makeAlignmentStatusRuntimeContext(stamp_sec));
+}
+
+lidar_localization::AlignmentStatusRuntimeContext
+PCLLocalization::makeAlignmentStatusRuntimeContext(double stamp_sec) const
+{
+  const auto fallback_seed_metrics = lidar_localization::computeAlignmentSeedMetrics(
+    have_last_accepted_pose_,
+    last_accepted_pose_matrix_,
+    predicted_pose_matrix_,
+    stamp_sec,
+    last_accepted_pose_time_sec_);
+
+  return lidar_localization::AlignmentStatusRuntimeContext{
+    registration_method_,
+    consecutive_rejected_updates_,
+    have_last_accepted_pose_,
+    stamp_sec,
+    last_accepted_pose_time_sec_,
+    fallback_seed_metrics.translation_since_accept_m,
+    map_recieved_,
+    initialpose_recieved_,
+    measurementGateParams(),
+    reinitializationTriggerParams()};
+}
+
+diagnostic_msgs::msg::DiagnosticStatus PCLLocalization::makeAlignmentDiagnosticStatus(
+  const lidar_localization::AlignmentStatusInput & status_input) const
+{
+  diagnostic_msgs::msg::DiagnosticStatus status;
+  status.level = status_input.level;
+  status.name = "lidar_localization_ros2/alignment";
+  status.message = status_input.message;
+  status.hardware_id = status_input.registration_method;
+  return status;
+}
+
+PCLLocalization::AlignmentStatusEvaluation PCLLocalization::evaluateAlignmentStatus(
+  const builtin_interfaces::msg::Time & stamp,
+  const AlignmentStatusPublishInput & publish_input)
+{
+  AlignmentStatusEvaluation evaluation;
+  evaluation.status_input = makeAlignmentStatusInput(publish_input);
+  evaluation.status_preparation =
+    lidar_localization::prepareAlignmentStatus(evaluation.status_input);
+  evaluation.reinitialization_request =
+    applyReinitializationRequestLatch(
+      stamp,
+      evaluation.status_preparation.reinitialization_request);
+
+  const auto recovery_evaluation =
+    lidar_localization::evaluateAlignmentStatusRecovery(
+      evaluation.status_input,
+      evaluation.reinitialization_request);
+  updateRecoverySupervisorState(
+    stamp,
+    recovery_evaluation.state,
+    recovery_evaluation.action);
+  return evaluation;
+}
+
+lidar_localization::AlignmentDiagnosticValuesInput
+PCLLocalization::prepareAlignmentDiagnosticValuesInput(
+  const lidar_localization::AlignmentStatusInput & status_input,
+  const lidar_localization::AlignmentStatusPreparation & status_preparation,
+  const ReinitializationRequestDecision & reinitialization_request) const
+{
+  return lidar_localization::makeAlignmentStatusDiagnosticValuesInput(
+    lidar_localization::makeAlignmentStatusDiagnosticInput(
+      status_input,
+      status_preparation,
+      reinitialization_request,
+      lidar_localization::AlignmentStatusDiagnosticRuntimeContext{
+        lidar_localization::recoverySupervisorStateName(recovery_supervisor_state_),
+        recovery_supervisor_action_,
+        recovery_supervisor_state_entered_stamp_sec_,
+        recovery_supervisor_transition_count_,
+        reinitialization_request_latched_,
+        reinitialization_request_latch_stamp_sec_}));
+}
+
+void PCLLocalization::appendAlignmentDiagnosticValues(
+  diagnostic_msgs::msg::DiagnosticStatus & status,
+  const lidar_localization::AlignmentDiagnosticValuesInput & diagnostic_values_input) const
+{
+  for (const auto & value :
+    lidar_localization::makeRosAlignmentDiagnosticKeyValues(diagnostic_values_input))
+  {
+    status.values.push_back(value);
+  }
+}
+
+diagnostic_msgs::msg::DiagnosticArray PCLLocalization::makeAlignmentDiagnosticArray(
+  const builtin_interfaces::msg::Time & stamp,
+  const diagnostic_msgs::msg::DiagnosticStatus & status) const
+{
   diagnostic_msgs::msg::DiagnosticArray status_array;
   status_array.header.stamp = stamp;
   status_array.header.frame_id = base_frame_id_;
   status_array.status.push_back(status);
-  status_pub_->publish(status_array);
-  publishReinitializationRequest(stamp, reinitialization_request);
+  return status_array;
+}
+
+void PCLLocalization::publishAlignmentDiagnosticStatus(
+  const builtin_interfaces::msg::Time & stamp,
+  const diagnostic_msgs::msg::DiagnosticStatus & status)
+{
+  status_pub_->publish(makeAlignmentDiagnosticArray(stamp, status));
 }
 
 void PCLLocalization::timerPublishPose()
 {
   if (shutting_down_ || !pose_pub_ || !path_pub_ || !path_ptr_) {return;}
   if (!corrent_pose_with_cov_stamped_ptr_) {return;}
-  geometry_msgs::msg::PoseWithCovarianceStamped pose_copy = *corrent_pose_with_cov_stamped_ptr_;
-  pose_copy.header.stamp = now();
+  geometry_msgs::msg::PoseWithCovarianceStamped pose_copy =
+    lidar_localization::stampPoseWithCovariance(*corrent_pose_with_cov_stamped_ptr_, now());
 
-  geometry_msgs::msg::PoseStamped stamped;
-  stamped.header = pose_copy.header;
-  stamped.header.frame_id = global_frame_id_;
-  stamped.pose = pose_copy.pose.pose;
-  path_ptr_->poses.push_back(stamped);
+  appendCurrentPoseToPath(pose_copy.header.stamp, pose_copy.pose.pose);
 
   nav_msgs::msg::Path path_copy = *path_ptr_;
 
-  pose_pub_->publish(pose_copy);
+  publishPoseMessage(pose_copy);
   path_pub_->publish(path_copy);
 
-  geometry_msgs::msg::TransformStamped map_to_base_link_stamped;
-  map_to_base_link_stamped.header.stamp = pose_copy.header.stamp;
-  map_to_base_link_stamped.header.frame_id = global_frame_id_;
-  map_to_base_link_stamped.child_frame_id = base_frame_id_;
-  map_to_base_link_stamped.transform.translation.x = pose_copy.pose.pose.position.x;
-  map_to_base_link_stamped.transform.translation.y = pose_copy.pose.pose.position.y;
-  map_to_base_link_stamped.transform.translation.z = pose_copy.pose.pose.position.z;
-  map_to_base_link_stamped.transform.rotation = pose_copy.pose.pose.orientation;
-
-  if (!enable_map_odom_tf_) {
-    broadcaster_.sendTransform(map_to_base_link_stamped);
-  } else {
-    tf2::Transform map_to_base_link_tf;
-    tf2::fromMsg(map_to_base_link_stamped.transform, map_to_base_link_tf);
-
-    geometry_msgs::msg::TransformStamped odom_to_base_link_msg;
-    try {
-      odom_to_base_link_msg = tfbuffer_.lookupTransform(
-        odom_frame_id_, base_frame_id_, pose_copy.header.stamp, rclcpp::Duration::from_seconds(0.1));
-    } catch (tf2::TransformException & ex) {
-      RCLCPP_WARN(
-        this->get_logger(), "Could not get transform %s to %s: %s",
-        base_frame_id_.c_str(), odom_frame_id_.c_str(), ex.what());
-      return;
-    }
-    tf2::Transform odom_to_base_link_tf;
-    tf2::fromMsg(odom_to_base_link_msg.transform, odom_to_base_link_tf);
-
-    tf2::Transform map_to_odom_tf = map_to_base_link_tf * odom_to_base_link_tf.inverse();
-    geometry_msgs::msg::TransformStamped map_to_odom_stamped;
-    map_to_odom_stamped.header.stamp = pose_copy.header.stamp;
-    map_to_odom_stamped.header.frame_id = global_frame_id_;
-    map_to_odom_stamped.child_frame_id = odom_frame_id_;
-    map_to_odom_stamped.transform = tf2::toMsg(map_to_odom_tf);
-    
-    broadcaster_.sendTransform(map_to_odom_stamped);
-  }
+  publishPoseTransform(pose_copy.header.stamp, pose_copy.pose.pose);
 }
