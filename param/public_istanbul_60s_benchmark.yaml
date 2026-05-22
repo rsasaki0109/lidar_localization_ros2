@@ -31,6 +31,7 @@
     max_twist_prediction_dt: 0.5
     use_imu: false
     use_imu_preintegration: true
+    imu_preintegration_use_base_frame_transform: false
     imu_prediction_correction_guard_translation_m: 2.0
     imu_prediction_correction_guard_yaw_deg: 4.0
     enable_debug: false

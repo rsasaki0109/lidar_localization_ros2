@@ -25,6 +25,7 @@ find_package(tf2_sensor_msgs  REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(PCL REQUIRED)
+find_package(Eigen3 REQUIRED)
 find_package(ndt_omp_ros2 REQUIRED)
 find_package(small_gicp QUIET CONFIG)
 find_package(nav2_util QUIET)
@@ -184,5 +185,294 @@ install(DIRECTORY
   param
   DESTINATION share/${PROJECT_NAME}/
 )
+
+if(BUILD_TESTING)
+  add_executable(test_registration_seed_policy
+    test/test_registration_seed_policy.cpp)
+  target_include_directories(test_registration_seed_policy PRIVATE
+    include)
+  add_test(
+    NAME registration_seed_policy
+    COMMAND test_registration_seed_policy
+  )
+
+  add_executable(test_scan_admission_policy
+    test/test_scan_admission_policy.cpp)
+  target_include_directories(test_scan_admission_policy PRIVATE
+    include)
+  add_test(
+    NAME scan_admission_policy
+    COMMAND test_scan_admission_policy
+  )
+
+  add_executable(test_ndt_initializer_policy
+    test/test_ndt_initializer_policy.cpp)
+  target_include_directories(test_ndt_initializer_policy PRIVATE
+    include)
+  add_test(
+    NAME ndt_initializer_policy
+    COMMAND test_ndt_initializer_policy
+  )
+
+  add_executable(test_registration_backend_policy
+    test/test_registration_backend_policy.cpp)
+  target_include_directories(test_registration_backend_policy PRIVATE
+    include)
+  add_test(
+    NAME registration_backend_policy
+    COMMAND test_registration_backend_policy
+  )
+
+  add_executable(test_alignment_diagnostics_policy
+    test/test_alignment_diagnostics_policy.cpp)
+  target_include_directories(test_alignment_diagnostics_policy PRIVATE
+    include)
+  add_test(
+    NAME alignment_diagnostics_policy
+    COMMAND test_alignment_diagnostics_policy
+  )
+
+  add_executable(test_alignment_diagnostic_ros_adapter
+    test/test_alignment_diagnostic_ros_adapter.cpp)
+  target_include_directories(test_alignment_diagnostic_ros_adapter PRIVATE
+    include)
+  ament_target_dependencies(test_alignment_diagnostic_ros_adapter
+    diagnostic_msgs)
+  add_test(
+    NAME alignment_diagnostic_ros_adapter
+    COMMAND test_alignment_diagnostic_ros_adapter
+  )
+
+  add_executable(test_alignment_status_policy
+    test/test_alignment_status_policy.cpp)
+  target_include_directories(test_alignment_status_policy PRIVATE
+    include)
+  add_test(
+    NAME alignment_status_policy
+    COMMAND test_alignment_status_policy
+  )
+
+  add_executable(test_alignment_attempt_policy
+    test/test_alignment_attempt_policy.cpp)
+  target_include_directories(test_alignment_attempt_policy PRIVATE
+    include)
+  target_link_libraries(test_alignment_attempt_policy
+    Eigen3::Eigen)
+  add_test(
+    NAME alignment_attempt_policy
+    COMMAND test_alignment_attempt_policy
+  )
+
+  add_executable(test_alignment_retry_policy
+    test/test_alignment_retry_policy.cpp)
+  target_include_directories(test_alignment_retry_policy PRIVATE
+    include)
+  add_test(
+    NAME alignment_retry_policy
+    COMMAND test_alignment_retry_policy
+  )
+
+  add_executable(test_alignment_pipeline_policy
+    test/test_alignment_pipeline_policy.cpp)
+  target_include_directories(test_alignment_pipeline_policy PRIVATE
+    include)
+  target_link_libraries(test_alignment_pipeline_policy
+    Eigen3::Eigen)
+  add_test(
+    NAME alignment_pipeline_policy
+    COMMAND test_alignment_pipeline_policy
+  )
+
+  add_executable(test_registration_observation_policy
+    test/test_registration_observation_policy.cpp)
+  target_include_directories(test_registration_observation_policy PRIVATE
+    include)
+  target_link_libraries(test_registration_observation_policy
+    Eigen3::Eigen)
+  add_test(
+    NAME registration_observation_policy
+    COMMAND test_registration_observation_policy
+  )
+
+  add_executable(test_pose_backend_selection_policy
+    test/test_pose_backend_selection_policy.cpp)
+  target_include_directories(test_pose_backend_selection_policy PRIVATE
+    include)
+  add_test(
+    NAME pose_backend_selection_policy
+    COMMAND test_pose_backend_selection_policy
+  )
+
+  add_executable(test_pose_backend_result_policy
+    test/test_pose_backend_result_policy.cpp)
+  target_include_directories(test_pose_backend_result_policy PRIVATE
+    include)
+  target_link_libraries(test_pose_backend_result_policy
+    Eigen3::Eigen)
+  add_test(
+    NAME pose_backend_result_policy
+    COMMAND test_pose_backend_result_policy
+  )
+
+  add_executable(test_imu_preintegration_guard_policy
+    test/test_imu_preintegration_guard_policy.cpp)
+  target_include_directories(test_imu_preintegration_guard_policy PRIVATE
+    include)
+  add_test(
+    NAME imu_preintegration_guard_policy
+    COMMAND test_imu_preintegration_guard_policy
+  )
+
+  add_executable(test_prediction_state_policy
+    test/test_prediction_state_policy.cpp)
+  target_include_directories(test_prediction_state_policy PRIVATE
+    include)
+  target_link_libraries(test_prediction_state_policy
+    Eigen3::Eigen)
+  add_test(
+    NAME prediction_state_policy
+    COMMAND test_prediction_state_policy
+  )
+
+  add_executable(test_pose_publish_policy
+    test/test_pose_publish_policy.cpp)
+  target_include_directories(test_pose_publish_policy PRIVATE
+    include)
+  ament_target_dependencies(test_pose_publish_policy
+    geometry_msgs
+    nav_msgs
+    tf2_geometry_msgs)
+  target_link_libraries(test_pose_publish_policy
+    Eigen3::Eigen)
+  add_test(
+    NAME pose_publish_policy
+    COMMAND test_pose_publish_policy
+  )
+
+  add_executable(test_pose_covariance_policy
+    test/test_pose_covariance_policy.cpp)
+  target_include_directories(test_pose_covariance_policy PRIVATE
+    include)
+  target_link_libraries(test_pose_covariance_policy
+    Eigen3::Eigen)
+  add_test(
+    NAME pose_covariance_policy
+    COMMAND test_pose_covariance_policy
+  )
+
+  add_executable(test_reinitialization_latch_policy
+    test/test_reinitialization_latch_policy.cpp)
+  target_include_directories(test_reinitialization_latch_policy PRIVATE
+    include)
+  add_test(
+    NAME reinitialization_latch_policy
+    COMMAND test_reinitialization_latch_policy
+  )
+
+  add_executable(test_reinitialization_request_output_policy
+    test/test_reinitialization_request_output_policy.cpp)
+  target_include_directories(test_reinitialization_request_output_policy PRIVATE
+    include)
+  add_test(
+    NAME reinitialization_request_output_policy
+    COMMAND test_reinitialization_request_output_policy
+  )
+
+  add_executable(test_recovery_supervisor_state_policy
+    test/test_recovery_supervisor_state_policy.cpp)
+  target_include_directories(test_recovery_supervisor_state_policy PRIVATE
+    include)
+  add_test(
+    NAME recovery_supervisor_state_policy
+    COMMAND test_recovery_supervisor_state_policy
+  )
+
+  add_executable(test_parameter_validation_policy
+    test/test_parameter_validation_policy.cpp)
+  target_include_directories(test_parameter_validation_policy PRIVATE
+    include)
+  add_test(
+    NAME parameter_validation_policy
+    COMMAND test_parameter_validation_policy
+  )
+
+  add_executable(test_point_cloud_conversion
+    test/test_point_cloud_conversion.cpp)
+  target_include_directories(test_point_cloud_conversion PRIVATE
+    include
+    ${PCL_INCLUDE_DIRS})
+  ament_target_dependencies(test_point_cloud_conversion
+    pcl_conversions
+    sensor_msgs)
+  target_link_libraries(test_point_cloud_conversion
+    ${PCL_LIBRARIES})
+  add_test(
+    NAME point_cloud_conversion
+    COMMAND test_point_cloud_conversion
+  )
+
+  add_executable(test_local_map_target_policy
+    test/test_local_map_target_policy.cpp)
+  target_include_directories(test_local_map_target_policy PRIVATE
+    include
+    ${PCL_INCLUDE_DIRS})
+  target_link_libraries(test_local_map_target_policy
+    ${PCL_LIBRARIES})
+  add_test(
+    NAME local_map_target_policy
+    COMMAND test_local_map_target_policy
+  )
+
+  add_executable(test_map_initialization_policy
+    test/test_map_initialization_policy.cpp)
+  target_include_directories(test_map_initialization_policy PRIVATE
+    include
+    ${PCL_INCLUDE_DIRS})
+  ament_target_dependencies(test_map_initialization_policy
+    pcl_conversions
+    sensor_msgs)
+  target_link_libraries(test_map_initialization_policy
+    ${PCL_LIBRARIES})
+  add_test(
+    NAME map_initialization_policy
+    COMMAND test_map_initialization_policy
+  )
+
+  add_executable(test_measurement_gate_policy
+    test/test_measurement_gate_policy.cpp)
+  target_include_directories(test_measurement_gate_policy PRIVATE
+    include)
+  add_test(
+    NAME measurement_gate_policy
+    COMMAND test_measurement_gate_policy
+  )
+
+  add_executable(test_localization_update_policy
+    test/test_localization_update_policy.cpp)
+  target_include_directories(test_localization_update_policy PRIVATE
+    include)
+  add_test(
+    NAME localization_update_policy
+    COMMAND test_localization_update_policy
+  )
+
+  add_executable(test_scan_preprocessing_policy
+    test/test_scan_preprocessing_policy.cpp)
+  target_include_directories(test_scan_preprocessing_policy PRIVATE
+    include)
+  add_test(
+    NAME scan_preprocessing_policy
+    COMMAND test_scan_preprocessing_policy
+  )
+
+  add_executable(test_recovery_supervisor
+    test/test_recovery_supervisor.cpp)
+  target_include_directories(test_recovery_supervisor PRIVATE
+    include)
+  add_test(
+    NAME recovery_supervisor
+    COMMAND test_recovery_supervisor
+  )
+endif()
 
 ament_package()
