@@ -5,6 +5,14 @@ quadruped or biped robots. It is a localization stack boundary: it does not
 own walking control, motor state estimation, global planning, or the MID-360
 driver process.
 
+Current validation status:
+
+- package build, policy/unit tests, and public replay regression have passed
+  after the MID-360 bringup merge
+- latest public replay snapshot:
+  [public_validation_log.md](public_validation_log.md#2026-05-22-main-after-mid-360-bringup-merge)
+- Jetson + MID-360 hardware validation has not been run in this workspace
+
 ## Runtime Contract
 
 Required inputs:
