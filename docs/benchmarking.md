@@ -88,10 +88,30 @@ localization claims.
 | Autoware Istanbul | no-IMU urban replay safety, Nav2 replay regression, GNSS-referenced smoke | IMU preintegration claims, production long-horizon robustness claims |
 | HDL sample | IMU pipeline smoke, throughput safety, direct `hdl_localization` sample compatibility | final backend ranking without a fair reference/initialization policy |
 | Boreas | public `LiDAR + IMU + GT` candidate; current localizer-only manifests are diagnostic until prediction/map-split behavior is fixed | quick plug-and-play map-based claims or backend ranking before the workflow is validated |
-| Koide hard localization | difficult public map-based benchmark candidate and failure-boundary study | broad robustness claims before data is staged and map quality, initial pose, and GT alignment are controlled |
+| Koide hard localization | next controlled public benchmark candidate; indoor and outdoor `60 s` smoke runs are staged | IMU/preintegration claims before calibration and extrinsics are controlled |
 
 The next strong benchmark track should promote Boreas or Koide-style public data, not deeper
 Istanbul-only tuning.
+
+### Koide smoke manifests
+
+After staging Koide maps, GT, and sequence bags under `data/public/koide_hard_localization`, use:
+
+```bash
+source scripts/setup_local_env.sh
+ros2 run lidar_localization_ros2 benchmark_from_manifest \
+  --manifest param/benchmark/koide_hard_localization_indoor_easy_01_smoke60.yaml
+ros2 run lidar_localization_ros2 benchmark_from_manifest \
+  --manifest param/benchmark/koide_hard_localization_outdoor_hard_01a_smoke60.yaml
+```
+
+Latest local smoke snapshot from 2026-05-24:
+
+- `indoor_easy_01_smoke60`: `translation_rmse_m=0.079`, `rotation_rmse_deg=1.639`, `ok_rows=773/773`
+- `outdoor_hard_01a_smoke60`: `translation_rmse_m=0.209`, `rotation_rmse_deg=2.241`, `ok_rows=223/225`
+
+The bags contain IMU topics, but the current smoke configs keep IMU preintegration disabled where
+the dataset calibration path is not controlled.
 
 ### Run a manifest with health summary
 

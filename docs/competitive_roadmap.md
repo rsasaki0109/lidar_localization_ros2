@@ -79,7 +79,7 @@ Different datasets have different jobs:
 | Autoware Istanbul | no-IMU urban replay and Nav2 regression guard | keep as safety/regression only |
 | HDL sample | public IMU smoke and throughput guard | keep as an IMU pipeline safety check, not final ranking |
 | Boreas | public `LiDAR + IMU + GT` candidate, currently diagnostic only | fix prediction/map-split behavior before using it for ranking |
-| Koide hard localization | difficult map-based public benchmark candidate | fetch and stage data, then control map quality, initial pose, and GT alignment before ranking backends |
+| Koide hard localization | next controlled public benchmark candidate; local `60 s` indoor and outdoor smoke runs pass | extend outdoor duration, then rank backends without making IMU claims until calibration is controlled |
 
 Istanbul should stay in the release suite, but it should not drive the next main research direction.
 
