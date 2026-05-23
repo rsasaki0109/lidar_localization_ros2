@@ -87,8 +87,8 @@ localization claims.
 |---|---|---|
 | Autoware Istanbul | no-IMU urban replay safety, Nav2 replay regression, GNSS-referenced smoke | IMU preintegration claims, production long-horizon robustness claims |
 | HDL sample | IMU pipeline smoke, throughput safety, direct `hdl_localization` sample compatibility | final backend ranking without a fair reference/initialization policy |
-| Boreas | main public `LiDAR + IMU + GT` candidate when a map/localization split is prepared | quick plug-and-play map-based claims before the mapping workflow is validated |
-| Koide hard localization | difficult public map-based benchmark candidate and failure-boundary study | broad robustness claims before map quality, initial pose, and GT alignment are controlled |
+| Boreas | public `LiDAR + IMU + GT` candidate; current localizer-only manifests are diagnostic until prediction/map-split behavior is fixed | quick plug-and-play map-based claims or backend ranking before the workflow is validated |
+| Koide hard localization | difficult public map-based benchmark candidate and failure-boundary study | broad robustness claims before data is staged and map quality, initial pose, and GT alignment are controlled |
 
 The next strong benchmark track should promote Boreas or Koide-style public data, not deeper
 Istanbul-only tuning.

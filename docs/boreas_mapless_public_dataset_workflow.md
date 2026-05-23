@@ -76,3 +76,17 @@ The generated bundle can then be run in this order:
 - Prefer `applanix/lidar_poses.csv` over `gps_post_process.csv` for the GT topic used by localization evaluation.
 - The converter rotates Boreas ENU linear velocity into the lidar body frame before writing `/vehicle/twist`.
 - The pointcloud writer preserves `ring` and a relative `time` field so future IMU undistortion experiments are not blocked on a format change.
+
+## Current Status
+
+As of 2026-05-24, the checked Boreas localizer-only path is diagnostic, not a benchmark claim.
+Smoke runs on `boreas-2021-09-02-11-42` with the local GT-aligned map completed, but did not produce
+a usable tracking result:
+
+- `use_twist_prediction: true`, IMU off, `30 s`: `translation_rmse_m=40.495`, `rotation_rmse_deg=8.641`, `ok_rows=38/148`
+- twist prediction off, IMU off, `30 s`: `translation_rmse_m=43.167`, `rotation_rmse_deg=6.811`, `ok_rows=85/85`, but the pose stayed near the initial pose
+- IMU preintegration on, twist prediction off, `30 s`: `translation_rmse_m=77.036`, `rotation_rmse_deg=10.340`, `ok_rows=3/77`
+
+The map bounds and sampled nearest-map distances overlap the localization reference path, so this is
+not simply a wrong-route or missing-map failure. Treat Boreas as blocked until the prediction,
+frame/extrinsic, and map-split assumptions are fixed and revalidated.
