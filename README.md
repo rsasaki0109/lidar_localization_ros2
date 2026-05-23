@@ -1,20 +1,41 @@
-# lidar_localization_ros2
+<div align="center">
 
-ROS 2 LiDAR localization package for map-based 3D pointcloud localization, with Nav2 launch helpers,
-benchmark tooling, and experiment runners.
+<h1>lidar_localization_ros2</h1>
 
-This repository is packaged as `v1.0.0`. The recommended Nav2 preset is:
+<p><strong>Map-based 3D LiDAR localization for ROS 2, Nav2, and repeatable rosbag evaluation.</strong></p>
+
+<p>
+  <img alt="ROS 2 Humble" src="https://img.shields.io/badge/ROS%202-Humble-1f5b99">
+  <img alt="Release v1.0.0" src="https://img.shields.io/badge/release-v1.0.0-2f855a">
+  <img alt="Backend NDT OMP" src="https://img.shields.io/badge/default-NDT__OMP-4a5568">
+  <img alt="License BSD 2 Clause" src="https://img.shields.io/badge/license-BSD--2--Clause-6b46c1">
+</p>
+
+<img src="./images/path.png" alt="LiDAR localization path over pointcloud map" width="720">
+
+<sub>Green: localized path. Red: pointcloud map. Grid: 50 m x 50 m cells.</sub>
+
+</div>
+
+## What This Is
+
+`lidar_localization_ros2` is a ROS 2 package for 3D pointcloud map localization. It provides a
+runtime localizer, Nav2 launch wrappers, benchmark tools, and experiment runners for recovery and
+relocalization work.
+
+Current default:
 
 ```text
 param/nav2_ndt_urban.yaml
 ```
 
-Known boundary: short public replay, smoke, and controlled regression paths are validated. Long-horizon
-urban replay and real robot deployment still need dataset or hardware-specific validation.
+Current boundary: short public replay, smoke, and controlled regression paths are validated.
+Long-horizon urban replay and real robot deployment still need dataset or hardware-specific
+validation.
 
-## Start Here
+## Quick Start
 
-Use this repository from the workspace layout below:
+Expected workspace layout:
 
 ```text
 lidarloc_ws/
@@ -23,7 +44,7 @@ lidarloc_ws/
   repo/
 ```
 
-Build and load the local environment:
+Build:
 
 ```bash
 cd /path/to/lidarloc_ws/repo
@@ -36,53 +57,38 @@ source scripts/setup_local_env.sh
 
 For the full no-sudo local-prefix workflow, see [docs/local_build.md](docs/local_build.md).
 
-## Common Commands
+## Choose A Workflow
 
-Localization only:
+| Goal | Command |
+|---|---|
+| LiDAR localization only | `ros2 launch lidar_localization_ros2 nav2_lidar_localization.launch.py` |
+| Full Nav2 wrapper | `ros2 launch lidar_localization_ros2 nav2_navigation.launch.py map_yaml:=/absolute/path/to/map.yaml` |
+| Jetson + Livox MID-360 | `ros2 launch lidar_localization_ros2 mid360_legged_localization.launch.py map_path:=/absolute/path/to/map.pcd cloud_topic:=/livox/points imu_topic:=/livox/imu` |
+| Self-contained Nav2 smoke | `ros2 run lidar_localization_ros2 run_nav2_demo_smoke --map-yaml /absolute/path/to/map.yaml --initial-pose-x 0.0 --initial-pose-y 0.0 --goal-x 1.0 --goal-y 0.0` |
+| Real-localizer replay smoke | `ros2 run lidar_localization_ros2 run_nav2_replay_smoke --map-yaml /absolute/path/to/map.yaml --pcd-map-path /absolute/path/to/map.pcd --bag-path /absolute/path/to/bag` |
+| Public regression | `source scripts/setup_local_env.sh && scripts/run_public_regression_suite.sh` |
 
-```bash
-ros2 launch lidar_localization_ros2 nav2_lidar_localization.launch.py
-```
+## Nav2 Requirements
 
-Full Nav2 wrapper:
+For full Nav2 use, provide:
 
-```bash
-ros2 launch lidar_localization_ros2 nav2_navigation.launch.py \
-  map_yaml:=/absolute/path/to/occupancy_map.yaml
-```
+- a 3D pointcloud map for the localizer
+- a 2D occupancy `map_yaml` for Nav2 planning
+- an odom source publishing `odom -> base_link`
+- an initial pose on `/initialpose`
 
-Jetson + Livox MID-360 on a legged robot:
-
-```bash
-ros2 launch lidar_localization_ros2 mid360_legged_localization.launch.py \
-  map_path:=/absolute/path/to/map.pcd \
-  cloud_topic:=/livox/points \
-  imu_topic:=/livox/imu
-```
-
-Self-contained Nav2 smoke test:
+If you only have a 3D PCD map, generate a cropped occupancy map:
 
 ```bash
-ros2 run lidar_localization_ros2 run_nav2_demo_smoke \
-  --map-yaml /absolute/path/to/occupancy_map.yaml \
-  --initial-pose-x 0.0 --initial-pose-y 0.0 \
-  --goal-x 1.0 --goal-y 0.0
+ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd.py \
+  --pcd /absolute/path/to/map.pcd \
+  --reference-csv /absolute/path/to/reference.csv \
+  --route-padding-m 20 \
+  --resolution 0.25 \
+  --output-dir /tmp/nav2_map
 ```
 
-Real-localizer replay smoke:
-
-```bash
-ros2 run lidar_localization_ros2 run_nav2_replay_smoke \
-  --map-yaml /absolute/path/to/occupancy_map.yaml \
-  --pcd-map-path /absolute/path/to/map.pcd \
-  --bag-path /absolute/path/to/localization_rosbag \
-  --initial-pose-x 0.0 --initial-pose-y 0.0 \
-  --initial-pose-z 0.0 \
-  --initial-pose-qx 0.0 --initial-pose-qy 0.0 \
-  --initial-pose-qz 0.0 --initial-pose-qw 1.0
-```
-
-## Inputs And Outputs
+## Topics
 
 Main inputs:
 
@@ -100,32 +106,11 @@ Main outputs:
 - `/reinitialization_requested`: `std_msgs/msg/Bool`
 - `/initial_map`: `sensor_msgs/msg/PointCloud2` when `use_pcd_map=true`
 
-## Configuration
-
-Use `param/nav2_ndt_urban.yaml` unless you are intentionally testing another preset. It enables the
-current conservative Nav2-facing defaults, including local map crop and guarded recovery diagnostics.
-
-Map notes:
+## Map Notes
 
 - Runtime map paths support `.ply` and `.pcd`.
 - Public benchmark runs should prefer binary little-endian float32 `.ply` maps.
 - Generated `.pcd` maps are useful for inspection, but are not the preferred benchmark path.
-
-Nav2 needs both:
-
-- a 3D pointcloud map for the localizer
-- a 2D occupancy `map_yaml` for planning
-
-If you only have a 3D PCD map, generate a cropped occupancy map:
-
-```bash
-ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd.py \
-  --pcd /absolute/path/to/map.pcd \
-  --reference-csv /absolute/path/to/reference.csv \
-  --route-padding-m 20 \
-  --resolution 0.25 \
-  --output-dir /tmp/nav2_map
-```
 
 ## Validation
 
@@ -141,13 +126,6 @@ Experiment comparison:
 
 ```bash
 ros2 run lidar_localization_ros2 run_experiment_suite.py
-```
-
-Public replay regression:
-
-```bash
-source scripts/setup_local_env.sh
-scripts/run_public_regression_suite.sh
 ```
 
 Release-style regression:
@@ -194,7 +172,7 @@ git diff main...<branch>
 git branch -D <branch>
 ```
 
-## Where To Read More
+## Read More
 
 | Need | Read |
 |---|---|
