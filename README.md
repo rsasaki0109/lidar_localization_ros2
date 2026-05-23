@@ -30,8 +30,8 @@ param/nav2_ndt_urban.yaml
 ```
 
 Current boundary: short public replay, smoke, and controlled regression paths are validated.
-Long-horizon urban replay and real robot deployment still need dataset or hardware-specific
-validation.
+Long-horizon robustness on stronger public `LiDAR + IMU + GT` data and real robot deployment still
+need dataset or hardware-specific validation.
 
 ## Quick Start
 
@@ -138,8 +138,8 @@ Latest recorded public validation snapshot:
 
 - [docs/public_validation_log.md](docs/public_validation_log.md)
 - `2026-05-22`, commit `2a5f11f`, release regression `overall_pass=true`
-- Istanbul `60 s`: `1.176 m` translation RMSE, `0.393 deg` rotation RMSE
-- HDL `60 s` two-repeat median: pose rows `558.5 -> 553.5`
+- Istanbul `60 s` no-IMU safety check: `1.176 m` translation RMSE, `0.393 deg` rotation RMSE
+- HDL `60 s` IMU safety check, two-repeat median: pose rows `558.5 -> 553.5`
 - Nav2 reinitialization supervisor `150 s`: requested rows `944 -> 7`
 
 This snapshot is public replay validation, not Jetson + MID-360 hardware validation.

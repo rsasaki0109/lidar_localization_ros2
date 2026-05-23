@@ -25,13 +25,14 @@ What is already in place:
 Current validated public boundary:
 
 - release regression snapshot: `2026-05-22`, commit `2a5f11f`, `overall_pass=true`
-- Istanbul `60 s`: `1.176 m` translation RMSE, `0.393 deg` rotation RMSE
-- HDL `60 s` two-repeat median: pose rows `558.5 -> 553.5`
+- Istanbul `60 s` no-IMU safety check: `1.176 m` translation RMSE, `0.393 deg` rotation RMSE
+- HDL `60 s` IMU safety check, two-repeat median: pose rows `558.5 -> 553.5`
 - Nav2 reinitialization supervisor `150 s`: requested rows `944 -> 7`
 
 Current limits:
 
-- long-horizon urban replay is still the main robustness gap
+- Istanbul is not the main benchmark dataset for IMU or production robustness claims
+- long-horizon public `LiDAR + IMU + GT` evaluation still needs a controlled dataset track
 - real Jetson + MID-360 hardware behavior needs separate sensor, thermal, vibration, and extrinsics validation
 - global relocalization is not production-ready; v1.1 is an artifact-first dry-run evaluation path
 - covariance semantics are still not strong enough to be a main competitive claim
@@ -69,28 +70,42 @@ Do not try to beat every competitor at once. The near-term competitive angle is:
 
 The project should avoid claims that are not backed by repeatable public artifacts.
 
+## Dataset Strategy
+
+Different datasets have different jobs:
+
+| Dataset | Current role | Next action |
+|---|---|---|
+| Autoware Istanbul | no-IMU urban replay and Nav2 regression guard | keep as safety/regression only |
+| HDL sample | public IMU smoke and throughput guard | keep as an IMU pipeline safety check, not final ranking |
+| Boreas | public `LiDAR + IMU + GT` main candidate | validate the map/localization split and reference extraction |
+| Koide hard localization | difficult map-based public benchmark candidate | control map quality, initial pose, and GT alignment before ranking backends |
+
+Istanbul should stay in the release suite, but it should not drive the next main research direction.
+
 ## Roadmap
 
 ### Now
 
 1. Keep the release regression green.
 2. Make README and docs user-friendly enough that a new user can find the right command quickly.
-3. Characterize the first long-horizon Istanbul drift interval instead of running broad sweeps.
+3. Pick and validate the next real benchmark track from Boreas or Koide-style public data.
 4. Close v1.1 around the dry-run relocalization command artifact, not automatic reset publication.
-5. Keep `param/nav2_ndt_urban.yaml` conservative.
+5. Keep Istanbul as a no-IMU/Nav2 regression guard, not the main benchmark target.
+6. Keep `param/nav2_ndt_urban.yaml` conservative.
 
 Done when:
 
 - `run_release_regression_suite.sh` remains the release boundary
 - docs point users to one clear command per workflow
-- the long-horizon failure mode has concrete timestamps and diagnostic evidence
+- Boreas or Koide has a clear map/reference/initial-pose workflow for backend comparison
 - v1.1 wording stays limited to artifact-first relocalization evaluation
 
 ### Next
 
 1. Strengthen measurement acceptance beyond scalar fitness score.
 2. Improve recovery diagnostics so drift can be detected before a large pose error accumulates.
-3. Compare `NDT_OMP`, `SMALL_GICP`, and `SMALL_VGICP` on at least two public datasets.
+3. Compare `NDT_OMP`, `SMALL_GICP`, and `SMALL_VGICP` on Boreas or Koide after the dataset workflow is controlled.
 4. Start a runtime relocalization prototype only after the artifact-first path is stable.
 5. Define covariance output semantics that downstream consumers can trust.
 
@@ -144,12 +159,14 @@ Safe claims:
 
 - public replay regression passes for the documented boundary
 - Nav2 launch and replay smoke paths are validated
+- Istanbul is a no-IMU/Nav2 regression check
 - v1.1 can produce validated dry-run reset command artifacts
 - MID-360 bringup path is launch/config/build oriented unless hardware data is provided
 
 Unsafe claims:
 
 - long-horizon urban replay is solved
+- Istanbul proves IMU or production robustness
 - global relocalization is production-ready
 - automatic reset publication is part of the default public path
 - `SMALL_GICP` or `SMALL_VGICP` is default-ready without current public comparisons
@@ -159,7 +176,7 @@ Unsafe claims:
 
 1. Documentation and branch hygiene
 2. Release regression maintenance
-3. Istanbul long-horizon drift diagnosis
+3. Boreas or Koide benchmark-track selection
 4. Artifact-first relocalization v1.1 closeout
 5. Backend comparison on public datasets
 6. Covariance and richer diagnostics

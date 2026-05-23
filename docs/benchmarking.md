@@ -71,12 +71,27 @@ Latest recorded public validation snapshot:
 
 - [public_validation_log.md](public_validation_log.md)
 - `2026-05-22`, commit `2a5f11f`, release regression `overall_pass=true`
-- Istanbul `60 s`: `translation_rmse_m=1.176`, `rotation_rmse_deg=0.393`
-- HDL `60 s`: median pose rows `558.5 -> 553.5`
+- Istanbul `60 s` no-IMU safety check: `translation_rmse_m=1.176`, `rotation_rmse_deg=0.393`
+- HDL `60 s` IMU safety check: median pose rows `558.5 -> 553.5`
 - Nav2 reinitialization supervisor `150 s`: requested rows `944 -> 7`
 
 This is public replay and controlled Nav2 regression validation, not Jetson + MID-360 hardware
 validation.
+
+## Dataset Roles
+
+Use the public datasets for different jobs. Do not treat Istanbul as the main benchmark for all
+localization claims.
+
+| Dataset | Role | Do not use it for |
+|---|---|---|
+| Autoware Istanbul | no-IMU urban replay safety, Nav2 replay regression, GNSS-referenced smoke | IMU preintegration claims, production long-horizon robustness claims |
+| HDL sample | IMU pipeline smoke, throughput safety, direct `hdl_localization` sample compatibility | final backend ranking without a fair reference/initialization policy |
+| Boreas | main public `LiDAR + IMU + GT` candidate when a map/localization split is prepared | quick plug-and-play map-based claims before the mapping workflow is validated |
+| Koide hard localization | difficult public map-based benchmark candidate and failure-boundary study | broad robustness claims before map quality, initial pose, and GT alignment are controlled |
+
+The next strong benchmark track should promote Boreas or Koide-style public data, not deeper
+Istanbul-only tuning.
 
 ### Run a manifest with health summary
 
@@ -134,9 +149,10 @@ Prepared assets:
 Use this official sample for externally shared `hdl_localization`-style results. Cite the upstream
 repository and dataset URL instead of presenting local field logs as open benchmark data.
 
-### Fetch a stronger public map-based localization dataset from Autoware
+### Fetch the Autoware Istanbul no-IMU regression dataset
 
-Use the official Autoware Istanbul localization assets for a harder public map-based benchmark.
+Use the official Autoware Istanbul localization assets for no-IMU urban replay and Nav2 regression.
+It is useful, but it should not be the main dataset for IMU or long-horizon robustness claims.
 
 ```bash
 source scripts/setup_local_env.sh

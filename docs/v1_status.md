@@ -47,8 +47,8 @@ Latest recorded public validation:
 - date: `2026-05-22`
 - commit: `2a5f11f`
 - release regression: `overall_pass=true`
-- Istanbul `60 s`: `1.176 m` translation RMSE, `0.393 deg` rotation RMSE
-- HDL `60 s` two-repeat median: pose rows `558.5 -> 553.5`
+- Istanbul `60 s` no-IMU safety check: `1.176 m` translation RMSE, `0.393 deg` rotation RMSE
+- HDL `60 s` IMU safety check, two-repeat median: pose rows `558.5 -> 553.5`
 - Nav2 reinitialization supervisor `150 s`: requested rows `944 -> 7`
 
 This is public replay and controlled Nav2 regression validation. It is not a Jetson + MID-360
@@ -77,12 +77,14 @@ It is reasonable to say:
 - the package provides ROS 2 map-based 3D LiDAR localization with Nav2 launch helpers
 - the recommended preset has public replay and smoke validation within the documented boundary
 - public regression and release regression scripts exist for repeatable checks
+- Istanbul is used as a no-IMU/Nav2 regression guard, not as the main IMU benchmark
 - the project has an artifact-first relocalization evaluation pipeline
 - MID-360 support is a launch/config/build-oriented bringup path
 
 ## Known Limits
 
-- Long-horizon urban replay remains the main unresolved robustness gap.
+- Long-horizon robustness on stronger public `LiDAR + IMU + GT` data is not established yet.
+- Istanbul has no IMU stream for IMU-preintegration claims and should not be treated as the main benchmark dataset.
 - Smoke and replay success do not replace real-robot validation with real odom, real TF, measured extrinsics, vibration, and thermal conditions.
 - The current relocalization work is not production-grade global relocalization.
 - The guarded reset publisher is experimental and opt-in.
@@ -105,7 +107,7 @@ Do not claim:
 The next technical work should focus on:
 
 - keeping release regression green
-- characterizing the first long-horizon Istanbul drift interval
+- promoting a stronger public benchmark track based on Boreas or Koide-style data
 - closing v1.1 relocalization around validated dry-run reset artifacts
 - comparing backends on public datasets before changing defaults
 - strengthening diagnostics and covariance semantics
