@@ -107,6 +107,8 @@ ros2 run lidar_localization_ros2 benchmark_from_manifest \
   --manifest param/benchmark/koide_hard_localization_outdoor_hard_01a_120.yaml
 ros2 run lidar_localization_ros2 benchmark_from_manifest \
   --manifest param/benchmark/koide_hard_localization_outdoor_hard_01a_180_reinit090.yaml
+ros2 run lidar_localization_ros2 benchmark_from_manifest \
+  --manifest param/benchmark/koide_hard_localization_outdoor_hard_01a_180_reinit090_oracle_relocalization_artifacts.yaml
 ```
 
 Latest local Koide snapshot:
@@ -131,6 +133,14 @@ does not recover by itself. The first request appeared at stamp `1694532923.6004
 `enable_rejected_seed_update` diagnostic also does not clear the `180 s` boundary: it still stops
 pose output at about `126.2 s` and ends near `translation_rmse_m=1.100`,
 `rotation_rmse_deg=10.368`.
+
+The `180_reinit090` request window is not empty. A route-grid diagnostic on `2026-05-25` generated
+one attempt and `90` candidates. Reference-oracle scoring found candidate `49` at `0.000 m`
+translation error, and oracle-ranked NDT_OMP scoring selected it with score `0.984596`. The
+validated dry-run command targeted `/initialpose`, frame `map`, with `published_count=0`. This
+proves the artifact chain can produce a plausible reset command. It is still not a runtime recovery
+claim because `candidate_index` ordering over the same top-32 scored rows selected candidate `6`
+first, with oracle score `26.293 m`; runtime-safe candidate ordering remains the next fix.
 
 ### Run a manifest with health summary
 

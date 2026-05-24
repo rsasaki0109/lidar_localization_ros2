@@ -96,6 +96,22 @@ The current Boreas localizer-only artifact chain exercises the v1.1 endpoint wit
 This is evidence for a guarded artifact chain. It is not evidence for autonomous relocalization or
 post-reset recovery success.
 
+The current Koide `outdoor_hard_01a` 180 s failure-boundary diagnostic adds a sharper recovery
+target:
+
+- The lowered-threshold `180_reinit090` run produced one request window with `264`
+  `/reinitialization_requested` rows and no recovered request window.
+- Route-grid generation for that request produced `90` candidates, and reference-oracle scoring
+  found candidate `49` at `0.000 m` translation error.
+- Candidate-index top-32 NDT_OMP scoring was unsafe as a reset source: the lowest registration score
+  was candidate `6` with oracle score `26.293 m`.
+- Oracle-ranked top-32 NDT_OMP scoring selected candidate `49` with registration score `0.984596`;
+  reset candidate validation and dry-run command validation both passed with `published_count=0`.
+
+This shows that the failure window contains a plausible reset pose and that the artifact chain can
+carry it to a validated dry-run `/initialpose` command. It does not show runtime-safe relocalization,
+because the successful selection uses oracle-ranked ordering.
+
 ## Dataset Roles
 
 ### Istanbul
@@ -124,6 +140,9 @@ Use as a public-map failure-boundary diagnostic.
 
 Keep original public-map results separate from diagnostic-map results. The useful claim is boundary
 characterization, not robust full-route tracking on the original public map.
+
+For the `outdoor_hard_01a` 180 s boundary, the next useful task is runtime-available candidate
+ordering or gating that can prefer the oracle-best reset candidate without using `oracle_rank`.
 
 ### GLIL
 
