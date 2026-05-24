@@ -1,14 +1,5 @@
-# Koide Hard Point Cloud Localization — outdoor_hard_01a (Zenodo 10122133).
-# Livox LiDAR outdoor sequence. citation: https://doi.org/10.5281/zenodo.10122133
-#
-# Data setup:
-#   ros2 run lidar_localization_ros2 fetch_koide_hard_pointcloud_localization_dataset.sh \
-#     --with-maps --with-gt --sequence outdoor_hard_01a --output-dir data/public/koide_hard_localization
-#   ros2 run lidar_localization_ros2 tum_trajectory_to_pose_reference_csv.py \
-#     --input data/public/koide_hard_localization/gt/traj_lidar_outdoor_hard_01.txt \
-#     --output-csv data/public/koide_hard_localization/benchmark/outdoor_hard_01a/reference.csv \
-#     --output-initial-pose-yaml data/public/koide_hard_localization/benchmark/outdoor_hard_01a/initial_pose.yaml \
-#     --initial-pose-skip-sec 0.05
+# Koide Hard Point Cloud Localization — outdoor_hard_01a 60 s smoke.
+# Requires data staged under data/public/koide_hard_localization.
 
 mode: run
 
@@ -36,9 +27,9 @@ localizer:
     - lidar_frame_id:=livox_frame
 
 benchmark:
-  output_dir: /tmp/lidarloc_koide_outdoor_hard_01a
-  ros_domain_id: 135
-  bag_duration: 380
+  output_dir: /tmp/lidarloc_koide_outdoor_hard_01a_smoke60
+  ros_domain_id: 178
+  bag_duration: 60
   bag_start_offset: 0
   settle_seconds: 5
   post_roll_seconds: 1
