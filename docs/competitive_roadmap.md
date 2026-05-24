@@ -79,7 +79,7 @@ Different datasets have different jobs:
 | Autoware Istanbul | no-IMU urban replay and Nav2 regression guard | keep as safety/regression only |
 | HDL sample | public IMU smoke and throughput guard | keep as an IMU pipeline safety check, not final ranking |
 | Boreas | public `LiDAR + IMU + GT` candidate, currently diagnostic only | fix prediction/map-split behavior before using it for ranking |
-| Koide hard localization | next controlled public benchmark candidate; local `60 s` indoor and outdoor smoke runs pass | extend outdoor duration, then rank backends without making IMU claims until calibration is controlled |
+| Koide hard localization | next controlled public benchmark candidate; local indoor `60 s` and outdoor `120 s` runs pass | fix the outdoor `180 s` failure boundary, then rank backends without making IMU claims until calibration is controlled |
 
 Istanbul should stay in the release suite, but it should not drive the next main research direction.
 
@@ -105,7 +105,7 @@ Done when:
 
 1. Strengthen measurement acceptance beyond scalar fitness score.
 2. Improve recovery diagnostics so drift can be detected before a large pose error accumulates.
-3. Compare `NDT_OMP`, `SMALL_GICP`, and `SMALL_VGICP` on Boreas or Koide after the dataset workflow is controlled.
+3. Compare `NDT_OMP`, `SMALL_GICP`, and `SMALL_VGICP` on Koide after the `outdoor_hard_01a` 180 s failure boundary is understood.
 4. Start a runtime relocalization prototype only after the artifact-first path is stable.
 5. Define covariance output semantics that downstream consumers can trust.
 
