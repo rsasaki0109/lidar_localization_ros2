@@ -1,0 +1,92 @@
+# Koide Hard Point Cloud Localization - outdoor_hard_01a 180 s route-proximity relocalization artifact diagnostic.
+#
+# This is not an automatic runtime relocalization benchmark. It keeps reset publication disabled.
+# Candidate ordering is oracle-free: route candidates nearest to the request timestamp and route
+# centerline are scored first, then converted into validated dry-run /initialpose artifacts.
+
+mode: run
+
+dataset:
+  bag_path: repo://data/public/koide_hard_localization/sequences/outdoor_hard_01a
+  map_path: repo://data/public/koide_hard_localization/map_outdoor_hard.ply
+  reference_csv: repo://data/public/koide_hard_localization/benchmark/outdoor_hard_01a/reference.csv
+  initial_pose_yaml: repo://data/public/koide_hard_localization/benchmark/outdoor_hard_01a/initial_pose.yaml
+  cloud_topic: /livox/points
+  imu_topic: /livox/imu
+
+localizer:
+  base_param_yaml: repo://param/nav2_ndt_urban.yaml
+  param_overrides:
+    use_imu: false
+    use_imu_preintegration: false
+    enable_scan_voxel_filter: true
+    voxel_leaf_size: 0.5
+    base_frame_id: livox_frame
+    scan_min_range: 1.0
+    scan_max_range: 100.0
+    score_threshold: 6.0
+    reinitialization_trigger_threshold: 0.90
+  launch_args:
+    - use_sim_time:=true
+    - lidar_frame_id:=livox_frame
+
+benchmark:
+  output_dir: /tmp/lidarloc_koide_outdoor_hard_01a_180_reinit090_route_proximity_relocalization_artifacts
+  ros_domain_id: 184
+  bag_duration: 180
+  bag_start_offset: 0
+  settle_seconds: 5
+  post_roll_seconds: 1
+  max_time_diff: 0.05
+  record_qos_reliability: reliable
+  record_qos_durability: volatile
+  record_use_sim_time: true
+  write_health_summary: true
+  health_stable_ok_rows: 5
+  health_recovery_window_sec: 10.0
+  health_false_recovery_rmse_threshold_m: 5.0
+  write_route_grid_relocalization_attempts: true
+  route_grid_time_radius_sec: 15.0
+  route_grid_min_spacing_m: 5.0
+  route_grid_max_route_poses: 32
+  route_grid_max_candidates: 256
+  route_grid_yaw_offsets_deg: [-15, 0, 15]
+  route_grid_lateral_offsets_m: [-1.0, 0.0, 1.0]
+  route_grid_longitudinal_offsets_m: [0.0]
+  write_reference_oracle_relocalization_scores: true
+  reference_oracle_translation_threshold_m: 2.0
+  reference_oracle_yaw_threshold_deg: 15.0
+  reference_oracle_yaw_weight_m_per_rad: 1.0
+  write_registration_relocalization_jobs: true
+  registration_jobs_method: NDT_OMP
+  registration_jobs_max_candidates_per_attempt: 32
+  registration_jobs_selection_source: route_proximity
+  registration_jobs_voxel_leaf_size: 1.0
+  registration_jobs_local_map_radius: 120.0
+  registration_jobs_timeout_sec: 1.0
+  write_registration_relocalization_scan_scores: true
+  registration_scores_max_scan_time_diff: 0.25
+  registration_scores_min_range: 1.0
+  registration_scores_max_range: 120.0
+  registration_scores_max_jobs: 32
+  registration_scores_export_scan_pcd_dir: manifest://registration_scans
+  write_ndt_relocalization_scores: true
+  ndt_relocalization_max_jobs: 32
+  ndt_relocalization_score_gate_threshold: 6.0
+  ndt_relocalization_refinement_delta_gate_m: 2.0
+  ndt_relocalization_refinement_yaw_gate_rad: 0.7853981633974483
+  write_registration_relocalization_score_summary: true
+  write_relocalization_reset_candidate_plan: true
+  relocalization_reset_candidate_plan_min_score_margin: 0.0
+  validate_relocalization_reset_candidate_plan: true
+  relocalization_reset_candidate_plan_min_selected_count: 1
+  relocalization_reset_candidate_plan_max_selected_count: 1
+  write_relocalization_reset_command_dry_run: true
+  relocalization_reset_publish_topic: /initialpose
+  relocalization_reset_frame_id: map
+  validate_relocalization_reset_commands: true
+  relocalization_reset_commands_min_generated_count: 1
+  relocalization_reset_commands_max_generated_count: 1
+  write_relocalization_attempt_summary: true
+  relocalization_request_match_window_sec: 10.0
+  relocalization_post_reset_stable_ok_rows: 5

@@ -15,7 +15,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Compare registration relocalization score summaries, for example "
-            "candidate_index order versus oracle_rank diagnostic order."
+            "candidate_index, route_proximity, and oracle_rank diagnostic order."
         )
     )
     parser.add_argument(

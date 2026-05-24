@@ -108,7 +108,7 @@ ros2 run lidar_localization_ros2 benchmark_from_manifest \
 ros2 run lidar_localization_ros2 benchmark_from_manifest \
   --manifest param/benchmark/koide_hard_localization_outdoor_hard_01a_180_reinit090.yaml
 ros2 run lidar_localization_ros2 benchmark_from_manifest \
-  --manifest param/benchmark/koide_hard_localization_outdoor_hard_01a_180_reinit090_oracle_relocalization_artifacts.yaml
+  --manifest param/benchmark/koide_hard_localization_outdoor_hard_01a_180_reinit090_route_proximity_relocalization_artifacts.yaml
 ```
 
 Latest local Koide snapshot:
@@ -136,11 +136,13 @@ pose output at about `126.2 s` and ends near `translation_rmse_m=1.100`,
 
 The `180_reinit090` request window is not empty. A route-grid diagnostic on `2026-05-25` generated
 one attempt and `90` candidates. Reference-oracle scoring found candidate `49` at `0.000 m`
-translation error, and oracle-ranked NDT_OMP scoring selected it with score `0.984596`. The
-validated dry-run command targeted `/initialpose`, frame `map`, with `published_count=0`. This
-proves the artifact chain can produce a plausible reset command. It is still not a runtime recovery
-claim because `candidate_index` ordering over the same top-32 scored rows selected candidate `6`
-first, with oracle score `26.293 m`; runtime-safe candidate ordering remains the next fix.
+translation error. `candidate_index` ordering over the same top-32 scored rows selected candidate
+`6` first, with oracle score `26.293 m`, so plain candidate order is unsafe as a reset source.
+`route_proximity` ordering fixes this artifact failure without using `oracle_rank`: it sorts by
+request-time proximity and route-center offsets, selected candidate `49` first, scored it with
+NDT_OMP score `0.984596`, and produced a validated dry-run `/initialpose` command with
+`published_count=0`. This is still not an automatic runtime recovery claim because reset
+publication remains disabled and the route-grid corridor is an offline evaluation artifact.
 
 ### Run a manifest with health summary
 

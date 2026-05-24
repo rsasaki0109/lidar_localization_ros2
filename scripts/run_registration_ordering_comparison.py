@@ -11,8 +11,9 @@ from typing import List
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run bounded NDT scorer comparisons for candidate_index and oracle_rank "
-            "candidate ordering. This is diagnostic only and never accepts or resets pose."
+            "Run bounded NDT scorer comparisons for candidate_index, route_proximity, "
+            "and oracle_rank candidate ordering. This is diagnostic only and never "
+            "accepts or resets pose."
         )
     )
     parser.add_argument("--attempts-csv", required=True)
@@ -57,7 +58,7 @@ def main() -> None:
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     scan_dir = output_dir / "registration_scans"
-    labels = ["candidate_index", "oracle_rank"]
+    labels = ["candidate_index", "route_proximity", "oracle_rank"]
     summary_args: List[str] = []
 
     script_dir = Path(__file__).resolve().parent
