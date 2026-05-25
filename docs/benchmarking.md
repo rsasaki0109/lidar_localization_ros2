@@ -105,6 +105,8 @@ ros2 run lidar_localization_ros2 benchmark_from_manifest \
   --manifest param/benchmark/koide_hard_localization_outdoor_hard_01a_smoke60.yaml
 ros2 run lidar_localization_ros2 benchmark_from_manifest \
   --manifest param/benchmark/koide_hard_localization_outdoor_hard_01a_120.yaml
+ros2 run lidar_localization_ros2 benchmark_from_manifest \
+  --manifest param/benchmark/koide_hard_localization_outdoor_hard_01a_180_reinit090.yaml
 ```
 
 Latest local Koide snapshot:
@@ -113,6 +115,7 @@ Latest local Koide snapshot:
 - `2026-05-24`, `outdoor_hard_01a_smoke60`: `translation_rmse_m=0.209`, `rotation_rmse_deg=2.241`, `ok_rows=223/225`
 - `2026-05-25`, `outdoor_hard_01a_120`: `translation_rmse_m=0.224`, `rotation_rmse_deg=2.083`, `ok_rows=482/499`
 - `2026-05-25`, `outdoor_hard_01a_180`: `translation_rmse_m=1.197`, `rotation_rmse_deg=10.337`, `ok_rows=466/679`
+- `2026-05-25`, `outdoor_hard_01a_180_reinit090`: `reinitialization_requested_rows=264`, `recovered_request_windows=0`
 
 The bags contain IMU topics, but the current smoke configs keep IMU preintegration disabled where
 the dataset calibration path is not controlled.
@@ -121,6 +124,13 @@ The current outdoor boundary is between 120 s and 180 s. In the `180 s` run, pos
 after about `126.2 s`; the first fitness score above `100` appeared at stamp `1694532947.800806284`,
 and the run ended with `179` consecutive rejected updates. Treat this as the next recovery and
 relocalization target, not as a passing benchmark.
+
+Lowering `reinitialization_trigger_threshold` to `0.90` raises `/reinitialization_requested`, but it
+does not recover by itself. The first request appeared at stamp `1694532923.600409269` with reason
+`fitness_exploded_reinit_requested`; the request window remained unrecovered. The existing
+`enable_rejected_seed_update` diagnostic also does not clear the `180 s` boundary: it still stops
+pose output at about `126.2 s` and ends near `translation_rmse_m=1.100`,
+`rotation_rmse_deg=10.368`.
 
 ### Run a manifest with health summary
 
