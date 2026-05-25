@@ -71,11 +71,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--selection-source",
-        choices=["candidate_index", "oracle_rank"],
+        choices=["candidate_index", "route_proximity", "oracle_rank"],
         default="candidate_index",
         help=(
-            "How to order candidates before truncation. oracle_rank is an offline diagnostic "
-            "mode and must not be used as a runtime claim."
+            "How to order candidates before truncation. route_proximity is an oracle-free "
+            "route-centered order. oracle_rank is an offline diagnostic mode and must not be "
+            "used as a runtime claim."
         ),
     )
     parser.add_argument("--voxel-leaf-size", type=float, default=1.0)
@@ -109,15 +110,30 @@ def _as_int(value: Any) -> Optional[int]:
         return None
 
 
-def _candidate_sort_key(row: Dict[str, Any], selection_source: str) -> Tuple[int, int]:
+def _abs_float_or_large(row: Dict[str, Any], key: str) -> float:
+    value = _as_float(row.get(key))
+    if value is None:
+        return float("inf")
+    return abs(value)
+
+
+def _candidate_sort_key(row: Dict[str, Any], selection_source: str) -> Tuple[float, ...]:
     candidate_index = _as_int(row.get("candidate_index"))
     if candidate_index is None:
         candidate_index = 10**9
+    if selection_source == "route_proximity":
+        return (
+            _abs_float_or_large(row, "route_time_delta_sec"),
+            _abs_float_or_large(row, "longitudinal_offset_m"),
+            _abs_float_or_large(row, "lateral_offset_m"),
+            _abs_float_or_large(row, "yaw_offset_deg"),
+            float(candidate_index),
+        )
     if selection_source == "oracle_rank":
         oracle_rank = _as_int(row.get("oracle_rank"))
         if oracle_rank is not None:
-            return (oracle_rank, candidate_index)
-    return (candidate_index, candidate_index)
+            return (float(oracle_rank), float(candidate_index))
+    return (float(candidate_index), float(candidate_index))
 
 
 def build_jobs(

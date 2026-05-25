@@ -79,7 +79,7 @@ Different datasets have different jobs:
 | Autoware Istanbul | no-IMU urban replay and Nav2 regression guard | keep as safety/regression only |
 | HDL sample | public IMU smoke and throughput guard | keep as an IMU pipeline safety check, not final ranking |
 | Boreas | public `LiDAR + IMU + GT` candidate, currently diagnostic only | fix prediction/map-split behavior before using it for ranking |
-| Koide hard localization | next controlled public benchmark candidate; local indoor `60 s` and outdoor `120 s` runs pass; outdoor `180 s` has a reproducible relocalization request window | replace oracle-ranked reset selection with runtime-safe candidate ordering, then rank backends without making IMU claims until calibration is controlled |
+| Koide hard localization | next controlled public benchmark candidate; local indoor `60 s` and outdoor `120 s` runs pass; outdoor `180 s` has a reproducible relocalization request window and an oracle-free route-proximity reset artifact | validate route-proximity ordering beyond the single failure window, then rank backends without making IMU claims until calibration is controlled |
 
 Istanbul should stay in the release suite, but it should not drive the next main research direction.
 
@@ -105,7 +105,7 @@ Done when:
 
 1. Strengthen measurement acceptance beyond scalar fitness score.
 2. Improve recovery diagnostics so drift can be detected before a large pose error accumulates.
-3. Replace the Koide `outdoor_hard_01a` 180 s oracle-ranked relocalization diagnostic with runtime-safe candidate ordering.
+3. Validate the Koide `outdoor_hard_01a` route-proximity relocalization artifact beyond the single `180 s` request window.
 4. Compare `NDT_OMP`, `SMALL_GICP`, and `SMALL_VGICP` on Koide after that failure boundary has a controlled recovery story.
 5. Start a runtime relocalization prototype only after the artifact-first path is stable.
 6. Define covariance output semantics that downstream consumers can trust.

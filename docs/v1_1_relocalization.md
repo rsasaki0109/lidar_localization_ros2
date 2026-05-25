@@ -105,12 +105,15 @@ target:
   found candidate `49` at `0.000 m` translation error.
 - Candidate-index top-32 NDT_OMP scoring was unsafe as a reset source: the lowest registration score
   was candidate `6` with oracle score `26.293 m`.
-- Oracle-ranked top-32 NDT_OMP scoring selected candidate `49` with registration score `0.984596`;
-  reset candidate validation and dry-run command validation both passed with `published_count=0`.
+- Route-proximity top-32 NDT_OMP scoring is oracle-free and selected candidate `49` first, with
+  registration score `0.984596`.
+- Reset candidate validation and dry-run command validation both passed for `route_proximity` with
+  `published_count=0`.
 
 This shows that the failure window contains a plausible reset pose and that the artifact chain can
-carry it to a validated dry-run `/initialpose` command. It does not show runtime-safe relocalization,
-because the successful selection uses oracle-ranked ordering.
+carry it to a validated dry-run `/initialpose` command. It does not show automatic runtime
+relocalization, because reset publication is still disabled and the route corridor is an offline
+evaluation artifact.
 
 ## Dataset Roles
 
@@ -141,8 +144,9 @@ Use as a public-map failure-boundary diagnostic.
 Keep original public-map results separate from diagnostic-map results. The useful claim is boundary
 characterization, not robust full-route tracking on the original public map.
 
-For the `outdoor_hard_01a` 180 s boundary, the next useful task is runtime-available candidate
-ordering or gating that can prefer the oracle-best reset candidate without using `oracle_rank`.
+For the `outdoor_hard_01a` 180 s boundary, `route_proximity` is the first oracle-free ordering that
+selects the known good reset candidate. The next useful task is validating that ordering on more
+request windows or replacing the offline route corridor with a runtime candidate source.
 
 ### GLIL
 

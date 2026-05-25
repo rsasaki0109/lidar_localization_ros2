@@ -484,6 +484,10 @@ if(BUILD_TESTING)
     NAME mid360_bringup_model
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_mid360_bringup_model.py
   )
+  add_test(
+    NAME registration_relocalization_job_ordering
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_registration_relocalization_job_ordering.py
+  )
 endif()
 
 ament_package()
