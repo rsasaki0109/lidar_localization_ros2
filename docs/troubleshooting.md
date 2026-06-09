@@ -130,6 +130,8 @@ scan frame mismatch, not map publishing.
 
 ## Symptom: Pose Looks Offset From Reality (#44, #75)
 
+See the full map-alignment guide in [map_alignment.md](map_alignment.md).
+
 Separate these cases:
 
 1. **Consistent offset** (always wrong by ~same translation/rotation)
@@ -138,6 +140,7 @@ Separate these cases:
    - check map origin and `/initialpose` seed
 2. **Drift over time**
    - tuning / environment issue; see public benchmark limits in [benchmarking.md](benchmarking.md)
+   - Istanbul public replay can show late-run drift even when early error is `< 0.1 m`
 3. **Jumps after rejects**
    - inspect `/alignment_status` reject streak before the jump
 
@@ -147,6 +150,17 @@ Collect before filing an issue:
 - `/initialpose` used
 - 3–5 `/alignment_status` samples around failure
 - `ros2 run tf2_ros tf2_echo map base_link`
+
+## Pose Covariance Questions (#72)
+
+`/pcl_pose` publishes `geometry_msgs/msg/PoseWithCovarianceStamped`. Current v1.1
+semantics are documented in [pose_covariance.md](pose_covariance.md).
+
+Short version:
+
+- covariance scales with `fitness_score`; it is a heuristic, not NDT posterior uncertainty
+- do not use it as a fusion-ready noise model without custom tuning
+- prefer `/alignment_status` for gating and diagnostics
 
 ## Sensor-Specific Notes
 

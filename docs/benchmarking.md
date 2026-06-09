@@ -236,6 +236,39 @@ ros2 run lidar_localization_ros2 benchmark_extract_pose_reference_from_rosbag2 \
 
 Use a unique `ROS_DOMAIN_ID` for replay so unrelated ROS 2 traffic cannot leak into the benchmark.
 
+#### Istanbul 60 s: run variance and regression guard
+
+The public demo and regression suite use the **same** seed/map parameters:
+
+- template: `param/public_istanbul_60s_benchmark.yaml`
+- initial pose + reference CSV: extracted from the bag (`initial-pose-skip-sec 0.05`)
+- map: `data/official/autoware_istanbul/pointcloud_map.pcd`
+
+Recent local reruns on 2026-06-10 (current `main`, Sprint 1 reliability patches):
+
+| Run | translation RMSE | rotation RMSE | matched | notes |
+| --- | --- | --- | --- | --- |
+| Public demo (fresh rerun) | `1.21 m` | `0.40 deg` | 61 | no `--resume`; end error ~`4.6 m` |
+| Public demo (outlier) | `4.74 m` | `0.44 deg` | 92 | late-run drift cascade to ~`24 m` |
+| Public regression suite | `1.15 m` | `0.39 deg` | 107 | safety gate still passes (`<= 6.0 m`) |
+
+The `4.74 m` outlier was **not** caused by seed/map parameter drift. Diff of
+`autoware_istanbul_initial_pose_60s.yaml` and `public_istanbul_60s_benchmark.yaml`
+between the outlier and fresh rerun showed identical values. Error started near
+`0.02 m` and grew only in the second half of the window — classic long-horizon
+drift, not map-frame misalignment. See [map_alignment.md](map_alignment.md).
+
+Interpretation:
+
+- Istanbul public replay is **stochastic** under the current acceptance policy;
+  compare trends across multiple runs, not a single number
+- for release checks, prefer `scripts/run_public_regression_suite.sh` gates over
+  one demo invocation
+- after code changes, rerun without `--resume` so `benchmark_runner` outputs are
+  regenerated
+- if RMSE spikes while early samples stay tight, inspect `/alignment_status`
+  reject streaks and `seed_translation_since_accept_m` before changing map/seed
+
 ### Run a private or NC dataset without committing raw paths
 
 Keep private bag, map, and ground-truth paths outside the repository. Drive the run through a manifest:
