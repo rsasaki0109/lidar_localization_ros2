@@ -73,12 +73,24 @@ ros2 topic echo /initialpose --once
 ros2 topic echo /alignment_status --once
 ```
 
+## RViz 2D Pose Estimate Checklist (issue #47)
+
+1. set RViz **Fixed Frame** to `map`
+2. wait until the pointcloud map is visible (or `use_pcd_map` load finished)
+3. use **2D Pose Estimate** (publishes `/initialpose`)
+4. confirm the tool uses `map` frame (not `odom` or `base_link`)
+5. check the node log:
+   - `published map -> base_link TF from initial pose` means RViz can resolve `map`
+   - `initial pose ignored: frame_id ...` means the frame is wrong
+   - `initial pose accepted before map is ready` means pose was stored early; wait for map load
+
 ## Common Failure Patterns
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| RViz: "No map frame" | fixed frame not set to `map`, or TF not published yet | set RViz fixed frame to `map`; publish `/initialpose` after map load |
+| RViz: "No map frame" | fixed frame not set to `map`, or TF not published yet | set RViz fixed frame to `map`; publish `/initialpose` once (recent builds publish `map` TF immediately) |
 | `/initialpose` ignored | `header.frame_id` is not `map` | republish with `frame_id: map` |
+| node dies right after 2D pose | stale scan replay or bad odom startup order | use current `main`; check logs for non-finite pose / map-not-ready warnings |
 | strange tf tree with odom | mixed Mode A and Mode B publishers | pick one mode; do not publish both `map->base_link` and `map->odom` unless intentional |
 | `use_odom:=true` crash at startup | odom before initial pose | fixed in recent builds; ensure initial pose is set first |
 | `enable_map_odom_tf:=true` but no map->odom | missing `odom->base_link` TF | publish wheel odom / identity odom / replay odom first |

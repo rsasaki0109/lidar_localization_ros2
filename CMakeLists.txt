@@ -229,6 +229,17 @@ if(BUILD_TESTING)
     COMMAND test_odom_integration_policy
   )
 
+  add_executable(test_initial_pose_admission_policy
+    test/test_initial_pose_admission_policy.cpp)
+  target_include_directories(test_initial_pose_admission_policy PRIVATE
+    include)
+  ament_target_dependencies(test_initial_pose_admission_policy
+    geometry_msgs)
+  add_test(
+    NAME initial_pose_admission_policy
+    COMMAND test_initial_pose_admission_policy
+  )
+
   add_executable(test_ndt_initializer_policy
     test/test_ndt_initializer_policy.cpp)
   target_include_directories(test_ndt_initializer_policy PRIVATE

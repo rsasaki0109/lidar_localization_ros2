@@ -1,9 +1,8 @@
 #ifndef LIDAR_LOCALIZATION_ODOM_INTEGRATION_POLICY_HPP_
 #define LIDAR_LOCALIZATION_ODOM_INTEGRATION_POLICY_HPP_
 
-#include <cmath>
-
 #include "geometry_msgs/msg/pose.hpp"
+#include "lidar_localization/pose_finite.hpp"
 
 namespace lidar_localization
 {
@@ -34,20 +33,6 @@ struct OdomAdmissionDecision
   OdomAdmissionStatus status{OdomAdmissionStatus::kAccepted};
   bool accepted{true};
 };
-
-inline bool isPoseFinite(const geometry_msgs::msg::Pose & pose)
-{
-  const double values[] = {
-    pose.position.x, pose.position.y, pose.position.z,
-    pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w,
-  };
-  for (const double value : values) {
-    if (!std::isfinite(value)) {
-      return false;
-    }
-  }
-  return true;
-}
 
 inline OdomAdmissionDecision decideOdomAdmission(const OdomAdmissionInput & input)
 {
