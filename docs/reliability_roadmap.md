@@ -31,7 +31,7 @@ Last triaged: 2026-06-10
 | [#72](https://github.com/rsasaki0109/lidar_localization_ros2/issues/72) | pose covariance | covariance | P2 | documented | see [pose_covariance.md](pose_covariance.md); no fusion claim yet |
 | [#70](https://github.com/rsasaki0109/lidar_localization_ros2/issues/70) | program starts but positioning fails | docs / diagnostics | P1 | documented | see [troubleshooting.md](troubleshooting.md) bringup checklist |
 | [#43](https://github.com/rsasaki0109/lidar_localization_ros2/issues/43) | map publishing clarification | docs | P3 | documented | see [troubleshooting.md](troubleshooting.md) map visibility section |
-| [#41](https://github.com/rsasaki0109/lidar_localization_ros2/issues/41) | how to reduce drift? | docs | P3 | open | point to public benchmark limits and tuning docs |
+| [#41](https://github.com/rsasaki0109/lidar_localization_ros2/issues/41) | how to reduce drift? | docs | P3 | documented | see [benchmarking.md](benchmarking.md) Istanbul drift tuning section |
 | [#33](https://github.com/rsasaki0109/lidar_localization_ros2/issues/33) | about ros2 humble | docs | P3 | open | README now documents Jazzy-first / Humble-compatible |
 | [#34](https://github.com/rsasaki0109/lidar_localization_ros2/issues/34) | different sensor like Ouster | docs | P3 | open | point to `cloud_topic` / frame-id configuration |
 | [#49](https://github.com/rsasaki0109/lidar_localization_ros2/issues/49) | ERROR run with Rslidar | docs | P3 | open | collect sensor-specific launch params |
@@ -76,6 +76,9 @@ Done criteria for sprint 1:
   - added [map_alignment.md](map_alignment.md) for map frame, seed pose, and offset vs drift
   - added [pose_covariance.md](pose_covariance.md) for `/pcl_pose` covariance semantics
   - Istanbul RMSE outlier (`4.74 m`) traced to late-run drift on identical seed/map; fresh rerun `1.21 m`
+- Istanbul drift tuning (`#41`):
+  - public preset now uses `local_map_crop` + `recovery_retry r3_gap1_seed15`
+  - repeat compare median translation `1.17 m` vs baseline `1.66 m`; see [benchmarking.md](benchmarking.md)
 - README or `docs/benchmarking.md` links to this roadmap
 - fixed issues get a one-line note in `CHANGELOG.md` Unreleased reliability section
 

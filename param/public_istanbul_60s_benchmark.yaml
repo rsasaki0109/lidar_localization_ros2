@@ -36,10 +36,17 @@
     imu_prediction_correction_guard_yaw_deg: 4.0
     enable_debug: false
     predict_pose_from_previous_delta: true
+    enable_local_map_crop: true
+    local_map_radius: 150.0
+    local_map_min_points: 100
     reject_above_score_threshold: true
     enable_borderline_seed_rejection_gate: true
     borderline_seed_gate_score_threshold: 5.25
     borderline_seed_gate_min_seed_translation_m: 1.0
+    enable_recovery_retry_from_last_pose: true
+    recovery_retry_from_last_pose_min_rejections: 3
+    recovery_retry_from_last_pose_max_accepted_gap_sec: 1.0
+    recovery_retry_from_last_pose_max_seed_translation_m: 15.0
     enable_map_odom_tf: false
     global_frame_id: map
     odom_frame_id: odom

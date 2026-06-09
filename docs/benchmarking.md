@@ -269,6 +269,28 @@ Interpretation:
 - if RMSE spikes while early samples stay tight, inspect `/alignment_status`
   reject streaks and `seed_translation_since_accept_m` before changing map/seed
 
+#### Istanbul 60 s drift tuning (2026-06-10)
+
+Public benchmark preset (`param/public_istanbul_60s_benchmark.yaml`) now enables
+`local_map_crop` and conservative `recovery_retry_from_last_pose` (`r3`, `gap<=1 s`,
+`seed<=15 m`) on top of the existing `thr6 + borderline_seed_gate` policy.
+
+Single-run and repeat compare (`param/benchmark/autoware_istanbul_ndt_60s_drift_tuning_*.json`):
+
+| Preset | translation RMSE (3 runs) | rotation RMSE | matched (typical) |
+| --- | --- | --- | --- |
+| public baseline | `1.66 / 3.20 / 1.27 m` (median `1.66 m`) | `0.2–0.7 deg` | `54–99` |
+| recovery `r3_gap1_seed15` | `1.17 / 0.97 / 2.59 m` (median `1.17 m`) | `2.4–3.7 deg` | `103–180` |
+
+Interpretation:
+
+- recovery retry reduces median translation RMSE and raises matched sample count
+- a parallel outlier baseline run (`3.20 m`, `54` matched) became `0.97 m`, `124` matched
+  with recovery enabled on the same seed/reference window
+- rotation RMSE rises slightly but stays well inside the public regression gate (`<= 20 deg`)
+- `score_threshold: 5.25` alone did not beat baseline on this template; avoid stacking
+  with recovery until revalidated
+
 ### Run a private or NC dataset without committing raw paths
 
 Keep private bag, map, and ground-truth paths outside the repository. Drive the run through a manifest:

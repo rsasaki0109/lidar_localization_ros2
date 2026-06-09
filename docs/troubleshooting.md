@@ -141,6 +141,8 @@ Separate these cases:
 2. **Drift over time**
    - tuning / environment issue; see public benchmark limits in [benchmarking.md](benchmarking.md)
    - Istanbul public replay can show late-run drift even when early error is `< 0.1 m`
+   - public preset enables `recovery_retry_from_last_pose` (`r3`, `gap<=1 s`, `seed<=15 m`); inspect
+     `recovery_retry_from_last_pose_recovered` and late-run `seed_translation_since_accept_m`
 3. **Jumps after rejects**
    - inspect `/alignment_status` reject streak before the jump
 
