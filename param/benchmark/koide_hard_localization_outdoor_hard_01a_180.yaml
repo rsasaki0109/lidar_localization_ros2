@@ -1,4 +1,4 @@
-# Koide Hard Point Cloud Localization — outdoor_hard_01a 60 s smoke.
+# Koide Hard Point Cloud Localization — outdoor_hard_01a 180 s acceptance boundary.
 # Requires data staged under data/public/koide_hard_localization.
 
 mode: run
@@ -31,9 +31,9 @@ localizer:
     - lidar_frame_id:=livox_frame
 
 benchmark:
-  output_dir: /tmp/lidarloc_koide_outdoor_hard_01a_smoke60
-  ros_domain_id: 178
-  bag_duration: 60
+  output_dir: /tmp/lidarloc_koide_outdoor_hard_01a_180
+  ros_domain_id: 181
+  bag_duration: 180
   bag_start_offset: 0
   settle_seconds: 5
   post_roll_seconds: 1

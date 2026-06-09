@@ -113,6 +113,13 @@ ros2 run lidar_localization_ros2 benchmark_from_manifest \
 
 Latest local Koide snapshot:
 
+- `2026-06-10`, `outdoor_hard_01a_smoke60` (baseline): `translation_rmse_m=0.230`, `rotation_rmse_deg=2.607`, `ok_rows=228/229`
+- `2026-06-10`, `outdoor_hard_01a_120` (baseline): `translation_rmse_m=0.192`, `rotation_rmse_deg=1.923`, `ok_rows=441/461`
+- `2026-06-10`, `outdoor_hard_01a_180` (baseline): `translation_rmse_m=0.210`, `ok_rows=71/523` — pose output stops ~`126 s`
+- `2026-06-10`, `outdoor_hard_01a_180` + `recovery_retry r3_gap1_seed15`: `translation_rmse_m=0.255`, `rotation_rmse_deg=2.273`, `ok_rows=473/474`
+- `2026-06-10`, `outdoor_hard_01 window_15_120` recovery compare:
+  - baseline: `translation_rmse_m=5.477`, `matched=138`
+  - `recovery_retry r3_gap1_seed15`: `translation_rmse_m=0.266`, `matched=443`
 - `2026-05-24`, `indoor_easy_01_smoke60`: `translation_rmse_m=0.079`, `rotation_rmse_deg=1.639`, `ok_rows=773/773`
 - `2026-05-24`, `outdoor_hard_01a_smoke60`: `translation_rmse_m=0.209`, `rotation_rmse_deg=2.241`, `ok_rows=223/225`
 - `2026-05-25`, `outdoor_hard_01a_120`: `translation_rmse_m=0.224`, `rotation_rmse_deg=2.083`, `ok_rows=482/499`
