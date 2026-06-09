@@ -18,9 +18,9 @@ Last triaged: 2026-06-10
 
 | Issue | Title | Category | Priority | Status | Next action |
 | --- | --- | --- | --- | --- | --- |
-| [#76](https://github.com/rsasaki0109/lidar_localization_ros2/issues/76) | initial pose result process died | crash | P0 | open | add repro checklist for `/initialpose` + required frames |
+| [#76](https://github.com/rsasaki0109/lidar_localization_ros2/issues/76) | initial pose result process died | crash | P0 | in progress | guard non-finite `/initialpose`; stop eager `cloudReceived` on reset |
 | [#47](https://github.com/rsasaki0109/lidar_localization_ros2/issues/47) | rviz no map frame; node dies on 2D pose | crash | P0 | open | verify `map` frame + initial pose path; document required TF tree |
-| [#56](https://github.com/rsasaki0109/lidar_localization_ros2/issues/56) | crash with `use_odom:=true` | crash | P0 | open | reproduce with `publish_identity_odom.py` / real odom source |
+| [#56](https://github.com/rsasaki0109/lidar_localization_ros2/issues/56) | crash with `use_odom:=true` | crash | P0 | fix in branch | skip odom before initial pose; guard non-finite pose integration |
 | [#58](https://github.com/rsasaki0109/lidar_localization_ros2/issues/58) | strange tf_tree with odom frame | frame / TF | P1 | open | document expected `map -> odom -> base_link` contract |
 | [#27](https://github.com/rsasaki0109/lidar_localization_ros2/issues/27) | use odom TF instead of odom topic | frame / TF | P1 | open | clarify supported odom input path in docs |
 | [#55](https://github.com/rsasaki0109/lidar_localization_ros2/issues/55) | `odom_frame_id_` defined but not used | frame / TF | P2 | open | code audit + doc alignment |
@@ -55,6 +55,14 @@ The first reliability sprint should stay narrow:
 Done criteria for sprint 1:
 
 - each P0 issue has either a reproduced test, a documented workaround, or a merged fix
+
+### 2026-06-10 Sprint 1 patch notes
+
+- `#56` / `#76` shared startup race:
+  - `odomReceived()` now waits for a valid initial pose and finite current pose
+  - non-finite odom integration is rolled back instead of poisoning NDT init guess
+  - `initialPoseReceived()` no longer immediately replays a cached pre-reset scan
+- unit coverage: `test_odom_integration_policy`
 - README or `docs/benchmarking.md` links to this roadmap
 - fixed issues get a one-line note in `CHANGELOG.md` Unreleased reliability section
 
