@@ -61,12 +61,13 @@ What it does:
 Typical first-run time: about **15–30 minutes** (network download dominates).
 Re-runs with `--resume` are much faster.
 
-Latest local smoke on Autoware Istanbul `60 s` (dataset already present, 2026-06-10):
+Latest local smoke on Autoware Istanbul `60 s` (dataset already present, 2026-06-10,
+new preset with `local_map_crop` + `recovery_retry_from_last_pose`):
 
-- translation RMSE: `1.21 m` (fresh rerun; outlier run `4.74 m` on same seed/map)
-- rotation RMSE: `0.40 deg`
-- matched samples: `61`
-- wall time: about `70 s`
+- public demo best run: translation RMSE `0.95 m`, rotation `2.13 deg`, matched `220`
+- public regression gate: translation RMSE `1.00 m`, rotation `2.33 deg`, matched `104` — **pass**
+- outlier runs still happen on identical seed/map (e.g. `3.31 m`, `19` matched); see variance notes
+- wall time: about `70 s` per demo run
 
 Istanbul replay is run-to-run variable; see [docs/benchmarking.md](docs/benchmarking.md)
 for the variance notes and prefer `scripts/run_public_regression_suite.sh` for release gates.
