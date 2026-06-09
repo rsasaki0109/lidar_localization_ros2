@@ -19,7 +19,9 @@
 - document Istanbul public demo RMSE run variance; identical seed/map can yield ~`1.2 m` or late-run drift outliers
 - tune public Istanbul 60 s preset with `local_map_crop` and `recovery_retry_from_last_pose` (`r3`, `gap<=1 s`, `seed<=15 m`)
 - reconfirm public regression suite after drift tuning; Istanbul gate `1.00 m` and HDL IMU checks pass (2026-06-10)
-- enable `recovery_retry_from_last_pose` on Koide outdoor manifests; `180 s` acceptance rises from `71` to `473` ok rows
+- enable `recovery_retry_from_last_pose` on Koide outdoor manifests; `180 s` acceptance rises from `71` to `473+` ok rows
+- reconfirm Koide outdoor manifests after recovery tuning; acceptance holds on `180 s` reconfirm (`486/753 ok_rows`) with run-to-run RMSE variance
+- fix `boreas_localization_120s.yaml` dataset paths; baseline smoke shows `37/961 ok_rows` with `local_map_crop_too_small` bottleneck
 - guard `use_odom` integration until initial pose is valid and keep pose finite for NDT init guess
 - ignore non-finite `/initialpose` payloads and stop eager scan replay during pose reset
 - v1.1 relocalization is documented as a validated dry-run `/initialpose` command artifact only
