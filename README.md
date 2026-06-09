@@ -113,6 +113,19 @@ For the full no-sudo local-prefix workflow, see [docs/local_build.md](docs/local
 | **30-minute public demo** | `source scripts/setup_local_env.sh && scripts/run_public_demo.sh` |
 | Public regression | `source scripts/setup_local_env.sh && scripts/run_public_regression_suite.sh` |
 
+## Frames And TF
+
+Default frames: `map` (global), `odom`, `base_link`.
+
+- `/initialpose` must use `header.frame_id = map`
+- default TF mode publishes `map -> base_link`
+- Nav2-style mode uses `enable_map_odom_tf: true` and requires an external `odom -> base_link` publisher
+- `use_odom: true` uses the `/odom` topic for pose prediction; it is not the same as odom TF
+
+See [docs/frame_contract.md](docs/frame_contract.md) for the full contract and troubleshooting for
+issues [#58](https://github.com/rsasaki0109/lidar_localization_ros2/issues/58) and
+[#27](https://github.com/rsasaki0109/lidar_localization_ros2/issues/27).
+
 ## Nav2 Requirements
 
 For full Nav2 use, provide:
@@ -120,7 +133,7 @@ For full Nav2 use, provide:
 - a 3D pointcloud map for the localizer
 - a 2D occupancy `map_yaml` for Nav2 planning
 - an odom source publishing `odom -> base_link`
-- an initial pose on `/initialpose`
+- an initial pose on `/initialpose` in the `map` frame
 
 If you only have a 3D PCD map, generate a cropped occupancy map:
 
@@ -250,6 +263,7 @@ git branch -D <branch>
 | Experiment interfaces and decisions | [docs/interfaces.md](docs/interfaces.md), [docs/experiments.md](docs/experiments.md), [docs/decisions.md](docs/decisions.md) |
 | Roadmap | [docs/competitive_roadmap.md](docs/competitive_roadmap.md) |
 | Reliability / open issues | [docs/reliability_roadmap.md](docs/reliability_roadmap.md) |
+| Frame / TF contract | [docs/frame_contract.md](docs/frame_contract.md) |
 
 ## ROS 2 Support
 
