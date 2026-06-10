@@ -160,6 +160,7 @@ install(PROGRAMS
   scripts/run_borderline_gate_experiments.py
   scripts/run_experiment_suite.py
   scripts/run_imu_guard_experiments.py
+  scripts/run_measurement_acceptance_experiments.py
   scripts/run_nav2_reinit_supervisor_sweep.sh
   scripts/run_nav2_reinit_supervisor_regression.sh
   scripts/run_recovery_action_experiments.py

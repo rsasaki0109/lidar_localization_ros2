@@ -236,6 +236,23 @@ supervisor) is green in one run. The public-suite half is no longer the blocker.
 - Detailed numbers live in
   [global_localization_roadmap.md](global_localization_roadmap.md).
 
+### 2026-06-11: Phase 3 opened with the measurement_acceptance experiment
+
+The Koide failure window turned Phase 3 into the evidence-backed priority, so it
+started the same day:
+
+- new `experiments/measurement_acceptance` track with six fixtures taken from the
+  reproduced failure window (healthy row, degraded onset, degraded streak, stale
+  prediction, total loss, synthetic fresh-prediction jump)
+- `correction_conditioned` (fitness threshold + correction/staleness cross-check)
+  passes 6/6; the runtime-equivalent `fixed_threshold` baseline passes 3/6 — it
+  rejects the rows that start the 300-row reject streak and accepts the aliased
+  jump
+- next step: validate the winning policy against full replay (does accepting the
+  degraded-onset rows keep RMSE bounded end-to-end on Koide and Istanbul?), then
+  consider the `measurement_gate_policy` C++ change behind the public regression
+  gates
+
 ### 2026-06-11: Global localization G1 start
 
 - `MAP_GRID` baseline merged: map-wide seed candidates (occupied-cell centroids with a

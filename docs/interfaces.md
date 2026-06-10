@@ -86,6 +86,47 @@ Disable the IMU-preintegration path early enough to avoid poisoning localization
 - `streak_guard`: stateful OOP streak detector
 
 
+## Multi-Criteria Measurement Acceptance
+
+Accept degraded-but-consistent registration results that the scalar fitness gate rejects, without accepting stale or contradicted measurements. Motivated by the Koide outdoor_hard_01a window where the ground-truth pose scores ~9.6 against the 6.0 gate and the scalar gate starts a 300-row reject streak.
+
+### Minimal Interface
+
+- `reset() -> None`
+- `step(sample: AcceptanceSample) -> AcceptanceDecision`
+
+### `AcceptanceSample` fields
+
+- `index`
+- `fitness_score`
+- `effective_score_threshold`
+- `correction_translation_m`
+- `correction_yaw_deg`
+- `accepted_gap_sec`
+- `consecutive_rejected_updates`
+
+### `AcceptanceDecision` fields
+
+- `reject_measurement`
+- `reason`
+- `score`
+
+### Shared Fixtures
+
+- `degraded_onset_small_correction_should_accept`: Failure-window onset: score 13.6 is over the 6.0 gate, but the correction is 1.0 m / 1.8 deg against a 0.5 s old prediction. Ground-truth analysis of this window shows even the true pose scores ~9.6 here; rejecting this row starts a 300-row reject streak.
+- `degraded_streak_small_correction_should_accept`: Three rejects into the window: score 26.6 but correction 0.75 m / 2.4 deg, gap 1.8 s. Pose still agrees with prediction.
+- `fresh_jump_good_score_should_reject`: Synthetic, derived from the healthy row: a good score (1.5) whose pose jumps 25 m against a 0.4 s old prediction. An aliased match should not be accepted on score alone.
+- `healthy_tracking_should_accept`: Real healthy tracking row; every strategy must accept.
+- `lost_huge_score_should_reject`: Deep in the failure window: score 4354 with a 128 s gap. Unambiguous loss.
+- `stale_prediction_should_reject`: Fifteen rejects in, the prediction is 7.3 s old; a small correction against a stale prediction is no longer evidence.
+
+### Candidate Families
+
+- `correction_conditioned`: fitness threshold + correction/staleness cross-check
+- `score_ratio_budget`: relative score cap with gap/streak budget
+- `fixed_threshold`: scalar fitness threshold (runtime baseline)
+
+
 ## Recovery Action Selection
 
 Choose whether to keep open-loop prediction, reuse a rejected seed, or retry from the last accepted pose after a failed measurement.

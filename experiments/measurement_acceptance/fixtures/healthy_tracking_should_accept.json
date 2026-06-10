@@ -1,0 +1,17 @@
+{
+  "name": "healthy_tracking_should_accept",
+  "description": "Real healthy tracking row; every strategy must accept.",
+  "source": "koide outdoor_hard_01a 180s reinit090 replay (2026-06-11), alignment_status.csv:10",
+  "expectation": {
+    "expected_reject": false
+  },
+  "sample": {
+    "index": 10,
+    "fitness_score": 0.3,
+    "effective_score_threshold": 6.0,
+    "correction_translation_m": 0.01,
+    "correction_yaw_deg": 0.13,
+    "accepted_gap_sec": 0.300838,
+    "consecutive_rejected_updates": 0
+  }
+}

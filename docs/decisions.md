@@ -28,6 +28,17 @@
 - nearest alternative: `score_budget` at `70.68`
 - generated_from: `scripts/run_imu_guard_experiments.py`
 
+## Multi-Criteria Measurement Acceptance
+
+- adopted variant for this problem: `correction_conditioned`
+- design family: fitness threshold + correction/staleness cross-check
+- rationale: highest combined score (`83.84`) under the shared fixture/evaluation contract
+- benchmark score: `100.0`
+- readability score: `25.2`
+- extensibility score: `94.0`
+- nearest alternative: `score_ratio_budget` at `78.72`
+- generated_from: `scripts/run_measurement_acceptance_experiments.py`
+
 ## Recovery Action Selection
 
 - adopted variant for this problem: `guarded_last_pose_retry`
