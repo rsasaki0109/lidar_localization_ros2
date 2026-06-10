@@ -9,7 +9,9 @@
 - `param/benchmark/v1_1_boreas_dry_run_endpoint.example.yaml` for the v1.1 MVP dry-run endpoint chain
 - `scripts/run_v1_1_relocalization_smoke.sh` to guard the v1.1 claim boundary
 - `docs/global_localization_roadmap.md` defining the G1/G2/G3 global localization phases
+- `docs/development_plan.md` dated execution plan linked from README and the roadmap
 - `scripts/make_map_grid_relocalization_attempts.py` map-wide candidate baseline that needs no route prior
+- `scripts/make_bbs_relocalization_attempts.py` BBS_2D branch-and-bound candidate generator over the occupancy-grid pyramid
 
 ### Reliability / Claim Boundary
 
@@ -38,6 +40,9 @@
 - README badges and support matrix now show **Jazzy-first / Humble-compatible**
 - GitHub Actions workflow updated to `actions/checkout@v4` and `push` on `main`
 - Jazzy CI still builds against `ndt_omp_ros2` `humble` branch until a dedicated Jazzy branch exists upstream
+- `scripts/setup_local_env.sh` resolves the ROS distro (`LIDAR_LOCALIZATION_ROS_DISTRO`, `ROS_DISTRO`, humble, jazzy) instead of hardcoding Humble
+- HDL sample fetch patches rosbag2 `offered_qos_profiles` metadata per distro so `ros2 bag play` works on Jazzy
+- public regression suite passes on a Jazzy build (2026-06-11): Istanbul `0.673 m` translation RMSE, HDL medians `468.5 / 459.0` pose rows
 
 ## 1.0.0 - 2026-03-30
 
