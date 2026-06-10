@@ -3,6 +3,59 @@
 This file records reproducible public-data validation snapshots. It is not a
 hardware field-test log.
 
+## 2026-06-10 Main After Istanbul Drift Tuning
+
+- commit: `f6503d3`
+- source branch: `main`
+- validation commands:
+
+```bash
+source scripts/setup_local_env.sh
+scripts/run_public_demo.sh \
+  --output-dir /tmp/lidarloc_public_demo_post_tune_r2 \
+  --skip-fetch --skip-build --ros-domain-id 212
+scripts/run_public_regression_suite.sh \
+  --output-dir /tmp/lidarloc_public_regression_post_tune \
+  --ros-domain-base 220
+```
+
+Result:
+
+- public demo (best of two fresh runs): `pass` trajectory eval
+  - translation RMSE: `0.955 m`
+  - rotation RMSE: `2.130 deg`
+  - matched samples: `220`
+  - pose rows: `222`
+- public demo outlier on same preset (same day): translation RMSE `3.308 m`, matched `19`
+- public regression suite: `pass`
+  - Istanbul `60 s`: `pass`
+    - pose rows: `106`
+    - matched samples: `104`
+    - translation RMSE: `1.002 m`
+    - rotation RMSE: `2.328 deg`
+    - recovery retry recovered: `1`
+    - IMU prediction active rows: `0`
+  - HDL `60 s`: `pass`
+    - runs: `2 baseline / 2 candidate`
+    - pose rows median: `559.0 -> 560.0`
+    - alignment-time median: `0.045634 s -> 0.046194 s`
+    - IMU prediction active rows median for the IMU-enabled candidate: `6.0`
+    - max IMU disable fallback events: `1`
+
+Artifacts:
+
+- `artifacts/public/demo/latest/demo_report.md`
+- `artifacts/public/public_regression_suite/summary.json`
+- `artifacts/public/public_regression_suite/summary.md`
+- `/tmp/lidarloc_public_demo_post_tune_r2/run/`
+- `/tmp/lidarloc_public_regression_post_tune/`
+
+Interpretation:
+
+- Drift-tuned Istanbul preset clears the public regression gate while still showing
+  run-to-run variance; prefer the regression suite over single demo runs for release checks.
+- HDL IMU safety / throughput behavior remains stable after the Istanbul preset change.
+
 ## 2026-05-22 Main Release Regression
 
 - commit: `2a5f11f`
