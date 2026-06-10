@@ -3,6 +3,43 @@
 This file records reproducible public-data validation snapshots. It is not a
 hardware field-test log.
 
+## 2026-06-10 Boreas Seed-Management Tuning
+
+- commit: uncommitted (after `433e0b5`)
+- source branch: `feat/rust-robotics-library-first`
+- validation commands:
+
+```bash
+source scripts/setup_local_env.sh
+ros2 run lidar_localization_ros2 benchmark_from_manifest \
+  --manifest param/benchmark/boreas_localization_60s_seed_compare.yaml
+ros2 run lidar_localization_ros2 benchmark_from_manifest \
+  --manifest param/benchmark/boreas_localization_120s_boreas_preset.yaml
+```
+
+Result:
+
+- `60 s` seed sweep winner `post_reject_r5_plus_rejected_seed`:
+  - matched: `49` (baseline `41`)
+  - translation RMSE: `45.7 m` (baseline `47.6 m`)
+  - no `reinitialization_requested_rows` in `60 s`
+- `120 s` updated `boreas_ndt_velodyne.yaml`:
+  - matched: `52` (previous throughput preset `45`)
+  - translation RMSE: `47.8 m`
+  - rotation RMSE: `7.7 deg`
+  - ok rows: `52 / 647`
+  - cliff still begins ~`12 s`; dominant post-cliff diagnostic: `fitness_score_over_post_reject_strict_threshold_rejected`
+
+Artifacts:
+
+- `/tmp/lidarloc_boreas_localization_60s_seed_compare/`
+- `/tmp/lidarloc_boreas_localization_120s_boreas_preset/`
+
+Interpretation:
+
+- `post_reject_strict` + conservative `rejected_seed_update` + tighter `max_twist_prediction_dt` improves throughput without the aggressive `recovery_retry` RMSE blow-up.
+- Boreas remains diagnostic-only; the `~12 s` fitness cliff is still the primary blocker.
+
 ## 2026-06-10 Boreas Baseline Smoke
 
 - commit: `4dd6b4c` (manifest path fix uncommitted)

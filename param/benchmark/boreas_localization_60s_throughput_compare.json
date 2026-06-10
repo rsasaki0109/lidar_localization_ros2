@@ -1,0 +1,71 @@
+{
+  "common_params": {
+    "registration_method": "NDT_OMP",
+    "score_threshold": 6.0,
+    "ndt_resolution": 1.0,
+    "ndt_step_size": 0.1,
+    "ndt_num_threads": 4,
+    "ndt_max_iterations": 35,
+    "transform_epsilon": 0.01,
+    "voxel_leaf_size": 1.0,
+    "enable_scan_voxel_filter": true,
+    "scan_min_range": 1.0,
+    "scan_max_range": 80.0,
+    "cloud_queue_depth": 1,
+    "min_scan_interval_sec": 0.0,
+    "predict_pose_from_previous_delta": true,
+    "reject_above_score_threshold": true,
+    "use_imu": false,
+    "use_imu_preintegration": false,
+    "use_odom": false,
+    "enable_debug": false,
+    "use_twist_prediction": true,
+    "twist_prediction_use_angular_velocity": false,
+    "max_twist_prediction_dt": 0.2,
+    "enable_local_map_crop": true,
+    "local_map_radius": 300.0,
+    "local_map_min_points": 100,
+    "enable_borderline_seed_rejection_gate": true,
+    "borderline_seed_gate_score_threshold": 5.25,
+    "borderline_seed_gate_min_seed_translation_m": 1.0
+  },
+  "runs": [
+    {
+      "name": "boreas_preset_vox1"
+    },
+    {
+      "name": "fast_path_velodyne",
+      "params": {
+        "base_frame_id": "velodyne",
+        "enable_scan_voxel_filter": false
+      }
+    },
+    {
+      "name": "vox15_threads8_iter25",
+      "params": {
+        "voxel_leaf_size": 1.5,
+        "ndt_num_threads": 8,
+        "ndt_max_iterations": 25
+      }
+    },
+    {
+      "name": "fast_path_vox15_threads8",
+      "params": {
+        "base_frame_id": "velodyne",
+        "enable_scan_voxel_filter": false,
+        "voxel_leaf_size": 1.5,
+        "ndt_num_threads": 8,
+        "ndt_max_iterations": 25
+      }
+    },
+    {
+      "name": "fast_path_ndt15",
+      "params": {
+        "base_frame_id": "velodyne",
+        "enable_scan_voxel_filter": false,
+        "ndt_resolution": 1.5,
+        "ndt_max_iterations": 25
+      }
+    }
+  ]
+}

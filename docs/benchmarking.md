@@ -337,16 +337,55 @@ generation scripts. See [mapless_public_dataset_workflow.md](mapless_public_data
 
 ### Boreas baseline snapshot
 
-Latest local Boreas snapshot (`boreas_localization_120s.yaml`, `boreas-2021-09-02-11-42` vs GT-aligned map):
+Latest local Boreas snapshot (`boreas-2021-09-02-11-42` vs GT-aligned map from `boreas-2020-11-26-13-58`):
 
-- `2026-06-10`, `120 s` localizer-only: `translation_rmse_m=43.515`, `rotation_rmse_deg=8.581`, `ok_rows=37/961`
-- dominant failure modes: `fitness_score_over_threshold_rejected` (`744`), `local_map_crop_too_small` (`179`), `accepted_gap_reinit_requested` from ~`43 s`
-- pose throughput: only `38` published poses in `120 s` — treat as map/crop/throughput bottleneck, not a passing benchmark
+- `2026-06-10`, `120 s` wall-clock baseline: `translation_rmse_m=43.515`, `rotation_rmse_deg=8.581`, `ok_rows=37/961`, matched `37`
+- `2026-06-10`, `120 s` `use_sim_time:=true`: `translation_rmse_m=42.567`, `rotation_rmse_deg=8.478`, matched `39` — no material fix
+- `2026-06-10`, crop sweep (`boreas_localization_120s_crop_compare.json`):
+  - `baseline_crop150`: matched `38`, `translation_rmse_m=40.325`
+  - `no_crop`: matched `31`, `translation_rmse_m=32.324`
+  - `crop_radius300`: matched `25`, `translation_rmse_m=39.469`
+  - `no_crop_recovery_r3_gap1_seed15`: matched `144`, `translation_rmse_m=110.709` — throughput up, false recovery / map misalignment
+- dominant failure modes on baseline: `fitness_score_over_threshold_rejected`, `local_map_crop_too_small`, `accepted_gap_reinit_requested` from ~`43 s`
+
+Interpretation:
+
+- crop tuning alone does not make Boreas benchmarkable; disabling crop or widening radius does not restore stable tracking
+- `recovery_retry` can raise pose throughput, but on this map/sequence pair it mostly accepts bad alignments
+- the next blocker is likely **map split / GT alignment** between mapping and localization sequences, not another crop radius sweep
+
+`2026-06-10` cliff / throughput tuning notes:
+
+- GT map rebuild with `build_gt_aligned_map_from_reference_csv.py` matches the existing map (`~2.68M` points); benchmark RMSE unchanged
+- first `~12 s` tracks well (`early12 median ~0.04–0.17 m`), then fitness rises above `score_threshold=6.0` and reject streaks begin
+- `use_twist_prediction: false` raises pose throughput but leaves the pose near the initial pose
+- aggressive `recovery_retry` + disabled borderline gate raises matched count but destroys RMSE (`60 s` matched `158`, RMSE `67 m`)
+- conservative improvements so far:
+  - `local_map_radius: 300` (`60 s` matched `24`, RMSE `39.5 m`, late median `87 m` vs urban `107 m`)
+  - `max_twist_prediction_dt: 0.2` with borderline gate kept (`60 s` matched `42`, early12 median `0.13 m`, late drift remains)
+- new preset: `param/boreas_ndt_velodyne.yaml`
+  - `local_map_radius=300`, `max_twist_prediction_dt=0.2`, borderline gate kept, no `recovery_retry`
+  - throughput tuning: `voxel_leaf_size=1.5`, `ndt_num_threads=8`, `ndt_max_iterations=25`, `cloud_queue_depth=1`
+- throughput sweep (`60 s`):
+  - `vox15_threads8_iter25`: matched `44`, align median `0.018 s` (vs preset `0.051 s`), RMSE `47.9 m`
+  - `fast_path_velodyne` (`base_frame_id=velodyne`, no voxel filter): matched `33`, align median `0.088 s` — not faster here
+- `120 s` updated preset: matched `45` (urban baseline was `~37`), translation RMSE `47.4 m` — still diagnostic only
+- `60 s` seed-management sweep (`boreas_localization_60s_seed_compare.json`):
+  - `preset_baseline`: matched `41`, RMSE `47.6 m`, `reinitialization_requested_rows=56`
+  - `max_dt01` (`max_twist_prediction_dt=0.1`): matched `50`, RMSE `47.7 m`, no reinit requests
+  - `post_reject_r5_thr55`: matched `42`, RMSE `47.1 m`
+  - `rejected_seed_r3_fit6_t2_yaw5`: matched `39`, RMSE `48.2 m`
+  - `recovery_r3_gap1_seed10`: matched `41`, RMSE `49.4 m` — conservative recovery still hurts RMSE
+  - `post_reject_r5_plus_rejected_seed` (winner): matched `49`, RMSE `45.7 m`, fitness median `18.0`, seed drift median `26.6 m`, no reinit requests
+  - `delta_only_no_twist`: matched `158`, RMSE `106.6 m` — confirms twist prediction must stay enabled
+- updated `param/boreas_ndt_velodyne.yaml` with winner combo:
+  - `max_twist_prediction_dt=0.1`
+  - `enable_post_reject_strict_score_threshold=true`, `post_reject_strict_min_rejections=5`, `post_reject_strict_score_threshold=5.5`
+  - `enable_rejected_seed_update=true`, `rejected_seed_update_min_rejections=3`, `rejected_seed_update_max_fitness=6.0`
+- `120 s` seed-management preset confirm: matched `52` (was `45`), translation RMSE `47.8 m`, `ok_rows=52/647` — throughput up, cliff still ~`12 s`
 
 Next engineering targets:
-
-1. verify map split / GT alignment for localization sequence vs mapping sequence
-2. disable or widen `local_map_crop` for large outdoor maps until crop policy is dataset-aware
+2. keep borderline / score gates, but improve behavior after the `~12 s` fitness cliff without accepting bad recoveries
 3. stage IMU/twist prediction only after localizer-only acceptance is stable
 
 ### Boreas starter
