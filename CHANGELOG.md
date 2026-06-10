@@ -11,6 +11,8 @@
 
 ### Reliability / Claim Boundary
 
+- guard `use_odom` integration until initial pose is valid and keep pose finite for NDT init guess
+- ignore non-finite `/initialpose` payloads and stop eager scan replay during pose reset
 - v1.1 relocalization is documented as a validated dry-run `/initialpose` command artifact only
 - guarded reset publication and post-reset observation remain experimental and outside the public MVP endpoint
 - automatic runtime recovery and production-grade global relocalization are explicitly out of scope
