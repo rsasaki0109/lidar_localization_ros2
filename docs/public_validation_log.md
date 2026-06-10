@@ -3,6 +3,54 @@
 This file records reproducible public-data validation snapshots. It is not a
 hardware field-test log.
 
+## 2026-06-11 v1.1.0 Release Regression On Jazzy
+
+- commit: `64da698`
+- source branch: `main`
+- environment: ROS 2 Jazzy, Ubuntu 24.04, first release-suite run on a Jazzy build
+- validation command:
+
+```bash
+source scripts/setup_local_env.sh
+scripts/run_release_regression_suite.sh \
+  --work-dir /tmp/lidarloc_release_regression_20260611 \
+  --report-dir ../artifacts/public/release_regression_suite_20260611_v1_1_0
+```
+
+Result:
+
+- overall: `overall_pass=true`
+- Istanbul `60 s` no-IMU safety check:
+  - translation RMSE: `0.673 m`
+  - rotation RMSE: `2.179 deg`
+  - alignment median: `0.036 s`
+- HDL `60 s` IMU safety check, two-repeat medians:
+  - pose rows: `468.5` baseline / `459.0` IMU candidate
+  - IMU-candidate alignment median: `0.084 s`
+  - fallback events: `1`
+- Nav2 reinitialization supervisor `150 s`:
+  - requested rows: `285 -> 6` (baseline vs supervisor)
+  - both replay goals `SUCCEEDED`
+  - all six regression checks pass
+
+Artifacts:
+
+- `artifacts/public/release_regression_suite_20260611_v1_1_0/summary.json`
+- `artifacts/public/release_regression_suite_20260611_v1_1_0/public_regression_suite/summary.json`
+- `artifacts/public/release_regression_suite_20260611_v1_1_0/nav2_reinit_supervisor_regression_150/regression_result.json`
+
+Interpretation:
+
+- This is the first full release-suite green on a Jazzy build and the v1.1.0
+  release boundary. It required the Jazzy bring-up fixes recorded in the
+  changelog (distro-aware env setup, HDL bag metadata patching, Nav2 plugin
+  type names, collision_monitor / docking_server sections, and removal of the
+  explicit BT plugin_lib_names list).
+- The Nav2 occupancy-map artifact is bootstrapped route-bounded on fresh
+  workspaces; full-map bounds OOM on the city-scale Istanbul map.
+- This is public replay and controlled Nav2 regression validation, not a
+  hardware result.
+
 ## 2026-06-10 Boreas Seed-Management Tuning
 
 - commit: uncommitted (after `433e0b5`)

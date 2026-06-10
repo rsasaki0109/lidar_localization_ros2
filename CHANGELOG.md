@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.1.0 - 2026-06-11
+
+Reliability sprint, Jazzy support, and the artifact-first relocalization /
+global-localization foundation. Release boundary:
+`run_release_regression_suite.sh` `overall_pass=true` on a Jazzy build
+(2026-06-11, commit `64da698`); see `docs/public_validation_log.md`.
+
 ### Added
 
 - `scripts/run_public_demo.sh` for the 30-minute Autoware Istanbul public demo path

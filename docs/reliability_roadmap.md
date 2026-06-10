@@ -18,9 +18,9 @@ Last triaged: 2026-06-10
 
 | Issue | Title | Category | Priority | Status | Next action |
 | --- | --- | --- | --- | --- | --- |
-| [#76](https://github.com/rsasaki0109/lidar_localization_ros2/issues/76) | initial pose result process died | crash | P0 | fix in main | non-finite `/initialpose` rejected; no eager scan replay on reset |
-| [#47](https://github.com/rsasaki0109/lidar_localization_ros2/issues/47) | rviz no map frame; node dies on 2D pose | crash | P0 | fix in main | publish TF on `/initialpose`; clearer frame/map diagnostics |
-| [#56](https://github.com/rsasaki0109/lidar_localization_ros2/issues/56) | crash with `use_odom:=true` | crash | P0 | fix in main | skip odom before initial pose; guard non-finite pose integration |
+| [#76](https://github.com/rsasaki0109/lidar_localization_ros2/issues/76) | initial pose result process died | crash | P0 | released in v1.1.0 | non-finite `/initialpose` rejected; no eager scan replay on reset |
+| [#47](https://github.com/rsasaki0109/lidar_localization_ros2/issues/47) | rviz no map frame; node dies on 2D pose | crash | P0 | released in v1.1.0 | publish TF on `/initialpose`; clearer frame/map diagnostics |
+| [#56](https://github.com/rsasaki0109/lidar_localization_ros2/issues/56) | crash with `use_odom:=true` | crash | P0 | released in v1.1.0 | skip odom before initial pose; guard non-finite pose integration |
 | [#58](https://github.com/rsasaki0109/lidar_localization_ros2/issues/58) | strange tf_tree with odom frame | frame / TF | P1 | documented | see [frame_contract.md](frame_contract.md) Mode A vs B |
 | [#27](https://github.com/rsasaki0109/lidar_localization_ros2/issues/27) | use odom TF instead of odom topic | frame / TF | P1 | documented | odom topic vs odom TF clarified; TF-only mode not implemented |
 | [#55](https://github.com/rsasaki0109/lidar_localization_ros2/issues/55) | `odom_frame_id_` defined but not used | frame / TF | P2 | open | code audit + doc alignment |
