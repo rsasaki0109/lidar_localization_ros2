@@ -18,24 +18,24 @@ Last triaged: 2026-06-10
 
 | Issue | Title | Category | Priority | Status | Next action |
 | --- | --- | --- | --- | --- | --- |
-| [#76](https://github.com/rsasaki0109/lidar_localization_ros2/issues/76) | initial pose result process died | crash | P0 | in progress | guard non-finite `/initialpose`; stop eager `cloudReceived` on reset |
+| [#76](https://github.com/rsasaki0109/lidar_localization_ros2/issues/76) | initial pose result process died | crash | P0 | fix in main | non-finite `/initialpose` rejected; no eager scan replay on reset |
 | [#47](https://github.com/rsasaki0109/lidar_localization_ros2/issues/47) | rviz no map frame; node dies on 2D pose | crash | P0 | fix in main | publish TF on `/initialpose`; clearer frame/map diagnostics |
-| [#56](https://github.com/rsasaki0109/lidar_localization_ros2/issues/56) | crash with `use_odom:=true` | crash | P0 | fix in branch | skip odom before initial pose; guard non-finite pose integration |
+| [#56](https://github.com/rsasaki0109/lidar_localization_ros2/issues/56) | crash with `use_odom:=true` | crash | P0 | fix in main | skip odom before initial pose; guard non-finite pose integration |
 | [#58](https://github.com/rsasaki0109/lidar_localization_ros2/issues/58) | strange tf_tree with odom frame | frame / TF | P1 | documented | see [frame_contract.md](frame_contract.md) Mode A vs B |
 | [#27](https://github.com/rsasaki0109/lidar_localization_ros2/issues/27) | use odom TF instead of odom topic | frame / TF | P1 | documented | odom topic vs odom TF clarified; TF-only mode not implemented |
 | [#55](https://github.com/rsasaki0109/lidar_localization_ros2/issues/55) | `odom_frame_id_` defined but not used | frame / TF | P2 | open | code audit + doc alignment |
 | [#75](https://github.com/rsasaki0109/lidar_localization_ros2/issues/75) | map alignment | map | P1 | open | collect map frame / initial pose / GT offset evidence |
 | [#68](https://github.com/rsasaki0109/lidar_localization_ros2/issues/68) | MGRS map not displayed | map | P2 | open | document supported map formats and frame assumptions |
-| [#48](https://github.com/rsasaki0109/lidar_localization_ros2/issues/48) | map showing alongside live data in rviz | map | P2 | open | clarify `/initial_map` vs runtime map behavior |
+| [#48](https://github.com/rsasaki0109/lidar_localization_ros2/issues/48) | map showing alongside live data in rviz | map | P2 | documented | see [troubleshooting.md](troubleshooting.md) map visibility section |
 | [#44](https://github.com/rsasaki0109/lidar_localization_ros2/issues/44) | localization pose offset | map | P2 | open | separate map-frame issue from registration tuning |
 | [#72](https://github.com/rsasaki0109/lidar_localization_ros2/issues/72) | pose covariance | covariance | P2 | open | document current covariance semantics; no fusion claim yet |
-| [#70](https://github.com/rsasaki0109/lidar_localization_ros2/issues/70) | program starts but positioning fails | docs / diagnostics | P1 | open | add troubleshooting for no-initial-pose / no-map / no-cloud |
-| [#43](https://github.com/rsasaki0109/lidar_localization_ros2/issues/43) | map publishing clarification | docs | P3 | open | fold into map notes / troubleshooting |
+| [#70](https://github.com/rsasaki0109/lidar_localization_ros2/issues/70) | program starts but positioning fails | docs / diagnostics | P1 | documented | see [troubleshooting.md](troubleshooting.md) bringup checklist |
+| [#43](https://github.com/rsasaki0109/lidar_localization_ros2/issues/43) | map publishing clarification | docs | P3 | documented | see [troubleshooting.md](troubleshooting.md) map visibility section |
 | [#41](https://github.com/rsasaki0109/lidar_localization_ros2/issues/41) | how to reduce drift? | docs | P3 | open | point to public benchmark limits and tuning docs |
 | [#33](https://github.com/rsasaki0109/lidar_localization_ros2/issues/33) | about ros2 humble | docs | P3 | open | README now documents Jazzy-first / Humble-compatible |
 | [#34](https://github.com/rsasaki0109/lidar_localization_ros2/issues/34) | different sensor like Ouster | docs | P3 | open | point to `cloud_topic` / frame-id configuration |
 | [#49](https://github.com/rsasaki0109/lidar_localization_ros2/issues/49) | ERROR run with Rslidar | docs | P3 | open | collect sensor-specific launch params |
-| [#35](https://github.com/rsasaki0109/lidar_localization_ros2/issues/35) | direct positioning got stuck | docs / diagnostics | P2 | open | inspect `/alignment_status` reject reasons |
+| [#35](https://github.com/rsasaki0109/lidar_localization_ros2/issues/35) | direct positioning got stuck | docs / diagnostics | P2 | documented | see [troubleshooting.md](troubleshooting.md) stuck positioning section |
 | [#52](https://github.com/rsasaki0109/lidar_localization_ros2/issues/52) | different results | docs / diagnostics | P3 | open | require same map / seed / bag window for comparisons |
 | [#37](https://github.com/rsasaki0109/lidar_localization_ros2/issues/37) | high CPU usage | docs | P3 | open | document backend cost and crop settings |
 | [#54](https://github.com/rsasaki0109/lidar_localization_ros2/issues/54) | `corrent_pose_with_cov_stamped_ptr_` locking | enhancement | P3 | open | code audit if reproduced under concurrency |
@@ -69,6 +69,9 @@ Done criteria for sprint 1:
 - `#47` RViz initial pose:
   - `/initialpose` now publishes `map` TF immediately when possible
   - frame mismatch / map-not-ready warnings are explicit in node logs
+- Sprint 2 troubleshooting (`#70`, `#35`, `#43`, `#48`):
+  - added [troubleshooting.md](troubleshooting.md) with bringup checklist and `/alignment_status` guide
+  - README links troubleshooting from Frames And TF / Read More
 - README or `docs/benchmarking.md` links to this roadmap
 - fixed issues get a one-line note in `CHANGELOG.md` Unreleased reliability section
 

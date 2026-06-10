@@ -122,9 +122,11 @@ Default frames: `map` (global), `odom`, `base_link`.
 - Nav2-style mode uses `enable_map_odom_tf: true` and requires an external `odom -> base_link` publisher
 - `use_odom: true` uses the `/odom` topic for pose prediction; it is not the same as odom TF
 
-See [docs/frame_contract.md](docs/frame_contract.md) for the full contract and troubleshooting for
+See [docs/frame_contract.md](docs/frame_contract.md) for the full contract for
 issues [#58](https://github.com/rsasaki0109/lidar_localization_ros2/issues/58) and
 [#27](https://github.com/rsasaki0109/lidar_localization_ros2/issues/27).
+
+If the node starts but pose does not update, see [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## Nav2 Requirements
 
@@ -263,6 +265,7 @@ git branch -D <branch>
 | Experiment interfaces and decisions | [docs/interfaces.md](docs/interfaces.md), [docs/experiments.md](docs/experiments.md), [docs/decisions.md](docs/decisions.md) |
 | Roadmap | [docs/competitive_roadmap.md](docs/competitive_roadmap.md) |
 | Reliability / open issues | [docs/reliability_roadmap.md](docs/reliability_roadmap.md) |
+| Bringup troubleshooting | [docs/troubleshooting.md](docs/troubleshooting.md) |
 | Frame / TF contract | [docs/frame_contract.md](docs/frame_contract.md) |
 
 ## ROS 2 Support
