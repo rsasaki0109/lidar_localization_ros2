@@ -22,6 +22,10 @@ localizer:
     scan_min_range: 1.0
     scan_max_range: 100.0
     score_threshold: 6.0
+    enable_recovery_retry_from_last_pose: true
+    recovery_retry_from_last_pose_min_rejections: 3
+    recovery_retry_from_last_pose_max_accepted_gap_sec: 1.0
+    recovery_retry_from_last_pose_max_seed_translation_m: 15.0
   launch_args:
     - use_sim_time:=true
     - lidar_frame_id:=livox_frame
