@@ -162,6 +162,7 @@ def branch_and_bound_candidates(
     angular_resolution_rad: float,
     pyramid_depth: int,
     max_candidates: int,
+    nms_radius_cells: int = 0,
 ) -> List[BbsGridCandidate]:
     if max_candidates <= 0:
         return []
@@ -221,17 +222,33 @@ def branch_and_bound_candidates(
             score, hit_count, point_count = _score_grid(
                 occupancy, scan_xy_grid, tx_cell, ty_cell, yaw_rad, factor=1
             )
-            best.append(
-                BbsGridCandidate(
-                    tx_cell=tx_cell,
-                    ty_cell=ty_cell,
-                    yaw_index=yaw_index,
-                    yaw_rad=yaw_rad,
-                    score=score,
-                    hit_count=hit_count,
-                    point_count=point_count,
-                )
+            candidate = BbsGridCandidate(
+                tx_cell=tx_cell,
+                ty_cell=ty_cell,
+                yaw_index=yaw_index,
+                yaw_rad=yaw_rad,
+                score=score,
+                hit_count=hit_count,
+                point_count=point_count,
             )
+            if nms_radius_cells > 0:
+                # Keep the candidate list spatially diverse: one winner per
+                # neighborhood, so downstream registration sees distinct
+                # hypotheses instead of duplicates of the global maximum.
+                suppressed = False
+                for index, existing in enumerate(best):
+                    if (
+                        abs(existing.tx_cell - candidate.tx_cell) <= nms_radius_cells
+                        and abs(existing.ty_cell - candidate.ty_cell) <= nms_radius_cells
+                    ):
+                        if candidate.score > existing.score:
+                            best[index] = candidate
+                        suppressed = True
+                        break
+                if not suppressed:
+                    best.append(candidate)
+            else:
+                best.append(candidate)
             best.sort(key=_candidate_sort_key)
             if len(best) > max_candidates:
                 best = best[:max_candidates]
@@ -371,13 +388,17 @@ def prepare_scan_xy(
     z_max_m: float,
     voxel_size_m: float,
     max_scan_points: int,
+    min_range_m: float = 1.0,
 ) -> np.ndarray:
     if points_xyz.size == 0:
         return np.empty((0, 2), dtype=np.float64)
     points_xyz = np.asarray(points_xyz, dtype=np.float64)
     finite = np.isfinite(points_xyz).all(axis=1)
     height_band = (points_xyz[:, 2] >= z_min_m) & (points_xyz[:, 2] <= z_max_m)
-    xy = points_xyz[finite & height_band, :2]
+    # Livox-style invalid returns are zero-filled at the origin; a minimum
+    # range removes them and the sensor-adjacent clutter.
+    in_range = np.hypot(points_xyz[:, 0], points_xyz[:, 1]) >= max(0.0, min_range_m)
+    xy = points_xyz[finite & height_band & in_range, :2]
     xy = voxel_downsample_2d(xy, voxel_size_m)
     if max_scan_points > 0 and xy.shape[0] > max_scan_points:
         keep = np.linspace(0, xy.shape[0] - 1, max_scan_points, dtype=np.int64)
@@ -486,15 +507,20 @@ def resolve_nearest_pointclouds(
 ) -> Dict[int, Tuple[int, np.ndarray]]:
     try:
         from rosbags.highlevel import AnyReader
+        from rosbags.typesys import Stores, get_typestore
     except ImportError as exc:
         raise RuntimeError("rosbags is required to read rosbag2 point clouds") from exc
+
+    # Bags recorded before type definitions were embedded need an explicit
+    # typestore; ROS2_HUMBLE matches the other readers in this repository.
+    typestore = get_typestore(Stores.ROS2_HUMBLE)
 
     targets = sorted((window.trigger_stamp_ns, index) for index, window in enumerate(windows))
     results: Dict[int, Tuple[int, np.ndarray]] = {}
     target_pos = 0
     previous: Optional[Tuple[int, Any, bytes]] = None
 
-    with AnyReader([bag_path]) as reader:
+    with AnyReader([bag_path], default_typestore=typestore) as reader:
         connections = [connection for connection in reader.connections if connection.topic == cloud_topic]
         if not connections:
             raise ValueError(f"topic {cloud_topic!r} was not found in {bag_path}")
@@ -589,6 +615,9 @@ def run(args: argparse.Namespace) -> None:
     yaw_samples_deg = [math.degrees(yaw) for yaw in _yaw_samples(angular_resolution_rad)]
 
     occupancy_map = load_occupancy_map(occupancy_yaml)
+    matching_grid = occupancy_map.occupied
+    for _ in range(max(0, args.dilate_cells)):
+        matching_grid = _dilate_one_cell(matching_grid)
     windows = load_request_windows(alignment_csv, source=args.source)
     clouds = (
         resolve_nearest_pointclouds(bag_path, args.cloud_topic, windows) if windows else {}
@@ -608,14 +637,16 @@ def run(args: argparse.Namespace) -> None:
             args.z_max_m,
             occupancy_map.resolution_m,
             args.max_scan_points,
+            min_range_m=args.min_range_m,
         )
         grid_candidates = branch_and_bound_candidates(
-            occupancy_map.occupied,
+            matching_grid,
             scan_xy,
             occupancy_map.resolution_m,
             angular_resolution_rad,
             args.pyramid_depth,
             args.max_candidates,
+            nms_radius_cells=int(round(max(0.0, args.nms_radius_m) / occupancy_map.resolution_m)),
         )
         runtime_sec = time.monotonic() - started
 
@@ -695,8 +726,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--angular-resolution-rad",
         type=float,
-        default=math.radians(10.0),
+        default=math.radians(5.0),
         help="Yaw sampling resolution in radians.",
+    )
+    parser.add_argument(
+        "--nms-radius-m",
+        type=float,
+        default=2.0,
+        help=(
+            "Spatial non-maximum-suppression radius for the candidate list; keeps "
+            "one hypothesis per neighborhood so top-K covers distinct locations."
+        ),
     )
     parser.add_argument(
         "--angular-resolution-deg",
@@ -714,19 +754,34 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--max-scan-points",
         type=int,
         default=512,
-        help="Maximum 2D scan points after the height band and voxel downsample.",
+        help="Maximum 2D scan points after the range/height filters and voxel downsample.",
     )
     parser.add_argument(
         "--z-min-m",
         type=float,
-        default=-0.5,
+        default=0.5,
         help="Lower bound of the sensor-frame height band kept for matching.",
     )
     parser.add_argument(
         "--z-max-m",
         type=float,
-        default=2.0,
+        default=5.0,
         help="Upper bound of the sensor-frame height band kept for matching.",
+    )
+    parser.add_argument(
+        "--min-range-m",
+        type=float,
+        default=1.0,
+        help="Minimum XY range; removes zero-filled invalid returns and sensor clutter.",
+    )
+    parser.add_argument(
+        "--dilate-cells",
+        type=int,
+        default=1,
+        help=(
+            "Dilate the occupancy grid by this many cells before matching, as a "
+            "tolerance for grid discretization and scan noise."
+        ),
     )
     parser.add_argument(
         "--seed-z-m",
