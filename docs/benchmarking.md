@@ -113,10 +113,12 @@ ros2 run lidar_localization_ros2 benchmark_from_manifest \
 
 Latest local Koide snapshot:
 
-- `2026-06-10`, `outdoor_hard_01a_smoke60` (baseline): `translation_rmse_m=0.230`, `rotation_rmse_deg=2.607`, `ok_rows=228/229`
-- `2026-06-10`, `outdoor_hard_01a_120` (baseline): `translation_rmse_m=0.192`, `rotation_rmse_deg=1.923`, `ok_rows=441/461`
+- `2026-06-10`, `outdoor_hard_01a_smoke60` + `recovery_retry r3_gap1_seed15`: `translation_rmse_m=0.228`, `rotation_rmse_deg=2.696`, `ok_rows=244/246`
+- `2026-06-10`, `outdoor_hard_01a_120` + `recovery_retry r3_gap1_seed15` (tuning run): `translation_rmse_m=0.192`, `rotation_rmse_deg=1.923`, `ok_rows=441/461`
+- `2026-06-10`, `outdoor_hard_01a_120` + `recovery_retry r3_gap1_seed15` (reconfirm run): `translation_rmse_m=0.315`, `ok_rows=221/447` — `fitness_exploded` outlier ~`104 s`
 - `2026-06-10`, `outdoor_hard_01a_180` (baseline): `translation_rmse_m=0.210`, `ok_rows=71/523` — pose output stops ~`126 s`
-- `2026-06-10`, `outdoor_hard_01a_180` + `recovery_retry r3_gap1_seed15`: `translation_rmse_m=0.255`, `rotation_rmse_deg=2.273`, `ok_rows=473/474`
+- `2026-06-10`, `outdoor_hard_01a_180` + `recovery_retry r3_gap1_seed15` (tuning run): `translation_rmse_m=0.255`, `rotation_rmse_deg=2.273`, `ok_rows=473/474`
+- `2026-06-10`, `outdoor_hard_01a_180` + `recovery_retry r3_gap1_seed15` (reconfirm run): `translation_rmse_m=1.549`, `rotation_rmse_deg=4.373`, `ok_rows=486/753` — acceptance holds, late-run drift outlier
 - `2026-06-10`, `outdoor_hard_01 window_15_120` recovery compare:
   - baseline: `translation_rmse_m=5.477`, `matched=138`
   - `recovery_retry r3_gap1_seed15`: `translation_rmse_m=0.266`, `matched=443`
@@ -332,6 +334,20 @@ Start from:
 
 The generated bundle contains mapping, reference extraction, localization benchmark, and Nav2 map
 generation scripts. See [mapless_public_dataset_workflow.md](mapless_public_dataset_workflow.md).
+
+### Boreas baseline snapshot
+
+Latest local Boreas snapshot (`boreas_localization_120s.yaml`, `boreas-2021-09-02-11-42` vs GT-aligned map):
+
+- `2026-06-10`, `120 s` localizer-only: `translation_rmse_m=43.515`, `rotation_rmse_deg=8.581`, `ok_rows=37/961`
+- dominant failure modes: `fitness_score_over_threshold_rejected` (`744`), `local_map_crop_too_small` (`179`), `accepted_gap_reinit_requested` from ~`43 s`
+- pose throughput: only `38` published poses in `120 s` — treat as map/crop/throughput bottleneck, not a passing benchmark
+
+Next engineering targets:
+
+1. verify map split / GT alignment for localization sequence vs mapping sequence
+2. disable or widen `local_map_crop` for large outdoor maps until crop policy is dataset-aware
+3. stage IMU/twist prediction only after localizer-only acceptance is stable
 
 ### Boreas starter
 

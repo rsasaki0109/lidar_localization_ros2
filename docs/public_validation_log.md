@@ -3,6 +3,83 @@
 This file records reproducible public-data validation snapshots. It is not a
 hardware field-test log.
 
+## 2026-06-10 Boreas Baseline Smoke
+
+- commit: `4dd6b4c` (manifest path fix uncommitted)
+- source branch: `main`
+- validation command:
+
+```bash
+source scripts/setup_local_env.sh
+ros2 run lidar_localization_ros2 benchmark_from_manifest \
+  --manifest param/benchmark/boreas_localization_120s.yaml
+```
+
+Result:
+
+- `boreas-2021-09-02-11-42` `120 s` localizer-only: diagnostic failure
+  - translation RMSE: `43.515 m`
+  - rotation RMSE: `8.581 deg`
+  - matched samples: `37`
+  - ok rows: `37 / 961`
+  - dominant diagnostics: `local_map_crop_too_small`, `fitness_score_over_threshold_rejected`, `accepted_gap_reinit_requested`
+
+Artifacts:
+
+- `/tmp/lidarloc_boreas_localization_120s_throttle/`
+
+Interpretation:
+
+- Boreas is not ready for outward claims; current bottleneck is map/crop acceptance and very low pose throughput.
+- Next step is map-split validation and crop-policy tuning before IMU prediction work.
+
+## 2026-06-10 Main After Koide Outdoor Acceptance Tuning
+
+- commit: `4dd6b4c`
+- source branch: `main`
+- validation commands:
+
+```bash
+source scripts/setup_local_env.sh
+ros2 run lidar_localization_ros2 benchmark_from_manifest \
+  --manifest param/benchmark/koide_hard_localization_outdoor_hard_01a_smoke60.yaml
+ros2 run lidar_localization_ros2 benchmark_from_manifest \
+  --manifest param/benchmark/koide_hard_localization_outdoor_hard_01a_120.yaml
+ros2 run lidar_localization_ros2 benchmark_from_manifest \
+  --manifest param/benchmark/koide_hard_localization_outdoor_hard_01a_180.yaml
+```
+
+Result:
+
+- `outdoor_hard_01a_smoke60` + `recovery_retry r3_gap1_seed15`: `pass` acceptance
+  - translation RMSE: `0.228 m`
+  - rotation RMSE: `2.696 deg`
+  - matched samples: `244`
+  - ok rows: `244 / 246`
+- `outdoor_hard_01a_120` + `recovery_retry r3_gap1_seed15`: outlier on reconfirm
+  - translation RMSE: `0.315 m`
+  - matched samples: `221`
+  - ok rows: `221 / 447`
+  - failure mode: `fitness_exploded_reinit_requested` ~`104 s`, unrecovered
+- `outdoor_hard_01a_180` + `recovery_retry r3_gap1_seed15`: acceptance improved, accuracy outlier
+  - translation RMSE: `1.549 m` (tuning run was `0.255 m`)
+  - rotation RMSE: `4.373 deg`
+  - matched samples: `486`
+  - ok rows: `486 / 753` (baseline without recovery was `71 / 523`)
+
+Artifacts:
+
+- `/tmp/lidarloc_koide_outdoor_hard_01a_smoke60/`
+- `/tmp/lidarloc_koide_outdoor_hard_01a_120/`
+- `/tmp/lidarloc_koide_outdoor_hard_01a_180/`
+
+Interpretation:
+
+- `recovery_retry_from_last_pose` fixes the `180 s` acceptance collapse (`71 -> 473+ ok_rows`).
+- Koide outdoor replay shows run-to-run variance on `120 s` / `180 s` similar to Istanbul;
+  treat acceptance gains as the validated improvement and prefer repeat runs for release checks.
+- Full-route robust tracking on Koide `Outdoor01` remains an open engineering target.
+
 ## 2026-06-10 Main After Istanbul Drift Tuning
 
 - commit: `f6503d3`
