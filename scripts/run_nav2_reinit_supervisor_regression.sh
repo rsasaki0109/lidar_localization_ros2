@@ -111,6 +111,15 @@ mkdir -p "${output_dir}"
 
 if [[ ! -f "${map_yaml}" ]]; then
   printf 'map_yaml does not exist: %s\n' "${map_yaml}" >&2
+  printf 'Bootstrap it once from the Istanbul dataset (route-bounded; full-map bounds OOM on the city-scale map):\n' >&2
+  printf '  python3 scripts/benchmark_extract_pose_reference_from_rosbag2 \\\n' >&2
+  printf '    --bag-path %s \\\n' "${bag_path}" >&2
+  printf '    --pose-topic /sensing/gnss/pose_with_covariance --bag-duration 180 \\\n' >&2
+  printf '    --output-csv /tmp/istanbul_reference_180s.csv\n' >&2
+  printf '  python3 scripts/generate_occupancy_map_from_pcd.py \\\n' >&2
+  printf '    --pcd %s \\\n' "${pcd_map_path}" >&2
+  printf '    --output-dir %s \\\n' "$(dirname "${map_yaml}")" >&2
+  printf '    --map-name istanbul_60s_nav2_map --reference-csv /tmp/istanbul_reference_180s.csv\n' >&2
   exit 2
 fi
 if [[ ! -f "${pcd_map_path}" ]]; then
