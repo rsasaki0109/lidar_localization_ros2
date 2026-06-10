@@ -5,7 +5,11 @@
 <p><strong>Map-based 3D LiDAR localization for ROS 2, Nav2, and repeatable rosbag evaluation.</strong></p>
 
 <p>
-  <img alt="ROS 2 Humble" src="https://img.shields.io/badge/ROS%202-Humble-1f5b99">
+  <a href="https://github.com/rsasaki0109/lidar_localization_ros2/actions/workflows/main.yml">
+    <img alt="build" src="https://github.com/rsasaki0109/lidar_localization_ros2/actions/workflows/main.yml/badge.svg">
+  </a>
+  <img alt="ROS 2 Jazzy" src="https://img.shields.io/badge/ROS%202-Jazzy-2563eb">
+  <img alt="ROS 2 Humble compatible" src="https://img.shields.io/badge/ROS%202-Humble-compatible-1f5b99">
   <img alt="Release v1.0.0" src="https://img.shields.io/badge/release-v1.0.0-2f855a">
   <img alt="Backend NDT OMP" src="https://img.shields.io/badge/default-NDT__OMP-4a5568">
   <img alt="License BSD 2 Clause" src="https://img.shields.io/badge/license-BSD--2--Clause-6b46c1">
@@ -32,6 +36,46 @@ param/nav2_ndt_urban.yaml
 Current boundary: short public replay, smoke, and controlled regression paths are validated.
 Long-horizon robustness on stronger public `LiDAR + IMU + GT` data and real robot deployment still
 need dataset or hardware-specific validation.
+
+v1.1 relocalization stops at a validated dry-run `/initialpose` command artifact.
+It does not claim automatic runtime recovery or production-grade global relocalization.
+See [docs/v1_1_relocalization.md](docs/v1_1_relocalization.md).
+
+## 30-Minute Public Demo
+
+Reproduce map-based localization on the official **Autoware Istanbul** public dataset:
+
+```bash
+cd /path/to/lidarloc_ws/repo
+source scripts/setup_local_env.sh
+scripts/run_public_demo.sh
+```
+
+What it does:
+
+- downloads the Istanbul map + bag when missing
+- builds `lidar_localization_ros2` when the overlay is missing
+- replays `60 s` of urban localization
+- writes `demo_report.md`, `demo_report.json`, and `trajectory_xy.png`
+
+Typical first-run time: about **15–30 minutes** (network download dominates).
+Re-runs with `--resume` are much faster.
+
+Latest local smoke on Autoware Istanbul `60 s` (dataset already present, 2026-06-10):
+
+- translation RMSE: `1.63 m`
+- rotation RMSE: `0.19 deg`
+- matched samples: `102`
+- wall time: about `70 s`
+
+Example report output directory:
+
+```text
+lidarloc_ws/artifacts/public/demo/latest/
+  demo_report.md
+  demo_report.json
+  trajectory_xy.png
+```
 
 ## Quick Start
 
@@ -66,6 +110,7 @@ For the full no-sudo local-prefix workflow, see [docs/local_build.md](docs/local
 | Jetson + Livox MID-360 | `ros2 launch lidar_localization_ros2 mid360_legged_localization.launch.py map_path:=/absolute/path/to/map.pcd cloud_topic:=/livox/points imu_topic:=/livox/imu` |
 | Self-contained Nav2 smoke | `ros2 run lidar_localization_ros2 run_nav2_demo_smoke --map-yaml /absolute/path/to/map.yaml --initial-pose-x 0.0 --initial-pose-y 0.0 --goal-x 1.0 --goal-y 0.0` |
 | Real-localizer replay smoke | `ros2 run lidar_localization_ros2 run_nav2_replay_smoke --map-yaml /absolute/path/to/map.yaml --pcd-map-path /absolute/path/to/map.pcd --bag-path /absolute/path/to/bag` |
+| **30-minute public demo** | `source scripts/setup_local_env.sh && scripts/run_public_demo.sh` |
 | Public regression | `source scripts/setup_local_env.sh && scripts/run_public_regression_suite.sh` |
 
 ## Nav2 Requirements
@@ -112,6 +157,34 @@ Main outputs:
 - Public benchmark runs should prefer binary little-endian float32 `.ply` maps.
 - Generated `.pcd` maps are useful for inspection, but are not the preferred benchmark path.
 
+## Latest Public Validation
+
+Regenerate the dashboard from local demo / regression artifacts:
+
+```bash
+source scripts/setup_local_env.sh
+scripts/run_public_validation_dashboard.sh
+```
+
+Outputs:
+
+```text
+lidarloc_ws/artifacts/public/dashboard/
+  index.md
+  index.html
+  dashboard.json
+```
+
+| Suite | Dataset | What it checks |
+|---|---|---|
+| Public demo | Autoware Istanbul `60 s` | Star-friendly replay + trajectory report |
+| Public regression | Istanbul `60 s` | No-IMU safety gate on public urban replay |
+| Public regression | HDL `hdl_400` `60 s` | IMU safety / throughput smoke |
+| Release regression | Nav2 reinit supervisor `150 s` | Controlled recovery wrapper behavior |
+
+Historical snapshots and interpretation notes live in
+[docs/public_validation_log.md](docs/public_validation_log.md).
+
 ## Validation
 
 Fast build check:
@@ -134,15 +207,7 @@ Release-style regression:
 ros2 run lidar_localization_ros2 run_release_regression_suite.sh
 ```
 
-Latest recorded public validation snapshot:
-
-- [docs/public_validation_log.md](docs/public_validation_log.md)
-- `2026-05-22`, commit `2a5f11f`, release regression `overall_pass=true`
-- Istanbul `60 s` no-IMU safety check: `1.176 m` translation RMSE, `0.393 deg` rotation RMSE
-- HDL `60 s` IMU safety check, two-repeat median: pose rows `558.5 -> 553.5`
-- Nav2 reinitialization supervisor `150 s`: requested rows `944 -> 7`
-
-This snapshot is public replay validation, not Jetson + MID-360 hardware validation.
+This validation path is public replay regression, not Jetson + MID-360 hardware validation.
 
 ## Branch Workflow
 
@@ -184,11 +249,22 @@ git branch -D <branch>
 | v1.1 relocalization work | [docs/v1_1_relocalization.md](docs/v1_1_relocalization.md) |
 | Experiment interfaces and decisions | [docs/interfaces.md](docs/interfaces.md), [docs/experiments.md](docs/experiments.md), [docs/decisions.md](docs/decisions.md) |
 | Roadmap | [docs/competitive_roadmap.md](docs/competitive_roadmap.md) |
+| Reliability / open issues | [docs/reliability_roadmap.md](docs/reliability_roadmap.md) |
+
+## ROS 2 Support
+
+| Distro | Status | CI |
+|---|---|---|
+| Jazzy | primary target for new users (2026) | `jazzy_build` in [`.github/workflows/main.yml`](.github/workflows/main.yml) |
+| Humble | supported for existing deployments | `humble_build` in [`.github/workflows/main.yml`](.github/workflows/main.yml) |
+
+Local development in this workspace still uses the Humble-based `scripts/setup_local_env.sh`
+overlay workflow documented in [docs/local_build.md](docs/local_build.md).
 
 ## Dependencies
 
-- ROS 2 Humble
-- [ndt_omp_ros2](https://github.com/rsasaki0109/ndt_omp_ros2.git)
+- ROS 2 Jazzy or Humble
+- [ndt_omp_ros2](https://github.com/rsasaki0109/ndt_omp_ros2.git) (`humble` branch; used for both distro CI builds today)
 - [small_gicp](https://github.com/koide3/small_gicp), optional for `SMALL_GICP` and `SMALL_VGICP`
 
-See [CHANGELOG.md](CHANGELOG.md) for release notes.
+See [CHANGELOG.md](CHANGELOG.md) for release notes and distro support notes.

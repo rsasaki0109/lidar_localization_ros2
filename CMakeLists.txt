@@ -125,6 +125,8 @@ install(PROGRAMS
   scripts/benchmark_make_graph_dataset
   scripts/benchmark_pose_recorder
   scripts/benchmark_diagnostic_recorder
+  scripts/build_public_demo_report.py
+  scripts/build_public_validation_dashboard.py
   scripts/build_relocalization_demo_report.py
   scripts/benchmark_runner
   scripts/benchmark_sweep_localizer
@@ -160,6 +162,10 @@ install(PROGRAMS
   scripts/run_nav2_reinit_supervisor_regression.sh
   scripts/run_recovery_action_experiments.py
   scripts/run_reinit_trigger_experiments.py
+  scripts/run_public_demo.sh
+  scripts/run_public_validation_dashboard.sh
+  scripts/run_v1_1_relocalization_smoke.sh
+  scripts/validate_v1_1_claim_language.py
   scripts/run_public_regression_suite.sh
   scripts/run_release_regression_suite.sh
   scripts/run_nav2_demo_smoke

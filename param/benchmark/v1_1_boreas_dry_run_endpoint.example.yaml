@@ -1,23 +1,21 @@
-# v1.1 Boreas localizer-only public regression starter.
+# v1.1 MVP endpoint manifest for Boreas localizer-only replay.
 #
-# Copy this file to a non-.example.yaml path and replace /absolute/path/to values before running.
-# The benchmark_from_manifest wrapper intentionally refuses to execute .example.yaml manifests.
+# Public v1.1 endpoint:
+#   validated dry-run /initialpose command artifact (published_count=0)
 #
-# Intended role:
-#   - add non-Istanbul public dataset coverage
-#   - record localization health/recovery metrics before adding global relocalization
-#   - keep Nav2 out of the first Boreas pass
-#   - stop before NDT relocalization scoring and dry-run reset command generation by default
-#   - for the v1.1 MVP endpoint chain, use v1_1_boreas_dry_run_endpoint.example.yaml instead
+# Copy to a non-.example.yaml path and replace /absolute/path/to values before running.
+# benchmark_from_manifest refuses to execute .example.yaml manifests directly.
 #
 # Suggested flow:
-#   ros2 run lidar_localization_ros2 convert_boreas_sequence_to_rosbag2.py ...
-#   ros2 run lidar_localization_ros2 benchmark_from_manifest --manifest /path/to/v1_1_boreas_localizer_only.yaml
-#   ros2 run lidar_localization_ros2 summarize_localization_health.py \
-#     --alignment-csv /tmp/lidarloc_v1_1_boreas_localizer_only/alignment_status.csv \
-#     --trajectory-eval-json /tmp/lidarloc_v1_1_boreas_localizer_only/trajectory_eval.json \
-#     --output-json /tmp/lidarloc_v1_1_boreas_localizer_only/health_summary.json \
-#     --output-md /tmp/lidarloc_v1_1_boreas_localizer_only/health_summary.md
+#   cp param/benchmark/v1_1_boreas_dry_run_endpoint.example.yaml /tmp/v1_1_boreas_dry_run_endpoint.yaml
+#   # edit /tmp/v1_1_boreas_dry_run_endpoint.yaml with real Boreas paths
+#   ros2 run lidar_localization_ros2 benchmark_from_manifest \
+#     --manifest /tmp/v1_1_boreas_dry_run_endpoint.yaml
+#
+# Dry-run only:
+#   - write_relocalization_reset_command_dry_run: true
+#   - validate_relocalization_reset_commands: true
+#   - guarded publisher and post-reset observation stay outside this manifest
 
 mode: run
 
@@ -46,8 +44,8 @@ localizer:
     - use_sim_time:=true
 
 benchmark:
-  output_dir: /tmp/lidarloc_v1_1_boreas_localizer_only
-  ros_domain_id: 170
+  output_dir: /tmp/lidarloc_v1_1_boreas_dry_run_endpoint
+  ros_domain_id: 172
   bag_duration: 120
   bag_start_offset: 0
   settle_seconds: 10
@@ -85,27 +83,23 @@ benchmark:
   registration_scores_max_range: 120.0
   registration_scores_max_jobs: 32
   registration_scores_export_scan_pcd_dir: manifest://registration_scans
-  write_ndt_relocalization_scores: false
-  ndt_relocalization_max_jobs: 1
+  write_ndt_relocalization_scores: true
+  ndt_relocalization_max_jobs: 32
   ndt_relocalization_score_gate_threshold: 6.0
   ndt_relocalization_refinement_delta_gate_m: 2.0
   ndt_relocalization_refinement_yaw_gate_rad: 0.7853981633974483
   write_registration_relocalization_score_summary: true
-  write_registration_ordering_comparison: false
-  registration_ordering_top_k: 5
-  registration_ordering_output_dir: manifest://registration_ordering_comparison
-  write_relocalization_reset_candidate_plan: false
-  relocalization_reset_candidate_plan_csv: manifest://relocalization_reset_candidate_plan.csv
+  write_relocalization_reset_candidate_plan: true
   relocalization_reset_candidate_plan_min_score_margin: 0.0
-  validate_relocalization_reset_candidate_plan: false
-  relocalization_reset_candidate_plan_min_selected_count: 0
-  write_relocalization_reset_command_dry_run: false
-  relocalization_reset_commands_csv: manifest://relocalization_reset_commands.csv
+  validate_relocalization_reset_candidate_plan: true
+  relocalization_reset_candidate_plan_min_selected_count: 1
+  relocalization_reset_candidate_plan_max_selected_count: 1
+  write_relocalization_reset_command_dry_run: true
   relocalization_reset_publish_topic: /initialpose
   relocalization_reset_frame_id: map
-  validate_relocalization_reset_commands: false
-  relocalization_reset_commands_min_generated_count: 0
-  write_disabled_relocalization_attempts: false
+  validate_relocalization_reset_commands: true
+  relocalization_reset_commands_min_generated_count: 1
+  relocalization_reset_commands_max_generated_count: 1
   write_relocalization_attempt_summary: true
   relocalization_request_match_window_sec: 10.0
   relocalization_post_reset_stable_ok_rows: 5

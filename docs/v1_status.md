@@ -102,12 +102,36 @@ Do not claim:
 - `SMALL_GICP` or `SMALL_VGICP` as the default-ready backend without current public comparisons
 - Jetson + MID-360 hardware validation unless real hardware evidence is provided
 
+## v1.1 MVP Endpoint
+
+v1.1 is closed around one public endpoint:
+
+> validated dry-run `/initialpose` command artifact derived from NDT_OMP-scored route-grid candidates,
+> with `published_count=0` in the default benchmark path
+
+Starter manifests:
+
+- `param/benchmark/v1_1_boreas_localizer_only.example.yaml` — health / candidate scaffolding only
+- `param/benchmark/v1_1_boreas_dry_run_endpoint.example.yaml` — full no-publish MVP chain
+
+Smoke check:
+
+```bash
+source scripts/setup_local_env.sh
+scripts/run_v1_1_relocalization_smoke.sh
+```
+
+Outside the v1.1 MVP endpoint:
+
+- guarded publisher (`publish_relocalization_reset_commands.py --execute`)
+- post-reset observation as an accepted-recovery claim
+- automatic runtime recovery
+
 ## Next Work
 
 The next technical work should focus on:
 
 - keeping release regression green
 - promoting a stronger public benchmark track based on Boreas or Koide-style data
-- closing v1.1 relocalization around validated dry-run reset artifacts
 - comparing backends on public datasets before changing defaults
 - strengthening diagnostics and covariance semantics

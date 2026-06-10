@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `scripts/run_public_demo.sh` for the 30-minute Autoware Istanbul public demo path
+- `scripts/run_public_validation_dashboard.sh` for Markdown/HTML public validation dashboards
+- `param/benchmark/v1_1_boreas_dry_run_endpoint.example.yaml` for the v1.1 MVP dry-run endpoint chain
+- `scripts/run_v1_1_relocalization_smoke.sh` to guard the v1.1 claim boundary
+
+### Reliability / Claim Boundary
+
+- v1.1 relocalization is documented as a validated dry-run `/initialpose` command artifact only
+- guarded reset publication and post-reset observation remain experimental and outside the public MVP endpoint
+- automatic runtime recovery and production-grade global relocalization are explicitly out of scope
+
+### ROS 2 Distro Support
+
+- README badges and support matrix now show **Jazzy-first / Humble-compatible**
+- GitHub Actions workflow updated to `actions/checkout@v4` and `push` on `main`
+- Jazzy CI still builds against `ndt_omp_ros2` `humble` branch until a dedicated Jazzy branch exists upstream
+
 ## 1.0.0 - 2026-03-30
 
 Initial repo-ready Nav2-focused release.
