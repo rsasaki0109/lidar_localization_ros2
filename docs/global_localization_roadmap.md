@@ -47,6 +47,28 @@ Done when:
 - at least one additional failure window (or kidnapped-start scenario) is evaluated
 - engine runtime and candidate counts are recorded in the benchmark artifacts
 
+#### 2026-06-11 first G1 evaluation on Koide outdoor_hard_01a
+
+Same-run comparison on one reproduced request window plus one synthetic
+kidnapped-start scan (machine was shared; absolute replay numbers are not
+comparable to the recorded boundary):
+
+- kidnapped-start, healthy scan: `BBS_2D` rank-1 candidate refines through the
+  standard NDT stage to `0.69 m / 1.0 deg` from ground truth with no route
+  prior and no initial pose. The BBS recipe that made this work: minimum-range
+  filter (Livox zero-filled invalid returns), sparse structure grid
+  (`--obstacle-height-m 1.5 --min-points-per-cell 10 --inflate-radius-m 0`),
+  1-cell dilation tolerance, 5 deg yaw sampling, spatial NMS. Runtime ~14 min
+  per window in pure python (optimization is future work).
+- the reproduced `180 s` failure window is not a candidate-generation problem:
+  even the ground-truth pose scores NDT fitness `9.6` against the map there
+  (gate `6.0`), and BBS misses accordingly. Route-proximity candidates reach
+  `2.4 m` in oracle terms but the registration gate rejects all of them too.
+  Recovery at such windows belongs to retry/last-pose (already shipped) and to
+  multi-criteria acceptance (Phase 3), not to a better global engine.
+- `MAP_GRID` stays the coverage baseline (`31.7 m` best at a 512-candidate cap
+  on this map); useful as a fallback set, not as a primary engine.
+
 ### G2: runtime global localization service
 
 Goal: expose G1 as an on-demand ROS 2 service, still without automatic publication.
