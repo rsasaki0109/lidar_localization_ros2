@@ -63,10 +63,13 @@ Re-runs with `--resume` are much faster.
 
 Latest local smoke on Autoware Istanbul `60 s` (dataset already present, 2026-06-10):
 
-- translation RMSE: `1.63 m`
-- rotation RMSE: `0.19 deg`
-- matched samples: `102`
+- translation RMSE: `1.21 m` (fresh rerun; outlier run `4.74 m` on same seed/map)
+- rotation RMSE: `0.40 deg`
+- matched samples: `61`
 - wall time: about `70 s`
+
+Istanbul replay is run-to-run variable; see [docs/benchmarking.md](docs/benchmarking.md)
+for the variance notes and prefer `scripts/run_public_regression_suite.sh` for release gates.
 
 Example report output directory:
 
@@ -266,6 +269,8 @@ git branch -D <branch>
 | Roadmap | [docs/competitive_roadmap.md](docs/competitive_roadmap.md) |
 | Reliability / open issues | [docs/reliability_roadmap.md](docs/reliability_roadmap.md) |
 | Bringup troubleshooting | [docs/troubleshooting.md](docs/troubleshooting.md) |
+| Map alignment / pose offset | [docs/map_alignment.md](docs/map_alignment.md) |
+| Pose covariance semantics | [docs/pose_covariance.md](docs/pose_covariance.md) |
 | Frame / TF contract | [docs/frame_contract.md](docs/frame_contract.md) |
 
 ## ROS 2 Support

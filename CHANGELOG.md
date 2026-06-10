@@ -14,6 +14,9 @@
 - add `docs/frame_contract.md` for `map` / `odom` / `base_link` expectations and issue #58 / #27 guidance
 - publish TF immediately on `/initialpose` and add explicit frame/map diagnostics for issue #47
 - add `docs/troubleshooting.md` for bringup failures and `/alignment_status` interpretation (issues #70, #35, #43, #48)
+- add `docs/map_alignment.md` for map frame / initial pose alignment (issues #75, #44)
+- add `docs/pose_covariance.md` for `/pcl_pose` covariance semantics (issue #72)
+- document Istanbul public demo RMSE run variance; identical seed/map can yield ~`1.2 m` or late-run drift outliers
 - guard `use_odom` integration until initial pose is valid and keep pose finite for NDT init guess
 - ignore non-finite `/initialpose` payloads and stop eager scan replay during pose reset
 - v1.1 relocalization is documented as a validated dry-run `/initialpose` command artifact only

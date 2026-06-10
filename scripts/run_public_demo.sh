@@ -22,6 +22,8 @@ Options:
   --skip-fetch         Do not download the Istanbul dataset when missing.
   --skip-build         Do not attempt colcon build when the package is missing.
   --resume             Reuse existing completed outputs when possible.
+                       Prefer a full rerun (no --resume) after code changes;
+                       Istanbul RMSE can vary run-to-run on identical seed/map.
   -h, --help           Show this help.
 EOF
 }
