@@ -22,6 +22,9 @@
 - enable `recovery_retry_from_last_pose` on Koide outdoor manifests; `180 s` acceptance rises from `71` to `473+` ok rows
 - reconfirm Koide outdoor manifests after recovery tuning; acceptance holds on `180 s` reconfirm (`486/753 ok_rows`) with run-to-run RMSE variance
 - fix `boreas_localization_120s.yaml` dataset paths; baseline smoke shows `37/961 ok_rows` with `local_map_crop_too_small` bottleneck
+- add `param/boreas_ndt_velodyne.yaml` and Boreas cliff sweeps; first `12 s` tracks (~`0.04 m`) before fitness reject streaks, `local_map_radius=300` improves 60 s RMSE to `39.5 m`
+- tune Boreas preset throughput (`voxel 1.5`, `ndt threads 8`, `cloud_queue_depth 1`); 120 s matched rises to `45` with align median `0.018 s`
+- add Boreas seed-management sweep; `post_reject_strict` + `rejected_seed_update` + `max_twist_prediction_dt=0.1` improves 60 s matched to `49` / RMSE `45.7 m`; 120 s confirm matched `52` / RMSE `47.8 m`
 - guard `use_odom` integration until initial pose is valid and keep pose finite for NDT init guess
 - ignore non-finite `/initialpose` payloads and stop eager scan replay during pose reset
 - v1.1 relocalization is documented as a validated dry-run `/initialpose` command artifact only
