@@ -27,10 +27,14 @@ RANSAC engines). License is compatible with direct adaptation.
 
 Goal: replace the route-grid candidate stage with engines that need no route prior.
 
-1. `BBS_2D` engine: branch-and-bound search over a 2D occupancy grid derived from the
+1. `MAP_GRID` baseline: `scripts/make_map_grid_relocalization_attempts.py` samples seed
+   poses from occupied map cells with discretized yaw and emits the existing
+   `relocalization_attempts.csv` / `relocalization_candidates.csv` contract. This is the
+   brute-force coverage baseline that the smarter engines must beat.
+2. `BBS_2D` engine: branch-and-bound search over a 2D occupancy grid derived from the
    pointcloud map. `scripts/generate_occupancy_map_from_pcd.py` already produces the grid.
-2. `FPFH_RANSAC` engine: PCL FPFH features + RANSAC alignment as a full-3D fallback.
-3. Both engines emit the existing `relocalization_attempts.csv` schema so the v1.1
+3. `FPFH_RANSAC` engine: PCL FPFH features + RANSAC alignment as a full-3D fallback.
+4. All engines emit the existing `relocalization_attempts.csv` schema so the v1.1
    scoring, selection, and dry-run command stages run unmodified.
 
 Done when:
