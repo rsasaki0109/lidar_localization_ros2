@@ -24,6 +24,7 @@
 #include "lidar_localization/registration_backend_policy.hpp"
 #include "lidar_localization/registration_observation_policy.hpp"
 #include "lidar_localization/prediction_state_policy.hpp"
+#include "lidar_localization/initial_pose_admission_policy.hpp"
 #include "lidar_localization/odom_integration_policy.hpp"
 #include "lidar_localization/scan_admission_policy.hpp"
 
@@ -984,13 +985,35 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
 {
   if (shutting_down_) {return;}
   RCLCPP_INFO(get_logger(), "initialPoseReceived");
-  if (msg->header.frame_id != global_frame_id_) {
-    RCLCPP_WARN(this->get_logger(), "initialpose_frame_id does not match global_frame_id");
+  const auto admission = lidar_localization::decideInitialPoseAdmission(
+    lidar_localization::InitialPoseAdmissionInput{
+      global_frame_id_,
+      msg->header.frame_id,
+      msg->pose.pose,
+      map_recieved_});
+  if (!admission.accepted) {
+    if (
+      admission.status ==
+      lidar_localization::InitialPoseAdmissionStatus::kRejectedFrameMismatch)
+    {
+      RCLCPP_WARN(
+        get_logger(),
+        "initial pose ignored: frame_id '%s' does not match global_frame_id '%s'. "
+        "RViz 2D Pose Estimate must publish /initialpose in the map frame.",
+        msg->header.frame_id.c_str(),
+        global_frame_id_.c_str());
+    } else if (
+      admission.status ==
+      lidar_localization::InitialPoseAdmissionStatus::kRejectedNonFinitePose)
+    {
+      RCLCPP_WARN(get_logger(), "initial pose ignored: pose contains non-finite values");
+    }
     return;
   }
-  if (!lidar_localization::isPoseFinite(msg->pose.pose)) {
-    RCLCPP_WARN(get_logger(), "initial pose has non-finite values; ignoring reset");
-    return;
+  if (admission.warn_map_not_ready) {
+    RCLCPP_WARN(
+      get_logger(),
+      "initial pose accepted before map is ready; scans will wait until map load completes");
   }
   initialpose_recieved_ = true;
   corrent_pose_with_cov_stamped_ptr_ = msg;
@@ -1057,6 +1080,29 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
     RCLCPP_INFO(get_logger(), "IMU preintegration smoother initialized from initial pose");
   }
   pose_pub_->publish(*corrent_pose_with_cov_stamped_ptr_);
+  if (publishPoseTransform(msg->header.stamp, corrent_pose_with_cov_stamped_ptr_->pose.pose)) {
+    if (enable_map_odom_tf_) {
+      RCLCPP_INFO(
+        get_logger(),
+        "published %s -> %s TF from initial pose",
+        global_frame_id_.c_str(),
+        odom_frame_id_.c_str());
+    } else {
+      RCLCPP_INFO(
+        get_logger(),
+        "published %s -> %s TF from initial pose",
+        global_frame_id_.c_str(),
+        base_frame_id_.c_str());
+    }
+  } else if (enable_map_odom_tf_) {
+    RCLCPP_WARN(
+      get_logger(),
+      "initial pose accepted but %s -> %s TF was not published; ensure %s -> %s TF exists",
+      global_frame_id_.c_str(),
+      odom_frame_id_.c_str(),
+      odom_frame_id_.c_str(),
+      base_frame_id_.c_str());
+  }
 
   RCLCPP_INFO(get_logger(), "initialPoseReceived end");
 }

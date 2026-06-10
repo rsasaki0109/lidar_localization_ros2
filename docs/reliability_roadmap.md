@@ -19,7 +19,7 @@ Last triaged: 2026-06-10
 | Issue | Title | Category | Priority | Status | Next action |
 | --- | --- | --- | --- | --- | --- |
 | [#76](https://github.com/rsasaki0109/lidar_localization_ros2/issues/76) | initial pose result process died | crash | P0 | in progress | guard non-finite `/initialpose`; stop eager `cloudReceived` on reset |
-| [#47](https://github.com/rsasaki0109/lidar_localization_ros2/issues/47) | rviz no map frame; node dies on 2D pose | crash | P0 | open | verify `map` frame + initial pose path; document required TF tree |
+| [#47](https://github.com/rsasaki0109/lidar_localization_ros2/issues/47) | rviz no map frame; node dies on 2D pose | crash | P0 | fix in main | publish TF on `/initialpose`; clearer frame/map diagnostics |
 | [#56](https://github.com/rsasaki0109/lidar_localization_ros2/issues/56) | crash with `use_odom:=true` | crash | P0 | fix in branch | skip odom before initial pose; guard non-finite pose integration |
 | [#58](https://github.com/rsasaki0109/lidar_localization_ros2/issues/58) | strange tf_tree with odom frame | frame / TF | P1 | documented | see [frame_contract.md](frame_contract.md) Mode A vs B |
 | [#27](https://github.com/rsasaki0109/lidar_localization_ros2/issues/27) | use odom TF instead of odom topic | frame / TF | P1 | documented | odom topic vs odom TF clarified; TF-only mode not implemented |
@@ -66,6 +66,9 @@ Done criteria for sprint 1:
 - `#58` / `#27` frame confusion:
   - added [frame_contract.md](frame_contract.md)
   - README now links expected `map` / `odom` / `base_link` behavior
+- `#47` RViz initial pose:
+  - `/initialpose` now publishes `map` TF immediately when possible
+  - frame mismatch / map-not-ready warnings are explicit in node logs
 - README or `docs/benchmarking.md` links to this roadmap
 - fixed issues get a one-line note in `CHANGELOG.md` Unreleased reliability section
 
