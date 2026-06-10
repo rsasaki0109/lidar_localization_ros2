@@ -197,5 +197,8 @@ print(json.dumps(result, indent=2, sort_keys=False))
 sys.exit(0 if result["overall_pass"] else 1)
 PY
 
+"${repo_root}/scripts/run_public_validation_dashboard.sh" \
+  --workspace-root "${ws_root}" || true
+
 echo "summary_json: ${summary_json}"
 echo "summary_md: ${summary_md}"

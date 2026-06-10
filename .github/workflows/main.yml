@@ -4,6 +4,12 @@ on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
 
 jobs:
   humble_build:
@@ -11,30 +17,29 @@ jobs:
     runs-on: ubuntu-22.04
     container: ros:humble
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - name: Copy repository
         run: |
-            mkdir -p ~/ros2_ws/src/lidar_localization_ros2
-            cp -rf . ~/ros2_ws/src/lidar_localization_ros2
+          mkdir -p ~/ros2_ws/src/lidar_localization_ros2
+          cp -rf . ~/ros2_ws/src/lidar_localization_ros2
       - name: Install dependencies
         run: |
-            source /opt/ros/humble/setup.bash
-            sudo apt install -y python3-rosdep
-            apt update
-            rosdep update
-            cd ~/ros2_ws/src
-            git clone https://github.com/rsasaki0109/ndt_omp_ros2.git -b humble
-            rosdep install -r -y --from-paths . --ignore-src
+          source /opt/ros/humble/setup.bash
+          sudo apt-get update
+          sudo apt-get install -y python3-rosdep python3-colcon-common-extensions
+          rosdep update
+          cd ~/ros2_ws/src
+          git clone https://github.com/rsasaki0109/ndt_omp_ros2.git -b humble
+          rosdep install -r -y --from-paths . --ignore-src
         shell: bash
       - name: Build packages
         run: |
-            source /opt/ros/humble/setup.bash
-            sudo apt install python3-colcon-common-extensions
-            cd ~/ros2_ws
-            colcon build
-            source ~/ros2_ws/install/setup.bash
+          source /opt/ros/humble/setup.bash
+          cd ~/ros2_ws
+          colcon build
+          source ~/ros2_ws/install/setup.bash
         shell: bash
 
   jazzy_build:
@@ -42,28 +47,28 @@ jobs:
     runs-on: ubuntu-24.04
     container: ros:jazzy
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - name: Copy repository
         run: |
-            mkdir -p ~/ros2_ws/src/lidar_localization_ros2
-            cp -rf . ~/ros2_ws/src/lidar_localization_ros2
+          mkdir -p ~/ros2_ws/src/lidar_localization_ros2
+          cp -rf . ~/ros2_ws/src/lidar_localization_ros2
       - name: Install dependencies
         run: |
-            source /opt/ros/jazzy/setup.bash
-            sudo apt install -y python3-rosdep
-            apt update
-            rosdep update
-            cd ~/ros2_ws/src
-            git clone https://github.com/rsasaki0109/ndt_omp_ros2.git -b humble
-            rosdep install -r -y --from-paths . --ignore-src
+          source /opt/ros/jazzy/setup.bash
+          sudo apt-get update
+          sudo apt-get install -y python3-rosdep python3-colcon-common-extensions
+          rosdep update
+          cd ~/ros2_ws/src
+          # ndt_omp_ros2 does not publish a dedicated jazzy branch yet; humble is used in CI.
+          git clone https://github.com/rsasaki0109/ndt_omp_ros2.git -b humble
+          rosdep install -r -y --from-paths . --ignore-src
         shell: bash
       - name: Build packages
         run: |
-            source /opt/ros/jazzy/setup.bash
-            sudo apt install python3-colcon-common-extensions
-            cd ~/ros2_ws
-            colcon build
-            source ~/ros2_ws/install/setup.bash
+          source /opt/ros/jazzy/setup.bash
+          cd ~/ros2_ws
+          colcon build
+          source ~/ros2_ws/install/setup.bash
         shell: bash
