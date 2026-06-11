@@ -45,13 +45,19 @@ download_file() {
 patch_metadata() {
   local metadata_path="$1"
 
-  python3 - "${metadata_path}" <<'PY'
+  # Humble's rosbag2 expects offered_qos_profiles as a string, while Iron and
+  # later (metadata version 9, e.g. Jazzy) require a YAML sequence.
+  python3 - "${metadata_path}" "${ROS_DISTRO:-}" <<'PY'
 from pathlib import Path
 import sys
 
 path = Path(sys.argv[1])
+ros_distro = sys.argv[2] if len(sys.argv) > 2 else ""
 text = path.read_text()
-patched = text.replace('offered_qos_profiles: []', 'offered_qos_profiles: ""')
+if ros_distro == "humble":
+    patched = text.replace('offered_qos_profiles: []', 'offered_qos_profiles: ""')
+else:
+    patched = text.replace('offered_qos_profiles: ""', 'offered_qos_profiles: []')
 path.write_text(patched)
 PY
 }
