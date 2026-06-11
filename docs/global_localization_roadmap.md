@@ -69,6 +69,24 @@ comparable to the recorded boundary):
 - `MAP_GRID` stays the coverage baseline (`31.7 m` best at a 512-candidate cap
   on this map); useful as a fallback set, not as a primary engine.
 
+#### 2026-06-12 BBS runtime optimization
+
+`branch_and_bound_candidates` was rewritten around two exact-equivalence
+optimizations, removing the "~14 min per window" blocker for G2:
+
+- node coordinates are always multiples of `2^level`, so the per-node floor
+  decomposes into a block index plus a `(yaw, level)` integer offset table,
+  precomputed once and deduplicated with counts;
+- per `(yaw, level)` pair the scorer starts with direct gathers and switches to
+  a one-shot FFT cross-correlation hit map for the whole level once the pair is
+  hot (hit counts are integers, so rounding restores exact values).
+
+Measured: synthetic 1200x1200 / 72-yaw / top-64 search 81.3 s -> 9.6 s (8.5x);
+HDL smoke window end-to-end 19.9 s -> 8.1 s with byte-identical candidate CSVs
+(the remainder is bag/map loading). The remaining floor is the Python
+branch-and-bound loop itself (~580 k heap pops); if G2 needs sub-second
+queries, that loop is the next target (C++ or batched expansion).
+
 ### G2: runtime global localization service
 
 Goal: expose G1 as an on-demand ROS 2 service, still without automatic publication.
