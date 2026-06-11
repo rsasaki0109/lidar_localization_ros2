@@ -253,6 +253,33 @@ started the same day:
   consider the `measurement_gate_policy` C++ change behind the public regression
   gates
 
+#### 2026-06-12 closed-loop replay result: fixture winner fails end-to-end
+
+The `correction_conditioned` policy was implemented as an opt-in
+`degraded_tracking_acceptance` gate (unit-tested against the same fixture
+values) and A/B-replayed on Koide `outdoor_hard_01a` `180 s` on an idle
+machine:
+
+- baseline (scalar gate): translation RMSE `0.582 m`, ok rows `329/539`
+- degraded acceptance: translation RMSE `62.7 m`, ok rows `152/535`
+
+Root cause: in closed loop the correction-vs-prediction cross-check is
+self-referential. Each accepted degraded measurement becomes the next
+prediction, so a drifting pose keeps producing small corrections and keeps
+"confirming" itself; and because the streak budget counts *rejections*, every
+acceptance resets it, making the budget unbounded in degraded regions. Single-
+step fixtures cannot expose either effect.
+
+Consequences (the runtime change was reverted; the experiment stays):
+
+1. the `measurement_acceptance` experiment needs sequence fixtures that replay
+   a window of consecutive samples with closed-loop feedback, not single rows
+2. the next policy iteration must bound *consecutive degraded accepts* with a
+   counter that only a genuinely below-threshold measurement resets, and/or
+   bound the cumulative correction absorbed during a degraded phase
+3. fixture-level benchmark scores are necessary but not sufficient; replay
+   validation stays mandatory before any runtime gate change
+
 ### 2026-06-11: Global localization G1 start
 
 - `MAP_GRID` baseline merged: map-wide seed candidates (occupied-cell centroids with a
