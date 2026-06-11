@@ -268,6 +268,8 @@ git branch -D <branch>
 | v1.1 relocalization work | [docs/v1_1_relocalization.md](docs/v1_1_relocalization.md) |
 | Experiment interfaces and decisions | [docs/interfaces.md](docs/interfaces.md), [docs/experiments.md](docs/experiments.md), [docs/decisions.md](docs/decisions.md) |
 | Roadmap | [docs/competitive_roadmap.md](docs/competitive_roadmap.md) |
+| Development plan | [docs/development_plan.md](docs/development_plan.md) |
+| Global localization phases | [docs/global_localization_roadmap.md](docs/global_localization_roadmap.md) |
 | Reliability / open issues | [docs/reliability_roadmap.md](docs/reliability_roadmap.md) |
 | Bringup troubleshooting | [docs/troubleshooting.md](docs/troubleshooting.md) |
 | Map alignment / pose offset | [docs/map_alignment.md](docs/map_alignment.md) |

@@ -193,6 +193,7 @@ Unsafe claims:
 - [v1_status.md](v1_status.md): validated scope and known limits
 - [v1_1_relocalization.md](v1_1_relocalization.md): relocalization MVP boundary
 - [global_localization_roadmap.md](global_localization_roadmap.md): map-wide global localization phases
+- [development_plan.md](development_plan.md): dated execution plan and current phase state
 - [public_validation_log.md](public_validation_log.md): recorded public validation snapshots
 - [mid360_legged_jetson.md](mid360_legged_jetson.md): MID-360 legged robot bringup notes
 
