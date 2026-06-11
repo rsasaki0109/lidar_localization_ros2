@@ -137,6 +137,7 @@ install(PROGRAMS
   scripts/observe_relocalization_reset_execution.py
   scripts/make_route_grid_relocalization_attempts.py
   scripts/make_map_grid_relocalization_attempts.py
+  scripts/make_bbs_relocalization_attempts.py
   scripts/make_registration_relocalization_jobs.py
   scripts/scaffold_mapless_public_dataset_bundle.py
   scripts/fetch_official_autoware_istanbul_dataset.sh
@@ -520,6 +521,10 @@ if(BUILD_TESTING)
   add_test(
     NAME map_grid_relocalization_attempts
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_map_grid_relocalization_attempts.py
+  )
+  add_test(
+    NAME bbs_relocalization_attempts
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_bbs_relocalization_attempts.py
   )
 endif()
 

@@ -31,8 +31,10 @@ Goal: replace the route-grid candidate stage with engines that need no route pri
    poses from occupied map cells with discretized yaw and emits the existing
    `relocalization_attempts.csv` / `relocalization_candidates.csv` contract. This is the
    brute-force coverage baseline that the smarter engines must beat.
-2. `BBS_2D` engine: branch-and-bound search over a 2D occupancy grid derived from the
-   pointcloud map. `scripts/generate_occupancy_map_from_pcd.py` already produces the grid.
+2. `BBS_2D` engine: `scripts/make_bbs_relocalization_attempts.py` runs an admissible
+   branch-and-bound search over a max-pooled pyramid of the 2D occupancy grid from
+   `scripts/generate_occupancy_map_from_pcd.py`, matching the bag scan nearest to each
+   request window and emitting top-K candidates best-first in the shared CSV contract.
 3. `FPFH_RANSAC` engine: PCL FPFH features + RANSAC alignment as a full-3D fallback.
 4. All engines emit the existing `relocalization_attempts.csv` schema so the v1.1
    scoring, selection, and dry-run command stages run unmodified.
