@@ -43,6 +43,9 @@
 - `scripts/setup_local_env.sh` resolves the ROS distro (`LIDAR_LOCALIZATION_ROS_DISTRO`, `ROS_DISTRO`, humble, jazzy) instead of hardcoding Humble
 - HDL sample fetch patches rosbag2 `offered_qos_profiles` metadata per distro so `ros2 bag play` works on Jazzy
 - public regression suite passes on a Jazzy build (2026-06-11): Istanbul `0.673 m` translation RMSE, HDL medians `468.5 / 459.0` pose rows
+- Nav2 plugin type names switched from the Humble lookup form (`nav2_navfn_planner/NavfnPlanner`, `nav2_behaviors/*`) to the `::` type form required by Iron+ and accepted by Humble
+- `param/nav2_humble_pointcloud.yaml` works with Jazzy bringup: explicit `plugin_lib_names` removed (double registration crashes Jazzy `bt_navigator`), `collision_monitor` and minimal `docking_server` sections added for the Iron+ lifecycle set
+- Nav2 reinit supervisor regression prints route-bounded occupancy-map bootstrap commands when the map artifact is missing on a fresh workspace
 
 ## 1.0.0 - 2026-03-30
 
