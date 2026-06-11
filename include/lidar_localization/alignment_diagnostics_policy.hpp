@@ -59,6 +59,11 @@ struct AlignmentDiagnosticValuesInput
   double reinitialization_request_latch_age_sec{0.0};
   bool map_received{false};
   bool initialpose_received{false};
+  std::string failure_category;
+  bool weak_overlap_active{false};
+  bool bad_match_active{false};
+  bool stale_prediction_active{false};
+  bool overload_active{false};
 };
 
 inline const char * boolString(bool value)
@@ -96,7 +101,7 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
   const AlignmentDiagnosticValuesInput & input)
 {
   std::vector<DiagnosticKeyValue> values;
-  values.reserve(31);
+  values.reserve(36);
   auto append = [&values](const std::string & key, const std::string & value) {
       values.emplace_back(key, value);
     };
@@ -147,6 +152,11 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
     std::to_string(input.reinitialization_request_latch_age_sec));
   append("map_received", boolString(input.map_received));
   append("initialpose_received", boolString(input.initialpose_received));
+  append("failure_category", input.failure_category);
+  append("weak_overlap_active", boolString(input.weak_overlap_active));
+  append("bad_match_active", boolString(input.bad_match_active));
+  append("stale_prediction_active", boolString(input.stale_prediction_active));
+  append("overload_active", boolString(input.overload_active));
   return values;
 }
 

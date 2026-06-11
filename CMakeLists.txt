@@ -270,6 +270,15 @@ if(BUILD_TESTING)
     COMMAND test_alignment_diagnostics_policy
   )
 
+  add_executable(test_alignment_failure_taxonomy
+    test/test_alignment_failure_taxonomy.cpp)
+  target_include_directories(test_alignment_failure_taxonomy PRIVATE
+    include)
+  add_test(
+    NAME alignment_failure_taxonomy
+    COMMAND test_alignment_failure_taxonomy
+  )
+
   add_executable(test_alignment_diagnostic_ros_adapter
     test/test_alignment_diagnostic_ros_adapter.cpp)
   target_include_directories(test_alignment_diagnostic_ros_adapter PRIVATE

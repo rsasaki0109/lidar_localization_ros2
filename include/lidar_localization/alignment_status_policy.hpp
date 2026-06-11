@@ -7,6 +7,7 @@
 #include <string>
 
 #include "lidar_localization/alignment_diagnostics_policy.hpp"
+#include "lidar_localization/alignment_failure_taxonomy.hpp"
 #include "lidar_localization/measurement_gate_policy.hpp"
 #include "lidar_localization/recovery_supervisor.hpp"
 
@@ -37,6 +38,7 @@ struct AlignmentStatusInput
   bool initialpose_received{false};
   MeasurementGateParams gate_params;
   ReinitializationTriggerParams reinitialization_params;
+  AlignmentFailureTaxonomyParams failure_taxonomy_params;
 };
 
 struct AlignmentStatusObservation
@@ -67,6 +69,7 @@ struct AlignmentStatusRuntimeContext
   bool initialpose_received{false};
   MeasurementGateParams gate_params;
   ReinitializationTriggerParams reinitialization_params;
+  AlignmentFailureTaxonomyParams failure_taxonomy_params;
 };
 
 struct AlignmentStatusPreparation
@@ -129,6 +132,7 @@ inline AlignmentStatusInput makeAlignmentStatusInput(
   input.initialpose_received = context.initialpose_received;
   input.gate_params = context.gate_params;
   input.reinitialization_params = context.reinitialization_params;
+  input.failure_taxonomy_params = context.failure_taxonomy_params;
   return input;
 }
 
@@ -257,6 +261,28 @@ inline AlignmentDiagnosticValuesInput makeAlignmentStatusDiagnosticValuesInput(
     input.reinitialization_request_latch_age_sec;
   diagnostic_input.map_received = status.map_received;
   diagnostic_input.initialpose_received = status.initialpose_received;
+
+  AlignmentFailureTaxonomyInput taxonomy_input;
+  taxonomy_input.map_received = status.map_received;
+  taxonomy_input.initialpose_received = status.initialpose_received;
+  taxonomy_input.status_message = status.message;
+  taxonomy_input.has_converged = status.has_converged;
+  taxonomy_input.fitness_score = status.fitness_score;
+  taxonomy_input.effective_score_threshold =
+    preparation.threshold_decision.effective_score_threshold;
+  taxonomy_input.filtered_point_count = status.filtered_point_count;
+  taxonomy_input.alignment_time_sec = status.alignment_time_sec;
+  // Use the resolved gap so staleness is still detected when the caller could
+  // not provide accepted_gap_sec directly.
+  taxonomy_input.accepted_gap_sec =
+    preparation.effective_reinitialization_metrics.accepted_gap_sec;
+  const auto taxonomy =
+    classifyAlignmentFailure(status.failure_taxonomy_params, taxonomy_input);
+  diagnostic_input.failure_category = taxonomy.category;
+  diagnostic_input.weak_overlap_active = taxonomy.weak_overlap_active;
+  diagnostic_input.bad_match_active = taxonomy.bad_match_active;
+  diagnostic_input.stale_prediction_active = taxonomy.stale_prediction_active;
+  diagnostic_input.overload_active = taxonomy.overload_active;
   return diagnostic_input;
 }
 

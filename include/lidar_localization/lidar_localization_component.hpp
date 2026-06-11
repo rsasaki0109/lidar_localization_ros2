@@ -229,6 +229,7 @@ public:
   lidar_localization::RecoveryRetryFromLastPoseParams recovery_retry_from_last_pose_config_;
   bool enable_reinitialization_request_output_{true};
   lidar_localization::ReinitializationTriggerParams reinitialization_trigger_config_;
+  lidar_localization::AlignmentFailureTaxonomyParams failure_taxonomy_params_;
 
   int ndt_num_threads_;
   int ndt_max_iterations_;

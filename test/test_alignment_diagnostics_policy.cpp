@@ -88,9 +88,14 @@ void test_build_alignment_diagnostic_values_order_and_strings()
   input.reinitialization_request_latch_age_sec = 10.0;
   input.map_received = true;
   input.initialpose_received = false;
+  input.failure_category = "bad_match";
+  input.weak_overlap_active = false;
+  input.bad_match_active = true;
+  input.stale_prediction_active = true;
+  input.overload_active = false;
 
   const auto values = ll::buildAlignmentDiagnosticValues(input);
-  assert(values.size() == 28);
+  assert(values.size() == 33);
   assert(values[0].first == "registration_method");
   assert(values[0].second == "NDT");
   assert(values[1].first == "has_converged");
@@ -109,6 +114,16 @@ void test_build_alignment_diagnostic_values_order_and_strings()
   assert(values[26].second == "true");
   assert(values[27].first == "initialpose_received");
   assert(values[27].second == "false");
+  assert(values[28].first == "failure_category");
+  assert(values[28].second == "bad_match");
+  assert(values[29].first == "weak_overlap_active");
+  assert(values[29].second == "false");
+  assert(values[30].first == "bad_match_active");
+  assert(values[30].second == "true");
+  assert(values[31].first == "stale_prediction_active");
+  assert(values[31].second == "true");
+  assert(values[32].first == "overload_active");
+  assert(values[32].second == "false");
 }
 
 int main()

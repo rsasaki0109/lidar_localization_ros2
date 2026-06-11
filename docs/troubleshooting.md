@@ -60,6 +60,30 @@ The `message` field is the primary reject reason. Key-value pairs carry context.
 | `map_received` | map not loaded yet; wait for `map_path` load or `/map` |
 | `initialpose_received` | no valid `/initialpose` in `map` frame yet |
 
+### Failure category (one-key triage)
+
+The `failure_category` key classifies the current state into a single dominant
+cause so you do not have to reverse-engineer the message:
+
+| Category | Meaning | First thing to check |
+| --- | --- | --- |
+| `healthy` | alignment accepted and timely | nothing |
+| `missing_map` | no map loaded | `map_path` / `/map` topic |
+| `missing_initial_pose` | no valid `/initialpose` yet | send `/initialpose` in `map` frame |
+| `weak_overlap` | too few points to constrain the match (scan side or `local_map_crop_too_small`) | scan filters, FOV, initial pose vs map crop |
+| `bad_match` | registration did not converge or score is over the effective threshold | initial pose, map alignment, sensor frame |
+| `stale_prediction` | no measurement accepted for a while; pose is coasting on prediction | upstream cause of rejects; consider re-sending `/initialpose` |
+| `overload` | alignment is slower than the configured budget | CPU load, `ndt_num_threads`, voxel sizes |
+
+Categories are prioritized in the order above; the companion boolean keys
+`weak_overlap_active`, `bad_match_active`, `stale_prediction_active`, and
+`overload_active` stay `true` for every condition that holds, so co-occurring
+causes remain visible. Thresholds are parameters:
+`diagnostics_weak_overlap_min_filtered_points` (default `100`),
+`diagnostics_stale_prediction_min_gap_sec` (default `2.0`),
+`diagnostics_overload_alignment_time_sec` (default `0.3`, `<= 0` disables).
+These keys are diagnostics only — they never change acceptance behavior.
+
 ### Common `message` values
 
 | Message | Likely cause | What to try |

@@ -164,6 +164,63 @@ void test_make_diagnostic_input_preserves_status_context()
   assert(diagnostic_input.reinitialization_request_latched);
   assert(diagnostic_input.map_received);
   assert(diagnostic_input.initialpose_received);
+  // fitness 6.0 over effective threshold 5.0 with a stale 8.0 s gap: the
+  // primary category is bad_match, staleness stays visible as a flag.
+  assert(diagnostic_input.failure_category == ll::kAlignmentFailureCategoryBadMatch);
+  assert(diagnostic_input.bad_match_active);
+  assert(diagnostic_input.stale_prediction_active);
+  assert(!diagnostic_input.weak_overlap_active);
+  assert(!diagnostic_input.overload_active);
+}
+
+void test_make_diagnostic_input_missing_initial_pose_outranks_bad_match()
+{
+  auto input = default_status_input();
+  input.initialpose_received = false;
+  const auto preparation = ll::prepareAlignmentStatus(input);
+  const auto diagnostic_input = ll::makeAlignmentStatusDiagnosticValuesInput(
+    ll::AlignmentStatusDiagnosticInput{
+      input,
+      preparation,
+      ll::ReinitializationRequestDecision{},
+      "tracking",
+      "accept_measurement",
+      0.0,
+      0,
+      false,
+      0.0});
+
+  assert(
+    diagnostic_input.failure_category ==
+    ll::kAlignmentFailureCategoryMissingInitialPose);
+  assert(diagnostic_input.bad_match_active);
+}
+
+void test_make_diagnostic_input_uses_fallback_gap_for_staleness()
+{
+  auto input = default_status_input();
+  input.fitness_score = 1.0;
+  input.accepted_gap_sec = NAN;
+  input.seed_translation_since_accept_m = NAN;
+  // stamp 20.0 - last accepted 12.0 = resolved gap 8.0 s.
+  const auto preparation = ll::prepareAlignmentStatus(input);
+  const auto diagnostic_input = ll::makeAlignmentStatusDiagnosticValuesInput(
+    ll::AlignmentStatusDiagnosticInput{
+      input,
+      preparation,
+      ll::ReinitializationRequestDecision{},
+      "tracking",
+      "accept_measurement",
+      0.0,
+      0,
+      false,
+      0.0});
+
+  assert(
+    diagnostic_input.failure_category ==
+    ll::kAlignmentFailureCategoryStalePrediction);
+  assert(diagnostic_input.stale_prediction_active);
+  assert(!diagnostic_input.bad_match_active);
 }
 
 void test_make_diagnostic_input_computes_runtime_ages()
@@ -224,6 +281,8 @@ int main()
   test_prepare_alignment_status_uses_fallback_reinit_metrics();
   test_recovery_evaluation_uses_latched_reinit_request();
   test_make_diagnostic_input_preserves_status_context();
+  test_make_diagnostic_input_missing_initial_pose_outranks_bad_match();
+  test_make_diagnostic_input_uses_fallback_gap_for_staleness();
   test_make_diagnostic_input_computes_runtime_ages();
   test_make_diagnostic_input_zeros_unlatched_request_age();
   return 0;
