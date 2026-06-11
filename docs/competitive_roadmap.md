@@ -121,7 +121,9 @@ Done when:
 1. Add dynamic map loading or tile/submap support.
 2. Evaluate GPU or accelerated backends only after CPU behavior is well characterized.
 3. Turn guarded relocalization publication into a controlled runtime feature.
-4. Add hardware-focused validation for Jetson + MID-360 and other robot-specific integrations.
+4. Add map-wide global localization engines on top of the artifact-first pipeline; see
+   [global_localization_roadmap.md](global_localization_roadmap.md).
+5. Add hardware-focused validation for Jetson + MID-360 and other robot-specific integrations.
 
 Done when:
 
@@ -190,6 +192,7 @@ Unsafe claims:
 - [benchmarking.md](benchmarking.md): benchmark and regression commands
 - [v1_status.md](v1_status.md): validated scope and known limits
 - [v1_1_relocalization.md](v1_1_relocalization.md): relocalization MVP boundary
+- [global_localization_roadmap.md](global_localization_roadmap.md): map-wide global localization phases
 - [public_validation_log.md](public_validation_log.md): recorded public validation snapshots
 - [mid360_legged_jetson.md](mid360_legged_jetson.md): MID-360 legged robot bringup notes
 
