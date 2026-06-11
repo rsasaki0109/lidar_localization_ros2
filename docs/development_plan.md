@@ -217,6 +217,25 @@ What happened, in order, on a fresh Jazzy-only workspace:
 Release decision: `v1.1.0` tags only after the full release suite (public + Nav2
 supervisor) is green in one run. The public-suite half is no longer the blocker.
 
+### 2026-06-11: First G1 evaluation on Koide (after v1.1.0)
+
+- Dataset bootstrapped on a fresh workspace: `outdoor_hard_01a` sequence (1.64 GiB,
+  Zenodo transfers need resume+retry), maps, GT converted via
+  `tum_trajectory_to_pose_reference_csv_for_rosbag2.py`.
+- The `180 s` route-proximity artifact manifest reproduced a request window, but the
+  registration stage rejected all 32 candidates — including the ground-truth pose, which
+  scores NDT fitness `9.6` vs the `6.0` gate at that location. The window is adversarial
+  for any scan-matching method; the fixed scalar gate is the weakest layer (Phase 3
+  evidence).
+- `BBS_2D`, after tuning on this data (min-range filter for Livox invalid returns,
+  sparse structure grid, dilation tolerance, 5 deg yaw, spatial NMS), solves a synthetic
+  kidnapped-start on a healthy scan end-to-end: rank-1 candidate -> NDT -> `0.69 m /
+  1.0 deg`, no priors. G2 has a working basis.
+- `MAP_GRID` had a yaw-aliasing bug in its candidate cap (stride collapsed every
+  candidate to one heading); fixed with a regression test.
+- Detailed numbers live in
+  [global_localization_roadmap.md](global_localization_roadmap.md).
+
 ### 2026-06-11: Global localization G1 start
 
 - `MAP_GRID` baseline merged: map-wide seed candidates (occupied-cell centroids with a
