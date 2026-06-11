@@ -8,6 +8,8 @@
 - `scripts/run_public_validation_dashboard.sh` for Markdown/HTML public validation dashboards
 - `param/benchmark/v1_1_boreas_dry_run_endpoint.example.yaml` for the v1.1 MVP dry-run endpoint chain
 - `scripts/run_v1_1_relocalization_smoke.sh` to guard the v1.1 claim boundary
+- `docs/global_localization_roadmap.md` defining the G1/G2/G3 global localization phases
+- `scripts/make_map_grid_relocalization_attempts.py` map-wide candidate baseline that needs no route prior
 
 ### Reliability / Claim Boundary
 
