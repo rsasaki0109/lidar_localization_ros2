@@ -1,6 +1,6 @@
 {
   "name": "koide_degraded_window_sequence",
-  "description": "Closed-loop-style sequence distilled from the Koide outdoor_hard_01a failure window. The harness derives gap and rejection streak from the policy's own decisions, so a policy that accepts degraded measurements without a non-resetting budget exhibits the unbounded self-confirming acceptance that broke the 2026-06-12 replay.",
+  "description": "Closed-loop-style sequence distilled from the Koide outdoor_hard_01a failure window. The harness derives gap and rejection streak from the policy's own decisions, so a policy that accepts degraded measurements without a non-resetting budget exhibits the unbounded self-confirming acceptance that broke the 2026-06-12 replay. Updated 2026-06-12: the bounded replay showed every step in this window (fit 13.6-26.6) is a false maximum; the correct behavior is to reject the entire window, not bridge its onset.",
   "source": "distilled from koide outdoor_hard_01a 180s window rows 139-160 (score/correction ranges)",
   "effective_score_threshold": 6.0,
   "steps": [
@@ -112,7 +112,7 @@
   ],
   "expectations": {
     "max_consecutive_degraded_accepts": 4,
-    "min_degraded_accepts": 1,
+    "min_degraded_accepts": 0,
     "must_reject_final_step": true
   }
 }

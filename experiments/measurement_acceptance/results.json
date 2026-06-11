@@ -27,16 +27,16 @@
   },
   "fixtures": [
     {
-      "name": "degraded_onset_small_correction_should_accept",
-      "description": "Failure-window onset: score 13.6 is over the 6.0 gate, but the correction is 1.0 m / 1.8 deg against a 0.5 s old prediction. Ground-truth analysis of this window shows even the true pose scores ~9.6 here; rejecting this row starts a 300-row reject streak.",
+      "name": "degraded_onset_small_correction_should_reject",
+      "description": "Failure-window onset: score 13.6 over the 6.0 gate with a small correction. The 2026-06-11 hypothesis was to accept this; the 2026-06-12 bounded replay falsified it: degraded accepts above fitness ~12 dragged the anchor (rotation RMSE 1.8->6.1 deg, ok rows 329->193). GT scores ~9.6 in this window, so anything above ~12 is a false maximum even when the correction is small.",
       "source": "koide outdoor_hard_01a 180s reinit090 replay (2026-06-11), alignment_status.csv:140",
-      "expected_reject": false
+      "expected_reject": true
     },
     {
-      "name": "degraded_streak_small_correction_should_accept",
-      "description": "Three rejects into the window: score 26.6 but correction 0.75 m / 2.4 deg, gap 1.8 s. Pose still agrees with prediction.",
+      "name": "degraded_streak_small_correction_should_reject",
+      "description": "Three rejects into the window: score 26.6 with correction 0.75 m. Falsified accept-hypothesis: the 2026-06-12 bounded replay showed fit 18.7/31.9 rows with small corrections are self-confirming false maxima once a degraded accept re-anchors the prediction.",
       "source": "koide outdoor_hard_01a 180s reinit090 replay (2026-06-11), alignment_status.csv:143",
-      "expected_reject": false
+      "expected_reject": true
     },
     {
       "name": "fresh_jump_good_score_should_reject",
@@ -65,26 +65,289 @@
   ],
   "variants": [
     {
+      "name": "fixed_threshold",
+      "design": "scalar fitness threshold (runtime baseline)",
+      "fixture_results": [
+        {
+          "fixture": "degraded_onset_small_correction_should_reject",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "score_over_threshold",
+          "decision_score": 13.59,
+          "expected_reject": true
+        },
+        {
+          "fixture": "degraded_streak_small_correction_should_reject",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "score_over_threshold",
+          "decision_score": 26.56,
+          "expected_reject": true
+        },
+        {
+          "fixture": "fresh_jump_good_score_should_reject",
+          "passed": false,
+          "outcome": "mismatched_expected_reject",
+          "decision": "accept",
+          "decision_reason": "score_within_threshold",
+          "decision_score": 1.5,
+          "expected_reject": true
+        },
+        {
+          "fixture": "healthy_tracking_should_accept",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "accept",
+          "decision_reason": "score_within_threshold",
+          "decision_score": 0.3,
+          "expected_reject": false
+        },
+        {
+          "fixture": "lost_huge_score_should_reject",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "score_over_threshold",
+          "decision_score": 4353.99,
+          "expected_reject": true
+        },
+        {
+          "fixture": "stale_prediction_should_reject",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "score_over_threshold",
+          "decision_score": 18.72,
+          "expected_reject": true
+        }
+      ],
+      "sequence_results": [
+        {
+          "fixture": "koide_bounded_replay_regression_sequence",
+          "passed": true,
+          "checks": {
+            "bounded_degraded_run": true,
+            "bridges_onset": true,
+            "rejects_when_exhausted": true,
+            "rejects_required_steps": true
+          },
+          "degraded_accepts": 0,
+          "max_consecutive_degraded_accepts": 0,
+          "rejected_indices": [
+            1,
+            2,
+            4,
+            5,
+            6,
+            7,
+            8
+          ]
+        },
+        {
+          "fixture": "koide_degraded_window_sequence",
+          "passed": true,
+          "checks": {
+            "bounded_degraded_run": true,
+            "bridges_onset": true,
+            "rejects_when_exhausted": true,
+            "rejects_required_steps": true
+          },
+          "degraded_accepts": 0,
+          "max_consecutive_degraded_accepts": 0,
+          "rejected_indices": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ]
+        }
+      ],
+      "benchmark_score": 87.5,
+      "readability_score": 79.0,
+      "extensibility_score": 85.0,
+      "static_metrics": {
+        "implementation_file": "experiments/measurement_acceptance/variants/fixed_threshold.py",
+        "loc": 10,
+        "branch_count": 1,
+        "max_nesting_depth": 1,
+        "state_field_count": 0,
+        "public_method_count": 2,
+        "import_count": 3,
+        "has_config_dataclass": false,
+        "readability_score": 79.0,
+        "extensibility_score": 85.0
+      },
+      "overall_score": 85.3
+    },
+    {
+      "name": "bounded_degraded",
+      "design": "correction cross-check with non-resetting degraded-accept budget",
+      "fixture_results": [
+        {
+          "fixture": "degraded_onset_small_correction_should_reject",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "degraded_budget_exhausted_or_unsupported",
+          "decision_score": 13.59,
+          "expected_reject": true
+        },
+        {
+          "fixture": "degraded_streak_small_correction_should_reject",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "degraded_budget_exhausted_or_unsupported",
+          "decision_score": 26.56,
+          "expected_reject": true
+        },
+        {
+          "fixture": "fresh_jump_good_score_should_reject",
+          "passed": false,
+          "outcome": "mismatched_expected_reject",
+          "decision": "accept",
+          "decision_reason": "score_within_threshold",
+          "decision_score": 1.5,
+          "expected_reject": true
+        },
+        {
+          "fixture": "healthy_tracking_should_accept",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "accept",
+          "decision_reason": "score_within_threshold",
+          "decision_score": 0.3,
+          "expected_reject": false
+        },
+        {
+          "fixture": "lost_huge_score_should_reject",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "degraded_budget_exhausted_or_unsupported",
+          "decision_score": 4353.99,
+          "expected_reject": true
+        },
+        {
+          "fixture": "stale_prediction_should_reject",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "degraded_budget_exhausted_or_unsupported",
+          "decision_score": 18.72,
+          "expected_reject": true
+        }
+      ],
+      "sequence_results": [
+        {
+          "fixture": "koide_bounded_replay_regression_sequence",
+          "passed": true,
+          "checks": {
+            "bounded_degraded_run": true,
+            "bridges_onset": true,
+            "rejects_when_exhausted": true,
+            "rejects_required_steps": true
+          },
+          "degraded_accepts": 3,
+          "max_consecutive_degraded_accepts": 1,
+          "rejected_indices": [
+            1,
+            5,
+            6,
+            8
+          ]
+        },
+        {
+          "fixture": "koide_degraded_window_sequence",
+          "passed": true,
+          "checks": {
+            "bounded_degraded_run": true,
+            "bridges_onset": true,
+            "rejects_when_exhausted": true,
+            "rejects_required_steps": true
+          },
+          "degraded_accepts": 0,
+          "max_consecutive_degraded_accepts": 0,
+          "rejected_indices": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ]
+        }
+      ],
+      "benchmark_score": 87.5,
+      "readability_score": 22.6,
+      "extensibility_score": 84.0,
+      "static_metrics": {
+        "implementation_file": "experiments/measurement_acceptance/variants/bounded_degraded.py",
+        "loc": 37,
+        "branch_count": 5,
+        "max_nesting_depth": 2,
+        "state_field_count": 5,
+        "public_method_count": 2,
+        "import_count": 4,
+        "has_config_dataclass": true,
+        "readability_score": 22.6,
+        "extensibility_score": 84.0
+      },
+      "overall_score": 73.82
+    },
+    {
       "name": "correction_conditioned",
       "design": "fitness threshold + correction/staleness cross-check",
       "fixture_results": [
         {
-          "fixture": "degraded_onset_small_correction_should_accept",
-          "passed": true,
-          "outcome": "matched_expected_reject",
+          "fixture": "degraded_onset_small_correction_should_reject",
+          "passed": false,
+          "outcome": "mismatched_expected_reject",
           "decision": "accept",
           "decision_reason": "degraded_score_consistent_pose",
           "decision_score": 13.59,
-          "expected_reject": false
+          "expected_reject": true
         },
         {
-          "fixture": "degraded_streak_small_correction_should_accept",
-          "passed": true,
-          "outcome": "matched_expected_reject",
+          "fixture": "degraded_streak_small_correction_should_reject",
+          "passed": false,
+          "outcome": "mismatched_expected_reject",
           "decision": "accept",
           "decision_reason": "degraded_score_consistent_pose",
           "decision_score": 26.56,
-          "expected_reject": false
+          "expected_reject": true
         },
         {
           "fixture": "fresh_jump_good_score_should_reject",
@@ -125,18 +388,35 @@
       ],
       "sequence_results": [
         {
+          "fixture": "koide_bounded_replay_regression_sequence",
+          "passed": false,
+          "checks": {
+            "bounded_degraded_run": false,
+            "bridges_onset": true,
+            "rejects_when_exhausted": false,
+            "rejects_required_steps": false
+          },
+          "degraded_accepts": 6,
+          "max_consecutive_degraded_accepts": 5,
+          "rejected_indices": [
+            1
+          ]
+        },
+        {
           "fixture": "koide_degraded_window_sequence",
           "passed": false,
           "checks": {
             "bounded_degraded_run": false,
             "bridges_onset": true,
-            "rejects_when_exhausted": false
+            "rejects_when_exhausted": false,
+            "rejects_required_steps": true
           },
           "degraded_accepts": 20,
-          "max_consecutive_degraded_accepts": 20
+          "max_consecutive_degraded_accepts": 20,
+          "rejected_indices": []
         }
       ],
-      "benchmark_score": 85.71428571428571,
+      "benchmark_score": 50.0,
       "readability_score": 25.200000000000003,
       "extensibility_score": 94.0,
       "static_metrics": {
@@ -151,118 +431,29 @@
         "readability_score": 25.200000000000003,
         "extensibility_score": 94.0
       },
-      "overall_score": 75.27
-    },
-    {
-      "name": "bounded_degraded",
-      "design": "correction cross-check with non-resetting degraded-accept budget",
-      "fixture_results": [
-        {
-          "fixture": "degraded_onset_small_correction_should_accept",
-          "passed": true,
-          "outcome": "matched_expected_reject",
-          "decision": "accept",
-          "decision_reason": "degraded_accept_within_budget",
-          "decision_score": 13.59,
-          "expected_reject": false
-        },
-        {
-          "fixture": "degraded_streak_small_correction_should_accept",
-          "passed": true,
-          "outcome": "matched_expected_reject",
-          "decision": "accept",
-          "decision_reason": "degraded_accept_within_budget",
-          "decision_score": 26.56,
-          "expected_reject": false
-        },
-        {
-          "fixture": "fresh_jump_good_score_should_reject",
-          "passed": false,
-          "outcome": "mismatched_expected_reject",
-          "decision": "accept",
-          "decision_reason": "score_within_threshold",
-          "decision_score": 1.5,
-          "expected_reject": true
-        },
-        {
-          "fixture": "healthy_tracking_should_accept",
-          "passed": true,
-          "outcome": "matched_expected_reject",
-          "decision": "accept",
-          "decision_reason": "score_within_threshold",
-          "decision_score": 0.3,
-          "expected_reject": false
-        },
-        {
-          "fixture": "lost_huge_score_should_reject",
-          "passed": true,
-          "outcome": "matched_expected_reject",
-          "decision": "reject",
-          "decision_reason": "degraded_budget_exhausted_or_unsupported",
-          "decision_score": 4353.99,
-          "expected_reject": true
-        },
-        {
-          "fixture": "stale_prediction_should_reject",
-          "passed": true,
-          "outcome": "matched_expected_reject",
-          "decision": "reject",
-          "decision_reason": "degraded_budget_exhausted_or_unsupported",
-          "decision_score": 18.72,
-          "expected_reject": true
-        }
-      ],
-      "sequence_results": [
-        {
-          "fixture": "koide_degraded_window_sequence",
-          "passed": true,
-          "checks": {
-            "bounded_degraded_run": true,
-            "bridges_onset": true,
-            "rejects_when_exhausted": true
-          },
-          "degraded_accepts": 3,
-          "max_consecutive_degraded_accepts": 3
-        }
-      ],
-      "benchmark_score": 85.71428571428571,
-      "readability_score": 34.0,
-      "extensibility_score": 84.0,
-      "static_metrics": {
-        "implementation_file": "experiments/measurement_acceptance/variants/bounded_degraded.py",
-        "loc": 35,
-        "branch_count": 4,
-        "max_nesting_depth": 1,
-        "state_field_count": 5,
-        "public_method_count": 2,
-        "import_count": 4,
-        "has_config_dataclass": true,
-        "readability_score": 34.0,
-        "extensibility_score": 84.0
-      },
-      "overall_score": 75.03
+      "overall_score": 53.84
     },
     {
       "name": "score_ratio_budget",
       "design": "relative score cap with gap/streak budget",
       "fixture_results": [
         {
-          "fixture": "degraded_onset_small_correction_should_accept",
-          "passed": true,
-          "outcome": "matched_expected_reject",
+          "fixture": "degraded_onset_small_correction_should_reject",
+          "passed": false,
+          "outcome": "mismatched_expected_reject",
           "decision": "accept",
           "decision_reason": "score_within_ratio_budget",
           "decision_score": 13.59,
-          "expected_reject": false
+          "expected_reject": true
         },
         {
-          "fixture": "degraded_streak_small_correction_should_accept",
-          "passed": true,
-          "outcome": "matched_expected_reject",
+          "fixture": "degraded_streak_small_correction_should_reject",
+          "passed": false,
+          "outcome": "mismatched_expected_reject",
           "decision": "accept",
           "decision_reason": "score_within_ratio_budget",
           "decision_score": 26.56,
-          "expected_reject": false
+          "expected_reject": true
         },
         {
           "fixture": "fresh_jump_good_score_should_reject",
@@ -303,18 +494,35 @@
       ],
       "sequence_results": [
         {
+          "fixture": "koide_bounded_replay_regression_sequence",
+          "passed": false,
+          "checks": {
+            "bounded_degraded_run": true,
+            "bridges_onset": true,
+            "rejects_when_exhausted": false,
+            "rejects_required_steps": false
+          },
+          "degraded_accepts": 6,
+          "max_consecutive_degraded_accepts": 2,
+          "rejected_indices": [
+            6
+          ]
+        },
+        {
           "fixture": "koide_degraded_window_sequence",
           "passed": false,
           "checks": {
             "bounded_degraded_run": false,
             "bridges_onset": true,
-            "rejects_when_exhausted": false
+            "rejects_when_exhausted": false,
+            "rejects_required_steps": true
           },
           "degraded_accepts": 20,
-          "max_consecutive_degraded_accepts": 20
+          "max_consecutive_degraded_accepts": 20,
+          "rejected_indices": []
         }
       ],
-      "benchmark_score": 71.42857142857143,
+      "benchmark_score": 37.5,
       "readability_score": 49.599999999999994,
       "extensibility_score": 94.0,
       "static_metrics": {
@@ -329,97 +537,8 @@
         "readability_score": 49.599999999999994,
         "extensibility_score": 94.0
       },
-      "overall_score": 71.58
-    },
-    {
-      "name": "fixed_threshold",
-      "design": "scalar fitness threshold (runtime baseline)",
-      "fixture_results": [
-        {
-          "fixture": "degraded_onset_small_correction_should_accept",
-          "passed": false,
-          "outcome": "mismatched_expected_reject",
-          "decision": "reject",
-          "decision_reason": "score_over_threshold",
-          "decision_score": 13.59,
-          "expected_reject": false
-        },
-        {
-          "fixture": "degraded_streak_small_correction_should_accept",
-          "passed": false,
-          "outcome": "mismatched_expected_reject",
-          "decision": "reject",
-          "decision_reason": "score_over_threshold",
-          "decision_score": 26.56,
-          "expected_reject": false
-        },
-        {
-          "fixture": "fresh_jump_good_score_should_reject",
-          "passed": false,
-          "outcome": "mismatched_expected_reject",
-          "decision": "accept",
-          "decision_reason": "score_within_threshold",
-          "decision_score": 1.5,
-          "expected_reject": true
-        },
-        {
-          "fixture": "healthy_tracking_should_accept",
-          "passed": true,
-          "outcome": "matched_expected_reject",
-          "decision": "accept",
-          "decision_reason": "score_within_threshold",
-          "decision_score": 0.3,
-          "expected_reject": false
-        },
-        {
-          "fixture": "lost_huge_score_should_reject",
-          "passed": true,
-          "outcome": "matched_expected_reject",
-          "decision": "reject",
-          "decision_reason": "score_over_threshold",
-          "decision_score": 4353.99,
-          "expected_reject": true
-        },
-        {
-          "fixture": "stale_prediction_should_reject",
-          "passed": true,
-          "outcome": "matched_expected_reject",
-          "decision": "reject",
-          "decision_reason": "score_over_threshold",
-          "decision_score": 18.72,
-          "expected_reject": true
-        }
-      ],
-      "sequence_results": [
-        {
-          "fixture": "koide_degraded_window_sequence",
-          "passed": false,
-          "checks": {
-            "bounded_degraded_run": true,
-            "bridges_onset": false,
-            "rejects_when_exhausted": true
-          },
-          "degraded_accepts": 0,
-          "max_consecutive_degraded_accepts": 0
-        }
-      ],
-      "benchmark_score": 42.857142857142854,
-      "readability_score": 79.0,
-      "extensibility_score": 85.0,
-      "static_metrics": {
-        "implementation_file": "experiments/measurement_acceptance/variants/fixed_threshold.py",
-        "loc": 10,
-        "branch_count": 1,
-        "max_nesting_depth": 1,
-        "state_field_count": 0,
-        "public_method_count": 2,
-        "import_count": 3,
-        "has_config_dataclass": false,
-        "readability_score": 79.0,
-        "extensibility_score": 85.0
-      },
-      "overall_score": 58.51
+      "overall_score": 51.22
     }
   ],
-  "benchmark_score_mean": 71.42857142857143
+  "benchmark_score_mean": 65.625
 }

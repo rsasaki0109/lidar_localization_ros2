@@ -102,6 +102,7 @@ def run_variant_on_sequence(variant_cls: type, fixture: dict[str, Any]) -> dict[
     max_consecutive_degraded = 0
     current_run = 0
     last_decision_reject = True
+    rejected_indices = []
     for index, step in enumerate(fixture["steps"]):
         gap = 0.4 + 0.5 * consecutive_rejected
         sample = AcceptanceSample(
@@ -116,6 +117,7 @@ def run_variant_on_sequence(variant_cls: type, fixture: dict[str, Any]) -> dict[
         decision = variant.step(sample)
         last_decision_reject = decision.reject_measurement
         if decision.reject_measurement:
+            rejected_indices.append(index)
             consecutive_rejected += 1
             current_run = 0
         else:
@@ -132,6 +134,10 @@ def run_variant_on_sequence(variant_cls: type, fixture: dict[str, Any]) -> dict[
         <= int(expectations["max_consecutive_degraded_accepts"]),
         "bridges_onset": degraded_accepts >= int(expectations["min_degraded_accepts"]),
         "rejects_when_exhausted": (not expectations["must_reject_final_step"]) or last_decision_reject,
+        "rejects_required_steps": all(
+            index in rejected_indices
+            for index in expectations.get("must_reject_indices", [])
+        ),
     }
     return {
         "fixture": fixture["name"],
@@ -139,6 +145,7 @@ def run_variant_on_sequence(variant_cls: type, fixture: dict[str, Any]) -> dict[
         "checks": checks,
         "degraded_accepts": degraded_accepts,
         "max_consecutive_degraded_accepts": max_consecutive_degraded,
+        "rejected_indices": rejected_indices,
     }
 
 

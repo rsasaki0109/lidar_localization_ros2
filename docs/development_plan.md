@@ -290,6 +290,48 @@ Consequences (the runtime change was reverted; the experiment stays):
 - `BBS_2D` drafting started the same day (see the track section above for the landing
   criteria).
 
+### 2026-06-12: Degraded acceptance closed — definitive negative after two more replays
+
+The bounded redesign from the 2026-06-12 failure analysis (`bounded_degraded`: budget of
+consecutive degraded accepts that only a clean acceptance resets, plus a cumulative
+correction cap) was implemented as a runtime gate and replay-validated twice on the Koide
+`outdoor_hard_01a` 180 s manifest. Both rounds regressed; all numbers are NDT, score gate
+6.0, same machine:
+
+| run | translation RMSE | rotation RMSE | ok rows |
+| --- | --- | --- | --- |
+| baseline, scalar gate (night run) | 0.582 m | 1.81 deg | 329/539 |
+| baseline, scalar gate (same-day rerun, load ~10) | 0.216 m | 2.30 deg | 179 ok-published |
+| bounded round 1 (budget 3, cumulative 5 m) | 0.618 m | 6.10 deg | 193/566 |
+| bounded round 2 (round 1 + fitness cap 12 + reset guard) | 6.80 m | 28.6 deg | 179/557 |
+
+Round-1 forensics (alignment rows 185-205) found two new failure modes beyond the
+2026-06-12 analysis: a below-threshold "ok" (fitness 1.75) carrying a 2.1 m jump refilled
+the budget mid-transient, and fitness 18.7/31.9 rows were accepted because only the
+correction was checked. Round 2 fixed both (max fitness 12, budget reset requires
+correction <= 1 m) and still diverged: eleven accepts in the supposedly safe 6.3-8.7
+fitness band — the very band the "GT scores ~9.6" motivation argued for — dragged the
+anchor ~1-2 m per accept and the run got lost 30 s earlier than baseline. The same-day
+baseline rerun at equal load (0.216 m) rules out machine-load confounding.
+
+Conclusion: on degenerate geometry the over-threshold registrations are systematically
+biased, not noisy, so any acceptance of them feeds bias into the prediction anchor.
+Three closed-loop falsifications (correction_conditioned 62.7 m, bounded r1, bounded r2)
+close this direction. The scalar gate + coast-on-rejection (+ existing recovery retry) is
+the replay-validated winner; recovery inside the hard window belongs to the
+relocalization/retry track (G2/G3), not to measurement acceptance.
+
+Artifacts kept: the falsified hypotheses are now encoded in the experiment — the two
+"should_accept" fixtures are flipped to `should_reject` with the falsifying evidence in
+their descriptions, a new `koide_bounded_replay_regression_sequence` (built from the real
+round-1 trace) requires rejecting gross fits and the exhausted tail, and the sequence
+harness gained `must_reject_indices`. With the corrected expectations `fixed_threshold`
+ranks first (85.3) — the offline ranking finally agrees with the replays. The C++ gate
+change was reverted both times; `main` never shipped any degraded acceptance.
+
+Phase 3 step 1 (multi-criteria acceptance) is closed as a negative result. Remaining
+Phase 3 work: diagnostics taxonomy (step 2) and covariance semantics (step 3).
+
 ## Suggested Order Of Work
 
 1. Phase 0 (release + issue hygiene) — small, high leverage, mostly waiting on an idle

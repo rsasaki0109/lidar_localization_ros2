@@ -8,11 +8,13 @@ from experiments.measurement_acceptance.interface import AcceptanceSample
 
 @dataclass(frozen=True)
 class Config:
+    max_degraded_fitness: float = 12.0
     max_degraded_correction_m: float = 3.0
     max_degraded_yaw_deg: float = 8.0
     max_degraded_gap_sec: float = 2.5
     degraded_accept_budget: int = 3
     max_cumulative_degraded_correction_m: float = 5.0
+    budget_reset_max_correction_m: float = 1.0
 
 
 class BoundedDegradedAcceptance:
@@ -40,11 +42,16 @@ class BoundedDegradedAcceptance:
     def step(self, sample: AcceptanceSample) -> AcceptanceDecision:
         config = self.config
         if sample.fitness_score <= sample.effective_score_threshold:
-            self.degraded_accept_streak = 0
-            self.cumulative_degraded_correction_m = 0.0
+            # The 2026-06-12 bounded replay showed a below-threshold "ok" with a
+            # 2.1 m jump refilling the budget mid-transient. Only a clean accept
+            # whose correction is also small earns a budget reset.
+            if sample.correction_translation_m <= config.budget_reset_max_correction_m:
+                self.degraded_accept_streak = 0
+                self.cumulative_degraded_correction_m = 0.0
             return AcceptanceDecision(False, "score_within_threshold", sample.fitness_score)
         if (
-            sample.correction_translation_m <= config.max_degraded_correction_m
+            sample.fitness_score <= config.max_degraded_fitness
+            and sample.correction_translation_m <= config.max_degraded_correction_m
             and abs(sample.correction_yaw_deg) <= config.max_degraded_yaw_deg
             and sample.accepted_gap_sec <= config.max_degraded_gap_sec
             and self.degraded_accept_streak < config.degraded_accept_budget
