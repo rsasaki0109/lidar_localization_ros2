@@ -261,12 +261,19 @@ def build_candidates(
     if yaw_count <= 0:
         raise ValueError("yaw count must be positive")
     yaws = [_wrap_angle(2.0 * math.pi * index / yaw_count) for index in range(yaw_count)]
+    # Cap by striding CELLS and keeping every yaw of each kept cell. Striding the
+    # flat (cell, yaw) list aliases with yaw_count and silently collapses the yaw
+    # dimension to a single heading.
+    kept_cells = cells
+    if max_candidates > 0 and len(cells) * yaw_count > max_candidates:
+        max_cells = max(1, max_candidates // yaw_count)
+        stride = math.ceil(len(cells) / max_cells)
+        kept_cells = cells[::stride]
     raw: List[Tuple[Dict[str, float], float]] = [
-        (cell, yaw) for cell in cells for yaw in yaws
+        (cell, yaw) for cell in kept_cells for yaw in yaws
     ]
     if max_candidates > 0 and len(raw) > max_candidates:
-        stride = math.ceil(len(raw) / max_candidates)
-        raw = raw[::stride]
+        raw = raw[:max_candidates]
     candidates: List[Dict[str, Any]] = []
     for cell, yaw in raw:
         candidates.append(

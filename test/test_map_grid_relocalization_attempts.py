@@ -84,7 +84,9 @@ def test_candidates_cover_yaws_and_respect_cap():
     )
     assert len(capped) <= 16
     xs = {row["pose_x"] for row in capped}
-    assert len(xs) > 1  # strided subsampling keeps spatial coverage
+    assert len(xs) > 1  # cell striding keeps spatial coverage
+    yaws_kept = {row["yaw_rad"] for row in capped}
+    assert len(yaws_kept) == 8  # capping must not collapse the yaw dimension
 
 
 def test_attempts_emit_contract_fields_per_request_window():
