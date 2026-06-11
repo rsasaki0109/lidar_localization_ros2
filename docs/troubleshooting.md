@@ -179,14 +179,18 @@ Collect before filing an issue:
 
 ## Pose Covariance Questions (#72)
 
-`/pcl_pose` publishes `geometry_msgs/msg/PoseWithCovarianceStamped`. Current v1.1
-semantics are documented in [pose_covariance.md](pose_covariance.md).
+`/pcl_pose` publishes `geometry_msgs/msg/PoseWithCovarianceStamped`. Semantics
+are documented in [pose_covariance.md](pose_covariance.md).
 
 Short version:
 
-- covariance scales with `fitness_score`; it is a heuristic, not NDT posterior uncertainty
-- do not use it as a fusion-ready noise model without custom tuning
-- prefer `/alignment_status` for gating and diagnostics
+- the default `error_floor` mode is calibrated against ground truth on public
+  datasets (per-axis 2σ coverage ≥ 96 % on the calibration runs) and is usable
+  for EKF fusion, with documented limits
+- it still cannot bound systematically biased degenerate matches; gate fusion
+  inputs with `/alignment_status` `failure_category` as well
+- the legacy v1.1 heuristic remains available as
+  `pose_covariance_mode: fitness_scaled`
 
 ## Sensor-Specific Notes
 

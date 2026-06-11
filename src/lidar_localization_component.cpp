@@ -196,6 +196,15 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("diagnostics_weak_overlap_min_filtered_points", 100);
   declare_parameter("diagnostics_stale_prediction_min_gap_sec", 2.0);
   declare_parameter("diagnostics_overload_alignment_time_sec", 0.3);
+  declare_parameter("pose_covariance_mode", "error_floor");
+  declare_parameter("covariance_xy_floor_std_m", 0.2);
+  declare_parameter("covariance_xy_std_per_fitness_m", 0.1);
+  declare_parameter("covariance_xy_max_std_m", 5.0);
+  declare_parameter("covariance_z_floor_std_m", 0.3);
+  declare_parameter("covariance_yaw_floor_std_deg", 2.0);
+  declare_parameter("covariance_yaw_std_per_fitness_deg", 1.0);
+  declare_parameter("covariance_yaw_max_std_deg", 30.0);
+  declare_parameter("covariance_roll_pitch_floor_std_deg", 1.5);
   declare_parameter("enable_timer_publishing", false);
   declare_parameter("pose_publish_frequency", 10.0);
   declare_parameter("viz_downsample", false);
@@ -689,6 +698,34 @@ void PCLLocalization::initializeParameters()
   get_parameter(
     "diagnostics_overload_alignment_time_sec",
     failure_taxonomy_params_.overload_alignment_time_sec);
+  std::string pose_covariance_mode{"error_floor"};
+  get_parameter("pose_covariance_mode", pose_covariance_mode);
+  use_error_floor_covariance_ = pose_covariance_mode != "fitness_scaled";
+  if (use_error_floor_covariance_ && pose_covariance_mode != "error_floor") {
+    RCLCPP_WARN(
+      get_logger(), "Unknown pose_covariance_mode '%s'; using error_floor",
+      pose_covariance_mode.c_str());
+  }
+  get_parameter(
+    "covariance_xy_floor_std_m", error_floor_covariance_params_.xy_floor_std_m);
+  get_parameter(
+    "covariance_xy_std_per_fitness_m",
+    error_floor_covariance_params_.xy_std_per_fitness_m);
+  get_parameter(
+    "covariance_xy_max_std_m", error_floor_covariance_params_.xy_max_std_m);
+  get_parameter(
+    "covariance_z_floor_std_m", error_floor_covariance_params_.z_floor_std_m);
+  get_parameter(
+    "covariance_yaw_floor_std_deg",
+    error_floor_covariance_params_.yaw_floor_std_deg);
+  get_parameter(
+    "covariance_yaw_std_per_fitness_deg",
+    error_floor_covariance_params_.yaw_std_per_fitness_deg);
+  get_parameter(
+    "covariance_yaw_max_std_deg", error_floor_covariance_params_.yaw_max_std_deg);
+  get_parameter(
+    "covariance_roll_pitch_floor_std_deg",
+    error_floor_covariance_params_.roll_pitch_floor_std_deg);
   get_parameter("enable_timer_publishing", enable_timer_publishing_);
   double requested_pose_publish_frequency = pose_publish_frequency_;
   get_parameter("pose_publish_frequency", requested_pose_publish_frequency);
@@ -2657,11 +2694,17 @@ void PCLLocalization::fillPoseCovariance(double fitness_score)
 {
   if (use_twist_ekf_ && twist_ekf_.isInitialized()) {
     corrent_pose_with_cov_stamped_ptr_->pose.covariance =
+      use_error_floor_covariance_ ?
+      lidar_localization::makeEkfErrorFloorPoseCovariance(
+      twist_ekf_.covariance(), error_floor_covariance_params_, fitness_score) :
       lidar_localization::makeEkfPoseCovariance(twist_ekf_.covariance(), fitness_score);
     return;
   }
 
   corrent_pose_with_cov_stamped_ptr_->pose.covariance =
+    use_error_floor_covariance_ ?
+    lidar_localization::makeErrorFloorPoseCovariance(
+    error_floor_covariance_params_, fitness_score) :
     lidar_localization::makeFitnessPoseCovariance(fitness_score);
 }
 

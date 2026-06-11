@@ -61,6 +61,7 @@
 #include "lidar_localization/measurement_gate_policy.hpp"
 #include "lidar_localization/localization_update_policy.hpp"
 #include "lidar_localization/pose_backend_result_policy.hpp"
+#include "lidar_localization/pose_covariance_policy.hpp"
 #include "lidar_localization/pose_backend_selection_policy.hpp"
 #include "lidar_localization/registration_observation_policy.hpp"
 #include "lidar_localization/registration_seed_policy.hpp"
@@ -230,6 +231,8 @@ public:
   bool enable_reinitialization_request_output_{true};
   lidar_localization::ReinitializationTriggerParams reinitialization_trigger_config_;
   lidar_localization::AlignmentFailureTaxonomyParams failure_taxonomy_params_;
+  bool use_error_floor_covariance_{true};
+  lidar_localization::ErrorFloorCovarianceParams error_floor_covariance_params_;
 
   int ndt_num_threads_;
   int ndt_max_iterations_;

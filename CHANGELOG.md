@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Added
+
+- `failure_category` key on `/alignment_status` distinguishing
+  `missing_map` / `missing_initial_pose` / `weak_overlap` / `bad_match` /
+  `stale_prediction` / `overload` / `healthy`, with `*_active` companion flags
+  and three `diagnostics_*` tuning parameters (docs: `troubleshooting.md`)
+- `scripts/analyze_pose_covariance_calibration.py` to calibrate `/pcl_pose`
+  covariance against ground-truth replays
+
+### Changed
+
+- `/pcl_pose` covariance default model is now `error_floor`, calibrated against
+  ground truth on Koide outdoor_hard_01a and Autoware Istanbul (per-axis 2σ
+  coverage ≥ 96 % on the calibration runs); the v1.1 heuristic remains
+  available as `pose_covariance_mode: fitness_scaled` (docs:
+  `pose_covariance.md`, issue #72)
+
 ## 1.1.0 - 2026-06-11
 
 Reliability sprint, Jazzy support, and the artifact-first relocalization /

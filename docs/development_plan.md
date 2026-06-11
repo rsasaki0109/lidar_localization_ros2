@@ -358,6 +358,38 @@ Design points:
 Documented for users in [troubleshooting.md](troubleshooting.md) ("Failure category").
 Remaining Phase 3 work: covariance semantics (step 3, the promised real fix for #72).
 
+### 2026-06-12: Calibrated /pcl_pose covariance (Phase 3 step 3, closes the #72 promise)
+
+The default covariance model is now `error_floor`, calibrated against ground
+truth using the replay artifacts already on disk (two Koide outdoor_hard_01a
+baselines + Istanbul 60 s; 628 matched poses total) via the new
+`scripts/analyze_pose_covariance_calibration.py`.
+
+Key empirical findings (report archived at
+`experiments/pose_covariance/calibration_2026_06_12.json`):
+
+- Within the accepted range, error is dominated by a per-dataset floor (Koide
+  ~0.18 m, Istanbul ~0.26 m p68), not by fitness — quantifying the #72 thread's
+  intuition that fitness is not linearly related to error across environments.
+- The legacy `fitness_scaled` model is systematically overconfident: per-axis
+  1σ xy coverage 0.42–0.59 measured against ground truth.
+- The calibrated defaults (`std_xy = 0.2 + 0.1·fitness` m clamped to 5 m,
+  `std_yaw = 2° + 1°·fitness` clamped to 30°, z floor 0.3 m, roll/pitch floor
+  1.5°) achieve per-axis xy coverage 0.69–0.95 at 1σ and ≥ 0.96 at 2σ on all
+  three runs, slightly conservative by design on tighter maps.
+- The biased tail is explicitly out of scope: Koide has accepted poses with
+  4.2 m error at fitness 0.5–1.0 (the same degenerate-geometry bias that killed
+  degraded acceptance). Documentation directs fusion consumers to also gate on
+  `failure_category`.
+
+Implementation: `ErrorFloorCovarianceParams` + `makeErrorFloorPoseCovariance` /
+`makeEkfErrorFloorPoseCovariance` in `pose_covariance_policy.hpp`, mode switch
+`pose_covariance_mode` (`error_floor` default, `fitness_scaled` legacy), eight
+`covariance_*` parameters, unit tests for clamps/NaN/EKF-hybrid paths.
+`pose_covariance.md` rewritten with the calibration tables, a recalibration
+recipe for user platforms, and an explicit can/cannot-promise list. Covariance
+does not affect acceptance or trajectory, so the replay gate does not apply.
+
 ## Suggested Order Of Work
 
 1. Phase 0 (release + issue hygiene) — small, high leverage, mostly waiting on an idle
