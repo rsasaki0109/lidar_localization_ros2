@@ -1,9 +1,9 @@
 {
-  "name": "degraded_streak_small_correction_should_accept",
-  "description": "Three rejects into the window: score 26.6 but correction 0.75 m / 2.4 deg, gap 1.8 s. Pose still agrees with prediction.",
+  "name": "degraded_streak_small_correction_should_reject",
+  "description": "Three rejects into the window: score 26.6 with correction 0.75 m. Falsified accept-hypothesis: the 2026-06-12 bounded replay showed fit 18.7/31.9 rows with small corrections are self-confirming false maxima once a degraded accept re-anchors the prediction.",
   "source": "koide outdoor_hard_01a 180s reinit090 replay (2026-06-11), alignment_status.csv:143",
   "expectation": {
-    "expected_reject": false
+    "expected_reject": true
   },
   "sample": {
     "index": 143,

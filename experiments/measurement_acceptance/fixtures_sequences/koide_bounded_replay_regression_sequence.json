@@ -1,0 +1,64 @@
+{
+  "name": "koide_bounded_replay_regression_sequence",
+  "description": "Replays the 2026-06-12 bounded_degraded A/B regression at outdoor_hard_01a t=50-54s. Round-1 (no fitness cap): accepting fit 18.7/31.9 rows dragged the anchor (rot RMSE 1.8->6.1 deg). Round-2 (fit<=12 cap + budget-reset guard): even fit 6.3-8.7 bridging accepts diverged the run (tRMSE 6.80 m vs same-day baseline 0.216 m). Conclusion: no degraded accept is safe on this dataset; the checks only require that gross fits and the exhausted tail are rejected.",
+  "source": "/tmp/lidarloc_koide_ab_bounded/alignment_status.csv rows 185-205 (run abcf172+bounded gate, tRMSE 0.618 vs baseline 0.582, ok rows 193 vs 329)",
+  "effective_score_threshold": 6.0,
+  "steps": [
+    {
+      "fitness_score": 1.52,
+      "correction_translation_m": 0.39,
+      "correction_yaw_deg": 7.0
+    },
+    {
+      "fitness_score": 9.2,
+      "correction_translation_m": 0.43,
+      "correction_yaw_deg": 9.79
+    },
+    {
+      "fitness_score": 9.77,
+      "correction_translation_m": 1.17,
+      "correction_yaw_deg": 5.41
+    },
+    {
+      "fitness_score": 1.75,
+      "correction_translation_m": 2.11,
+      "correction_yaw_deg": 11.91
+    },
+    {
+      "fitness_score": 8.84,
+      "correction_translation_m": 0.29,
+      "correction_yaw_deg": 4.89
+    },
+    {
+      "fitness_score": 18.69,
+      "correction_translation_m": 0.53,
+      "correction_yaw_deg": 0.35
+    },
+    {
+      "fitness_score": 31.93,
+      "correction_translation_m": 0.43,
+      "correction_yaw_deg": 0.33
+    },
+    {
+      "fitness_score": 9.0,
+      "correction_translation_m": 0.5,
+      "correction_yaw_deg": 1.0
+    },
+    {
+      "fitness_score": 9.5,
+      "correction_translation_m": 0.6,
+      "correction_yaw_deg": 1.2
+    }
+  ],
+  "expectations": {
+    "max_consecutive_degraded_accepts": 3,
+    "min_degraded_accepts": 0,
+    "must_reject_final_step": true,
+    "must_reject_indices": [
+      1,
+      5,
+      6,
+      8
+    ]
+  }
+}
