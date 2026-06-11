@@ -332,6 +332,32 @@ change was reverted both times; `main` never shipped any degraded acceptance.
 Phase 3 step 1 (multi-criteria acceptance) is closed as a negative result. Remaining
 Phase 3 work: diagnostics taxonomy (step 2) and covariance semantics (step 3).
 
+### 2026-06-12: Diagnostics taxonomy (Phase 3 step 2)
+
+`/alignment_status` now publishes a `failure_category` key that classifies each update
+into the roadmap's five distinguishable causes — `missing_map`, `missing_initial_pose`,
+`weak_overlap`, `bad_match`, `stale_prediction`, `overload` — plus `healthy`, with
+companion `*_active` booleans so co-occurring conditions stay visible (e.g. a bad match
+that has also gone stale reports `bad_match` as the category and both flags true).
+
+Design points:
+
+- Pure policy header `alignment_failure_taxonomy.hpp` (`classifyAlignmentFailure`),
+  wired through `alignment_status_policy.hpp` so the component only passes parameters.
+  Classification reuses the resolved reinitialization gap, so staleness is detected even
+  when the caller cannot provide `accepted_gap_sec` directly.
+- Weak overlap uses the scan-side proxy (`filtered_point_count <
+  diagnostics_weak_overlap_min_filtered_points`, default 100, mirroring
+  `local_map_min_points`) and the map-side `local_map_crop_too_small` status.
+- Priority order is missing inputs > weak overlap > bad match > stale prediction >
+  overload; thresholds are the three new `diagnostics_*` parameters.
+- Diagnostics only: acceptance behavior is untouched, so this is exempt from the
+  replay-gate rule (no gate semantics changed); unit tests cover every category,
+  the priority order, and boundary values.
+
+Documented for users in [troubleshooting.md](troubleshooting.md) ("Failure category").
+Remaining Phase 3 work: covariance semantics (step 3, the promised real fix for #72).
+
 ## Suggested Order Of Work
 
 1. Phase 0 (release + issue hygiene) — small, high leverage, mostly waiting on an idle

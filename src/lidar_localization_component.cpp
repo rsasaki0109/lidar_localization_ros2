@@ -193,6 +193,9 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("reinitialization_trigger_seed_translation_scale_m", 100.0);
   declare_parameter("reinitialization_trigger_reject_streak_scale", 200.0);
   declare_parameter("reinitialization_trigger_fitness_explosion_threshold", 1000.0);
+  declare_parameter("diagnostics_weak_overlap_min_filtered_points", 100);
+  declare_parameter("diagnostics_stale_prediction_min_gap_sec", 2.0);
+  declare_parameter("diagnostics_overload_alignment_time_sec", 0.3);
   declare_parameter("enable_timer_publishing", false);
   declare_parameter("pose_publish_frequency", 10.0);
   declare_parameter("viz_downsample", false);
@@ -673,6 +676,19 @@ void PCLLocalization::initializeParameters()
   get_parameter(
     "reinitialization_trigger_fitness_explosion_threshold",
     reinitialization_trigger_config_.fitness_explosion_threshold);
+  int requested_weak_overlap_min_filtered_points =
+    static_cast<int>(failure_taxonomy_params_.weak_overlap_min_filtered_points);
+  get_parameter(
+    "diagnostics_weak_overlap_min_filtered_points",
+    requested_weak_overlap_min_filtered_points);
+  failure_taxonomy_params_.weak_overlap_min_filtered_points =
+    static_cast<std::size_t>(std::max(0, requested_weak_overlap_min_filtered_points));
+  get_parameter(
+    "diagnostics_stale_prediction_min_gap_sec",
+    failure_taxonomy_params_.stale_prediction_min_gap_sec);
+  get_parameter(
+    "diagnostics_overload_alignment_time_sec",
+    failure_taxonomy_params_.overload_alignment_time_sec);
   get_parameter("enable_timer_publishing", enable_timer_publishing_);
   double requested_pose_publish_frequency = pose_publish_frequency_;
   get_parameter("pose_publish_frequency", requested_pose_publish_frequency);
@@ -2857,7 +2873,8 @@ PCLLocalization::makeAlignmentStatusRuntimeContext(double stamp_sec) const
     map_recieved_,
     initialpose_recieved_,
     measurementGateParams(),
-    reinitializationTriggerParams()};
+    reinitializationTriggerParams(),
+    failure_taxonomy_params_};
 }
 
 diagnostic_msgs::msg::DiagnosticStatus PCLLocalization::makeAlignmentDiagnosticStatus(
