@@ -123,7 +123,20 @@
           "expected_reject": true
         }
       ],
-      "benchmark_score": 100.0,
+      "sequence_results": [
+        {
+          "fixture": "koide_degraded_window_sequence",
+          "passed": false,
+          "checks": {
+            "bounded_degraded_run": false,
+            "bridges_onset": true,
+            "rejects_when_exhausted": false
+          },
+          "degraded_accepts": 20,
+          "max_consecutive_degraded_accepts": 20
+        }
+      ],
+      "benchmark_score": 85.71428571428571,
       "readability_score": 25.200000000000003,
       "extensibility_score": 94.0,
       "static_metrics": {
@@ -138,7 +151,96 @@
         "readability_score": 25.200000000000003,
         "extensibility_score": 94.0
       },
-      "overall_score": 83.84
+      "overall_score": 75.27
+    },
+    {
+      "name": "bounded_degraded",
+      "design": "correction cross-check with non-resetting degraded-accept budget",
+      "fixture_results": [
+        {
+          "fixture": "degraded_onset_small_correction_should_accept",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "accept",
+          "decision_reason": "degraded_accept_within_budget",
+          "decision_score": 13.59,
+          "expected_reject": false
+        },
+        {
+          "fixture": "degraded_streak_small_correction_should_accept",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "accept",
+          "decision_reason": "degraded_accept_within_budget",
+          "decision_score": 26.56,
+          "expected_reject": false
+        },
+        {
+          "fixture": "fresh_jump_good_score_should_reject",
+          "passed": false,
+          "outcome": "mismatched_expected_reject",
+          "decision": "accept",
+          "decision_reason": "score_within_threshold",
+          "decision_score": 1.5,
+          "expected_reject": true
+        },
+        {
+          "fixture": "healthy_tracking_should_accept",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "accept",
+          "decision_reason": "score_within_threshold",
+          "decision_score": 0.3,
+          "expected_reject": false
+        },
+        {
+          "fixture": "lost_huge_score_should_reject",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "degraded_budget_exhausted_or_unsupported",
+          "decision_score": 4353.99,
+          "expected_reject": true
+        },
+        {
+          "fixture": "stale_prediction_should_reject",
+          "passed": true,
+          "outcome": "matched_expected_reject",
+          "decision": "reject",
+          "decision_reason": "degraded_budget_exhausted_or_unsupported",
+          "decision_score": 18.72,
+          "expected_reject": true
+        }
+      ],
+      "sequence_results": [
+        {
+          "fixture": "koide_degraded_window_sequence",
+          "passed": true,
+          "checks": {
+            "bounded_degraded_run": true,
+            "bridges_onset": true,
+            "rejects_when_exhausted": true
+          },
+          "degraded_accepts": 3,
+          "max_consecutive_degraded_accepts": 3
+        }
+      ],
+      "benchmark_score": 85.71428571428571,
+      "readability_score": 34.0,
+      "extensibility_score": 84.0,
+      "static_metrics": {
+        "implementation_file": "experiments/measurement_acceptance/variants/bounded_degraded.py",
+        "loc": 35,
+        "branch_count": 4,
+        "max_nesting_depth": 1,
+        "state_field_count": 5,
+        "public_method_count": 2,
+        "import_count": 4,
+        "has_config_dataclass": true,
+        "readability_score": 34.0,
+        "extensibility_score": 84.0
+      },
+      "overall_score": 75.03
     },
     {
       "name": "score_ratio_budget",
@@ -199,7 +301,20 @@
           "expected_reject": true
         }
       ],
-      "benchmark_score": 83.33333333333334,
+      "sequence_results": [
+        {
+          "fixture": "koide_degraded_window_sequence",
+          "passed": false,
+          "checks": {
+            "bounded_degraded_run": false,
+            "bridges_onset": true,
+            "rejects_when_exhausted": false
+          },
+          "degraded_accepts": 20,
+          "max_consecutive_degraded_accepts": 20
+        }
+      ],
+      "benchmark_score": 71.42857142857143,
       "readability_score": 49.599999999999994,
       "extensibility_score": 94.0,
       "static_metrics": {
@@ -214,7 +329,7 @@
         "readability_score": 49.599999999999994,
         "extensibility_score": 94.0
       },
-      "overall_score": 78.72
+      "overall_score": 71.58
     },
     {
       "name": "fixed_threshold",
@@ -275,7 +390,20 @@
           "expected_reject": true
         }
       ],
-      "benchmark_score": 50.0,
+      "sequence_results": [
+        {
+          "fixture": "koide_degraded_window_sequence",
+          "passed": false,
+          "checks": {
+            "bounded_degraded_run": true,
+            "bridges_onset": false,
+            "rejects_when_exhausted": true
+          },
+          "degraded_accepts": 0,
+          "max_consecutive_degraded_accepts": 0
+        }
+      ],
+      "benchmark_score": 42.857142857142854,
       "readability_score": 79.0,
       "extensibility_score": 85.0,
       "static_metrics": {
@@ -290,8 +418,8 @@
         "readability_score": 79.0,
         "extensibility_score": 85.0
       },
-      "overall_score": 62.8
+      "overall_score": 58.51
     }
   ],
-  "benchmark_score_mean": 77.77777777777779
+  "benchmark_score_mean": 71.42857142857143
 }

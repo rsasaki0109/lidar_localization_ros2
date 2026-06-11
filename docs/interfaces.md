@@ -123,6 +123,7 @@ Accept degraded-but-consistent registration results that the scalar fitness gate
 ### Candidate Families
 
 - `correction_conditioned`: fitness threshold + correction/staleness cross-check
+- `bounded_degraded`: correction cross-check with non-resetting degraded-accept budget
 - `score_ratio_budget`: relative score cap with gap/streak budget
 - `fixed_threshold`: scalar fitness threshold (runtime baseline)
 

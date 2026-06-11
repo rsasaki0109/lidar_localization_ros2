@@ -32,11 +32,11 @@
 
 - adopted variant for this problem: `correction_conditioned`
 - design family: fitness threshold + correction/staleness cross-check
-- rationale: highest combined score (`83.84`) under the shared fixture/evaluation contract
-- benchmark score: `100.0`
+- rationale: highest combined score (`75.27`) under the shared fixture/evaluation contract
+- benchmark score: `85.7`
 - readability score: `25.2`
 - extensibility score: `94.0`
-- nearest alternative: `score_ratio_budget` at `78.72`
+- nearest alternative: `bounded_degraded` at `75.03`
 - generated_from: `scripts/run_measurement_acceptance_experiments.py`
 
 ## Recovery Action Selection
