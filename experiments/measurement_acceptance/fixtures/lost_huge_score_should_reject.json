@@ -1,0 +1,17 @@
+{
+  "name": "lost_huge_score_should_reject",
+  "description": "Deep in the failure window: score 4354 with a 128 s gap. Unambiguous loss.",
+  "source": "koide outdoor_hard_01a 180s reinit090 replay (2026-06-11), alignment_status.csv:451",
+  "expectation": {
+    "expected_reject": true
+  },
+  "sample": {
+    "index": 451,
+    "fitness_score": 4353.99,
+    "effective_score_threshold": 6.0,
+    "correction_translation_m": 0.0,
+    "correction_yaw_deg": 0.0,
+    "accepted_gap_sec": 128.100037,
+    "consecutive_rejected_updates": 311
+  }
+}

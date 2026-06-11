@@ -67,6 +67,42 @@ Disable the IMU-preintegration path early enough to avoid poisoning localization
 - `hdl_unstable_candidate_r02`: pass=`True` decision=`trigger_at_4` reason=`hazard_streak_reached`
 - `istanbul_no_imu`: pass=`True` decision=`no_trigger` reason=`must_not_trigger`
 
+## Multi-Criteria Measurement Acceptance
+
+Accept degraded-but-consistent registration results that the scalar fitness gate rejects, without accepting stale or contradicted measurements. Motivated by the Koide outdoor_hard_01a window where the ground-truth pose scores ~9.6 against the 6.0 gate and the scalar gate starts a 300-row reject streak.
+
+| Variant | Design | Benchmark | Readability | Extensibility | Overall |
+|---|---|---:|---:|---:|---:|
+| `correction_conditioned` | fitness threshold + correction/staleness cross-check | 100.0 | 25.2 | 94.0 | 83.84 |
+| `score_ratio_budget` | relative score cap with gap/streak budget | 83.3 | 49.6 | 94.0 | 78.72 |
+| `fixed_threshold` | scalar fitness threshold (runtime baseline) | 50.0 | 79.0 | 85.0 | 62.80 |
+
+### Fixture Outcomes
+
+#### `correction_conditioned`
+- `degraded_onset_small_correction_should_accept`: pass=`True` decision=`accept` reason=`degraded_score_consistent_pose`
+- `degraded_streak_small_correction_should_accept`: pass=`True` decision=`accept` reason=`degraded_score_consistent_pose`
+- `fresh_jump_good_score_should_reject`: pass=`True` decision=`reject` reason=`fresh_prediction_contradicted`
+- `healthy_tracking_should_accept`: pass=`True` decision=`accept` reason=`score_within_threshold`
+- `lost_huge_score_should_reject`: pass=`True` decision=`reject` reason=`score_over_threshold_unsupported`
+- `stale_prediction_should_reject`: pass=`True` decision=`reject` reason=`score_over_threshold_unsupported`
+
+#### `score_ratio_budget`
+- `degraded_onset_small_correction_should_accept`: pass=`True` decision=`accept` reason=`score_within_ratio_budget`
+- `degraded_streak_small_correction_should_accept`: pass=`True` decision=`accept` reason=`score_within_ratio_budget`
+- `fresh_jump_good_score_should_reject`: pass=`False` decision=`accept` reason=`score_within_threshold`
+- `healthy_tracking_should_accept`: pass=`True` decision=`accept` reason=`score_within_threshold`
+- `lost_huge_score_should_reject`: pass=`True` decision=`reject` reason=`score_over_ratio_budget`
+- `stale_prediction_should_reject`: pass=`True` decision=`reject` reason=`score_over_ratio_budget`
+
+#### `fixed_threshold`
+- `degraded_onset_small_correction_should_accept`: pass=`False` decision=`reject` reason=`score_over_threshold`
+- `degraded_streak_small_correction_should_accept`: pass=`False` decision=`reject` reason=`score_over_threshold`
+- `fresh_jump_good_score_should_reject`: pass=`False` decision=`accept` reason=`score_within_threshold`
+- `healthy_tracking_should_accept`: pass=`True` decision=`accept` reason=`score_within_threshold`
+- `lost_huge_score_should_reject`: pass=`True` decision=`reject` reason=`score_over_threshold`
+- `stale_prediction_should_reject`: pass=`True` decision=`reject` reason=`score_over_threshold`
+
 ## Recovery Action Selection
 
 Choose whether to keep open-loop prediction, reuse a rejected seed, or retry from the last accepted pose after a failed measurement.

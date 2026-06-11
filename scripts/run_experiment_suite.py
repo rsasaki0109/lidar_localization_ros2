@@ -26,6 +26,7 @@ def main() -> int:
     scripts = [
         repo_root / "scripts" / "run_borderline_gate_experiments.py",
         repo_root / "scripts" / "run_imu_guard_experiments.py",
+        repo_root / "scripts" / "run_measurement_acceptance_experiments.py",
         repo_root / "scripts" / "run_recovery_action_experiments.py",
         repo_root / "scripts" / "run_reinit_trigger_experiments.py",
     ]
