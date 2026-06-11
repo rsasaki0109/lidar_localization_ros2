@@ -13,6 +13,9 @@
 
 ### Changed
 
+- `make_bbs_relocalization_attempts.py` branch-and-bound search is ~8x faster
+  (precomputed per-yaw/level integer offset tables + adaptive FFT hit maps)
+  with exactly identical candidate output
 - `/pcl_pose` covariance default model is now `error_floor`, calibrated against
   ground truth on Koide outdoor_hard_01a and Autoware Istanbul (per-axis 2σ
   coverage ≥ 96 % on the calibration runs); the v1.1 heuristic remains

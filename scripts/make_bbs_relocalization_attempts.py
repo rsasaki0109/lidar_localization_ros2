@@ -188,25 +188,155 @@ def branch_and_bound_candidates(
 
     height, width = occupancy.shape
     initial_step = 1 << start_level
+    n_points = int(scan_xy_grid.shape[0])
+
+    # Every node's (tx_cell, ty_cell) is a multiple of 2^level, so
+    # floor((tx + 0.5 + rx) / factor) decomposes into
+    # tx / factor + floor((0.5 + rx) / factor). The second term depends only on
+    # (yaw, level): precompute it once per pair and merge duplicate coarse cells
+    # with counts, turning each node evaluation into a small integer gather
+    # instead of a full scan rotation.
+    offset_cache: List[List[Tuple[np.ndarray, np.ndarray, np.ndarray]]] = []
+    for yaw_rad in yaws:
+        c = math.cos(yaw_rad)
+        s = math.sin(yaw_rad)
+        rx = c * scan_xy_grid[:, 0] - s * scan_xy_grid[:, 1]
+        ry = s * scan_xy_grid[:, 0] + c * scan_xy_grid[:, 1]
+        per_level = []
+        for level in range(len(upper_bound_pyramid)):
+            factor = float(1 << level)
+            qx = np.floor((0.5 + rx) / factor).astype(np.int64)
+            qy = np.floor((0.5 + ry) / factor).astype(np.int64)
+            unique_cells, cell_counts = np.unique(
+                np.stack([qy, qx], axis=1), axis=0, return_counts=True)
+            per_level.append(
+                (unique_cells[:, 0], unique_cells[:, 1], cell_counts))
+        offset_cache.append(per_level)
+
+    def full_hit_map(
+        grid: np.ndarray,
+        qy: np.ndarray,
+        qx: np.ndarray,
+        cell_counts: np.ndarray,
+        n_blocks_y: int,
+        n_blocks_x: int,
+    ) -> np.ndarray:
+        # hits[ky, kx] = sum over offsets of count * grid[ky + qy, kx + qx]
+        # for every block at once, via FFT cross-correlation. Hit counts are
+        # integers <= the scan size, far above the FFT round-trip error, so
+        # rounding restores the exact integer the direct gather would produce.
+        qy_min = int(qy.min())
+        qx_min = int(qx.min())
+        kernel_h = int(qy.max()) - qy_min + 1
+        kernel_w = int(qx.max()) - qx_min + 1
+        kernel = np.zeros((kernel_h, kernel_w), dtype=np.float64)
+        np.add.at(kernel, (qy - qy_min, qx - qx_min), cell_counts.astype(np.float64))
+
+        grid_height, grid_width = grid.shape
+        padded = np.zeros(
+            (n_blocks_y + kernel_h - 1, n_blocks_x + kernel_w - 1), dtype=np.float64)
+        src_y0 = max(0, qy_min)
+        src_x0 = max(0, qx_min)
+        src_y1 = min(grid_height, n_blocks_y + qy_min + kernel_h - 1)
+        src_x1 = min(grid_width, n_blocks_x + qx_min + kernel_w - 1)
+        if src_y1 > src_y0 and src_x1 > src_x0:
+            padded[
+                src_y0 - qy_min:src_y1 - qy_min,
+                src_x0 - qx_min:src_x1 - qx_min,
+            ] = grid[src_y0:src_y1, src_x0:src_x1]
+
+        fft_shape = (
+            padded.shape[0] + kernel_h - 1,
+            padded.shape[1] + kernel_w - 1,
+        )
+        try:
+            from scipy.fft import next_fast_len
+            fft_shape = (
+                next_fast_len(fft_shape[0], real=True),
+                next_fast_len(fft_shape[1], real=True),
+            )
+        except ImportError:
+            pass
+        spectrum = np.fft.rfft2(padded, fft_shape) * np.fft.rfft2(
+            kernel[::-1, ::-1], fft_shape)
+        correlation = np.fft.irfft2(spectrum, fft_shape)
+        block_map = correlation[
+            kernel_h - 1:kernel_h - 1 + n_blocks_y,
+            kernel_w - 1:kernel_w - 1 + n_blocks_x,
+        ]
+        return np.rint(block_map).astype(np.int64)
+
+    # Adaptive scoring: gather directly while a (yaw, level) pair is cold, and
+    # switch to a one-shot FFT hit map for the whole level once the pair is hot
+    # enough that the map pays for itself.
+    hit_map_cache: dict = {}
+    gather_call_counts: dict = {}
+
+    def gather_hits(
+        grid: np.ndarray, level: int, yaw_index: int, tx_cell: int, ty_cell: int
+    ) -> int:
+        key = (yaw_index, level)
+        cached_map = hit_map_cache.get(key)
+        if cached_map is not None:
+            return int(cached_map[ty_cell >> level, tx_cell >> level])
+
+        qy, qx, cell_counts = offset_cache[yaw_index][level]
+        grid_height, grid_width = grid.shape
+        calls = gather_call_counts.get(key, 0) + 1
+        gather_call_counts[key] = calls
+        if calls > max(64, (grid_height * grid_width) // 256):
+            n_blocks_y = (height + (1 << level) - 1) >> level
+            n_blocks_x = (width + (1 << level) - 1) >> level
+            cached_map = full_hit_map(
+                grid, qy, qx, cell_counts, n_blocks_y, n_blocks_x)
+            hit_map_cache[key] = cached_map
+            return int(cached_map[ty_cell >> level, tx_cell >> level])
+
+        iy = qy + (ty_cell >> level)
+        ix = qx + (tx_cell >> level)
+        inside = (ix >= 0) & (iy >= 0) & (ix < grid_width) & (iy < grid_height)
+        if not np.any(inside):
+            return 0
+        return int(
+            cell_counts[inside][grid[iy[inside], ix[inside]]].sum())
+
+    # Seed the queue by scoring every top-level block of a yaw at once: the
+    # integer hit map is an accumulation of count-weighted shifted views of the
+    # (zero-padded) top pyramid level.
+    block_tys = list(range(0, height, initial_step))
+    block_txs = list(range(0, width, initial_step))
+    top_grid = upper_bound_pyramid[start_level]
+    top_height, top_width = top_grid.shape
+
     heap: List[Tuple[float, int, int, int, int, int, float]] = []
     sequence = 0
-
     for yaw_index, yaw_rad in enumerate(yaws):
-        for ty_cell in range(0, height, initial_step):
-            for tx_cell in range(0, width, initial_step):
-                bound = bbs_upper_bound(
-                    upper_bound_pyramid,
-                    scan_xy_grid,
-                    tx_cell,
-                    ty_cell,
-                    yaw_rad,
-                    start_level,
-                )
-                heapq.heappush(
-                    heap,
-                    (-bound, sequence, start_level, tx_cell, ty_cell, yaw_index, yaw_rad),
-                )
+        qy, qx, cell_counts = offset_cache[yaw_index][start_level]
+        pad_top = int(max(0, -qy.min()))
+        pad_left = int(max(0, -qx.min()))
+        pad_bottom = int(max(0, len(block_tys) - 1 + qy.max() - (top_height - 1)))
+        pad_right = int(max(0, len(block_txs) - 1 + qx.max() - (top_width - 1)))
+        padded = np.zeros(
+            (pad_top + top_height + pad_bottom, pad_left + top_width + pad_right),
+            dtype=np.int64)
+        padded[pad_top:pad_top + top_height, pad_left:pad_left + top_width] = top_grid
+        hit_map = np.zeros((len(block_tys), len(block_txs)), dtype=np.int64)
+        for offset_y, offset_x, count in zip(qy, qx, cell_counts):
+            row = pad_top + int(offset_y)
+            col = pad_left + int(offset_x)
+            hit_map += count * padded[
+                row:row + len(block_tys), col:col + len(block_txs)]
+        for block_row, ty_cell in enumerate(block_tys):
+            for block_col, tx_cell in enumerate(block_txs):
+                bound = float(hit_map[block_row, block_col]) / float(n_points)
+                heap.append(
+                    (-bound, sequence, start_level, tx_cell, ty_cell, yaw_index,
+                     yaw_rad))
                 sequence += 1
+    # Heap keys are unique (sequence tiebreaker), so pop order is the sorted key
+    # order regardless of internal heap layout; heapify keeps behavior identical
+    # to sequential pushes.
+    heapq.heapify(heap)
 
     best: List[BbsGridCandidate] = []
     kth_score = -math.inf
@@ -219,17 +349,19 @@ def branch_and_bound_candidates(
             break
 
         if level == 0:
-            score, hit_count, point_count = _score_grid(
-                occupancy, scan_xy_grid, tx_cell, ty_cell, yaw_rad, factor=1
-            )
+            cached_level0 = hit_map_cache.get((yaw_index, 0))
+            if cached_level0 is not None:
+                hit_count = int(cached_level0[ty_cell, tx_cell])
+            else:
+                hit_count = gather_hits(occupancy, 0, yaw_index, tx_cell, ty_cell)
             candidate = BbsGridCandidate(
                 tx_cell=tx_cell,
                 ty_cell=ty_cell,
                 yaw_index=yaw_index,
                 yaw_rad=yaw_rad,
-                score=score,
+                score=float(hit_count) / float(n_points),
                 hit_count=hit_count,
-                point_count=point_count,
+                point_count=n_points,
             )
             if nms_radius_cells > 0:
                 # Keep the candidate list spatially diverse: one winner per
@@ -266,14 +398,17 @@ def branch_and_bound_candidates(
                 child_tx = tx_cell + dx
                 if child_tx >= width:
                     continue
-                child_bound = bbs_upper_bound(
-                    upper_bound_pyramid,
-                    scan_xy_grid,
-                    child_tx,
-                    child_ty,
-                    yaw_rad,
-                    child_level,
-                )
+                cached_child = hit_map_cache.get((yaw_index, child_level))
+                if cached_child is not None:
+                    child_bound = float(
+                        cached_child[
+                            child_ty >> child_level, child_tx >> child_level]
+                    ) / float(n_points)
+                else:
+                    child_bound = float(
+                        gather_hits(
+                            upper_bound_pyramid[child_level], child_level,
+                            yaw_index, child_tx, child_ty)) / float(n_points)
                 if len(best) >= max_candidates and child_bound < kth_score - eps:
                     continue
                 heapq.heappush(

@@ -390,6 +390,19 @@ Implementation: `ErrorFloorCovarianceParams` + `makeErrorFloorPoseCovariance` /
 recipe for user platforms, and an explicit can/cannot-promise list. Covariance
 does not affect acceptance or trajectory, so the replay gate does not apply.
 
+### 2026-06-12: BBS_2D 8.5x speedup with exact output equivalence
+
+The G2 blocker ("~14 min per window in pure python") is addressed in
+`make_bbs_relocalization_attempts.py` without changing a single output bit:
+per-(yaw, level) integer offset tables (node coordinates are always multiples
+of `2^level`, so the floor decomposes) plus adaptive FFT hit maps for hot
+(yaw, level) pairs. Synthetic 1200x1200/72-yaw/top-64: 81.3 s -> 9.6 s; HDL
+smoke window: 19.9 s -> 8.1 s end-to-end with byte-identical candidate CSVs
+(verified against the pre-change code on the same machine and load). Details in
+[global_localization_roadmap.md](global_localization_roadmap.md). Remaining
+floor: the Python heap loop (~580 k pops) — revisit if G2 needs sub-second
+queries.
+
 ## Suggested Order Of Work
 
 1. Phase 0 (release + issue hygiene) — small, high leverage, mostly waiting on an idle
