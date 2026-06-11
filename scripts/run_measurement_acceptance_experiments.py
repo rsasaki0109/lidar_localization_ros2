@@ -28,6 +28,7 @@ if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
 from experiments.measurement_acceptance.interface import AcceptanceSample
+from experiments.measurement_acceptance.variants import BoundedDegradedAcceptance
 from experiments.measurement_acceptance.variants import CorrectionConditionedAcceptance
 from experiments.measurement_acceptance.variants import FixedThresholdAcceptance
 from experiments.measurement_acceptance.variants import ScoreRatioBudgetAcceptance
@@ -40,6 +41,7 @@ VARIANTS = [
     FixedThresholdAcceptance,
     CorrectionConditionedAcceptance,
     ScoreRatioBudgetAcceptance,
+    BoundedDegradedAcceptance,
 ]
 
 
@@ -89,21 +91,80 @@ def run_variant_on_fixture(variant_cls: type, fixture: dict[str, Any]) -> dict[s
     }
 
 
+def run_variant_on_sequence(variant_cls: type, fixture: dict[str, Any]) -> dict[str, Any]:
+    """Closed-loop-style harness: gap and rejection streak follow the policy's
+    own decisions, so self-confirming unbounded acceptance becomes visible."""
+    variant = variant_cls()
+    variant.reset()
+    threshold = float(fixture["effective_score_threshold"])
+    consecutive_rejected = 0
+    degraded_accepts = 0
+    max_consecutive_degraded = 0
+    current_run = 0
+    last_decision_reject = True
+    for index, step in enumerate(fixture["steps"]):
+        gap = 0.4 + 0.5 * consecutive_rejected
+        sample = AcceptanceSample(
+            index=index,
+            fitness_score=float(step["fitness_score"]),
+            effective_score_threshold=threshold,
+            correction_translation_m=float(step["correction_translation_m"]),
+            correction_yaw_deg=float(step["correction_yaw_deg"]),
+            accepted_gap_sec=gap,
+            consecutive_rejected_updates=consecutive_rejected,
+        )
+        decision = variant.step(sample)
+        last_decision_reject = decision.reject_measurement
+        if decision.reject_measurement:
+            consecutive_rejected += 1
+            current_run = 0
+        else:
+            consecutive_rejected = 0
+            if sample.fitness_score > threshold:
+                degraded_accepts += 1
+                current_run += 1
+                max_consecutive_degraded = max(max_consecutive_degraded, current_run)
+            else:
+                current_run = 0
+    expectations = fixture["expectations"]
+    checks = {
+        "bounded_degraded_run": max_consecutive_degraded
+        <= int(expectations["max_consecutive_degraded_accepts"]),
+        "bridges_onset": degraded_accepts >= int(expectations["min_degraded_accepts"]),
+        "rejects_when_exhausted": (not expectations["must_reject_final_step"]) or last_decision_reject,
+    }
+    return {
+        "fixture": fixture["name"],
+        "passed": all(checks.values()),
+        "checks": checks,
+        "degraded_accepts": degraded_accepts,
+        "max_consecutive_degraded_accepts": max_consecutive_degraded,
+    }
+
+
 def main() -> int:
     args = parse_args()
     fixtures_dir = repo_root / "experiments" / "measurement_acceptance" / "fixtures"
     fixtures = [load_fixture(path) for path in sorted(fixtures_dir.glob("*.json"))]
+    sequences_dir = repo_root / "experiments" / "measurement_acceptance" / "fixtures_sequences"
+    sequence_fixtures = [load_fixture(path) for path in sorted(sequences_dir.glob("*.json"))]
     variants = []
     for variant_cls in VARIANTS:
         fixture_results = [run_variant_on_fixture(variant_cls, fixture) for fixture in fixtures]
-        benchmark_score = 100.0 * (
-            sum(1 for result in fixture_results if result["passed"]) / max(1, len(fixture_results))
+        sequence_results = [
+            run_variant_on_sequence(variant_cls, fixture) for fixture in sequence_fixtures
+        ]
+        passed_units = sum(1 for result in fixture_results if result["passed"]) + sum(
+            1 for result in sequence_results if result["passed"]
         )
+        total_units = len(fixture_results) + len(sequence_results)
+        benchmark_score = 100.0 * passed_units / max(1, total_units)
         static_metrics = compute_static_metrics(variant_cls)
         variant_result = {
             "name": variant_cls.name,
             "design": variant_cls.design,
             "fixture_results": fixture_results,
+            "sequence_results": sequence_results,
             "benchmark_score": benchmark_score,
             "readability_score": static_metrics["readability_score"],
             "extensibility_score": static_metrics["extensibility_score"],
