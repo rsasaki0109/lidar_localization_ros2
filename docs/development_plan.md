@@ -62,6 +62,41 @@ Known execution constraints:
   artifacts/public/autoware_istanbul_60s_nav2_map --map-name istanbul_60s_nav2_map`.
   Folding this bootstrap into the regression entry script is an open cleanup item.
 
+## Issue Tracker State (2026-06-13)
+
+Twelve issues are open. None are regressions in shipped behavior; they split into
+"already answered by the v1.1 doc set", "small actionable code items", "needs real
+investigation", and "future enhancement track". Closing or commenting on GitHub is done
+by the maintainer; this table is the triage record.
+
+| # | Title | Disposition |
+| --- | --- | --- |
+| 25 | specifying the lidar frame id | Answered — `frame_contract.md` documents frame expectations; close with pointer |
+| 33 | about ros2 humble (ouster remap, inaccurate) | Answered — sensor remap + `frame_contract.md`/`troubleshooting.md`; Humble/Jazzy matrix shipped; close with pointer |
+| 34 | use different sensor (Ouster etc.) | Answered — same sensor/frame guidance as #33; close with pointer |
+| 37 | CPU占用率爆炸 | Answered — `failure_category: overload` diagnostic + throughput tuning (`voxel`, `ndt threads`, `cloud_queue_depth`) in `troubleshooting.md`; close with pointer |
+| 49 | ERROR run with Rslidar | Answered — point-type / remap guidance; close with pointer (ask for log if it recurs) |
+| 50 | enhance stability (try/catch) | Partially shipped — Phase 0 crash-survival fixes (#76/#56/#47) + Phase 3 diagnostics; reply with what shipped, keep open for broader hardening |
+| 55 | `odom_frame_id_` defined but not used | Actionable code cleanup — verify and remove or wire it; small win |
+| 54 | `corrent_pose_with_cov_stamped_ptr_` not locked | Actionable — confirm the single-threaded executor assumption or add a guard; small win |
+| 52 | different results (degrades each restart, worse after reboot) | Needs investigation — restart-to-restart degradation suggests state/seed leak, not documented run variance; keep open |
+| 68 | MGRS map not displayed in Rviz | Needs investigation — large-coordinate PCD likely hits float32 precision in the map path; reporter offered to implement, give a hint and keep open |
+| 77 | IMU angular velocity + estimator | Future enhancement track (IMU); keep open |
+| 36 | imu preintegration | Future enhancement track (IMU), overlaps #77; keep open |
+
+Two cheap code wins (#55, #54) can land in the next `Unreleased` batch; the doc-answered
+set (#25/#33/#34/#37/#49) is ready to close once the maintainer posts the pointer
+comments; #52 and #68 want a reproduction before any claim.
+
+Branch hygiene: `origin` carries ten non-`main` branches. Five are stale merged feature
+branches fully contained in `main` (`codex/mid360-policy-split`,
+`codex/public-validation-log`, `codex/release-validation-log`,
+`feat/public-demo-validation-dashboard`, `fix/tf`) and are deletion candidates.
+`feature/small_gicp` is *not* a backend integration — its one unmerged commit is only a
+2024 README edit, so the Phase 1 `SMALL_GICP` work starts fresh, not from this branch.
+The distro branches (`dashing`, `foxy`, `humble`, `jazzy`) are merged into `main` but kept
+as user-facing checkout points for those ROS distros and are not deleted.
+
 ## Phase 0: v1.1.0 Release Closeout — DONE (2026-06-11)
 
 Goal was to ship the accumulated reliability work as `v1.1.0` and clean up the issue
@@ -443,6 +478,23 @@ The G2 service node landed (`8a04314`) and the demo GIF was added to the README
   `ROS_DOMAIN_ID`, drive the run with `rosbag2_player` pause/resume to hide query latency.
 
 G2 is done; G3 automation needs faster queries (coarse-yaw ~9 s or a C++ heap-loop port).
+
+### 2026-06-13: Issue and branch triage
+
+Triaged the twelve open issues into the table in "Issue Tracker State" above: five are
+answered by the shipped v1.1 doc set and ready to close with pointers (#25/#33/#34/#37/#49),
+two are small actionable code items (#55 unused `odom_frame_id_`, #54 missing lock on
+`corrent_pose_with_cov_stamped_ptr_`), two need a reproduction before any claim (#52
+restart-degradation, #68 MGRS/large-coordinate map), and the IMU-estimator pair
+(#77/#36) plus the broader stability ask (#50) stay open as enhancement work. No open
+issue is a regression in shipped behavior.
+
+Branch audit (`git fetch --prune`): of ten non-`main` remote branches, five merged feature
+branches are stale and fully in `main` (`codex/mid360-policy-split`,
+`codex/public-validation-log`, `codex/release-validation-log`,
+`feat/public-demo-validation-dashboard`, `fix/tf`). `feature/small_gicp` carries only a
+stale 2024 README commit (not the backend integration its name implies). The distro
+branches (`dashing`/`foxy`/`humble`/`jazzy`) are kept as user checkout points.
 
 ## Suggested Order Of Work
 
