@@ -1,6 +1,6 @@
 # Development Plan
 
-Last updated: 2026-06-11
+Last updated: 2026-06-13
 
 This document is the working development plan for `lidar_localization_ros2`. It is more
 detailed and more dated than [competitive_roadmap.md](competitive_roadmap.md): the roadmap
@@ -16,31 +16,34 @@ Related documents:
 - [v1_status.md](v1_status.md): what v1.0.0 means and its validated boundary
 - [public_validation_log.md](public_validation_log.md): recorded validation snapshots
 
-## Current State (2026-06-11)
+## Current State (2026-06-13)
 
 What is true right now:
 
-- `v1.0.0` was released 2026-03-30. Since then `main` has accumulated a large unreleased
-  reliability batch: the Sprint 1/2 crash fixes (#76, #56, #47), the frame/troubleshooting/
-  map-alignment/covariance documentation set, Istanbul drift tuning, Koide outdoor recovery
-  tuning, and Boreas diagnostic work.
-- The 2026-05-22 release regression snapshot (`overall_pass=true`) plus the 2026-06-10
-  drift-tuning reconfirm are the latest recorded green boundaries on the Humble overlay.
-- New on 2026-06-11: the public regression suite is green on a ROS 2 Jazzy build for the
-  first time (`overall_pass=true`): Istanbul 60 s no-IMU translation RMSE `0.673 m`,
-  rotation RMSE `2.179 deg`, alignment median `0.036 s`; HDL 60 s two-repeat medians
-  `468.5` baseline / `459.0` IMU-candidate pose rows, IMU-candidate alignment median
-  `0.084 s`, fallback events `1`. The long Nav2 reinitialization-supervisor regression is
-  the remaining release-suite stage (see execution log below).
-- The P0 crash issues are fixed on `main` but still open on GitHub, which makes the
-  package look more broken than it is to a new user. Closing them is gated on tagging the
-  release that contains the fixes.
-- Local development now also runs on ROS 2 Jazzy: `scripts/setup_local_env.sh` resolves
-  the distro instead of hardcoding Humble, and the HDL sample fetch patches rosbag2
-  metadata per distro. Build, 32 unit tests, and the experiment suite pass on Jazzy.
-- Global localization work has started: the `MAP_GRID` candidate baseline
-  (`scripts/make_map_grid_relocalization_attempts.py`) generates map-wide seed candidates
-  without a route prior and feeds the unchanged v1.1 scoring/dry-run chain.
+- `v1.1.0` is released and tagged (commit `668fff2`): the accumulated reliability batch
+  (Sprint 1/2 crash fixes #76/#56/#47, the frame/troubleshooting/map-alignment/covariance
+  documentation set, Istanbul drift tuning, Koide recovery tuning, Boreas diagnostics) is
+  shipped, `package.xml` is at `1.1.0`, and the fixed P0 issues are closed. Phase 0 is
+  done.
+- Development and the public regression suite run on ROS 2 Jazzy (first Jazzy-green
+  recorded 2026-06-11: Istanbul 60 s no-IMU translation RMSE `0.673 m`, rotation
+  `2.179 deg`, alignment median `0.036 s`; HDL two-repeat medians `468.5`/`459.0` pose
+  rows). `scripts/setup_local_env.sh` resolves the distro and the HDL fetch patches
+  rosbag2 metadata per distro.
+- Phase 3 (measurement acceptance, diagnostics, covariance) is complete. Step 1
+  (multi-criteria acceptance) closed as a replay-falsified **negative result** after three
+  closed-loop A/B replays; step 2 added the `/alignment_status` `failure_category`
+  taxonomy; step 3 replaced the `/pcl_pose` covariance with a ground-truth-calibrated
+  `error_floor` model, closing the #72 promise. All on `main`; unit-test count is 36
+  C++/Python policy tests.
+- Global localization has reached G2. `MAP_GRID` and the admissible `BBS_2D`
+  branch-and-bound engine are merged; `BBS_2D` was sped up ~8x with byte-identical output;
+  and the opt-in `global_localization_node.py` runtime service (`~/query` ->
+  `~/candidates`) is validated end-to-end on the HDL bag with a kidnapped start. A demo GIF
+  of the full kidnapped-start -> relocalize -> resume flow is in the README.
+- Open work, in priority order, is the Phase 1 Koide backend comparison (needs an idle
+  machine), G3 guarded automatic reinitialization (needs faster queries), and Phase 2
+  Boreas recovery. None are started.
 
 Known execution constraints:
 
@@ -59,40 +62,33 @@ Known execution constraints:
   artifacts/public/autoware_istanbul_60s_nav2_map --map-name istanbul_60s_nav2_map`.
   Folding this bootstrap into the regression entry script is an open cleanup item.
 
-## Phase 0: v1.1.0 Release Closeout
+## Phase 0: v1.1.0 Release Closeout — DONE (2026-06-11)
 
-Goal: ship the accumulated reliability work as `v1.1.0` and clean up the issue tracker so
-the public state of the project matches the actual state of `main`.
+Goal was to ship the accumulated reliability work as `v1.1.0` and clean up the issue
+tracker so the public state matches `main`. Completed:
 
-Steps:
+- `v1.1.0` tagged at `668fff2`; `package.xml` bumped to `1.1.0`; the `CHANGELOG.md`
+  `Unreleased` section moved to `1.1.0`; validation snapshot recorded in
+  [public_validation_log.md](public_validation_log.md).
+- Fixed P0 issues #76/#56/#47 closed with the fix commits, the release tag, and a
+  verification recipe; the documented-issue sweep (#58/#27/#70/#75/#44/#72/#48/#43/#41/#35)
+  answered with the matching doc links and closed.
+- `reliability_roadmap.md` statuses moved from "fix in main" to "released".
 
-1. Run `scripts/run_release_regression_suite.sh` on an idle machine and confirm
-   `overall_pass=true`. Status: the public-suite half is green on Jazzy as of 2026-06-11
-   (numbers in Current State); the Nav2 reinitialization-supervisor half is pending the
-   occupancy-map bootstrap described in the execution constraints. Earlier same-day
-   attempts under load ~37 failed only on throughput gates, not correctness; Istanbul RMSE
-   passed even then (1.39 m vs the 6.0 m gate).
-2. Move the `Unreleased` section of `CHANGELOG.md` to `1.1.0`, bump `package.xml` to
-   `1.1.0`, record the validation snapshot in
-   [public_validation_log.md](public_validation_log.md), and tag `v1.1.0`.
-3. Close fixed P0 issues #76, #56, #47 with the fix commits, the release tag, and a short
-   verification recipe. They already carry "fixed on main" comments; the close comment
-   only needs to add "released in v1.1.0".
-4. Sweep the documented issues (#58, #27, #70, #75, #44, #72, #48, #43, #41, #35): reply
-   with the matching doc link (frame_contract, troubleshooting, map_alignment,
-   pose_covariance, benchmarking) and close with an invitation to reopen if the doc does
-   not resolve the report.
+A follow-on `Unreleased` batch has since accumulated on `main` (diagnostics taxonomy,
+calibrated covariance, BBS speedup, the G2 service); it will roll into the next tagged
+release once Phase 1 / G3 work reaches a natural boundary.
 
-Done when:
-
-- `v1.1.0` tag exists and points at a commit with a green release regression
-- the issue tracker has no open issue that is already fixed or already documented
-- `reliability_roadmap.md` statuses are updated from "fix in main" to "released"
-
-## Phase 1: Koide Benchmark Track
+## Phase 1: Koide Benchmark Track — IN PROGRESS
 
 Goal: make the Koide hard-localization dataset the controlled public benchmark for
 recovery and backend ranking, replacing Istanbul as the research driver.
+
+Status: the first G1 evaluation on `outdoor_hard_01a` ran 2026-06-11 (see execution log).
+It established that the 180 s window is a recovery problem, not a candidate-generation
+problem (GT pose scores fitness 9.6 there). The backend comparison (step 2) is the main
+open item and is **blocked on an idle machine** — it needs `load < ~5` for meaningful
+alignment-time numbers, and the shared machine is usually busy.
 
 Steps:
 
@@ -100,7 +96,9 @@ Steps:
    window on `outdoor_hard_01a` (additional windows, and at minimum one different segment
    or seed perturbation).
 2. Once the failure boundary has a controlled recovery story, run the backend comparison
-   (`NDT_OMP` vs `SMALL_GICP` vs `SMALL_VGICP`) with identical bag/map/eval commands.
+   (`NDT_OMP` vs `SMALL_GICP` vs `SMALL_VGICP`) with identical bag/map/eval commands. While
+   collecting these replays, confirm the diagnostics added in Phase 3 (`failure_category`)
+   and the calibrated `error_floor` covariance also surface in the outputs.
 3. Apply the roadmap's backend decision gate (two public datasets, no catastrophic
    failure, alignment-time or robustness win, RMSE not materially worse) before changing
    any default.
@@ -133,39 +131,60 @@ Done when:
 - RMSE is in a range where backend and IMU comparisons are meaningful
 - Boreas earns a defined role in the regression or benchmark suite
 
-## Phase 3: Measurement Acceptance, Diagnostics, Covariance
+## Phase 3: Measurement Acceptance, Diagnostics, Covariance — DONE (2026-06-12)
 
-Goal: move acceptance and failure detection beyond the scalar fitness score, so drift is
-caught before large pose error accumulates and downstream consumers can trust the outputs.
+Goal was to move acceptance and failure detection beyond the scalar fitness score, so
+drift is caught before large pose error accumulates and downstream consumers can trust the
+outputs. All three steps are complete; see the execution log for full evidence.
 
-Steps:
+1. **Multi-criteria acceptance — closed as a negative result.** Two policies that won the
+   offline fixture ranking (`correction_conditioned`, then the bounded redesign
+   `bounded_degraded`) both diverged in closed-loop replay (62.7 m, then 6.80 m). On
+   degenerate geometry, over-threshold registrations are systematically biased, not noisy,
+   so accepting any of them feeds bias into the prediction anchor. The scalar gate +
+   coast-on-rejection + existing recovery retry is the replay-validated winner; recovery
+   inside the hard window belongs to the relocalization track (G2/G3), not acceptance. The
+   falsified hypotheses are encoded as `experiments/measurement_acceptance` regression
+   fixtures + a closed-loop sequence harness so the offline ranking now agrees with the
+   replays.
+2. **Diagnostics taxonomy — shipped.** `/alignment_status` publishes a `failure_category`
+   key (`missing_map`, `missing_initial_pose`, `weak_overlap`, `bad_match`,
+   `stale_prediction`, `overload`, `healthy`) plus `*_active` co-occurrence flags, in the
+   pure `alignment_failure_taxonomy.hpp` policy. Documented in `troubleshooting.md`.
+3. **Calibrated covariance — shipped, closes #72.** `/pcl_pose` defaults to an
+   `error_floor` model calibrated against ground truth (per-axis 2σ coverage ≥ 0.96 on the
+   calibration runs vs 0.42–0.59 1σ for the old heuristic). The biased tail is documented
+   as out of scope, directing fusion consumers to also gate on `failure_category`. Recipe
+   and limits in `pose_covariance.md`.
 
-1. Multi-criteria measurement acceptance (score + correction magnitude + overlap +
-   prediction staleness), developed through the `experiments/` comparison framework first.
-2. Diagnostics that distinguish bad match, missing map/initial pose, weak overlap, stale
-   prediction, and overload.
-3. Covariance semantics for `/pcl_pose` that fusion/arbitration consumers can rely on
-   (the real fix for #72), building on [pose_covariance.md](pose_covariance.md).
-
-Done when the roadmap's "Next" done-criteria for diagnostics and covariance hold.
+This makes the roadmap's "Next" diagnostics and covariance done-criteria hold.
 
 ## Global Localization Track (G1 -> G3)
 
 Runs in parallel with Phases 1-3; detailed phases live in
 [global_localization_roadmap.md](global_localization_roadmap.md).
 
-- G1 (artifact-first map-wide candidates): `MAP_GRID` baseline implemented 2026-06-11
-  (unit-tested, verified on the Istanbul map and against the registration job generator).
-  A `BBS_2D` implementation (multi-resolution occupancy pyramid with admissible
-  branch-and-bound over x/y/yaw, scan input from the bag at the request-window trigger) is
-  being drafted and reviewed; it lands only with passing unit tests for bound
-  admissibility and top-K ordering. Next after that: evaluate both engines on the Koide
-  180 s window against the route-proximity artifact, then `FPFH_RANSAC` as the full-3D
-  fallback.
-- G2 (runtime query service): opt-in service returning ranked candidates; starts after G1
-  beats or matches route-proximity on the validated windows.
-- G3 (guarded automatic reinitialization): connects `/reinitialization_requested` to G2
-  behind the recovery supervisor; gated by the roadmap's relocalization runtime rules.
+- **G1 (artifact-first map-wide candidates) — DONE.** `MAP_GRID` baseline (2026-06-11,
+  unit-tested, verified on the Istanbul map) and the admissible `BBS_2D` branch-and-bound
+  engine (multi-resolution occupancy pyramid over x/y/yaw, with unit tests for bound
+  admissibility and top-K ordering) are merged. `BBS_2D` solves a synthetic kidnapped
+  start end-to-end (rank-1 -> NDT -> 0.69 m / 1.0 deg). The Koide 180 s failure window is
+  *not* a candidate-generation problem — even the GT pose scores fitness 9.6 there — so it
+  belongs to recovery/retry, not the engine. `FPFH_RANSAC` (full-3D fallback) is the only
+  remaining G1 sub-item and is not started.
+- **G2 (runtime query service) — DONE (2026-06-13).** `BBS_2D` was sped up ~8x with
+  byte-identical output (per-(yaw,level) integer offset tables + adaptive FFT hit maps),
+  removing the "~14 min/window" blocker. The opt-in `scripts/global_localization_node.py`
+  answers `std_srvs/Trigger` on `~/query` with map-wide candidates on `~/candidates`; pure
+  query logic in `global_localization_query.py` (rclpy-free, unit-tested). Validated
+  end-to-end on the HDL bag: kidnapped start -> query (23 s, 16 candidates, top score
+  0.998) -> top as `/initialpose` -> NDT tracks the full remaining bag (858 poses). Demo
+  GIF in the README and `scripts/render_global_localization_demo_gif.py`.
+- **G3 (guarded automatic reinitialization) — next.** Connect `/reinitialization_requested`
+  to the G2 service behind the recovery supervisor, gated by the roadmap's relocalization
+  runtime rules (candidate generation without oracle ordering, runtime-available scoring,
+  guarded reset publication, post-reset recovery evidence). Prerequisite: faster queries
+  for automation — either the ~9 s coarse-yaw setting or a C++ port of the BBS heap loop.
 
 ## Later
 
@@ -403,11 +422,41 @@ smoke window: 19.9 s -> 8.1 s end-to-end with byte-identical candidate CSVs
 floor: the Python heap loop (~580 k pops) — revisit if G2 needs sub-second
 queries.
 
+### 2026-06-13: G2 runtime service + kidnapped-start demo
+
+The G2 service node landed (`8a04314`) and the demo GIF was added to the README
+(`595b96a`):
+
+- `scripts/global_localization_node.py`: opt-in node, `std_srvs/Trigger` on `~/query`
+  runs the optimized `BBS_2D` search on the latest scan from the localization cloud topic
+  and publishes ranked candidates as a `geometry_msgs/PoseArray` on `~/candidates`
+  (transient local). Never part of the default launch; nothing is published unless the
+  service is called. Pure query logic in `scripts/global_localization_query.py` is
+  rclpy-free and unit-tested (`test_global_localization_query.py`).
+- End-to-end validation on the HDL sample bag with `set_initial_pose: false`: play ->
+  pause player -> `~/query` answers in 23 s with 16 candidates (top score 0.998) -> top
+  candidate published as `/initialpose` -> resume -> NDT tracks the full remaining bag
+  (858 accepted poses around the loop). The pause is honest about the 23 s query latency.
+- `scripts/render_global_localization_demo_gif.py` renders the recorded artifacts into the
+  README GIF (kidnapped start -> BBS_2D candidates -> `/initialpose` -> tracking resumes).
+- Shared-machine recording recipe (now in memory): isolate with a dedicated
+  `ROS_DOMAIN_ID`, drive the run with `rosbag2_player` pause/resume to hide query latency.
+
+G2 is done; G3 automation needs faster queries (coarse-yaw ~9 s or a C++ heap-loop port).
+
 ## Suggested Order Of Work
 
-1. Phase 0 (release + issue hygiene) — small, high leverage, mostly waiting on an idle
-   machine for the regression run.
-2. G1 evaluation on Koide + Phase 1 window validation — these share the same dataset and
-   manifests, so they advance together.
-3. Phase 2 Boreas root-cause, interleaved as long-running sweeps.
-4. BBS_2D engine, then Phase 3 acceptance/diagnostics work feeding G2/G3 readiness.
+Phase 0, Phase 3 (all three steps), G1, the BBS speedup, and G2 are complete. Remaining,
+in priority order:
+
+1. **Phase 1 Koide backend comparison** (`NDT_OMP` vs `SMALL_GICP` vs `SMALL_VGICP`) on an
+   idle machine — needs `load < ~5`; this is the main blocker, since the shared machine is
+   usually busy. Reuse the existing Koide manifests; confirm the new `failure_category` and
+   `error_floor` covariance columns also appear in the replay outputs while there.
+2. **G3 guarded automatic reinitialization** — wire `/reinitialization_requested` to the
+   G2 service behind the recovery supervisor. Machine-independent design work can start
+   now; the runtime path needs the faster query (coarse-yaw or C++ port) first.
+3. **Phase 2 Boreas recovery** — root-cause the `local_map_crop_too_small` cliff;
+   long-running sweeps interleave well with the above.
+4. **Next release tag** once Phase 1 or G3 reaches a boundary, rolling up the current
+   `Unreleased` batch.
