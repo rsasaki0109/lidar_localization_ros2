@@ -101,6 +101,25 @@ Done when:
 - service returns a usable candidate on the validated G1 windows in bounded time
 - no change to default launch behavior; the service is opt-in
 
+#### 2026-06-13 G2 service node and end-to-end demo
+
+`scripts/global_localization_node.py` implements the on-demand service:
+`std_srvs/Trigger` on `~/query` runs the (8x-optimized) BBS_2D search on the
+latest scan from the localization cloud topic and publishes ranked candidates
+as a `geometry_msgs/PoseArray` on `~/candidates` (transient local). The pure
+query logic lives in `scripts/global_localization_query.py` (unit tested
+without rclpy). Opt-in only: nothing changes unless the node is started and
+the service is called.
+
+End-to-end demo on the HDL sample bag (kidnapped start, `set_initial_pose:
+false`): play bag -> pause player -> `~/query` answers in 23 s with 16
+candidates (top score 0.998) -> top candidate published as `/initialpose` ->
+resume -> NDT localization tracks the full remaining bag (858 accepted poses
+around the loop). Rendered as a GIF by
+`scripts/render_global_localization_demo_gif.py` from the recorded artifacts.
+The pause is honest about query latency; G3 automation will need either the
+~9 s coarse-yaw setting or the C++ port noted in the G1 optimization entry.
+
 ### G3: guarded automatic reinitialization
 
 Goal: connect `/reinitialization_requested` to the G2 service behind the existing
