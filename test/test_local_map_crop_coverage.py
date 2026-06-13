@@ -62,6 +62,21 @@ def test_no_cliff_when_trajectory_stays_inside_map():
     assert "prediction-driven" in v
 
 
+def test_count_scale_compensates_for_subsampling():
+    # Dense map: the full-map in-radius count is well above min_points, but a
+    # stride-4 subsample alone undercounts ~4x and would trip a false cliff.
+    map_xy = grid_map(-100, 100, -100, 100, step=1.0)
+    t = np.arange(0, 10, 1.0)
+    xy = np.column_stack([np.linspace(-20, 20, len(t)), np.zeros(len(t))])
+    sub = map_xy[::4]
+    raw = cov.analyze_coverage(sub, xy, t, radius_m=15.0, min_points=400)
+    scaled = cov.analyze_coverage(sub, xy, t, radius_m=15.0, min_points=400, count_scale=4)
+    # Unscaled strided counts trip the absolute threshold (the bug)...
+    assert raw["cliff_index"] is not None
+    # ...scaling back by the stride restores a true-negative (no false cliff).
+    assert scaled["cliff_index"] is None
+
+
 def test_out_of_bounds_flag_tracks_bbox_plus_radius():
     map_xy = grid_map(0, 100, 0, 100, step=2.0)
     t = np.array([0.0, 1.0])

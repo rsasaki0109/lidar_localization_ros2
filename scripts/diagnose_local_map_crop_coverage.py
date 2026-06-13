@@ -71,8 +71,11 @@ def count_points_within_radius(map_xy, query_xy, radius_m, chunk=256):
     counts = np.empty(len(query_xy), dtype=np.int64)
     mx = map_xy[:, 0]
     my = map_xy[:, 1]
-    for start in range(0, len(query_xy), chunk):
-        block = query_xy[start:start + chunk]
+    # Bound the (chunk x map) intermediate so a large map cannot OOM the fallback:
+    # cap ~20M float64 elements (~160 MB) per temporary.
+    eff_chunk = max(1, min(chunk, int(20_000_000 // max(1, len(map_xy)))))
+    for start in range(0, len(query_xy), eff_chunk):
+        block = query_xy[start:start + eff_chunk]
         # (block, map) squared distances, chunked over queries to bound memory.
         dx = block[:, 0][:, None] - mx[None, :]
         dy = block[:, 1][:, None] - my[None, :]
@@ -80,7 +83,7 @@ def count_points_within_radius(map_xy, query_xy, radius_m, chunk=256):
     return counts
 
 
-def analyze_coverage(map_xy, traj_xy, traj_t, radius_m, min_points):
+def analyze_coverage(map_xy, traj_xy, traj_t, radius_m, min_points, count_scale=1):
     """Per-pose coverage and the first under-covered (cliff) index.
 
     Returns a dict with: ``counts`` (per pose), ``too_small`` (bool mask),
@@ -90,7 +93,9 @@ def analyze_coverage(map_xy, traj_xy, traj_t, radius_m, min_points):
     """
     map_xy = np.asarray(map_xy, dtype=np.float64)
     traj_xy = np.asarray(traj_xy, dtype=np.float64)
-    counts = count_points_within_radius(map_xy, traj_xy, radius_m)
+    # Scale by the subsample stride so we compare a full-map estimate against the
+    # absolute min_points (a strided map otherwise reports a false cliff).
+    counts = count_points_within_radius(map_xy, traj_xy, radius_m) * int(count_scale)
     too_small = counts < min_points
 
     min_x, min_y = map_xy.min(axis=0)
@@ -161,11 +166,13 @@ def load_map_xy(map_pcd, max_points=None):
     if points.size == 0:
         raise SystemExit(f"map PCD is empty: {map_pcd}")
     xy = points[:, :2]
+    stride = 1
     if max_points and len(xy) > max_points:
-        # Uniform stride subsample keeps spatial coverage representative.
+        # Uniform stride subsample keeps spatial coverage representative; the
+        # caller scales counts by `stride` so min_points stays comparable.
         stride = int(np.ceil(len(xy) / max_points))
         xy = xy[::stride]
-    return xy
+    return xy, stride
 
 
 def parse_args():
@@ -175,8 +182,10 @@ def parse_args():
     p.add_argument("--reference-csv", required=True, type=Path)
     p.add_argument("--local-map-radius", type=float, default=300.0)
     p.add_argument("--local-map-min-points", type=int, default=100)
-    p.add_argument("--max-map-points", type=int, default=2_000_000,
-                   help="Subsample the map above this many points for speed.")
+    p.add_argument("--max-map-points", type=int, default=None,
+                   help="Optional: subsample the map above this many points for "
+                        "speed; counts are scaled back by the stride so min_points "
+                        "stays comparable (an estimate). Default: no subsample.")
     p.add_argument("--out-csv", type=Path, default=None)
     p.add_argument("--plot", type=Path, default=None)
     return p.parse_args()
@@ -220,9 +229,13 @@ def render_plot(path, t, result, min_points):
 def main():
     args = parse_args()
     t, xy = load_reference(args.reference_csv)
-    map_xy = load_map_xy(args.map_pcd, args.max_map_points)
-    result = analyze_coverage(map_xy, xy, t, args.local_map_radius, args.local_map_min_points)
+    map_xy, stride = load_map_xy(args.map_pcd, args.max_map_points)
+    result = analyze_coverage(
+        map_xy, xy, t, args.local_map_radius, args.local_map_min_points, count_scale=stride)
 
+    if stride > 1:
+        print(f"NOTE: map subsampled by stride {stride}; in-radius counts are "
+              f"estimated (raw count x {stride}).")
     print(f"poses: {len(t)}  map points (after subsample): {len(map_xy)}")
     print("map bbox x[%.1f, %.1f] y[%.1f, %.1f]" % result["map_bounds"])
     print("in-radius count: min %d, median %d, max %d" % (
