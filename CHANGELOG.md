@@ -10,6 +10,12 @@
   and three `diagnostics_*` tuning parameters (docs: `troubleshooting.md`)
 - `scripts/analyze_pose_covariance_calibration.py` to calibrate `/pcl_pose`
   covariance against ground-truth replays
+- G2 runtime global localization service: `scripts/global_localization_node.py`
+  answers `std_srvs/Trigger` queries on `~/query` with map-wide BBS_2D
+  candidates on `~/candidates` (opt-in node; default launch unchanged), with
+  ROS-free query logic in `scripts/global_localization_query.py`
+- `scripts/render_global_localization_demo_gif.py` renders the
+  kidnapped-start -> global localization -> tracking-resume demo GIF
 
 ### Changed
 
