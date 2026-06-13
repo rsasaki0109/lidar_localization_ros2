@@ -29,6 +29,8 @@
   reset spacing, post-reset recovery evidence, and a non-self-resetting attempt
   ceiling -- regression-tested against unsafe-publication and false-acceptance
   sequences in `test/test_reinitialization_supervisor_policy.py`
+- `docs/global_localization.md`: operations guide for running the G2 service and
+  the G3 supervisor (commands, parameters, and the supervisor's safety guards)
 
 ### Changed
 

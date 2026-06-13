@@ -122,6 +122,9 @@ The pause is honest about query latency; G3 automation will need either the
 
 ### G3: guarded automatic reinitialization
 
+> How to run the G2 service and the G3 supervisor: see
+> [global_localization.md](global_localization.md).
+
 Goal: connect `/reinitialization_requested` to the G2 service behind the existing
 recovery supervisor, gated by the relocalization runtime rules already defined in
 [competitive_roadmap.md](competitive_roadmap.md) Decision Gates:
