@@ -77,16 +77,18 @@ by the maintainer; this table is the triage record.
 | 37 | CPU占用率爆炸 | Answered — `failure_category: overload` diagnostic + throughput tuning (`voxel`, `ndt threads`, `cloud_queue_depth`) in `troubleshooting.md`; close with pointer |
 | 49 | ERROR run with Rslidar | Answered — point-type / remap guidance; close with pointer (ask for log if it recurs) |
 | 50 | enhance stability (try/catch) | Partially shipped — Phase 0 crash-survival fixes (#76/#56/#47) + Phase 3 diagnostics; reply with what shipped, keep open for broader hardening |
-| 55 | `odom_frame_id_` defined but not used | Actionable code cleanup — verify and remove or wire it; small win |
-| 54 | `corrent_pose_with_cov_stamped_ptr_` not locked | Actionable — confirm the single-threaded executor assumption or add a guard; small win |
+| 55 | `odom_frame_id_` defined but not used | Resolved (2026-06-14) — stale report; the field is wired into the `map -> odom` TF path (`publishMapToOdomTransform`), no code change needed |
+| 54 | `corrent_pose_with_cov_stamped_ptr_` not locked | Resolved (2026-06-14) — the node runs on a `SingleThreadedExecutor` with the default mutually-exclusive callback group, so the shared pose pointer is serialized without a lock; documented the invariant in the node + header + CHANGELOG so a future executor change can't regress it silently |
 | 52 | different results (degrades each restart, worse after reboot) | Needs investigation — restart-to-restart degradation suggests state/seed leak, not documented run variance; keep open |
 | 68 | MGRS map not displayed in Rviz | Needs investigation — large-coordinate PCD likely hits float32 precision in the map path; reporter offered to implement, give a hint and keep open |
 | 77 | IMU angular velocity + estimator | Future enhancement track (IMU); keep open |
 | 36 | imu preintegration | Future enhancement track (IMU), overlaps #77; keep open |
 
-Two cheap code wins (#55, #54) can land in the next `Unreleased` batch; the doc-answered
-set (#25/#33/#34/#37/#49) is ready to close once the maintainer posts the pointer
-comments; #52 and #68 want a reproduction before any claim.
+The two cheap code wins (#55, #54) were investigated on 2026-06-14: both turned out
+to be non-bugs under the shipped configuration (#55 already wired; #54 protected by the
+single-threaded executor) and were closed with documenting changes rather than fixes.
+The doc-answered set (#25/#33/#34/#37/#49) is ready to close once the maintainer posts
+the pointer comments; #52 and #68 want a reproduction before any claim.
 
 Branch hygiene: `origin` carries ten non-`main` branches. Five are stale merged feature
 branches fully contained in `main` (`codex/mid360-policy-split`,
@@ -495,6 +497,40 @@ branches are stale and fully in `main` (`codex/mid360-policy-split`,
 `feat/public-demo-validation-dashboard`, `fix/tf`). `feature/small_gicp` carries only a
 stale 2024 README commit (not the backend integration its name implies). The distro
 branches (`dashing`/`foxy`/`humble`/`jazzy`) are kept as user checkout points.
+
+### 2026-06-14: #55 / #54 closed as non-bugs with documentation
+
+Followed up on the two "small code wins" from the triage. Both turned out to be stale
+or already-safe under the shipped configuration, so neither warranted a behavioral
+change:
+
+- **#55 (`odom_frame_id_` unused)** — stale. The field is read in
+  `publishMapToOdomTransform` to look up `odom -> base` and broadcast the
+  `map -> odom` TF whenever `enable_map_odom_tf_` is set. Nothing to remove.
+- **#54 (`corrent_pose_with_cov_stamped_ptr_` unlocked)** — not a race. `main` spins the
+  node on a `SingleThreadedExecutor` (`lidar_localization_node.cpp`) and no callback
+  opts into a Reentrant group, so every subscription/timer/service callback runs in one
+  mutually-exclusive group on one thread; the shared pose pointer is serialized by the
+  executor, not a lock. The real risk is that this invariant was implicit, so a later
+  switch to `MultiThreadedExecutor` (or a Reentrant group) would silently introduce a
+  data race. Made the invariant explicit instead of adding a now-redundant mutex:
+  comments at the executor construction site and the member declaration, plus a
+  CHANGELOG note.
+
+Comment/doc-only changes, no rebuild required.
+
+**Phase 1 correction (found while reading this code):** the SMALL_GICP *and* SMALL_VGICP
+backends are already fully wired, not a "start fresh" item as previously noted.
+`registration_backend_policy.hpp` maps `SMALL_GICP`/`SMALL_VGICP`, and
+`lidar_localization_component.cpp:998-1013` constructs `small_gicp::RegistrationPCL`,
+selects GICP vs VGICP via `smallGicpRegistrationType`, and sets epsilon / correspondence
+randomness / max-correspondence-distance / `vgicp_voxel_resolution_` / thread count
+before assigning `registration_`. `CMakeLists.txt` already does
+`find_package(small_gicp QUIET CONFIG)` and defines `LIDAR_LOCALIZATION_HAVE_SMALL_GICP`
++ links `small_gicp::small_gicp` when found; without the dependency the backend is a
+clean `RCLCPP_ERROR` + exit. So Phase 1 is a **build-and-benchmark** task, not an
+implementation one: install `small_gicp`, rebuild, then run NDT_OMP vs SMALL_GICP vs
+SMALL_VGICP on an idle machine (still gated on `load < ~5`).
 
 ## Suggested Order Of Work
 

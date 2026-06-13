@@ -140,6 +140,10 @@ public:
   small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>::Ptr small_gicp_registration_;
 #endif
   pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter_;
+  // Mutated and read from several callbacks (initial pose, scan, odom, imu,
+  // services). Safe without a mutex only because the node is spun by a
+  // SingleThreadedExecutor with the default mutually-exclusive callback group
+  // (see lidar_localization_node.cpp); add a guard before changing executors.
   geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr corrent_pose_with_cov_stamped_ptr_;
   nav_msgs::msg::Path::SharedPtr path_ptr_;
   sensor_msgs::msg::PointCloud2::ConstSharedPtr last_scan_ptr_;

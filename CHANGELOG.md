@@ -27,6 +27,9 @@
   coverage ≥ 96 % on the calibration runs); the v1.1 heuristic remains
   available as `pose_covariance_mode: fitness_scaled` (docs:
   `pose_covariance.md`, issue #72)
+- Documented the single-threaded-executor invariant that serializes the node's
+  shared pose state without locks, so a future executor change cannot silently
+  introduce a data race (issue #54)
 
 ## 1.1.0 - 2026-06-11
 
