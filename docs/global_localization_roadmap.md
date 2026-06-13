@@ -134,6 +134,32 @@ recovery supervisor, gated by the relocalization runtime rules already defined i
 
 G3 starts only after G1/G2 artifacts are stable on at least two public failure scenarios.
 
+#### 2026-06-14 G3 guard policy and supervisor node (logic complete, runtime pending)
+
+The loop is now wired in code. The localization component already raises
+`/reinitialization_requested` from its C++ recovery supervisor; the new
+`reinitialization_supervisor_node.py` consumes it, calls the G2 `~/query` service,
+and republishes `/initialpose`. The safety-critical part -- *whether* it is allowed
+to publish -- is a ROS-free state machine, `reinitialization_supervisor_policy.py`,
+so it can be tested without a live stack:
+
+- candidate-score floor: a reset is never published from a candidate scoring below
+  `min_candidate_score` (the "reset publication guarded by explicit checks" gate);
+- minimum reset spacing and a non-self-resetting attempt ceiling, so a
+  confidently-wrong candidate cannot loop -- the Phase 3 closed-loop blowup shape;
+- post-reset recovery evidence: after a reset the supervisor waits for alignment
+  fitness back under `recovery_fitness_threshold` before standing down, and gives
+  up after `max_attempts` rather than retrying forever;
+- edge-triggered re-arming: after recovery or give-up it waits for the request to
+  de-assert, so a stuck-high request line cannot re-fire it.
+
+`test/test_reinitialization_supervisor_policy.py` is the required "regression test
+that fails on unsafe publication or false acceptance": ten adversarial sequences
+covering transient blips, weak candidates, false acceptance, spacing, budget reset
+on recovery, and the exhausted latch. All pass. Still **pending**: a live/replay
+smoke run on the Koide kidnapped-start window once the shared machine is idle, plus
+the post-reset recovery-evidence capture for the roadmap's evidence gate.
+
 ## Non-Goals For Now
 
 - production-grade kidnapped-robot recovery claims

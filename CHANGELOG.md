@@ -16,6 +16,14 @@
   ROS-free query logic in `scripts/global_localization_query.py`
 - `scripts/render_global_localization_demo_gif.py` renders the
   kidnapped-start -> global localization -> tracking-resume demo GIF
+- G3 guarded automatic reinitialization: `scripts/reinitialization_supervisor_node.py`
+  connects `/reinitialization_requested` to the G2 query service and republishes
+  `/initialpose` only when explicit safety guards pass (opt-in node; default
+  launch unchanged). The decision logic is the ROS-free state machine in
+  `scripts/reinitialization_supervisor_policy.py` -- candidate-score floor, minimum
+  reset spacing, post-reset recovery evidence, and a non-self-resetting attempt
+  ceiling -- regression-tested against unsafe-publication and false-acceptance
+  sequences in `test/test_reinitialization_supervisor_policy.py`
 
 ### Changed
 

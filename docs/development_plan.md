@@ -532,6 +532,35 @@ clean `RCLCPP_ERROR` + exit. So Phase 1 is a **build-and-benchmark** task, not a
 implementation one: install `small_gicp`, rebuild, then run NDT_OMP vs SMALL_GICP vs
 SMALL_VGICP on an idle machine (still gated on `load < ~5`).
 
+### 2026-06-14: G3 guarded automatic reinitialization (logic complete)
+
+Built the consumer side of the global-localization recovery loop, which was the
+named next item after G1/G2. The producer (`/reinitialization_requested` from the C++
+recovery supervisor) already existed; G3 adds the part that closes the loop while
+respecting the Phase 3 lesson that a closed loop must not be able to reset its own
+bounds. Two new files:
+
+- `scripts/reinitialization_supervisor_policy.py` — a ROS-free, deterministic state
+  machine (`decide(params, state, obs)`) that owns every safety decision: a candidate
+  must clear `min_candidate_score` to be published, resets are spaced by
+  `min_seconds_between_attempts`, after a reset it requires alignment fitness back under
+  `recovery_fitness_threshold` as recovery evidence, and the attempt counter is a true
+  ceiling (`max_attempts`) that only clears on confirmed recovery or request release —
+  never as a side effect of attempting. After a terminal outcome it waits for the request
+  to de-assert (edge-triggered), so a stuck-high request line cannot re-fire it.
+- `scripts/reinitialization_supervisor_node.py` — the thin ROS shell (opt-in, not in the
+  default launch): subscribes `/reinitialization_requested` + `/alignment_status`
+  (reads the `fitness_score` diagnostic), calls the G2 `~/query` Trigger service, and
+  publishes `/initialpose` from the top candidate only when the policy says so.
+
+`test/test_reinitialization_supervisor_policy.py` is the roadmap-required regression
+test that fails on unsafe publication or false acceptance: 10 adversarial sequences
+(transient blip, pure tracking, happy-path single reset + recovery, weak-candidate
+never published, bounded queries, false-acceptance no-loop, reset spacing, budget reset
+on recovery between episodes, exhausted latch, purity). All green. **Pending** (machine-
+or runtime-bound, not logic): a live/replay smoke on the Koide kidnapped-start window
+and capture of the post-reset recovery evidence for the roadmap's evidence gate.
+
 ## Suggested Order Of Work
 
 Phase 0, Phase 3 (all three steps), G1, the BBS speedup, and G2 are complete. Remaining,
