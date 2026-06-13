@@ -168,6 +168,54 @@ Done when:
 - RMSE is in a range where backend and IMU comparisons are meaningful
 - Boreas earns a defined role in the regression or benchmark suite
 
+### Root-cause analysis (2026-06-14, code-level; data run still pending)
+
+Read the crop path end to end to narrow step 1 before spending an idle-machine run.
+Findings, all from the shipped code and `param/boreas_ndt_velodyne.yaml`:
+
+- **The crop is centered on the *predicted* seed, not the last accepted pose.** The
+  primary attempt is `runAlignmentAttempt(init_guess, init_guess, ...)`
+  (`lidar_localization_component.cpp:1969`), and `init_guess` is the twist/IMU
+  prediction (`:1710-1753`). `setInputTargetForPose` crops `full_map_cloud_ptr_`
+  around that center (`:1810`). Only the *recovery retry* re-centers on
+  `last_accepted_pose_matrix_` (`:1980`). So a runaway prediction starves its own
+  target cloud — a positive-feedback divergence, exactly the closed-loop shape
+  Phase 3 warned about.
+- **`local_map_crop_too_small` is a lagging symptom here, not a primary cause.** With
+  `local_map_radius: 300` and `local_map_min_points: 100`, a 300 m disk around any
+  on-map center holds far more than 100 points. For the count to fall under 100 the
+  center must be roughly the map radius (~300 m) off the mapped area — i.e. the pose
+  has *already* diverged. So the reported `local_map_crop_too_small` is downstream of
+  whatever starts the divergence, not an independent map problem at the cliff instant.
+- **The crop-failure guard is what freezes the run into a flat 45 m plateau.** After a
+  streak of crop failures the component activates `crop_failure_guard`, resets the
+  prediction to the last accepted pose, and then *drops every subsequent scan until a
+  new initial pose arrives* (`:1503-1521`). With no auto-reinitialization wired in the
+  Boreas config, the estimate is frozen at the last good pose while the vehicle keeps
+  driving — RMSE then grows linearly to ~45 m. (G3, just landed, is the mechanism that
+  could break this freeze automatically; Boreas is its natural second test scenario.)
+
+This leaves two candidate triggers for the *initial* divergence, with opposite fixes:
+
+  (A) **prediction divergence** — a twist-prediction glitch or a single bad accepted
+      match throws the seed, and the predicted-center crop then guarantees the next
+      reject; fix is estimator-side (crop around last-accepted instead of the raw
+      seed, and/or harden the twist/reject path).
+  (C) **map coverage** — the Boreas map (`*_rebuild_loc_frame.pcd`, a GT-aligned
+      rebuild) does not cover the full 60 s route, so once the vehicle passes the
+      mapped region the crop around the *true* pose legitimately falls below
+      `min_points`; fix is map-side (extend / retile the map).
+
+`scripts/diagnose_local_map_crop_coverage.py` decides (A) vs (C) offline, with no ROS
+and no localizer: it counts map points within `local_map_radius` of every ground-truth
+pose and reports the first time that count drops below `local_map_min_points`. If the
+true trajectory stays covered, a real `local_map_crop_too_small` is prediction-driven
+(A); if coverage collapses at the cliff time, it is a map-split (C). The counting core
+is unit-tested in `test/test_local_map_crop_coverage.py`. **Blocked only on data**: the
+Boreas map PCD and reference CSV live on the `/media/autoware/aa/...` mount, which is
+not currently attached; run the diagnostic the moment it is back to fix the root cause
+before any runtime change (no unreplayed estimator edits — the Phase 3 rule).
+
 ## Phase 3: Measurement Acceptance, Diagnostics, Covariance — DONE (2026-06-12)
 
 Goal was to move acceptance and failure detection beyond the scalar fitness score, so

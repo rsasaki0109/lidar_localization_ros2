@@ -16,6 +16,11 @@
   ROS-free query logic in `scripts/global_localization_query.py`
 - `scripts/render_global_localization_demo_gif.py` renders the
   kidnapped-start -> global localization -> tracking-resume demo GIF
+- `scripts/diagnose_local_map_crop_coverage.py` decides offline whether a Boreas
+  `local_map_crop_too_small` cliff is a map-coverage problem or prediction-driven
+  divergence, by counting map points within `local_map_radius` of every
+  ground-truth pose (no ROS / no localizer); core unit-tested in
+  `test/test_local_map_crop_coverage.py`
 - G3 guarded automatic reinitialization: `scripts/reinitialization_supervisor_node.py`
   connects `/reinitialization_requested` to the G2 query service and republishes
   `/initialpose` only when explicit safety guards pass (opt-in node; default
