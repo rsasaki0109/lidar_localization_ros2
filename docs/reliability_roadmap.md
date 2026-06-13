@@ -25,7 +25,7 @@ Last triaged: 2026-06-10
 | [#27](https://github.com/rsasaki0109/lidar_localization_ros2/issues/27) | use odom TF instead of odom topic | frame / TF | P1 | documented | odom topic vs odom TF clarified; TF-only mode not implemented |
 | [#55](https://github.com/rsasaki0109/lidar_localization_ros2/issues/55) | `odom_frame_id_` defined but not used | frame / TF | P2 | open | code audit + doc alignment |
 | [#75](https://github.com/rsasaki0109/lidar_localization_ros2/issues/75) | map alignment | map | P1 | documented | see [map_alignment.md](map_alignment.md) |
-| [#68](https://github.com/rsasaki0109/lidar_localization_ros2/issues/68) | MGRS map not displayed | map | P2 | open | document supported map formats and frame assumptions |
+| [#68](https://github.com/rsasaki0109/lidar_localization_ros2/issues/68) | MGRS map not displayed | map | P2 | documented | float32 precision limit on absolute MGRS/UTM coords; recenter to a local frame ([map_alignment.md](map_alignment.md)) |
 | [#48](https://github.com/rsasaki0109/lidar_localization_ros2/issues/48) | map showing alongside live data in rviz | map | P2 | documented | see [troubleshooting.md](troubleshooting.md) map visibility section |
 | [#44](https://github.com/rsasaki0109/lidar_localization_ros2/issues/44) | localization pose offset | map | P2 | documented | see [map_alignment.md](map_alignment.md) offset vs drift table |
 | [#72](https://github.com/rsasaki0109/lidar_localization_ros2/issues/72) | pose covariance | covariance | P2 | documented | see [pose_covariance.md](pose_covariance.md); no fusion claim yet |
