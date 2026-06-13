@@ -41,6 +41,35 @@ use a fixed local East-North-Up style frame baked into the map build:
 - `/initialpose` must use the **same origin and axis convention** as the map file
 - GNSS reference poses in the Istanbul bag are already in that convention
 
+### Very large coordinates and float32 precision (issue #68)
+
+The map is loaded into a `pcl::PointCloud<pcl::PointXYZI>`, whose XYZ are **32-bit
+floats**. float32 keeps ~24 bits of mantissa, so the spacing between representable
+values (and therefore the position quantization of every map point) grows with the
+coordinate magnitude:
+
+| Coordinate magnitude | float32 step (quantization) |
+| --- | --- |
+| `~66,000` (Istanbul local frame) | `~0.008 m` (fine) |
+| `~500,000` (UTM easting) | `~0.03 m` |
+| `~4,000,000` (UTM/MGRS northing) | `~0.25 m` |
+| `~8,000,000` | `~0.5 m` |
+
+So a map kept in **absolute MGRS/UTM coordinates** (six- to eight-digit northings)
+is silently snapped to a 0.25–0.5 m grid the moment it is loaded — registration can
+never do better than that floor, and in RViz the cloud looks coarse or, more often,
+**does not appear at all**: RViz/Ogre also renders in float32 with the camera at the
+origin, so a cloud millions of metres away is beyond the default view and clipping
+planes (this is the symptom reported in #68).
+
+**Fix: localize in a recentered frame, not in absolute MGRS/UTM.** Subtract a fixed
+origin offset from the map so its coordinates are small (a few km at most), and use
+that same offset for `/initialpose`, any GNSS reference poses, and when interpreting
+`/pcl_pose`. This is exactly what the public setups already do — the Istanbul map is
+a local ENU frame (`x ≈ 66459`), and the Boreas maps are GT-aligned
+`*_loc_frame.pcd` rebuilds rather than absolute coordinates. MGRS tiles are **not**
+supported directly (see *Supported map inputs* above); convert and recenter first.
+
 ### Common mismatch patterns
 
 | Symptom | Likely cause | What to check |
@@ -50,6 +79,7 @@ use a fixed local East-North-Up style frame baked into the map build:
 | Offset grows over time | registration drift, not static map misalignment | see `/alignment_status` reject streak |
 | `local_map_crop_too_small` | pose seed far outside map bounds | initial pose or map path wrong |
 | Map visible, pose never moves | frame id mismatch on `/initialpose` | `header.frame_id` must equal `global_frame_id` |
+| Map not displayed in RViz / coarse-looking cloud | absolute MGRS/UTM coordinates exceed float32 precision | recenter the map to a local origin (see *Very large coordinates*, issue #68) |
 
 ## Minimum alignment checklist
 
