@@ -81,6 +81,20 @@ lidarloc_ws/artifacts/public/demo/latest/
   trajectory_xy.png
 ```
 
+## Global Localization Demo (experimental)
+
+On-demand map-wide relocalization with no initial pose, on the official HDL
+sample bag: the `~/query` service of `scripts/global_localization_node.py`
+runs a BBS_2D branch-and-bound search over the occupancy grid, the top
+candidate is published as `/initialpose`, and NDT localization tracks the rest
+of the run.
+
+<img src="./images/global_localization_demo.gif" alt="Kidnapped start, BBS_2D global localization candidates, NDT tracking resumes" width="480">
+
+The service node is opt-in and never part of the default launch. Status and
+limits (query latency, validated windows) are tracked in
+[docs/global_localization_roadmap.md](docs/global_localization_roadmap.md).
+
 ## Quick Start
 
 Expected workspace layout:
