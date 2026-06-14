@@ -91,9 +91,14 @@ of the run.
 
 <img src="./images/global_localization_demo.gif" alt="Kidnapped start, BBS_2D global localization candidates, NDT tracking resumes" width="480">
 
-The service node is opt-in and never part of the default launch. Status and
-limits (query latency, validated windows) are tracked in
-[docs/global_localization_roadmap.md](docs/global_localization_roadmap.md).
+The service node is opt-in and never part of the default launch. An optional
+supervisor (`scripts/reinitialization_supervisor_node.py`) can close the loop
+automatically — on the `/reinitialization_requested` signal it queries the service
+and re-seeds `/initialpose` behind explicit safety guards. See
+[docs/global_localization.md](docs/global_localization.md) for how to run the
+service and the supervisor, and
+[docs/global_localization_roadmap.md](docs/global_localization_roadmap.md) for
+status and limits (query latency, validated windows).
 
 ## Quick Start
 
@@ -283,6 +288,7 @@ git branch -D <branch>
 | Experiment interfaces and decisions | [docs/interfaces.md](docs/interfaces.md), [docs/experiments.md](docs/experiments.md), [docs/decisions.md](docs/decisions.md) |
 | Roadmap | [docs/competitive_roadmap.md](docs/competitive_roadmap.md) |
 | Development plan | [docs/development_plan.md](docs/development_plan.md) |
+| Global localization (run it) | [docs/global_localization.md](docs/global_localization.md) |
 | Global localization phases | [docs/global_localization_roadmap.md](docs/global_localization_roadmap.md) |
 | Reliability / open issues | [docs/reliability_roadmap.md](docs/reliability_roadmap.md) |
 | Bringup troubleshooting | [docs/troubleshooting.md](docs/troubleshooting.md) |

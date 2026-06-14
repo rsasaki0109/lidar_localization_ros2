@@ -16,6 +16,21 @@
   ROS-free query logic in `scripts/global_localization_query.py`
 - `scripts/render_global_localization_demo_gif.py` renders the
   kidnapped-start -> global localization -> tracking-resume demo GIF
+- `scripts/diagnose_local_map_crop_coverage.py` decides offline whether a Boreas
+  `local_map_crop_too_small` cliff is a map-coverage problem or prediction-driven
+  divergence, by counting map points within `local_map_radius` of every
+  ground-truth pose (no ROS / no localizer); core unit-tested in
+  `test/test_local_map_crop_coverage.py`
+- G3 guarded automatic reinitialization: `scripts/reinitialization_supervisor_node.py`
+  connects `/reinitialization_requested` to the G2 query service and republishes
+  `/initialpose` only when explicit safety guards pass (opt-in node; default
+  launch unchanged). The decision logic is the ROS-free state machine in
+  `scripts/reinitialization_supervisor_policy.py` -- candidate-score floor, minimum
+  reset spacing, post-reset recovery evidence, and a non-self-resetting attempt
+  ceiling -- regression-tested against unsafe-publication and false-acceptance
+  sequences in `test/test_reinitialization_supervisor_policy.py`
+- `docs/global_localization.md`: operations guide for running the G2 service and
+  the G3 supervisor (commands, parameters, and the supervisor's safety guards)
 
 ### Changed
 
@@ -27,6 +42,9 @@
   coverage ≥ 96 % on the calibration runs); the v1.1 heuristic remains
   available as `pose_covariance_mode: fitness_scaled` (docs:
   `pose_covariance.md`, issue #72)
+- Documented the single-threaded-executor invariant that serializes the node's
+  shared pose state without locks, so a future executor change cannot silently
+  introduce a data race (issue #54)
 
 ## 1.1.0 - 2026-06-11
 

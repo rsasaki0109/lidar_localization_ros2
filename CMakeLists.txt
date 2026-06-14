@@ -140,6 +140,8 @@ install(PROGRAMS
   scripts/make_bbs_relocalization_attempts.py
   scripts/global_localization_query.py
   scripts/global_localization_node.py
+  scripts/reinitialization_supervisor_policy.py
+  scripts/reinitialization_supervisor_node.py
   scripts/make_registration_relocalization_jobs.py
   scripts/scaffold_mapless_public_dataset_bundle.py
   scripts/fetch_official_autoware_istanbul_dataset.sh

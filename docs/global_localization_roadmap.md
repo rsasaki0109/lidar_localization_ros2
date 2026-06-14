@@ -122,6 +122,9 @@ The pause is honest about query latency; G3 automation will need either the
 
 ### G3: guarded automatic reinitialization
 
+> How to run the G2 service and the G3 supervisor: see
+> [global_localization.md](global_localization.md).
+
 Goal: connect `/reinitialization_requested` to the G2 service behind the existing
 recovery supervisor, gated by the relocalization runtime rules already defined in
 [competitive_roadmap.md](competitive_roadmap.md) Decision Gates:
@@ -133,6 +136,93 @@ recovery supervisor, gated by the relocalization runtime rules already defined i
 - a regression test that fails on unsafe publication or false acceptance
 
 G3 starts only after G1/G2 artifacts are stable on at least two public failure scenarios.
+
+#### 2026-06-14 G3 guard policy and supervisor node (logic complete, runtime pending)
+
+The loop is now wired in code. The localization component already raises
+`/reinitialization_requested` from its C++ recovery supervisor; the new
+`reinitialization_supervisor_node.py` consumes it, calls the G2 `~/query` service,
+and republishes `/initialpose`. The safety-critical part -- *whether* it is allowed
+to publish -- is a ROS-free state machine, `reinitialization_supervisor_policy.py`,
+so it can be tested without a live stack:
+
+- candidate-score floor: a reset is never published from a candidate scoring below
+  `min_candidate_score` (the "reset publication guarded by explicit checks" gate);
+- minimum reset spacing and a non-self-resetting attempt ceiling, so a
+  confidently-wrong candidate cannot loop -- the Phase 3 closed-loop blowup shape;
+- post-reset recovery evidence: after a reset the supervisor waits for alignment
+  fitness back under `recovery_fitness_threshold` before standing down, and gives
+  up after `max_attempts` rather than retrying forever;
+- edge-triggered re-arming: after recovery or give-up it waits for the request to
+  de-assert, so a stuck-high request line cannot re-fire it.
+
+`test/test_reinitialization_supervisor_policy.py` is the required "regression test
+that fails on unsafe publication or false acceptance": ten adversarial sequences
+covering transient blips, weak candidates, false acceptance, spacing, budget reset
+on recovery, and the exhausted latch. All pass.
+
+**Runtime glue validated (2026-06-14):** the supervisor node now runs under ROS.
+A first launch surfaced and fixed a shutdown bug (an external SIGTERM raised an
+uncaught `ExternalShutdownException`). `test/test_reinitialization_supervisor_node_ros.py`
+is an rclpy integration smoke (skipped without a sourced ROS env) that fakes the
+localizer + G2 service and asserts the full path end-to-end: the node receives
+`/reinitialization_requested` + `/alignment_status`, debounces, calls the G2
+`~/query` service, parses the candidate JSON, and publishes `/initialpose`
+(correct pose + covariance) before entering `settling`. So the supervisor's own
+job -- decide and publish a guarded reset -- is validated end-to-end.
+
+**3-node bringup authored (2026-06-14):** `launch/global_localization_recovery.launch.py`
+now brings up all three nodes together -- the core localizer (via the existing
+`lidar_localization.launch.py`), the G2 `global_localization_node`, and the G3
+`reinitialization_supervisor_node` -- on a shared `cloud_topic` / `global_frame_id`,
+with the supervisor wired to the G2 `~/query` service and the localizer's
+`/alignment_status` and `/reinitialization_requested`. The supervisor's typed guards
+(`min_candidate_score`, `max_attempts`) are exposed as launch arguments (coerced with
+`ParameterValue` so the node's int/float parameter types are respected). The two
+supervisor files are now installed via `CMakeLists.txt` so they resolve as
+`ros2 run` / launch executables. `ros2 launch ... --show-args` validates the full
+argument graph (including the included localizer's pass-through args).
+
+**Live closed-loop exercised (2026-06-15):** the three-node bringup was run against the
+real `outdoor_hard_01a` bag + map with a kidnap injected at a healthy location. Full
+write-up in [g3_live_closed_loop.md](g3_live_closed_loop.md). Two results:
+
+- *The G3 supervisor mechanism is validated end-to-end against a real stack.* Detect →
+  debounce → query G2 → score-guard → guarded `/initialpose` publish → recovery-wait →
+  retry → `max_attempts` ceiling → safe give-up with an operator alert all fired
+  correctly. The safety ceiling contained three confidently-wrong-or-stale candidates
+  without an unbounded reset loop — the Phase 3 lesson validated live, not just offline.
+- *Recovery did not complete, and the cause is candidate quality, not the supervisor.*
+  G2's BBS_2D returned high-confidence but grossly wrong candidates (107 m and 190 m off
+  at BBS score ≈ 0.99) on 2 of 3 attempts; the correct pose (5.5 m, score 0.998) arrived
+  too late. The BBS occupancy score does not separate right from wrong.
+
+So the recovery-evidence gate had a concrete, evidence-backed blocker: the supervisor
+trusted the BBS score, which does not separate right from wrong.
+
+**Ranked-candidate walk implemented (2026-06-15):** the supervisor now walks the ranked
+candidate list from a single query, using the localizer's NDT fitness as the
+registration oracle the BBS score is not — publish the best, and if fitness does not
+recover within `settle_timeout_sec`, publish the next-best from the same query. Walking
+does not spend a `max_attempts` slot (only re-querying does), so the ceiling still bounds
+queries while one query can try every pose it found. G2 returns the full ranked
+`candidates` list in its reply; the policy and node carry a candidate index; the new
+behaviour is regression-tested (policy walk + list-exhaust + score-floor cases, plus a
+ROS integration test that walks 0→1 and recovers). The complementary piece — G2 scoring
+each candidate by NDT/GICP fitness so the *ranking* reflects registration quality — and
+the BBS query-latency/staleness remain the next G3 work; live validation of the walk on
+the kidnap window is pending. See [g3_live_closed_loop.md](g3_live_closed_loop.md).
+
+**Recovery-evidence gate met (2026-06-15).** The final blocker turned out to be that the
+reset was published with z = 0: G2 candidates are 2D and the supervisor left
+`position.z = 0`, ~11 m above the true Koide ground, outside the NDT z-basin — so even an
+x/y/yaw-correct candidate never locked. The supervisor now carries z / roll / pitch from
+`/pcl_pose` onto the candidate. With that fix the full loop recovers live on the Koide
+kidnap window: after the guarded reset (`recovery_confirmed`) the localizer re-locks and
+fitness falls to ~0.1, then the supervisor stands down and re-arms. So *post-reset
+recovery evidence* — the last G3 Decision Gate — is now satisfied with a real localizer.
+Remaining work is quality, not correctness: faster/first-try recovery (cut BBS query
+latency, per-candidate registration scoring in G2).
 
 ## Non-Goals For Now
 
