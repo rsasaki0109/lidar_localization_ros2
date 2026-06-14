@@ -34,9 +34,9 @@ preprocessing to the NDT baseline, isolating the registration backend:
 | **SMALL_GICP** | 0.396 s | 126 | **100%** | **0.095 m** | **2.18 deg** |
 | SMALL_VGICP | 0.630 s | 29 | 38.9% | 0.209 m | 2.56 deg |
 
-### Findings
+### Findings (60 s smoke only -- see the full-window section below, which reverses this)
 
-- **SMALL_GICP is the accuracy/stability winner.** With downsampling it is fast
+- **SMALL_GICP is the accuracy/stability winner on this easy window.** With downsampling it is fast
   enough (0.40 s max align, ~2.6x NDT but real-time-viable at the processed
   ~2 Hz), 100% ok-rate, and 2.8x better translation than NDT (0.095 vs
   0.266 m). Notably it had **zero** rejects, while NDT had a 6.2 s
@@ -55,6 +55,43 @@ preprocessing to the NDT baseline, isolating the registration backend:
 - VGICP needs a `vgicp_voxel_resolution` sweep before any verdict.
 - Full-density GICP being throughput-bound is data/sensor-specific (dense Livox
   returns); on a sparser lidar the trade-off differs.
+
+## Full 380 s window (definitive): the ranking REVERSES
+
+Re-run on the full `outdoor_hard_01a` window (380 s), same identical-downsampling
+config. The 60 s smoke ranking is overturned:
+
+| backend | poses | ok-rate | trans RMSE | rot RMSE | longest lost window |
+| --- | --- | --- | --- | --- | --- |
+| **NDT_OMP** | 476 | 57.3% | **0.668 m** | 11.2 deg | 75.4 s |
+| SMALL_GICP | 87 | 11.2% | 11.70 m | 47.4 deg | 274.5 s |
+| SMALL_VGICP | 35 | 6.7% | 22.68 m | 32.6 deg | 298.4 s |
+
+- **NDT_OMP is the robust winner on the full hard window** (0.668 m). It survives the
+  hard section -- 57% ok, `local_map_crop_too_small: 101`, `fitness_rejected: 247`, and
+  one `recovery_retry_from_last_pose_recovered` -- and ends well-tracked.
+- **SMALL_GICP collapses** (11.70 m): it is lost for 274.5 s (~72% of the run). Once it
+  loses lock on the hard section it never recovers -- fitness explodes (max 1.3M),
+  rejections pile up (523), and the crop starves (`local_map_crop_too_small: 106`).
+- **SMALL_VGICP** is worse still (22.68 m, lost 298 s).
+
+**The lesson:** SMALL_GICP looked like the winner on the easy first 60 s (0.095 m,
+100% ok) but is *fragile* -- more accurate while locked, yet unable to hold lock
+through the hard section, where it diverges catastrophically. NDT_OMP is less
+accurate when locked but far more robust, which is what matters end-to-end. This is
+a textbook case of why a single easy window is necessary-but-not-sufficient (the
+Phase 3 lesson): the smoke ranking was exactly reversed by the full replay.
+
+### Verdict
+
+- **NDT_OMP: recommended default** -- robust across the full hard window.
+- **SMALL_GICP: higher locked-in accuracy, but not a safe default** without
+  robustness work (lock retention / recovery on the hard section).
+- **SMALL_VGICP: not competitive** as configured.
+
+Single run per backend; the divergence magnitude (11.7 m vs 0.67 m) is far beyond
+run-to-run variance, but a repeat would firm up the numbers. A `vgicp_voxel_resolution`
+sweep is still open for VGICP.
 
 ## Reproduce
 
