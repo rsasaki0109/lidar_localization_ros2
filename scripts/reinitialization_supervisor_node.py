@@ -31,6 +31,7 @@ import time
 import rclpy
 from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool
@@ -214,11 +215,14 @@ def main() -> None:
     node = ReinitializationSupervisorNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
+        # Normal shutdown paths: Ctrl-C, or an external SIGTERM / context
+        # shutdown (the latter raises ExternalShutdownException from spin).
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":
