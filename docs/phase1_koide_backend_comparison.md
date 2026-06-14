@@ -90,8 +90,40 @@ Phase 3 lesson): the smoke ranking was exactly reversed by the full replay.
 - **SMALL_VGICP: not competitive** as configured.
 
 Single run per backend; the divergence magnitude (11.7 m vs 0.67 m) is far beyond
-run-to-run variance, but a repeat would firm up the numbers. A `vgicp_voxel_resolution`
-sweep is still open for VGICP.
+run-to-run variance, but a repeat would firm up the numbers. The
+`vgicp_voxel_resolution` sweep that was open here is resolved in the next section.
+
+## SMALL_VGICP `vgicp_voxel_resolution` sweep (full 380 s): finer voxels do not help
+
+The full-window SMALL_VGICP above used `vgicp_voxel_resolution: 0.5`. The open
+question was whether a finer target voxelization would let VGICP hold lock through
+the hard section. Swept 0.5 -> 0.3 -> 0.2 (full 380 s, identical config otherwise,
+each run gated at load < 5 so alignment timing is valid):
+
+| vgicp_voxel_resolution | poses | ok-rate | trans RMSE | rot RMSE | longest lost window |
+| --- | --- | --- | --- | --- | --- |
+| 0.5 (baseline) | 35 | 6.7% | 22.68 m | 32.6 deg | 298.4 s |
+| 0.3 | 27 | 6.0% | 2.49 m | 7.9 deg | 348.7 s |
+| 0.2 | 12 | 2.7% | 1.77 m | 5.4 deg | 368.8 s |
+
+**The RMSE drop is a mirage -- it is the same early-window throughput trap.** As the
+voxel gets finer the *number* goes down (22.68 -> 1.77 m), which looks like
+improvement, but every robustness signal moves the wrong way:
+
+- **ok-rate falls** (6.7% -> 6.0% -> 2.7%) and **poses collapse** (35 -> 27 -> 12).
+- **the longest lost window grows** (298 -> 349 -> 369 s). At 0.2, VGICP loses lock at
+  index 10 (~9 s in) and *never recovers* -- lost for 368.8 s of the 380 s run. The
+  1.77 m RMSE is computed over the 10 matched poses of the first ~9 s only.
+- this is **not** throughput-bound: `max_alignment_time_sec` stays ~1.25 s (same as
+  0.5), so finer voxels are not simply too slow. Instead the finer per-voxel
+  covariances make the fit more peaked and brittle -- `fitness_score_over_threshold`
+  rejections dominate (371 rows at 0.3) and it cannot re-lock on the hard section.
+
+**Verdict: the sweep refutes the hypothesis.** Finer `vgicp_voxel_resolution` does not
+rescue SMALL_VGICP; it worsens lock retention while making the RMSE number
+deceptively small. SMALL_VGICP stays non-competitive, and **NDT_OMP remains the
+recommended default**. (Methodological echo of the smoke-vs-full reversal: read
+ok-rate + lost-window + pose-count *before* RMSE.)
 
 ## Reproduce
 
