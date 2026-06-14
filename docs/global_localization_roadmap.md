@@ -171,11 +171,22 @@ localizer + G2 service and asserts the full path end-to-end: the node receives
 (correct pose + covariance) before entering `settling`. So the supervisor's own
 job -- decide and publish a guarded reset -- is validated end-to-end.
 
-Still **pending**: a full closed-loop run against a *real* localizer on the Koide
-kidnapped-start window (tracking actually recovers after the published reset), for
-the roadmap's post-reset recovery-evidence gate. That needs the 3-node bringup
-(localizer + G2 + supervisor) wired into a launch, which the fake-service smoke now
-de-risks.
+**3-node bringup authored (2026-06-14):** `launch/global_localization_recovery.launch.py`
+now brings up all three nodes together -- the core localizer (via the existing
+`lidar_localization.launch.py`), the G2 `global_localization_node`, and the G3
+`reinitialization_supervisor_node` -- on a shared `cloud_topic` / `global_frame_id`,
+with the supervisor wired to the G2 `~/query` service and the localizer's
+`/alignment_status` and `/reinitialization_requested`. The supervisor's typed guards
+(`min_candidate_score`, `max_attempts`) are exposed as launch arguments (coerced with
+`ParameterValue` so the node's int/float parameter types are respected). The two
+supervisor files are now installed via `CMakeLists.txt` so they resolve as
+`ros2 run` / launch executables. `ros2 launch ... --show-args` validates the full
+argument graph (including the included localizer's pass-through args).
+
+Still **pending**: actually *running* that launch against the Koide kidnapped-start
+window on an idle machine and capturing the post-reset recovery evidence (tracking
+recovers after the published reset) for the roadmap's recovery-evidence gate. The
+launch and the fake-service smoke now de-risk everything up to that live replay.
 
 ## Non-Goals For Now
 

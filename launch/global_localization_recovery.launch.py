@@ -1,0 +1,137 @@
+"""Three-node bringup for the G3 guarded automatic reinitialization loop.
+
+Brings up, in one launch, the full closed recovery loop documented in
+``docs/global_localization_roadmap.md`` (G3 section):
+
+1. the core ``lidar_localization`` lifecycle node (raises
+   ``/reinitialization_requested`` and publishes ``/alignment_status``),
+2. the G2 ``global_localization_node`` (answers ``~/query`` with ranked
+   candidates from a map-wide BBS_2D search),
+3. the G3 ``reinitialization_supervisor_node`` (watches the lost-tracking
+   signal, queries G2, and republishes ``/initialpose`` -- only when every
+   safety guard in ``reinitialization_supervisor_policy`` passes).
+
+This is the bringup the roadmap's post-reset recovery-evidence gate needs: with
+all three running against the Koide kidnapped-start window, tracking should
+actually recover after the supervisor publishes its guarded reset. Everything is
+still opt-in -- this launch is never part of the default bringup, and the
+supervisor publishes nothing until ``/reinitialization_requested`` is asserted
+and the guards pass.
+
+Example (Koide outdoor_hard_01a, dataset TF tree)::
+
+    ros2 launch lidar_localization_ros2 global_localization_recovery.launch.py \\
+        cloud_topic:=/velodyne_points \\
+        occupancy_yaml:=/path/to/occupancy.yaml \\
+        localization_param_dir:=/path/to/localization.yaml \\
+        use_dataset_tf_tree:=true dataset_root_frame:=camera_base \\
+        use_sim_time:=true
+
+Then replay the bag with ``set_initial_pose:=false`` (or let tracking diverge);
+the supervisor closes the loop without manual intervention.
+"""
+
+import os
+
+from ament_index_python.packages import get_package_share_directory
+
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
+
+from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
+
+
+def generate_launch_description():
+    pkg_share = get_package_share_directory('lidar_localization_ros2')
+
+    cloud_topic = LaunchConfiguration('cloud_topic')
+    occupancy_yaml = LaunchConfiguration('occupancy_yaml')
+    global_frame_id = LaunchConfiguration('global_frame_id')
+    use_sim_time = LaunchConfiguration('use_sim_time')
+    localization_param_dir = LaunchConfiguration('localization_param_dir')
+
+    # Pass-through to the core localization launch so dataset TF trees (Koide
+    # bags) and the lidar frame can be selected from this single entry point.
+    use_dataset_tf_tree = LaunchConfiguration('use_dataset_tf_tree')
+    dataset_root_frame = LaunchConfiguration('dataset_root_frame')
+    lidar_frame_id = LaunchConfiguration('lidar_frame_id')
+
+    # Supervisor guards most likely to be tuned per scenario; the rest keep the
+    # node's own defaults (see reinitialization_supervisor_policy).
+    supervisor_min_candidate_score = LaunchConfiguration('supervisor_min_candidate_score')
+    supervisor_max_attempts = LaunchConfiguration('supervisor_max_attempts')
+
+    declared = [
+        DeclareLaunchArgument(
+            'cloud_topic', default_value='/velodyne_points',
+            description='Scan topic shared by the localizer and the G2 search.'),
+        DeclareLaunchArgument(
+            'occupancy_yaml', default_value='',
+            description='Occupancy grid YAML for the G2 BBS_2D search '
+                        '(scripts/generate_occupancy_map_from_pcd.py).'),
+        DeclareLaunchArgument(
+            'global_frame_id', default_value='map',
+            description='Map frame shared by all three nodes and /initialpose.'),
+        DeclareLaunchArgument('use_sim_time', default_value='false'),
+        DeclareLaunchArgument(
+            'localization_param_dir',
+            default_value=os.path.join(pkg_share, 'param', 'localization.yaml'),
+            description='Parameter file for the core lidar_localization node.'),
+        DeclareLaunchArgument('use_dataset_tf_tree', default_value='false'),
+        DeclareLaunchArgument('dataset_root_frame', default_value='camera_base'),
+        DeclareLaunchArgument('lidar_frame_id', default_value='velodyne'),
+        DeclareLaunchArgument(
+            'supervisor_min_candidate_score', default_value='0.6',
+            description='No reset is published below this candidate score.'),
+        DeclareLaunchArgument(
+            'supervisor_max_attempts', default_value='3',
+            description='Hard ceiling on resets for one continuous problem.'),
+    ]
+
+    # 1. Core localizer (also raises /reinitialization_requested + /alignment_status).
+    localization = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_share, 'launch', 'lidar_localization.launch.py')),
+        launch_arguments={
+            'localization_param_dir': localization_param_dir,
+            'cloud_topic': cloud_topic,
+            'use_sim_time': use_sim_time,
+            'use_dataset_tf_tree': use_dataset_tf_tree,
+            'dataset_root_frame': dataset_root_frame,
+            'lidar_frame_id': lidar_frame_id,
+        }.items())
+
+    # 2. G2 on-demand global-localization service.
+    global_localization = Node(
+        package='lidar_localization_ros2',
+        executable='global_localization_node.py',
+        name='global_localization_node',
+        output='screen',
+        parameters=[{
+            'occupancy_yaml': occupancy_yaml,
+            'cloud_topic': cloud_topic,
+            'global_frame_id': global_frame_id,
+            'use_sim_time': use_sim_time,
+        }])
+
+    # 3. G3 guarded automatic reinitialization supervisor (opt-in, guarded).
+    supervisor = Node(
+        package='lidar_localization_ros2',
+        executable='reinitialization_supervisor_node.py',
+        name='reinitialization_supervisor_node',
+        output='screen',
+        parameters=[{
+            'query_service': '/global_localization_node/query',
+            'alignment_status_topic': '/alignment_status',
+            'initialpose_topic': '/initialpose',
+            'global_frame_id': global_frame_id,
+            'min_candidate_score': ParameterValue(
+                supervisor_min_candidate_score, value_type=float),
+            'max_attempts': ParameterValue(supervisor_max_attempts, value_type=int),
+            'use_sim_time': use_sim_time,
+        }])
+
+    return LaunchDescription(declared + [localization, global_localization, supervisor])
