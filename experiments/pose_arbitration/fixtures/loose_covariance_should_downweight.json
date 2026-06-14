@@ -1,0 +1,18 @@
+{
+  "name": "loose_covariance_should_downweight",
+  "description": "Accepted but middling match: fitness ~4 -> error_floor loosens to std ~0.6 m (2sigma 1.2 m), above the 1.0 m trust radius. Both consumers should DOWNWEIGHT, not trust. This is the regime where covariance alone IS informative -- a worse match correctly produces a looser, lower-weight pose.",
+  "source": "koide outdoor_hard_01a calibration (fitness 2-4 bin: p68 0.17-0.24 m); error_floor std = 0.2 + 0.1*fitness",
+  "expectation": {
+    "covariance_only": "downweight",
+    "covariance_plus_category": "downweight"
+  },
+  "sample": {
+    "index": 42,
+    "cov_xy_std_m": 0.6,
+    "cov_yaw_std_deg": 6.0,
+    "failure_category": "healthy",
+    "consecutive_rejected_updates": 0,
+    "reinitialization_requested": false,
+    "abs_xy_error_m": 0.24
+  }
+}
