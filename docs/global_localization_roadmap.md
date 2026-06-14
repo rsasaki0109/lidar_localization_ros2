@@ -159,9 +159,23 @@ so it can be tested without a live stack:
 `test/test_reinitialization_supervisor_policy.py` is the required "regression test
 that fails on unsafe publication or false acceptance": ten adversarial sequences
 covering transient blips, weak candidates, false acceptance, spacing, budget reset
-on recovery, and the exhausted latch. All pass. Still **pending**: a live/replay
-smoke run on the Koide kidnapped-start window once the shared machine is idle, plus
-the post-reset recovery-evidence capture for the roadmap's evidence gate.
+on recovery, and the exhausted latch. All pass.
+
+**Runtime glue validated (2026-06-14):** the supervisor node now runs under ROS.
+A first launch surfaced and fixed a shutdown bug (an external SIGTERM raised an
+uncaught `ExternalShutdownException`). `test/test_reinitialization_supervisor_node_ros.py`
+is an rclpy integration smoke (skipped without a sourced ROS env) that fakes the
+localizer + G2 service and asserts the full path end-to-end: the node receives
+`/reinitialization_requested` + `/alignment_status`, debounces, calls the G2
+`~/query` service, parses the candidate JSON, and publishes `/initialpose`
+(correct pose + covariance) before entering `settling`. So the supervisor's own
+job -- decide and publish a guarded reset -- is validated end-to-end.
+
+Still **pending**: a full closed-loop run against a *real* localizer on the Koide
+kidnapped-start window (tracking actually recovers after the published reset), for
+the roadmap's post-reset recovery-evidence gate. That needs the 3-node bringup
+(localizer + G2 + supervisor) wired into a launch, which the fake-service smoke now
+de-risks.
 
 ## Non-Goals For Now
 
