@@ -249,3 +249,40 @@ Note this does *not* help when the true candidate is genuinely in the list but r
 on registration quality -- that is what per-candidate registration scoring in G2 (lever 2,
 not yet built) would fix. The cap addresses the more common stale-query case observed here,
 where no rank would have recovered and the time is better spent on a new scan.
+
+## Speedup lever 2 -- forward-compensate the seed for query latency
+
+The fourth (clean) run isolated the residual blocker after the re-lock fix: even a *correct
+rank-1 fix goes stale*. A G2 BBS query takes ~5-23 s, and the candidate it returns is a fix
+of the scan taken when the query was *issued*; by the time the supervisor publishes the
+reset the vehicle has driven several metres on, so the seed lands behind the vehicle, outside
+the registration basin, and the lock does not take. The true lever here is not candidate
+*quality* but *latency*: close the gap between where the fix says the vehicle was and where it
+is when the seed is applied.
+
+Two ways to close it: make the query instant (the G2 C++ port -- the root fix, separate work),
+or *forward-compensate* the seed by the measured latency. This lever does the latter, and it
+has to work on the Koide bag, which carries no twist/odom topic (only `/livox` lidar+imu). So
+the velocity is inferred from the data the loop already has: **successive query fixes**. Each
+query returns an absolute map-frame position at its issue time, so the displacement between
+two consecutively published fixes, divided by the wall time between their issues, is a direct
+map-frame velocity; the next seed is pushed ahead by `velocity * (now - query_issue_time)`.
+Monotonic wall time is used consistently for both the velocity `dt` and the latency, so the
+result is correct under `use_sim_time` and any constant bag-replay rate (the rate cancels).
+
+Safety is the same shape as the rest of the guard: a perceptual-aliasing wrong candidate (the
+first run saw a 190 m-off candidate scored 0.99) would imply an absurd speed, so any estimate
+above `max_seed_speed_mps` (default 30) is rejected and the raw candidate is published
+unchanged; the latency is clamped to `max_seed_latency_sec` (default 30) so a pathologically
+slow query cannot extrapolate a first-order model arbitrarily far. Compensation therefore only
+ever fires when two consecutive fixes are mutually consistent -- exactly when the velocity is
+trustworthy -- and a bad estimate is always a no-op, so this can never *worsen* a publish. It
+is off by default (`enable_seed_motion_compensation` / `supervisor_enable_seed_motion_compensation`
+launch arg), since it only helps a moving vehicle with slow queries.
+
+The compensation math is pure and unit-tested in `reinitialization_supervisor_policy.py`
+(`estimate_seed_velocity`, `forward_compensate_xy`) with `test_reinitialization_supervisor_policy.py`
+pinning the velocity estimate, the within-query-walk rejection, the implausible-speed
+rejection, the latency clamp, and the invalid-estimate no-op. Live verification on Koide
+(does the compensated seed lock where the raw one went stale) is the remaining idle-machine
+step.
