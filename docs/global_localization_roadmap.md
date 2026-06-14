@@ -122,6 +122,9 @@ The pause is honest about query latency; G3 automation will need either the
 
 ### G3: guarded automatic reinitialization
 
+> How to run the G2 service and the G3 supervisor: see
+> [global_localization.md](global_localization.md).
+
 Goal: connect `/reinitialization_requested` to the G2 service behind the existing
 recovery supervisor, gated by the relocalization runtime rules already defined in
 [competitive_roadmap.md](competitive_roadmap.md) Decision Gates:
@@ -133,6 +136,57 @@ recovery supervisor, gated by the relocalization runtime rules already defined i
 - a regression test that fails on unsafe publication or false acceptance
 
 G3 starts only after G1/G2 artifacts are stable on at least two public failure scenarios.
+
+#### 2026-06-14 G3 guard policy and supervisor node (logic complete, runtime pending)
+
+The loop is now wired in code. The localization component already raises
+`/reinitialization_requested` from its C++ recovery supervisor; the new
+`reinitialization_supervisor_node.py` consumes it, calls the G2 `~/query` service,
+and republishes `/initialpose`. The safety-critical part -- *whether* it is allowed
+to publish -- is a ROS-free state machine, `reinitialization_supervisor_policy.py`,
+so it can be tested without a live stack:
+
+- candidate-score floor: a reset is never published from a candidate scoring below
+  `min_candidate_score` (the "reset publication guarded by explicit checks" gate);
+- minimum reset spacing and a non-self-resetting attempt ceiling, so a
+  confidently-wrong candidate cannot loop -- the Phase 3 closed-loop blowup shape;
+- post-reset recovery evidence: after a reset the supervisor waits for alignment
+  fitness back under `recovery_fitness_threshold` before standing down, and gives
+  up after `max_attempts` rather than retrying forever;
+- edge-triggered re-arming: after recovery or give-up it waits for the request to
+  de-assert, so a stuck-high request line cannot re-fire it.
+
+`test/test_reinitialization_supervisor_policy.py` is the required "regression test
+that fails on unsafe publication or false acceptance": ten adversarial sequences
+covering transient blips, weak candidates, false acceptance, spacing, budget reset
+on recovery, and the exhausted latch. All pass.
+
+**Runtime glue validated (2026-06-14):** the supervisor node now runs under ROS.
+A first launch surfaced and fixed a shutdown bug (an external SIGTERM raised an
+uncaught `ExternalShutdownException`). `test/test_reinitialization_supervisor_node_ros.py`
+is an rclpy integration smoke (skipped without a sourced ROS env) that fakes the
+localizer + G2 service and asserts the full path end-to-end: the node receives
+`/reinitialization_requested` + `/alignment_status`, debounces, calls the G2
+`~/query` service, parses the candidate JSON, and publishes `/initialpose`
+(correct pose + covariance) before entering `settling`. So the supervisor's own
+job -- decide and publish a guarded reset -- is validated end-to-end.
+
+**3-node bringup authored (2026-06-14):** `launch/global_localization_recovery.launch.py`
+now brings up all three nodes together -- the core localizer (via the existing
+`lidar_localization.launch.py`), the G2 `global_localization_node`, and the G3
+`reinitialization_supervisor_node` -- on a shared `cloud_topic` / `global_frame_id`,
+with the supervisor wired to the G2 `~/query` service and the localizer's
+`/alignment_status` and `/reinitialization_requested`. The supervisor's typed guards
+(`min_candidate_score`, `max_attempts`) are exposed as launch arguments (coerced with
+`ParameterValue` so the node's int/float parameter types are respected). The two
+supervisor files are now installed via `CMakeLists.txt` so they resolve as
+`ros2 run` / launch executables. `ros2 launch ... --show-args` validates the full
+argument graph (including the included localizer's pass-through args).
+
+Still **pending**: actually *running* that launch against the Koide kidnapped-start
+window on an idle machine and capturing the post-reset recovery evidence (tracking
+recovers after the published reset) for the roadmap's recovery-evidence gate. The
+launch and the fake-service smoke now de-risk everything up to that live replay.
 
 ## Non-Goals For Now
 
