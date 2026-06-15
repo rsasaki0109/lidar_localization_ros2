@@ -91,7 +91,36 @@ supervisor should let it adjudicate the ranked list rather than trusting rank 0:
 Query latency remains a secondary factor: attempt 3 was correct but stale by the time it
 was published. The G1 optimization note's coarse-yaw / C++ path applies here.
 
-**Live validation of the walk on this exact kidnap window is still pending** — the unit
-and integration tests prove the supervisor walks and recovers given a ranked list whose
-list contains the true pose; whether the real BBS top-K at this kidnap location actually
-contains it (and within the staleness budget) is the next thing to confirm on the bag.
+## Live walk run (2026-06-15, second run) — the blocker is query latency, not candidates
+
+Re-running the kidnap with the walk enabled corrected the earlier "candidate quality"
+diagnosis. The walk itself is now **live-validated**: the supervisor walked all 16
+candidates from one query (`candidate 1/16` … `16/16`, each a `next_candidate`
+transition, each published by index), kept every guard, and only then re-queried — the
+designed behaviour, on the real stack.
+
+And the candidate generation was actually *fine*: the BBS **top candidate (rank 1) was
+the true pose** — `(-107.1, 18.44)` at score `1.0`, versus ground truth `(-107.2, 17.7)`
+at the query-issue time, ~0.8 m off. The walk published it first.
+
+It still did not recover, and the reason is **BBS query latency**:
+
+- the `~/query` call reported `runtime_sec: 23.376` — the BBS search took ~23 s;
+- the candidate is computed against the scan captured at query-*issue* time, but is
+  published ~23 s later. At the 0.4× replay rate that is ~9 s of sim time, during which
+  the (still-driving) vehicle moved from `(-107, 18)` to ~`(-108, 30)` — so the
+  rank-1-correct candidate was ~12–17 m **stale** by the time it was published;
+- the localizer seeded there, could not register the now-moved scan (fitness stayed
+  ~31), and the counter shows `/pcl_pose` briefly at `(-107.1, 18.4)` with high fitness
+  and no accepted pose. Every other candidate is from the same stale scan, so the walk
+  cannot rescue it.
+
+**Refined conclusion.** Candidate generation and ranking were not the blocker here (BBS
+put the truth at rank 1); the blocker is that a ~23 s query makes *any* candidate ~15 m
+stale on a moving vehicle, outside the registration basin. The walk is validated and
+keeps its guarantees, but live recovery needs a **fresh** candidate. So the primary next
+lever is **G2 query speed** — the coarse-yaw (~9 s) setting or the C++ port already noted
+in the G1 optimization entry of the roadmap, and/or exposing G2's search parameters so a
+faster (coarser) configuration can be selected for the runtime loop. Per-candidate
+registration scoring in G2 remains useful (it would reject a stale candidate faster), but
+it cannot manufacture a fresh one — query latency is the thing to cut.

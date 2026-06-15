@@ -100,6 +100,19 @@ def generate_launch_description():
             'supervisor_settle_timeout_sec', default_value='8.0',
             description='Time to observe post-reset recovery before counting the '
                         'attempt failed.'),
+        DeclareLaunchArgument(
+            'g2_angular_resolution_deg', default_value='5.0',
+            description='G2 BBS yaw sampling step; coarser = faster query, fresher '
+                        'seed (e.g. 10.0).'),
+        DeclareLaunchArgument(
+            'g2_max_scan_points', default_value='512',
+            description='G2 BBS scan points; fewer = faster query (e.g. 256).'),
+        DeclareLaunchArgument(
+            'g2_pyramid_depth', default_value='4',
+            description='G2 BBS branch-and-bound pyramid depth.'),
+        DeclareLaunchArgument(
+            'g2_max_candidates', default_value='16',
+            description='G2 ranked candidate count returned per query.'),
     ]
 
     # 1. Core localizer (also raises /reinitialization_requested + /alignment_status).
@@ -115,7 +128,10 @@ def generate_launch_description():
             'lidar_frame_id': lidar_frame_id,
         }.items())
 
-    # 2. G2 on-demand global-localization service.
+    # 2. G2 on-demand global-localization service. The search-cost parameters are
+    # exposed because query latency directly bounds live recovery: a candidate is
+    # stale by the query duration on a moving vehicle (see g3_live_closed_loop.md),
+    # so a coarser/faster setting trades a little accuracy for a fresher seed.
     global_localization = Node(
         package='lidar_localization_ros2',
         executable='global_localization_node.py',
@@ -125,6 +141,14 @@ def generate_launch_description():
             'occupancy_yaml': occupancy_yaml,
             'cloud_topic': cloud_topic,
             'global_frame_id': global_frame_id,
+            'angular_resolution_deg': ParameterValue(
+                LaunchConfiguration('g2_angular_resolution_deg'), value_type=float),
+            'max_scan_points': ParameterValue(
+                LaunchConfiguration('g2_max_scan_points'), value_type=int),
+            'pyramid_depth': ParameterValue(
+                LaunchConfiguration('g2_pyramid_depth'), value_type=int),
+            'max_candidates': ParameterValue(
+                LaunchConfiguration('g2_max_candidates'), value_type=int),
             'use_sim_time': use_sim_time,
         }])
 
