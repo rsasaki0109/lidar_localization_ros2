@@ -128,6 +128,47 @@ Cannot:
 | Arbitration between two pose sources | usable for 2σ-level comparisons; never trust covariance alone in degenerate geometry |
 | Safety-critical gating | covariance is not sufficient; use `/alignment_status` reject reasons and `reinitialization_requested` |
 
+## Reference arbitration consumer
+
+The guidance above ("usable, but also watch `/alignment_status`") is backed by a
+runnable, tested reference consumer rather than left as prose:
+
+- policy: `experiments/pose_arbitration/policy.py`
+- fixtures: `experiments/pose_arbitration/fixtures/`
+- regression test: `test/test_pose_arbitration_policy.py`
+- demo: `python3 scripts/demo_pose_arbitration.py`
+
+It contrasts two consumers of a published pose:
+
+| Consumer | Inputs | Result on the calibration fixtures |
+| --- | --- | --- |
+| `covariance_only` | published 2σ radius only | **4 dangerous trusts** — fooled by the bias tail |
+| `covariance_plus_category` | 2σ radius **+** `failure_category`, `consecutive_rejected_updates`, `reinitialization_requested` | **0 dangerous trusts** |
+
+The decisive case is the **bias tail**: a degenerate-geometry pose has *low*
+fitness, and in `error_floor` mode low fitness yields a *tight* covariance, so a
+covariance-only consumer assigns full trust to exactly the poses carrying
+multi-metre error. The reference consumer first vetoes on the diagnostics
+covariance cannot represent — an active degeneracy/overload category
+(`weak_overlap` is the tell), a reject streak, or an open reinitialization
+request — and only then uses the 2σ radius to weight the surviving,
+geometrically-sound pose. Demo output:
+
+```text
+fixture                                          true_err  cov2sig     covariance_only  covariance_plus_category
+degenerate_low_fitness_bias_tail_should_reject      4.20m    0.56m       trust w=1.00!         reject w=0.00
+healthy_tight_should_trust                          0.18m    0.46m       trust w=1.00          trust  w=1.00
+loose_covariance_should_downweight                  0.24m    1.20m  downweight w=0.83     downweight w=0.83
+reinit_requested_should_reject                     12.00m    0.60m       trust w=1.00!         reject w=0.00
+reject_streak_should_reject                         3.10m    0.50m       trust w=1.00!         reject w=0.00
+stale_prediction_jump_should_reject                 7.50m    0.60m       trust w=1.00!         reject w=0.00
+```
+
+This is the consumable-covariance contract: covariance decides *how much* to
+trust a geometrically-sound pose; `/alignment_status` decides *whether the pose
+is sound at all*. Either signal alone is insufficient; together they are safe for
+fusion and arbitration.
+
 ## Related docs
 
 - [troubleshooting.md](troubleshooting.md) — `/alignment_status` field guide,

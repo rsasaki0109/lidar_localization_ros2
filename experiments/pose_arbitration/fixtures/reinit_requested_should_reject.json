@@ -1,0 +1,18 @@
+{
+  "name": "reinit_requested_should_reject",
+  "description": "The localizer has raised /reinitialization_requested -- it has judged tracking lost. No covariance value on a pose published in this state is trustworthy for fusion. covariance-only ignores the signal; the reference consumer rejects unconditionally.",
+  "source": "alignment_status reinitialization_requested (the G3 recovery trigger)",
+  "expectation": {
+    "covariance_only": "trust",
+    "covariance_plus_category": "reject"
+  },
+  "sample": {
+    "index": 240,
+    "cov_xy_std_m": 0.3,
+    "cov_yaw_std_deg": 3.0,
+    "failure_category": "bad_match",
+    "consecutive_rejected_updates": 2,
+    "reinitialization_requested": true,
+    "abs_xy_error_m": 12.0
+  }
+}
