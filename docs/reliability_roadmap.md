@@ -41,8 +41,8 @@ Last triaged: 2026-06-10
 | [#54](https://github.com/rsasaki0109/lidar_localization_ros2/issues/54) | `corrent_pose_with_cov_stamped_ptr_` locking | enhancement | P3 | open | code audit if reproduced under concurrency |
 | [#25](https://github.com/rsasaki0109/lidar_localization_ros2/issues/25) | specifying lidar frame id | docs | P3 | open | already configurable; improve launch examples |
 | [#50](https://github.com/rsasaki0109/lidar_localization_ros2/issues/50) | enhance stability | enhancement | P4 | open | track through public regression, not ad-hoc tuning |
-| [#77](https://github.com/rsasaki0109/lidar_localization_ros2/issues/77) | IMU angular velocity estimator | enhancement | P4 | open | keep in experiments; not a v1.1 reliability target |
-| [#36](https://github.com/rsasaki0109/lidar_localization_ros2/issues/36) | imu preintegration | enhancement | P4 | open | covered by guarded IMU path + public regression |
+| [#77](https://github.com/rsasaki0109/lidar_localization_ros2/issues/77) | IMU angular velocity estimator | enhancement | P4 | open | **implemented** (twist prediction / twist EKF / IMU preintegration smoother); documented in [imu_estimation.md](imu_estimation.md). Open only on a controlled LiDAR+IMU+GT accuracy ranking |
+| [#36](https://github.com/rsasaki0109/lidar_localization_ros2/issues/36) | imu preintegration | enhancement | P4 | open | **implemented** (Forster on-manifold preintegration + sliding-window smoother + guard); math verified by `test_imu_preintegration`; documented in [imu_estimation.md](imu_estimation.md). Open only on a controlled accuracy ranking |
 
 ## Sprint 1 Targets
 

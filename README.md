@@ -294,6 +294,7 @@ git branch -D <branch>
 | Bringup troubleshooting | [docs/troubleshooting.md](docs/troubleshooting.md) |
 | Map alignment / pose offset | [docs/map_alignment.md](docs/map_alignment.md) |
 | Pose covariance semantics | [docs/pose_covariance.md](docs/pose_covariance.md) |
+| IMU estimation (preintegration) | [docs/imu_estimation.md](docs/imu_estimation.md) |
 | Frame / TF contract | [docs/frame_contract.md](docs/frame_contract.md) |
 
 ## ROS 2 Support
