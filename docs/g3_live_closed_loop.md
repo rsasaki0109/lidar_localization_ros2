@@ -124,3 +124,32 @@ in the G1 optimization entry of the roadmap, and/or exposing G2's search paramet
 faster (coarser) configuration can be selected for the runtime loop. Per-candidate
 registration scoring in G2 remains useful (it would reject a stale candidate faster), but
 it cannot manufacture a fresh one — query latency is the thing to cut.
+
+## Fast-G2 run (2026-06-15, third run) — query sped up, but walk latency re-staled
+
+Exposing G2's search cost as launch arguments and running with a coarse config
+(`g2_angular_resolution_deg:=10`, `g2_max_scan_points:=256`) cut the query from ~23 s
+to **~4–8 s** (`runtime_sec` 7.559 then 4.387) — the speed knob works. Recovery still did
+not complete, for a subtler reason and with a harness caveat:
+
+- **Walk latency re-introduces staleness.** Even with a fast query, a near-correct
+  candidate that is not rank 1 is published late: the walk spends `settle_timeout_sec`
+  (6 s here) on each earlier candidate first. The near-correct candidate `(-107.9, 12.0)`
+  was rank 3, so it was published ~20 s after the query issued — stale again by the
+  vehicle's motion, fitness stayed ~29, rejected. So the latency budget is *query +
+  rank × settle*, not just the query.
+- **Harness caveat for this run.** The healthy baseline did not establish: the one-shot
+  seed publisher exited before the localizer's `/initialpose` subscription finished
+  discovery (a transient-local race that only bit at this slower replay rate), so the
+  localizer had no lock before the kidnap. The kidnap seed (published by the longer-lived
+  injector) *was* received. This makes the third run a weak recovery test, but the query
+  timing and the walk-latency observation above stand on their own.
+
+**Net.** On a *moving* vehicle the total scan→seed latency (query + walk) must stay under
+the time the vehicle takes to leave the registration basin. The levers are: cut the query
+hard (C++ BBS, or coarser still) *and* keep the true pose at rank 1 (so no walk latency);
+or motion-compensate the published seed forward by the measured latency; or scope G3
+recovery to low-speed / stationary kidnaps and say so. The ranked-candidate walk stays the
+right mechanism for *aliasing* (true pose present but not at rank 0); it is not a remedy
+for *staleness*, which is a latency problem. The test harness should also republish the
+seed until the localizer acknowledges, to remove the discovery race.
