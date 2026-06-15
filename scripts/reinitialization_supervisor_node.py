@@ -87,6 +87,7 @@ class ReinitializationSupervisorNode(Node):
         self.declare_parameter("query_timeout_sec", 10.0)
         self.declare_parameter("settle_timeout_sec", 8.0)
         self.declare_parameter("recovery_fitness_threshold", 1.5)
+        self.declare_parameter("max_walk_candidates", 4)
 
         self.params = rsp.SupervisorParams(
             request_debounce_sec=float(self.get_parameter("request_debounce_sec").value),
@@ -98,6 +99,7 @@ class ReinitializationSupervisorNode(Node):
             settle_timeout_sec=float(self.get_parameter("settle_timeout_sec").value),
             recovery_fitness_threshold=float(
                 self.get_parameter("recovery_fitness_threshold").value),
+            max_walk_candidates=int(self.get_parameter("max_walk_candidates").value),
         )
         self.state = rsp.initial_state()
 

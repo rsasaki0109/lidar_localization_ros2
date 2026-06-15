@@ -53,6 +53,13 @@ poses it actually found. A wrong reset is rejected by the localizer (high fitnes
 accepted pose), so walking cannot cause the Phase 3 *acceptance* blowup -- it only
 changes which seed is offered next.
 
+The walk is bounded by ``max_walk_candidates``: the same live run showed a *stale*
+query can return a full ranked list none of whose poses lock, so walking all 16 burned
+~95 s at ``settle_timeout_sec`` each before the next query -- on a newer, more
+distinctive scan -- produced the candidate that recovered. Past the top few occupancy
+maxima a fresh query beats a deeper walk, so the supervisor abandons the query after
+``max_walk_candidates`` and re-queries (spending one attempt) instead.
+
 These map directly onto the G3 Decision Gates in
 ``docs/global_localization_roadmap.md``. ``test_reinitialization_supervisor_policy.py``
 fails if any of them regress.
@@ -113,6 +120,16 @@ class SupervisorParams:
     settle_timeout_sec: float = 8.0
     # Post-reset alignment fitness at or below this counts as recovered.
     recovery_fitness_threshold: float = 1.5
+    # Walk at most this many candidates from one query (counting the top one)
+    # before abandoning the whole query and re-querying with a fresh scan. The
+    # 2026-06-15 live run (docs/g3_live_closed_loop.md) showed a stale query can
+    # return a full ranked list none of whose poses lock, so walking all 16 just
+    # burned ~95 s at settle_timeout_sec each before the *next* query -- on a
+    # newer, more distinctive scan -- produced the candidate that recovered. Past
+    # the top few BBS occupancy maxima a fresh query beats a deeper walk, so cap
+    # the walk and spend the time on a new scan instead. Set very high to restore
+    # walking the entire list.
+    max_walk_candidates: int = 4
 
 
 @dataclass(frozen=True)
@@ -276,6 +293,7 @@ def decide(
             # spending another attempt -- only re-querying consumes max_attempts.
             next_index = state.candidate_index + 1
             if (next_index < len(state.candidate_scores)
+                    and next_index < params.max_walk_candidates
                     and state.candidate_scores[next_index] >= params.min_candidate_score):
                 return SupervisorDecision(
                     ACTION_PUBLISH_RESET, "next_candidate",

@@ -225,3 +225,27 @@ make recovery faster and first-try. The test harness should also republish the s
 the localizer acknowledges (the transient-local discovery race still occasionally drops the
 healthy baseline at slow replay rates). But the gate question -- *does tracking recover
 after the guarded reset* -- is now answered yes.
+
+## Speedup lever 1 -- bound the walk, re-query on a fresher scan
+
+The dominant cost in that run was **not** the query itself but the walk: the first query
+(at t+8 s) returned 16 candidates clustered around `(95, -63)` and `(-65, -78)`, none of
+which was the true pose `(-76, 55)` -- the right place simply was not in that scan's
+candidate set. The supervisor nonetheless walked all 16 at `settle_timeout_sec` (6 s) each,
+burning **~95 s**, before cooling down and re-querying. The *second* query (on a newer, more
+distinctive scan) returned the true pose at rank 1 with score 1.0 and locked immediately.
+
+So past the top few BBS occupancy maxima, a fresh query beats a deeper walk into a stale
+list. The policy now caps the walk at `max_walk_candidates` (default 4): after the top few
+candidates fail to lock, it treats the whole query as a miss and re-queries (spending one
+attempt) instead of grinding through ranks 5-16. On this run that turns ~95 s of doomed
+walking into ~24 s, then a fresh query -- the one that actually recovered. The cap is a pure
+policy change (`reinitialization_supervisor_policy.py`), unit-tested in
+`test_reinitialization_supervisor_policy.py` (`test_walk_is_bounded_by_max_walk_candidates`,
+`test_high_max_walk_candidates_restores_full_list_walk`), and exposed as the
+`supervisor_max_walk_candidates` launch arg. Set it high to restore walking the full list.
+
+Note this does *not* help when the true candidate is genuinely in the list but ranked deep
+on registration quality -- that is what per-candidate registration scoring in G2 (lever 2,
+not yet built) would fix. The cap addresses the more common stale-query case observed here,
+where no rank would have recovered and the time is better spent on a new scan.

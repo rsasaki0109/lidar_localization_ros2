@@ -308,6 +308,37 @@ def test_walk_stops_at_min_candidate_score_floor():
     assert rsp.ACTION_GIVE_UP in actions(events)
 
 
+def test_walk_is_bounded_by_max_walk_candidates():
+    # A stale query returns a long ranked list none of whose poses lock. The walk
+    # must stop after max_walk_candidates instead of burning settle_timeout_sec on
+    # all 16 -- past the top few occupancy maxima a fresh query is the better spend.
+    # With max_attempts=1 (a single query) exactly max_walk_candidates resets fire.
+    params = rsp.SupervisorParams(
+        request_debounce_sec=1.0, min_candidate_score=0.6, settle_timeout_sec=3.0,
+        max_attempts=1, max_walk_candidates=4)
+    events = run_ranked(
+        params, 120, requested=True,
+        candidate_scores=[0.99] * 16, recover_on_index=None)
+    assert published_indices(events) == [0, 1, 2, 3]
+    assert actions(events).count(rsp.ACTION_QUERY) == 1
+    assert rsp.ACTION_GIVE_UP in actions(events)
+    assert events[-1][3] == rsp.STATE_EXHAUSTED
+
+
+def test_high_max_walk_candidates_restores_full_list_walk():
+    # Raising the cap restores walking the entire ranked list: the true pose at
+    # rank 5 (beyond the default cap of 4) is reached and recovers only because the
+    # cap is lifted -- proving the cap is what gates the deeper walk.
+    params = rsp.SupervisorParams(
+        request_debounce_sec=1.0, min_candidate_score=0.6, settle_timeout_sec=3.0,
+        max_attempts=1, max_walk_candidates=999)
+    events = run_ranked(
+        params, 120, requested=True,
+        candidate_scores=[0.99] * 6, recover_on_index=5)
+    assert published_indices(events) == [0, 1, 2, 3, 4, 5]
+    assert events[-1][3] == rsp.STATE_STANDDOWN
+
+
 if __name__ == "__main__":
     import pytest
     raise SystemExit(pytest.main([__file__, "-v"]))

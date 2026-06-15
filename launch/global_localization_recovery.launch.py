@@ -66,6 +66,7 @@ def generate_launch_description():
     # G2's BBS query can take ~10-25 s; query/settle timeouts must allow for it.
     supervisor_query_timeout_sec = LaunchConfiguration('supervisor_query_timeout_sec')
     supervisor_settle_timeout_sec = LaunchConfiguration('supervisor_settle_timeout_sec')
+    supervisor_max_walk_candidates = LaunchConfiguration('supervisor_max_walk_candidates')
 
     declared = [
         DeclareLaunchArgument(
@@ -100,6 +101,12 @@ def generate_launch_description():
             'supervisor_settle_timeout_sec', default_value='8.0',
             description='Time to observe post-reset recovery before counting the '
                         'attempt failed.'),
+        DeclareLaunchArgument(
+            'supervisor_max_walk_candidates', default_value='4',
+            description='Walk at most this many candidates from one (possibly stale) '
+                        'query before re-querying on a fresher scan; a stale query '
+                        'can return a full list none of whose poses lock '
+                        '(g3_live_closed_loop.md). Set high to walk the whole list.'),
         DeclareLaunchArgument(
             'g2_angular_resolution_deg', default_value='5.0',
             description='G2 BBS yaw sampling step; coarser = faster query, fresher '
@@ -170,6 +177,8 @@ def generate_launch_description():
                 supervisor_query_timeout_sec, value_type=float),
             'settle_timeout_sec': ParameterValue(
                 supervisor_settle_timeout_sec, value_type=float),
+            'max_walk_candidates': ParameterValue(
+                supervisor_max_walk_candidates, value_type=int),
             'use_sim_time': use_sim_time,
         }])
 
