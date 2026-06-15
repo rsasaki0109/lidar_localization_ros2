@@ -376,8 +376,12 @@ if(BUILD_TESTING)
 
   add_executable(test_imu_preintegration
     test/test_imu_preintegration.cpp)
+  # Unlike the guard-policy header, imu_preintegration.hpp pulls in Eigen (via
+  # so3_utils.hpp), so the Eigen include path must be explicit here -- it reaches
+  # the global include path only indirectly via PCL on some distros (Jazzy) and
+  # not others (Humble).
   target_include_directories(test_imu_preintegration PRIVATE
-    include)
+    include ${EIGEN3_INCLUDE_DIRS})
   add_test(
     NAME imu_preintegration
     COMMAND test_imu_preintegration
