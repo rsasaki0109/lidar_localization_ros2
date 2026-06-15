@@ -90,14 +90,40 @@ latency gap.
 ## Status
 
 - Profiling and the threshold refutation: **done** (this page).
-- C++ core implementation + bit-exact fixture verification: **next**, machine-independent.
-- Idle-machine wall-clock benchmark of the ported query: **after**, gated on a
-  quiet shared machine (the development plan's load < ~5 rule).
+- C++ core implementation + bit-exact fixture verification: **done**.
+  `include/lidar_localization/bbs_branch_and_bound.hpp` is the pure-C++ port
+  (pyramid + offset cache + heap + direct gather, no FFT). It is verified
+  bit-exact against the Python reference by `test/test_bbs_branch_and_bound.cpp`,
+  which replays four golden fixtures (single-yaw, multi-yaw, deep-pyramid, and
+  NMS) frozen from the Python search by `scripts/generate_bbs_golden_fixtures.py`
+  — every `(tx, ty, yaw_index, hit_count)` tuple matches.
+- Directional speed (same machine, same load, same input — the **real**
+  `outdoor_hard` map, 512-pt scan, 5° yaw, depth 4, NMS 8): the C++ core ran the
+  query in **2.6 s vs the Python search's 14.6 s — ~5.5×** — and returned the
+  identical top candidate (hit 499 at cell (397, 175), yaw 8), confirming
+  bit-exactness on the full map too. The machine was loaded (the development
+  plan's idle Python baseline is ~8 s), so this ratio — not the absolute time —
+  is the load-independent result. Scaling the idle baseline by ~5.5× puts the
+  ported query near ~1.5 s, and with a coarser yaw step (which the plan notes
+  roughly halves the Python query) into the sub-second range that — combined with
+  lever-2 seed motion compensation — closes the live-recovery latency gap.
+- Idle-machine wall-clock benchmark and the pybind11 runtime wiring into
+  `global_localization_node.py` (opt-in, Python fallback): **next**, the bench
+  gated on a quiet shared machine (load < ~5).
 
 ## Reproduce
 
-The profiling/threshold harness is ad-hoc (`/tmp`); the inputs are the committed
-`outdoor_hard_occupancy` map and a seeded 512-point scan sampled from occupied
-cells within 30 m of the map-centre pose. Re-derive with `cProfile` over
-`branch_and_bound_candidates` and compare candidate tuples across threshold
-overrides.
+Bit-exactness (committed, machine-independent):
+
+```bash
+python3 scripts/generate_bbs_golden_fixtures.py   # refresh the golden from Python
+g++ -std=c++17 -I include -I test \
+    test/test_bbs_branch_and_bound.cpp -o /tmp/t && /tmp/t
+```
+
+The profiling/threshold/timing harness is ad-hoc (`/tmp`); the inputs are the
+committed `outdoor_hard_occupancy` map and a seeded 512-point scan sampled from
+occupied cells within 30 m of the map-centre pose. Re-derive the profile with
+`cProfile` over `branch_and_bound_candidates`; re-derive the speed ratio by
+dumping that map+scan and running it through both the Python search and the C++
+core on the same idle machine.

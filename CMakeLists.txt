@@ -138,6 +138,7 @@ install(PROGRAMS
   scripts/make_route_grid_relocalization_attempts.py
   scripts/make_map_grid_relocalization_attempts.py
   scripts/make_bbs_relocalization_attempts.py
+  scripts/generate_bbs_golden_fixtures.py
   scripts/global_localization_query.py
   scripts/global_localization_node.py
   scripts/reinitialization_supervisor_policy.py
@@ -385,6 +386,16 @@ if(BUILD_TESTING)
   add_test(
     NAME imu_preintegration
     COMMAND test_imu_preintegration
+  )
+
+  add_executable(test_bbs_branch_and_bound
+    test/test_bbs_branch_and_bound.cpp)
+  # The test includes bbs_golden_fixtures.inc from the test/ directory.
+  target_include_directories(test_bbs_branch_and_bound PRIVATE
+    include test)
+  add_test(
+    NAME bbs_branch_and_bound
+    COMMAND test_bbs_branch_and_bound
   )
 
   add_executable(test_prediction_state_policy
