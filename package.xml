@@ -21,6 +21,9 @@
   <build_depend>tf2_geometry_msgs</build_depend>
   <build_depend>tf2_eigen</build_depend>
   <build_depend>pcl_conversions</build_depend>
+  <!-- Optional: builds the bbs_cpp backend for the global localization node.
+       The build degrades gracefully (Python fallback) if it is unavailable. -->
+  <build_depend>pybind11_vendor</build_depend>
 
   <exec_depend>rclcpp_lifecycle</exec_depend>
   <exec_depend>rclpy</exec_depend>

@@ -107,9 +107,21 @@ latency gap.
   ported query near ~1.5 s, and with a coarser yaw step (which the plan notes
   roughly halves the Python query) into the sub-second range that — combined with
   lever-2 seed motion compensation — closes the live-recovery latency gap.
-- Idle-machine wall-clock benchmark and the pybind11 runtime wiring into
-  `global_localization_node.py` (opt-in, Python fallback): **next**, the bench
-  gated on a quiet shared machine (load < ~5).
+- pybind11 runtime wiring into `global_localization_node.py` (opt-in, Python
+  fallback): **done**. `src/bbs_pybind.cpp` exposes the C++ core as the Python
+  module `bbs_cpp` (numpy in, candidate objects out with the same fields as the
+  Python dataclass). `GlobalLocalizationEngine` resolves the backend once: with
+  `use_cpp_backend=true` it imports `bbs_cpp` and uses it, and on `ImportError`
+  it logs once and falls back to the pure-Python search — so a stock build with
+  the default `use_cpp_backend=false` is unchanged. CMake gates the module behind
+  `find_package(pybind11 QUIET)` and installs it next to the node in
+  `lib/${PROJECT_NAME}`; when pybind11 is absent the module is simply not built.
+  `test/test_bbs_cpp_backend_parity.py` re-checks the binding's numpy↔struct
+  plumbing against the Python reference on the four fixture shapes (and skips
+  cleanly when the module is not present).
+- Idle-machine wall-clock benchmark of the wired `bbs_cpp` query: **next**,
+  gated on a quiet shared machine (load < ~5) — the only remaining piece, and a
+  measurement rather than a code change.
 
 ## Reproduce
 
@@ -119,6 +131,16 @@ Bit-exactness (committed, machine-independent):
 python3 scripts/generate_bbs_golden_fixtures.py   # refresh the golden from Python
 g++ -std=c++17 -I include -I test \
     test/test_bbs_branch_and_bound.cpp -o /tmp/t && /tmp/t
+```
+
+Runtime C++ backend (opt-in; needs pybind11 at build time):
+
+```bash
+colcon build --packages-select lidar_localization   # builds bbs_cpp if pybind11 is found
+# then run the node with the backend enabled:
+ros2 run lidar_localization global_localization_node.py \
+    --ros-args -p occupancy_yaml:=<map>.yaml -p use_cpp_backend:=true
+# the startup log and each query summary report backend=cpp (or python on fallback)
 ```
 
 The profiling/threshold/timing harness is ad-hoc (`/tmp`); the inputs are the
