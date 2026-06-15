@@ -77,16 +77,18 @@ by the maintainer; this table is the triage record.
 | 37 | CPU占用率爆炸 | Answered — `failure_category: overload` diagnostic + throughput tuning (`voxel`, `ndt threads`, `cloud_queue_depth`) in `troubleshooting.md`; close with pointer |
 | 49 | ERROR run with Rslidar | Answered — point-type / remap guidance; close with pointer (ask for log if it recurs) |
 | 50 | enhance stability (try/catch) | Partially shipped — Phase 0 crash-survival fixes (#76/#56/#47) + Phase 3 diagnostics; reply with what shipped, keep open for broader hardening |
-| 55 | `odom_frame_id_` defined but not used | Actionable code cleanup — verify and remove or wire it; small win |
-| 54 | `corrent_pose_with_cov_stamped_ptr_` not locked | Actionable — confirm the single-threaded executor assumption or add a guard; small win |
+| 55 | `odom_frame_id_` defined but not used | Resolved (2026-06-14) — stale report; the field is wired into the `map -> odom` TF path (`publishMapToOdomTransform`), no code change needed |
+| 54 | `corrent_pose_with_cov_stamped_ptr_` not locked | Resolved (2026-06-14) — the node runs on a `SingleThreadedExecutor` with the default mutually-exclusive callback group, so the shared pose pointer is serialized without a lock; documented the invariant in the node + header + CHANGELOG so a future executor change can't regress it silently |
 | 52 | different results (degrades each restart, worse after reboot) | Needs investigation — restart-to-restart degradation suggests state/seed leak, not documented run variance; keep open |
 | 68 | MGRS map not displayed in Rviz | Needs investigation — large-coordinate PCD likely hits float32 precision in the map path; reporter offered to implement, give a hint and keep open |
 | 77 | IMU angular velocity + estimator | Future enhancement track (IMU); keep open |
 | 36 | imu preintegration | Future enhancement track (IMU), overlaps #77; keep open |
 
-Two cheap code wins (#55, #54) can land in the next `Unreleased` batch; the doc-answered
-set (#25/#33/#34/#37/#49) is ready to close once the maintainer posts the pointer
-comments; #52 and #68 want a reproduction before any claim.
+The two cheap code wins (#55, #54) were investigated on 2026-06-14: both turned out
+to be non-bugs under the shipped configuration (#55 already wired; #54 protected by the
+single-threaded executor) and were closed with documenting changes rather than fixes.
+The doc-answered set (#25/#33/#34/#37/#49) is ready to close once the maintainer posts
+the pointer comments; #52 and #68 want a reproduction before any claim.
 
 Branch hygiene: `origin` carries ten non-`main` branches. Five are stale merged feature
 branches fully contained in `main` (`codex/mid360-policy-split`,
@@ -165,6 +167,54 @@ Done when:
 - Boreas 120 s runs hold tracking without reject-streak collapse
 - RMSE is in a range where backend and IMU comparisons are meaningful
 - Boreas earns a defined role in the regression or benchmark suite
+
+### Root-cause analysis (2026-06-14, code-level; data run still pending)
+
+Read the crop path end to end to narrow step 1 before spending an idle-machine run.
+Findings, all from the shipped code and `param/boreas_ndt_velodyne.yaml`:
+
+- **The crop is centered on the *predicted* seed, not the last accepted pose.** The
+  primary attempt is `runAlignmentAttempt(init_guess, init_guess, ...)`
+  (`lidar_localization_component.cpp:1969`), and `init_guess` is the twist/IMU
+  prediction (`:1710-1753`). `setInputTargetForPose` crops `full_map_cloud_ptr_`
+  around that center (`:1810`). Only the *recovery retry* re-centers on
+  `last_accepted_pose_matrix_` (`:1980`). So a runaway prediction starves its own
+  target cloud — a positive-feedback divergence, exactly the closed-loop shape
+  Phase 3 warned about.
+- **`local_map_crop_too_small` is a lagging symptom here, not a primary cause.** With
+  `local_map_radius: 300` and `local_map_min_points: 100`, a 300 m disk around any
+  on-map center holds far more than 100 points. For the count to fall under 100 the
+  center must be roughly the map radius (~300 m) off the mapped area — i.e. the pose
+  has *already* diverged. So the reported `local_map_crop_too_small` is downstream of
+  whatever starts the divergence, not an independent map problem at the cliff instant.
+- **The crop-failure guard is what freezes the run into a flat 45 m plateau.** After a
+  streak of crop failures the component activates `crop_failure_guard`, resets the
+  prediction to the last accepted pose, and then *drops every subsequent scan until a
+  new initial pose arrives* (`:1503-1521`). With no auto-reinitialization wired in the
+  Boreas config, the estimate is frozen at the last good pose while the vehicle keeps
+  driving — RMSE then grows linearly to ~45 m. (G3, just landed, is the mechanism that
+  could break this freeze automatically; Boreas is its natural second test scenario.)
+
+This leaves two candidate triggers for the *initial* divergence, with opposite fixes:
+
+  (A) **prediction divergence** — a twist-prediction glitch or a single bad accepted
+      match throws the seed, and the predicted-center crop then guarantees the next
+      reject; fix is estimator-side (crop around last-accepted instead of the raw
+      seed, and/or harden the twist/reject path).
+  (C) **map coverage** — the Boreas map (`*_rebuild_loc_frame.pcd`, a GT-aligned
+      rebuild) does not cover the full 60 s route, so once the vehicle passes the
+      mapped region the crop around the *true* pose legitimately falls below
+      `min_points`; fix is map-side (extend / retile the map).
+
+`scripts/diagnose_local_map_crop_coverage.py` decides (A) vs (C) offline, with no ROS
+and no localizer: it counts map points within `local_map_radius` of every ground-truth
+pose and reports the first time that count drops below `local_map_min_points`. If the
+true trajectory stays covered, a real `local_map_crop_too_small` is prediction-driven
+(A); if coverage collapses at the cliff time, it is a map-split (C). The counting core
+is unit-tested in `test/test_local_map_crop_coverage.py`. **Blocked only on data**: the
+Boreas map PCD and reference CSV live on the `/media/autoware/aa/...` mount, which is
+not currently attached; run the diagnostic the moment it is back to fix the root cause
+before any runtime change (no unreplayed estimator edits — the Phase 3 rule).
 
 ## Phase 3: Measurement Acceptance, Diagnostics, Covariance — DONE (2026-06-12)
 
@@ -495,6 +545,69 @@ branches are stale and fully in `main` (`codex/mid360-policy-split`,
 `feat/public-demo-validation-dashboard`, `fix/tf`). `feature/small_gicp` carries only a
 stale 2024 README commit (not the backend integration its name implies). The distro
 branches (`dashing`/`foxy`/`humble`/`jazzy`) are kept as user checkout points.
+
+### 2026-06-14: #55 / #54 closed as non-bugs with documentation
+
+Followed up on the two "small code wins" from the triage. Both turned out to be stale
+or already-safe under the shipped configuration, so neither warranted a behavioral
+change:
+
+- **#55 (`odom_frame_id_` unused)** — stale. The field is read in
+  `publishMapToOdomTransform` to look up `odom -> base` and broadcast the
+  `map -> odom` TF whenever `enable_map_odom_tf_` is set. Nothing to remove.
+- **#54 (`corrent_pose_with_cov_stamped_ptr_` unlocked)** — not a race. `main` spins the
+  node on a `SingleThreadedExecutor` (`lidar_localization_node.cpp`) and no callback
+  opts into a Reentrant group, so every subscription/timer/service callback runs in one
+  mutually-exclusive group on one thread; the shared pose pointer is serialized by the
+  executor, not a lock. The real risk is that this invariant was implicit, so a later
+  switch to `MultiThreadedExecutor` (or a Reentrant group) would silently introduce a
+  data race. Made the invariant explicit instead of adding a now-redundant mutex:
+  comments at the executor construction site and the member declaration, plus a
+  CHANGELOG note.
+
+Comment/doc-only changes, no rebuild required.
+
+**Phase 1 correction (found while reading this code):** the SMALL_GICP *and* SMALL_VGICP
+backends are already fully wired, not a "start fresh" item as previously noted.
+`registration_backend_policy.hpp` maps `SMALL_GICP`/`SMALL_VGICP`, and
+`lidar_localization_component.cpp:998-1013` constructs `small_gicp::RegistrationPCL`,
+selects GICP vs VGICP via `smallGicpRegistrationType`, and sets epsilon / correspondence
+randomness / max-correspondence-distance / `vgicp_voxel_resolution_` / thread count
+before assigning `registration_`. `CMakeLists.txt` already does
+`find_package(small_gicp QUIET CONFIG)` and defines `LIDAR_LOCALIZATION_HAVE_SMALL_GICP`
++ links `small_gicp::small_gicp` when found; without the dependency the backend is a
+clean `RCLCPP_ERROR` + exit. So Phase 1 is a **build-and-benchmark** task, not an
+implementation one: install `small_gicp`, rebuild, then run NDT_OMP vs SMALL_GICP vs
+SMALL_VGICP on an idle machine (still gated on `load < ~5`).
+
+### 2026-06-14: G3 guarded automatic reinitialization (logic complete)
+
+Built the consumer side of the global-localization recovery loop, which was the
+named next item after G1/G2. The producer (`/reinitialization_requested` from the C++
+recovery supervisor) already existed; G3 adds the part that closes the loop while
+respecting the Phase 3 lesson that a closed loop must not be able to reset its own
+bounds. Two new files:
+
+- `scripts/reinitialization_supervisor_policy.py` — a ROS-free, deterministic state
+  machine (`decide(params, state, obs)`) that owns every safety decision: a candidate
+  must clear `min_candidate_score` to be published, resets are spaced by
+  `min_seconds_between_attempts`, after a reset it requires alignment fitness back under
+  `recovery_fitness_threshold` as recovery evidence, and the attempt counter is a true
+  ceiling (`max_attempts`) that only clears on confirmed recovery or request release —
+  never as a side effect of attempting. After a terminal outcome it waits for the request
+  to de-assert (edge-triggered), so a stuck-high request line cannot re-fire it.
+- `scripts/reinitialization_supervisor_node.py` — the thin ROS shell (opt-in, not in the
+  default launch): subscribes `/reinitialization_requested` + `/alignment_status`
+  (reads the `fitness_score` diagnostic), calls the G2 `~/query` Trigger service, and
+  publishes `/initialpose` from the top candidate only when the policy says so.
+
+`test/test_reinitialization_supervisor_policy.py` is the roadmap-required regression
+test that fails on unsafe publication or false acceptance: 10 adversarial sequences
+(transient blip, pure tracking, happy-path single reset + recovery, weak-candidate
+never published, bounded queries, false-acceptance no-loop, reset spacing, budget reset
+on recovery between episodes, exhausted latch, purity). All green. **Pending** (machine-
+or runtime-bound, not logic): a live/replay smoke on the Koide kidnapped-start window
+and capture of the post-reset recovery evidence for the roadmap's evidence gate.
 
 ## Suggested Order Of Work
 
