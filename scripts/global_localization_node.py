@@ -47,6 +47,9 @@ class GlobalLocalizationNode(Node):
         self.declare_parameter("nms_radius_m", 2.0)
         self.declare_parameter("dilate_cells", 1)
         self.declare_parameter("seed_z_m", 0.0)
+        # Opt-in C++ backend (bbs_cpp). Default False -> pure Python; if the
+        # compiled module is unavailable the engine falls back to Python.
+        self.declare_parameter("use_cpp_backend", False)
 
         occupancy_yaml = (
             self.get_parameter("occupancy_yaml").get_parameter_value().string_value)
@@ -67,8 +70,14 @@ class GlobalLocalizationNode(Node):
             nms_radius_m=self.get_parameter("nms_radius_m").value,
             dilate_cells=int(self.get_parameter("dilate_cells").value),
             seed_z_m=self.get_parameter("seed_z_m").value,
+            use_cpp_backend=bool(self.get_parameter("use_cpp_backend").value),
         )
         self.engine = GlobalLocalizationEngine(Path(occupancy_yaml), config)
+        if config.use_cpp_backend and self.engine.backend != "cpp":
+            self.get_logger().warn(
+                "use_cpp_backend requested but bbs_cpp is unavailable (%s); "
+                "falling back to the Python search"
+                % self.engine.backend_error)
         self.global_frame_id = (
             self.get_parameter("global_frame_id").get_parameter_value().string_value)
         self.latest_cloud = None
@@ -86,8 +95,8 @@ class GlobalLocalizationNode(Node):
             PoseArray, "~/candidates", candidate_qos)
         self.query_srv = self.create_service(Trigger, "~/query", self.handle_query)
         self.get_logger().info(
-            "global localization service ready: map=%s scan=%s"
-            % (occupancy_yaml, cloud_topic))
+            "global localization service ready: map=%s scan=%s backend=%s"
+            % (occupancy_yaml, cloud_topic, self.engine.backend))
 
     def cloud_received(self, msg: PointCloud2) -> None:
         self.latest_cloud = msg
@@ -130,6 +139,7 @@ class GlobalLocalizationNode(Node):
             "candidate_count": len(result.candidates),
             "scan_point_count": result.scan_point_count,
             "runtime_sec": round(runtime_sec, 3),
+            "backend": self.engine.backend,
             # Full ranked list (high-to-low) so a consumer can walk past an
             # aliased top candidate; "top" kept for back-compat.
             "candidates": ranked,
