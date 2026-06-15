@@ -374,6 +374,15 @@ if(BUILD_TESTING)
     COMMAND test_imu_preintegration_guard_policy
   )
 
+  add_executable(test_imu_preintegration
+    test/test_imu_preintegration.cpp)
+  target_include_directories(test_imu_preintegration PRIVATE
+    include)
+  add_test(
+    NAME imu_preintegration
+    COMMAND test_imu_preintegration
+  )
+
   add_executable(test_prediction_state_policy
     test/test_prediction_state_policy.cpp)
   target_include_directories(test_prediction_state_policy PRIVATE
