@@ -32,6 +32,10 @@ find_package(small_gicp QUIET CONFIG)
 find_package(nav2_util QUIET)
 find_package(bondcpp QUIET)
 find_package(OpenMP)
+# Optional: enables the compiled C++ BBS backend (bbs_cpp) for the global
+# localization node. QUIET so a checkout without pybind11 still builds and the
+# node falls back to the pure-Python search.
+find_package(pybind11 QUIET)
 
 if (OPENMP_FOUND)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
@@ -198,6 +202,21 @@ install(DIRECTORY
   scripts/lidar_localization_mid360
   DESTINATION lib/${PROJECT_NAME}
   PATTERN "__pycache__" EXCLUDE)
+
+# Optional compiled BBS backend. Installed next to the Python scripts in
+# lib/${PROJECT_NAME} so global_localization_node.py (which sys.path.inserts its
+# own directory) can `import bbs_cpp`. Off the critical path: when pybind11 is
+# absent the module simply is not built and the node uses the Python search.
+if(pybind11_FOUND)
+  pybind11_add_module(bbs_cpp src/bbs_pybind.cpp)
+  target_include_directories(bbs_cpp PRIVATE include)
+  target_compile_features(bbs_cpp PRIVATE cxx_std_17)
+  install(TARGETS bbs_cpp
+    LIBRARY DESTINATION lib/${PROJECT_NAME})
+  message(STATUS "lidar_localization: building optional bbs_cpp pybind11 backend")
+else()
+  message(STATUS "lidar_localization: pybind11 not found; bbs_cpp backend disabled (Python fallback)")
+endif()
 
 install(DIRECTORY
   launch
@@ -568,6 +587,17 @@ if(BUILD_TESTING)
     NAME global_localization_query
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_global_localization_query.py
   )
+  # Parity check for the optional C++ backend: compares bbs_cpp against the
+  # Python reference when the compiled module is importable, and skips cleanly
+  # (exit 0) otherwise, so it is green whether or not pybind11 was found.
+  if(pybind11_FOUND)
+    add_test(
+      NAME bbs_cpp_backend_parity
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_bbs_cpp_backend_parity.py
+    )
+    set_tests_properties(bbs_cpp_backend_parity PROPERTIES
+      ENVIRONMENT "BBS_CPP_MODULE_DIR=$<TARGET_FILE_DIR:bbs_cpp>")
+  endif()
 endif()
 
 ament_package()

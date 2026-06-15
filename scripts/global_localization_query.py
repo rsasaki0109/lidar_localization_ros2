@@ -30,6 +30,10 @@ class GlobalLocalizationConfig:
     nms_radius_m: float = 2.0
     dilate_cells: int = 1
     seed_z_m: float = 0.0
+    # Opt-in: use the compiled C++ branch-and-bound backend (bbs_cpp) when it is
+    # importable. Defaults to False so a stock checkout runs pure Python; if the
+    # module is missing the engine logs once and silently falls back to Python.
+    use_cpp_backend: bool = False
 
 
 @dataclass(frozen=True)
@@ -60,6 +64,20 @@ class GlobalLocalizationEngine:
             matching_grid = bbs_engine._dilate_one_cell(matching_grid)
         self.matching_grid = matching_grid
 
+        # Resolve the search backend once. The C++ module (bbs_cpp) is bit-exact
+        # to bbs_engine.branch_and_bound_candidates and exposes the same call
+        # signature and candidate attributes, so query() is backend-agnostic.
+        self.backend = "python"
+        self.backend_error = None
+        self._search = bbs_engine.branch_and_bound_candidates
+        if config.use_cpp_backend:
+            try:
+                import bbs_cpp  # noqa: E402
+                self._search = bbs_cpp.branch_and_bound_candidates
+                self.backend = "cpp"
+            except ImportError as exc:  # pragma: no cover - depends on build
+                self.backend_error = str(exc)
+
     def query(self, points_xyz):
         config = self.config
         resolution_m = self.occupancy_map.resolution_m
@@ -74,7 +92,7 @@ class GlobalLocalizationEngine:
         if scan_xy.shape[0] == 0:
             return GlobalLocalizationResult(candidates=[], scan_point_count=0)
 
-        grid_candidates = bbs_engine.branch_and_bound_candidates(
+        grid_candidates = self._search(
             self.matching_grid,
             scan_xy,
             resolution_m,

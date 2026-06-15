@@ -128,6 +128,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'g2_max_candidates', default_value='16',
             description='G2 ranked candidate count returned per query.'),
+        DeclareLaunchArgument(
+            'g2_use_cpp_backend', default_value='false',
+            description='Use the compiled C++ BBS backend (bbs_cpp) when built; '
+                        'falls back to the Python search if unavailable.'),
     ]
 
     # 1. Core localizer (also raises /reinitialization_requested + /alignment_status).
@@ -164,6 +168,8 @@ def generate_launch_description():
                 LaunchConfiguration('g2_pyramid_depth'), value_type=int),
             'max_candidates': ParameterValue(
                 LaunchConfiguration('g2_max_candidates'), value_type=int),
+            'use_cpp_backend': ParameterValue(
+                LaunchConfiguration('g2_use_cpp_backend'), value_type=bool),
             'use_sim_time': use_sim_time,
         }])
 
