@@ -63,6 +63,9 @@ def generate_launch_description():
     # node's own defaults (see reinitialization_supervisor_policy).
     supervisor_min_candidate_score = LaunchConfiguration('supervisor_min_candidate_score')
     supervisor_max_attempts = LaunchConfiguration('supervisor_max_attempts')
+    # G2's BBS query can take ~10-25 s; query/settle timeouts must allow for it.
+    supervisor_query_timeout_sec = LaunchConfiguration('supervisor_query_timeout_sec')
+    supervisor_settle_timeout_sec = LaunchConfiguration('supervisor_settle_timeout_sec')
 
     declared = [
         DeclareLaunchArgument(
@@ -89,6 +92,14 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'supervisor_max_attempts', default_value='3',
             description='Hard ceiling on resets for one continuous problem.'),
+        DeclareLaunchArgument(
+            'supervisor_query_timeout_sec', default_value='10.0',
+            description='Abandon a G2 query that returns nothing within this long '
+                        '(raise above the BBS query latency, ~10-25 s).'),
+        DeclareLaunchArgument(
+            'supervisor_settle_timeout_sec', default_value='8.0',
+            description='Time to observe post-reset recovery before counting the '
+                        'attempt failed.'),
     ]
 
     # 1. Core localizer (also raises /reinitialization_requested + /alignment_status).
@@ -131,6 +142,10 @@ def generate_launch_description():
             'min_candidate_score': ParameterValue(
                 supervisor_min_candidate_score, value_type=float),
             'max_attempts': ParameterValue(supervisor_max_attempts, value_type=int),
+            'query_timeout_sec': ParameterValue(
+                supervisor_query_timeout_sec, value_type=float),
+            'settle_timeout_sec': ParameterValue(
+                supervisor_settle_timeout_sec, value_type=float),
             'use_sim_time': use_sim_time,
         }])
 

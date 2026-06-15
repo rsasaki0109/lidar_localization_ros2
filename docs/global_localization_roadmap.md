@@ -183,10 +183,26 @@ supervisor files are now installed via `CMakeLists.txt` so they resolve as
 `ros2 run` / launch executables. `ros2 launch ... --show-args` validates the full
 argument graph (including the included localizer's pass-through args).
 
-Still **pending**: actually *running* that launch against the Koide kidnapped-start
-window on an idle machine and capturing the post-reset recovery evidence (tracking
-recovers after the published reset) for the roadmap's recovery-evidence gate. The
-launch and the fake-service smoke now de-risk everything up to that live replay.
+**Live closed-loop exercised (2026-06-15):** the three-node bringup was run against the
+real `outdoor_hard_01a` bag + map with a kidnap injected at a healthy location. Full
+write-up in [g3_live_closed_loop.md](g3_live_closed_loop.md). Two results:
+
+- *The G3 supervisor mechanism is validated end-to-end against a real stack.* Detect →
+  debounce → query G2 → score-guard → guarded `/initialpose` publish → recovery-wait →
+  retry → `max_attempts` ceiling → safe give-up with an operator alert all fired
+  correctly. The safety ceiling contained three confidently-wrong-or-stale candidates
+  without an unbounded reset loop — the Phase 3 lesson validated live, not just offline.
+- *Recovery did not complete, and the cause is candidate quality, not the supervisor.*
+  G2's BBS_2D returned high-confidence but grossly wrong candidates (107 m and 190 m off
+  at BBS score ≈ 0.99) on 2 of 3 attempts; the correct pose (5.5 m, score 0.998) arrived
+  too late. The BBS occupancy score does not separate right from wrong.
+
+So the recovery-evidence gate now has a concrete, evidence-backed blocker: **the
+supervisor must validate a candidate by registration fitness before publishing** (the
+"registration scoring from runtime-available inputs" gate), e.g. G2 returning per-
+candidate NDT/GICP fitness and/or the supervisor walking the ranked candidate list
+rather than only the top. That — plus the BBS query-latency/staleness already noted in
+the G1 optimization entry — is the next G3 work.
 
 ## Non-Goals For Now
 
