@@ -207,15 +207,20 @@ install(DIRECTORY
 # lib/${PROJECT_NAME} so global_localization_node.py (which sys.path.inserts its
 # own directory) can `import bbs_cpp`. Off the critical path: when pybind11 is
 # absent the module simply is not built and the node uses the Python search.
-if(pybind11_FOUND)
+# pybind11's new-tools pybind11_add_module() needs FindPython's
+# python3_add_library, which is only defined when the Development.Module
+# component is found (the top-level find_package above asks for Interpreter only).
+find_package(Python3 QUIET COMPONENTS Interpreter Development.Module)
+if(pybind11_FOUND AND Python3_Development.Module_FOUND)
   pybind11_add_module(bbs_cpp src/bbs_pybind.cpp)
   target_include_directories(bbs_cpp PRIVATE include)
   target_compile_features(bbs_cpp PRIVATE cxx_std_17)
   install(TARGETS bbs_cpp
     LIBRARY DESTINATION lib/${PROJECT_NAME})
+  set(BBS_CPP_BACKEND_BUILT TRUE)
   message(STATUS "lidar_localization: building optional bbs_cpp pybind11 backend")
 else()
-  message(STATUS "lidar_localization: pybind11 not found; bbs_cpp backend disabled (Python fallback)")
+  message(STATUS "lidar_localization: pybind11/Python3 Development.Module not found; bbs_cpp backend disabled (Python fallback)")
 endif()
 
 install(DIRECTORY
@@ -590,7 +595,7 @@ if(BUILD_TESTING)
   # Parity check for the optional C++ backend: compares bbs_cpp against the
   # Python reference when the compiled module is importable, and skips cleanly
   # (exit 0) otherwise, so it is green whether or not pybind11 was found.
-  if(pybind11_FOUND)
+  if(BBS_CPP_BACKEND_BUILT)
     add_test(
       NAME bbs_cpp_backend_parity
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_bbs_cpp_backend_parity.py
