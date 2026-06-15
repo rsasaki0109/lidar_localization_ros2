@@ -48,13 +48,17 @@ class _Harness(Node):
     walked to the second candidate -- exercising the ranked-candidate walk glue.
     """
 
-    def __init__(self, recover_on_second=False):
+    def __init__(self, recover_on_second=False, pose_z=None):
         super().__init__("g3_test_harness")
         self.create_service(Trigger, "/global_localization_node/query", self._on_query)
         self._reinit = self.create_publisher(Bool, "/reinitialization_requested", _REL)
         self._status = self.create_publisher(DiagnosticArray, "/alignment_status", 10)
         self.create_subscription(
             PoseWithCovarianceStamped, "/initialpose", self._on_pose, _REL)
+        # Optionally fake the localizer pose output so the supervisor can carry z.
+        self._pose_z = pose_z
+        self._pcl_pose = self.create_publisher(
+            PoseWithCovarianceStamped, "/pcl_pose", 10)
         self.query_calls = 0
         self.recover_on_second = recover_on_second
         self.poses = []
@@ -90,6 +94,12 @@ class _Harness(Node):
         array = DiagnosticArray()
         array.status = [status]
         self._status.publish(array)
+        if self._pose_z is not None:
+            pose = PoseWithCovarianceStamped()
+            pose.header.frame_id = "map"
+            pose.pose.pose.position.z = self._pose_z
+            pose.pose.pose.orientation.w = 1.0
+            self._pcl_pose.publish(pose)
 
 
 def test_supervisor_node_closes_the_loop():
@@ -151,6 +161,35 @@ def test_supervisor_node_walks_to_second_candidate_and_recovers():
         # Recovered on the walked candidate, within one query, without giving up.
         assert sup.state.name == rsn.rsp.STATE_STANDDOWN
         assert harness.query_calls == 1
+    finally:
+        executor.shutdown()
+        sup.destroy_node()
+        harness.destroy_node()
+        rclpy.shutdown()
+
+
+def test_reset_carries_z_from_localizer_pose():
+    # A 2D candidate (z=0) on a map whose true z is far from zero seeds the reset
+    # outside the registration z-basin. The supervisor must carry z from the last
+    # /pcl_pose so the published reset uses the real height, not 0.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    sup.params = replace(sup.params, request_debounce_sec=0.5)
+    harness = _Harness(pose_z=-11.05)
+    executor = SingleThreadedExecutor()
+    executor.add_node(sup)
+    executor.add_node(harness)
+    spin = threading.Thread(target=executor.spin, daemon=True)
+    spin.start()
+    try:
+        deadline = time.monotonic() + 12.0
+        while time.monotonic() < deadline and harness.initialpose is None:
+            time.sleep(0.1)
+        assert harness.initialpose is not None, "supervisor never published /initialpose"
+        # Candidate carried x/y from the query but z from the localizer pose.
+        pose = harness.initialpose.pose.pose
+        assert abs(pose.position.x - 12.0) < 1e-3
+        assert abs(pose.position.z - (-11.05)) < 1e-2, pose.position.z
     finally:
         executor.shutdown()
         sup.destroy_node()

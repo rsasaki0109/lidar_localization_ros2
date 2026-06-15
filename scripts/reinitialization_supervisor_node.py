@@ -40,6 +40,28 @@ from std_srvs.srv import Trigger
 import reinitialization_supervisor_policy as rsp
 
 
+def _roll_pitch_from_quat(x: float, y: float, z: float, w: float):
+    """Extract (roll, pitch) from a quaternion (yaw is taken from the candidate)."""
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    roll = math.atan2(sinr_cosp, cosr_cosp)
+    sinp = max(-1.0, min(1.0, 2.0 * (w * y - z * x)))
+    pitch = math.asin(sinp)
+    return roll, pitch
+
+
+def _quat_from_rpy(roll: float, pitch: float, yaw: float):
+    """Quaternion (x, y, z, w) from roll/pitch/yaw (ZYX convention)."""
+    cy, sy = math.cos(yaw * 0.5), math.sin(yaw * 0.5)
+    cp, sp = math.cos(pitch * 0.5), math.sin(pitch * 0.5)
+    cr, sr = math.cos(roll * 0.5), math.sin(roll * 0.5)
+    x = sr * cp * cy - cr * sp * sy
+    y = cr * sp * cy + sr * cp * sy
+    z = cr * cp * sy - sr * sp * cy
+    w = cr * cp * cy + sr * sp * sy
+    return x, y, z, w
+
+
 class ReinitializationSupervisorNode(Node):
     def __init__(self) -> None:
         super().__init__("reinitialization_supervisor_node")
@@ -50,6 +72,10 @@ class ReinitializationSupervisorNode(Node):
         self.declare_parameter("query_service", "/global_localization_node/query")
         self.declare_parameter("global_frame_id", "map")
         self.declare_parameter("tick_period_sec", 0.5)
+        # Localizer pose output, used to carry z / roll / pitch onto a 2D candidate.
+        self.declare_parameter("pose_topic", "/pcl_pose")
+        # Fallback z if no pose has been observed yet (e.g. a cold kidnapped start).
+        self.declare_parameter("reset_default_z_m", 0.0)
         # Initial-pose covariance to advertise on a reset (diagonal x, y, yaw).
         self.declare_parameter("reset_position_std_m", 0.5)
         self.declare_parameter("reset_yaw_std_rad", 0.25)
@@ -78,10 +104,20 @@ class ReinitializationSupervisorNode(Node):
         self.global_frame_id = self.get_parameter("global_frame_id").value
         self.position_std = float(self.get_parameter("reset_position_std_m").value)
         self.yaw_std = float(self.get_parameter("reset_yaw_std_rad").value)
+        self.reset_default_z = float(self.get_parameter("reset_default_z_m").value)
 
         # Latest observed signals.
         self._requested = False
         self._fitness = None
+        # Latest z / roll / pitch from the localizer pose. A G2 candidate is 2D
+        # (x, y, yaw, z=0); on an outdoor map the true z can be tens of metres from
+        # zero, which seeds the reset outside the registration z-basin and the lock
+        # never takes. The vehicle's height and attitude drift slowly even while xy
+        # tracking is lost, so the most recent pose's z / roll / pitch are a good
+        # carry-over -- we override only x / y / yaw from the candidate.
+        self._last_pose_z = None
+        self._last_pose_roll = 0.0
+        self._last_pose_pitch = 0.0
         # One-shot service reply delivered to the policy once: a tuple of ranked
         # candidate scores (high-to-low), or () for a reply that carried no usable
         # candidate. None means no reply is pending this tick.
@@ -101,6 +137,9 @@ class ReinitializationSupervisorNode(Node):
         self.create_subscription(
             DiagnosticArray, self.get_parameter("alignment_status_topic").value,
             self._on_alignment_status, 10)
+        self.create_subscription(
+            PoseWithCovarianceStamped, self.get_parameter("pose_topic").value,
+            self._on_pose, 10)
         self.initialpose_pub = self.create_publisher(
             PoseWithCovarianceStamped, self.get_parameter("initialpose_topic").value,
             reliable)
@@ -126,6 +165,12 @@ class ReinitializationSupervisorNode(Node):
                     except ValueError:
                         pass
                     return
+
+    def _on_pose(self, msg: PoseWithCovarianceStamped) -> None:
+        p = msg.pose.pose
+        self._last_pose_z = float(p.position.z)
+        self._last_pose_roll, self._last_pose_pitch = _roll_pitch_from_quat(
+            p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w)
 
     # --- main loop -----------------------------------------------------------
 
@@ -202,13 +247,22 @@ class ReinitializationSupervisorNode(Node):
             return
         top = self._candidates[candidate_index]
         yaw = math.radians(top["yaw_deg"])
+        # The candidate is 2D (x, y, yaw); carry z / roll / pitch from the last
+        # localizer pose so the seed lands in the registration z-basin on a non-flat
+        # map. Fall back to the configured default z if no pose seen yet.
+        z = self._last_pose_z if self._last_pose_z is not None else self.reset_default_z
+        qx, qy, qz, qw = _quat_from_rpy(
+            self._last_pose_roll, self._last_pose_pitch, yaw)
         msg = PoseWithCovarianceStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self.global_frame_id
         msg.pose.pose.position.x = float(top["x"])
         msg.pose.pose.position.y = float(top["y"])
-        msg.pose.pose.orientation.z = math.sin(yaw / 2.0)
-        msg.pose.pose.orientation.w = math.cos(yaw / 2.0)
+        msg.pose.pose.position.z = float(z)
+        msg.pose.pose.orientation.x = qx
+        msg.pose.pose.orientation.y = qy
+        msg.pose.pose.orientation.z = qz
+        msg.pose.pose.orientation.w = qw
         cov = [0.0] * 36
         cov[0] = self.position_std ** 2          # x
         cov[7] = self.position_std ** 2          # y
@@ -216,9 +270,9 @@ class ReinitializationSupervisorNode(Node):
         msg.pose.covariance = cov
         self.initialpose_pub.publish(msg)
         self.get_logger().warn(
-            "published /initialpose reset to (%.2f, %.2f, %.1f deg) score=%s "
+            "published /initialpose reset to (%.2f, %.2f, z=%.2f, %.1f deg) score=%s "
             "[candidate %d/%d]"
-            % (top["x"], top["y"], top["yaw_deg"], top["score"],
+            % (top["x"], top["y"], z, top["yaw_deg"], top["score"],
                candidate_index + 1, len(self._candidates)))
 
 
