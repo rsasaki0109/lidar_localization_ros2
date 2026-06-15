@@ -67,6 +67,7 @@ def generate_launch_description():
     supervisor_query_timeout_sec = LaunchConfiguration('supervisor_query_timeout_sec')
     supervisor_settle_timeout_sec = LaunchConfiguration('supervisor_settle_timeout_sec')
     supervisor_max_walk_candidates = LaunchConfiguration('supervisor_max_walk_candidates')
+    supervisor_enable_seed_motion = LaunchConfiguration('supervisor_enable_seed_motion_compensation')
 
     declared = [
         DeclareLaunchArgument(
@@ -107,6 +108,13 @@ def generate_launch_description():
                         'query before re-querying on a fresher scan; a stale query '
                         'can return a full list none of whose poses lock '
                         '(g3_live_closed_loop.md). Set high to walk the whole list.'),
+        DeclareLaunchArgument(
+            'supervisor_enable_seed_motion_compensation', default_value='false',
+            description='Forward-extrapolate a candidate by the measured query->publish '
+                        'latency so it lands where the moving vehicle is now, not where '
+                        'it was when the (slow) BBS query was issued. Velocity is inferred '
+                        'from successive query fixes (g3_live_closed_loop.md). Off by '
+                        'default; helps only on a moving vehicle with slow queries.'),
         DeclareLaunchArgument(
             'g2_angular_resolution_deg', default_value='5.0',
             description='G2 BBS yaw sampling step; coarser = faster query, fresher '
@@ -179,6 +187,8 @@ def generate_launch_description():
                 supervisor_settle_timeout_sec, value_type=float),
             'max_walk_candidates': ParameterValue(
                 supervisor_max_walk_candidates, value_type=int),
+            'enable_seed_motion_compensation': ParameterValue(
+                supervisor_enable_seed_motion, value_type=bool),
             'use_sim_time': use_sim_time,
         }])
 
