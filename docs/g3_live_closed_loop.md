@@ -260,8 +260,9 @@ the registration basin, and the lock does not take. The true lever here is not c
 *quality* but *latency*: close the gap between where the fix says the vehicle was and where it
 is when the seed is applied.
 
-Two ways to close it: make the query instant (the G2 C++ port -- the root fix, separate work),
-or *forward-compensate* the seed by the measured latency. This lever does the latter, and it
+Two ways to close it: make the query instant (the G2 C++ port -- the root fix, profiled and
+planned in [g2_bbs_speedup.md](g2_bbs_speedup.md)), or *forward-compensate* the seed by the
+measured latency. This lever does the latter, and it
 has to work on the Koide bag, which carries no twist/odom topic (only `/livox` lidar+imu). So
 the velocity is inferred from the data the loop already has: **successive query fixes**. Each
 query returns an absolute map-frame position at its issue time, so the displacement between
