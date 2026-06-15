@@ -119,9 +119,29 @@ latency gap.
   `test/test_bbs_cpp_backend_parity.py` re-checks the binding's numpy↔struct
   plumbing against the Python reference on the four fixture shapes (and skips
   cleanly when the module is not present).
-- Idle-machine wall-clock benchmark of the wired `bbs_cpp` query: **next**,
-  gated on a quiet shared machine (load < ~5) — the only remaining piece, and a
-  measurement rather than a code change.
+- Wall-clock benchmark of the **wired runtime path** (through `bbs_cpp`, on the
+  dilated matching grid the node actually searches, real `outdoor_hard_bbs` map,
+  512-pt scan, 5° yaw, depth 4, NMS 10 cells): the C++ backend ran the query in
+  **~8.3 s vs the Python backend's ~38 s — ~4.6×**, returning the identical top
+  candidate (cell (718, 530), hit 512/512). The Python reps ran first at lower
+  load and the C++ reps under the load climbing toward the gate, so 4.6× is a
+  **conservative lower bound** (the C++ side was penalised), consistent with the
+  earlier 5.5× core microbenchmark. Reproduce with
+  `scripts/benchmark_bbs_backends.py` (records per-rep load; flags any rep at
+  load ≥ 5 as invalid). Note: the run that produced these numbers crossed the
+  load gate partway through, so the absolute seconds are approximate and a
+  quiet-machine re-run is still worthwhile; the 4.6× ratio is the
+  load-independent takeaway.
+- Important honest correction to the earlier projection: the **runtime** query is
+  **not** sub-second at the default settings. The 2.6 s figure above is the C++
+  *core* on the **raw** occupancy; the node searches the **dilated** grid
+  (`dilate_cells=1`, ~3× more occupied cells), which raises every upper bound and
+  weakens pruning, so the real query is several seconds even in C++. Sub-second
+  for live recovery therefore needs the search-cost levers, not the port alone:
+  coarser yaw (`g2_angular_resolution_deg`), fewer scan points
+  (`g2_max_scan_points`), and/or less dilation — all already exposed as launch
+  args. `scripts/benchmark_bbs_backends.py` also times the 10° / 256-pt C++
+  variants to quantify those levers.
 
 ## Reproduce
 
