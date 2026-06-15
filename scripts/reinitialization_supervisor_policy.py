@@ -74,6 +74,7 @@ Conventions
   a clock, so replays are exact.
 """
 
+import math
 from dataclasses import dataclass, field, replace
 from typing import Optional, Tuple
 
@@ -342,3 +343,88 @@ def decide(
         return SupervisorDecision(ACTION_NONE, "exhausted", state)
 
     raise ValueError(f"unknown supervisor state: {name!r}")
+
+
+# --- seed motion compensation --------------------------------------------------
+#
+# The decisive G3 live-run blocker (docs/g3_live_closed_loop.md, 5th clean run)
+# was *not* the supervisor, the walk, candidate quality, or yaw: it was latency.
+# A G2 BBS query takes ~5-23 s, and the candidate it returns is a fix of the scan
+# taken when the query was *issued*. By the time the reset is published the vehicle
+# has driven on, so the seed lands metres behind the vehicle -- outside the
+# registration basin -- and the lock never takes, even when the candidate was a
+# correct rank-1 fix at query time.
+#
+# We cannot make the query instant here (that is the G2 C++ port), but we can
+# forward-compensate: estimate the vehicle's map-frame velocity and push the seed
+# ahead by the measured query->publish latency. The velocity source must work on
+# the Koide bag, which carries no twist/odom topic (only /livox lidar+imu) -- so we
+# estimate it from the data we already have: *successive query fixes*. Each query
+# returns an absolute map-frame position at its issue time, so the displacement
+# between two consecutive published fixes, divided by the wall time between their
+# issues, is a direct map-frame velocity. Using monotonic wall time consistently
+# for both the velocity dt and the latency keeps this correct under use_sim_time
+# and any constant bag-replay rate (the rate cancels).
+#
+# Safety: a perceptual-aliasing wrong candidate (the live run saw a 190 m-off
+# candidate scored 0.99) would yield an absurd inferred speed. We reject any
+# estimate above ``max_speed_mps`` and fall back to publishing the raw candidate --
+# so compensation only ever fires when two consecutive fixes are mutually
+# consistent, which is exactly when the velocity is trustworthy. This is opt-in
+# (off by default) and never weakens the publish: a bad estimate is a no-op.
+
+
+@dataclass(frozen=True)
+class SeedVelocity:
+    """Map-frame velocity (m/s) inferred from two successive query fixes."""
+    vx: float = 0.0
+    vy: float = 0.0
+    valid: bool = False
+
+
+def estimate_seed_velocity(
+    prev_xy: Tuple[float, float],
+    prev_issue_sec: float,
+    curr_xy: Tuple[float, float],
+    curr_issue_sec: float,
+    max_speed_mps: float,
+    min_dt_sec: float = 0.5,
+) -> SeedVelocity:
+    """Map-frame velocity from two consecutive query fixes, or invalid.
+
+    ``prev_xy`` / ``curr_xy`` are the published candidate positions of two
+    *different* queries; ``*_issue_sec`` are the monotonic times those queries
+    were issued (a good proxy for each fix's scan time). Returns ``valid=False``
+    when the two fixes are too close in time to differentiate (same query / a
+    within-query walk, where ``dt`` is ~0) or when the implied speed exceeds
+    ``max_speed_mps`` -- the latter rejects an inconsistent pair (e.g. one fix was
+    a perceptual-aliasing wrong candidate), so a bad pair never compensates.
+    """
+    dt = curr_issue_sec - prev_issue_sec
+    if dt < min_dt_sec:
+        return SeedVelocity()
+    vx = (curr_xy[0] - prev_xy[0]) / dt
+    vy = (curr_xy[1] - prev_xy[1]) / dt
+    if math.hypot(vx, vy) > max_speed_mps:
+        return SeedVelocity()
+    return SeedVelocity(vx=vx, vy=vy, valid=True)
+
+
+def forward_compensate_xy(
+    xy: Tuple[float, float],
+    velocity: SeedVelocity,
+    latency_sec: float,
+    max_latency_sec: float,
+) -> Tuple[float, float]:
+    """Push ``xy`` ahead by ``velocity * latency`` (clamped), or return it unchanged.
+
+    ``latency_sec`` is the query->publish delay; it is clamped to
+    ``max_latency_sec`` so a pathologically slow query cannot extrapolate the seed
+    arbitrarily far on a first-order model. A non-positive latency or an invalid
+    velocity is a no-op, so this can never move a seed backwards or sideways from a
+    bad estimate.
+    """
+    if not velocity.valid or latency_sec <= 0.0:
+        return xy
+    dt = min(latency_sec, max_latency_sec)
+    return (xy[0] + velocity.vx * dt, xy[1] + velocity.vy * dt)

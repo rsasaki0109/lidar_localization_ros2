@@ -88,6 +88,16 @@ class ReinitializationSupervisorNode(Node):
         self.declare_parameter("settle_timeout_sec", 8.0)
         self.declare_parameter("recovery_fitness_threshold", 1.5)
         self.declare_parameter("max_walk_candidates", 4)
+        # Seed motion compensation: forward-extrapolate a candidate by the measured
+        # query->publish latency so it lands where the moving vehicle is *now*, not
+        # where it was when the (slow) BBS query was issued. Off by default; the
+        # velocity is inferred from successive query fixes (see the policy module's
+        # seed-motion section). max_seed_speed_mps rejects an implausible estimate
+        # (a wrong perceptual-aliasing candidate); max_seed_latency_sec clamps how
+        # far the first-order extrapolation is trusted.
+        self.declare_parameter("enable_seed_motion_compensation", False)
+        self.declare_parameter("max_seed_speed_mps", 30.0)
+        self.declare_parameter("max_seed_latency_sec", 30.0)
 
         self.params = rsp.SupervisorParams(
             request_debounce_sec=float(self.get_parameter("request_debounce_sec").value),
@@ -107,6 +117,10 @@ class ReinitializationSupervisorNode(Node):
         self.position_std = float(self.get_parameter("reset_position_std_m").value)
         self.yaw_std = float(self.get_parameter("reset_yaw_std_rad").value)
         self.reset_default_z = float(self.get_parameter("reset_default_z_m").value)
+        self.enable_seed_motion = bool(
+            self.get_parameter("enable_seed_motion_compensation").value)
+        self.max_seed_speed = float(self.get_parameter("max_seed_speed_mps").value)
+        self.max_seed_latency = float(self.get_parameter("max_seed_latency_sec").value)
 
         # Latest observed signals.
         self._requested = False
@@ -129,6 +143,11 @@ class ReinitializationSupervisorNode(Node):
         # policy's candidate_index when it asks for a publish (the ranked-candidate
         # walk -- see reinitialization_supervisor_policy).
         self._candidates = []
+        # Seed motion compensation bookkeeping: the monotonic time the in-flight
+        # query was issued (a proxy for its fix's scan time), and the previously
+        # published candidate fix (x, y, issue_time) used to infer map velocity.
+        self._query_issue_time = None
+        self._prev_fix = None
 
         reliable = QoSProfile(depth=1)
         reliable.reliability = ReliabilityPolicy.RELIABLE
@@ -156,7 +175,12 @@ class ReinitializationSupervisorNode(Node):
     # --- subscriptions -------------------------------------------------------
 
     def _on_reinit(self, msg: Bool) -> None:
-        self._requested = bool(msg.data)
+        requested = bool(msg.data)
+        if self._requested and not requested:
+            # Problem cleared: the next recovery episode is a fresh trajectory, so
+            # drop the previous fix rather than differencing across the gap.
+            self._prev_fix = None
+        self._requested = requested
 
     def _on_alignment_status(self, msg: DiagnosticArray) -> None:
         for status in msg.status:
@@ -214,6 +238,9 @@ class ReinitializationSupervisorNode(Node):
         future = self.query_client.call_async(Trigger.Request())
         future.add_done_callback(self._on_query_response)
         self._query_in_flight = True
+        # The candidate this query returns is a fix of the scan available now, so
+        # stamp the issue time for the query->publish latency used in compensation.
+        self._query_issue_time = time.monotonic()
 
     def _on_query_response(self, future) -> None:
         self._query_in_flight = False
@@ -249,6 +276,8 @@ class ReinitializationSupervisorNode(Node):
             return
         top = self._candidates[candidate_index]
         yaw = math.radians(top["yaw_deg"])
+        raw_x, raw_y = float(top["x"]), float(top["y"])
+        seed_x, seed_y = self._compensate_seed(raw_x, raw_y)
         # The candidate is 2D (x, y, yaw); carry z / roll / pitch from the last
         # localizer pose so the seed lands in the registration z-basin on a non-flat
         # map. Fall back to the configured default z if no pose seen yet.
@@ -258,8 +287,8 @@ class ReinitializationSupervisorNode(Node):
         msg = PoseWithCovarianceStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self.global_frame_id
-        msg.pose.pose.position.x = float(top["x"])
-        msg.pose.pose.position.y = float(top["y"])
+        msg.pose.pose.position.x = seed_x
+        msg.pose.pose.position.y = seed_y
         msg.pose.pose.position.z = float(z)
         msg.pose.pose.orientation.x = qx
         msg.pose.pose.orientation.y = qy
@@ -271,11 +300,40 @@ class ReinitializationSupervisorNode(Node):
         cov[35] = self.yaw_std ** 2              # yaw
         msg.pose.covariance = cov
         self.initialpose_pub.publish(msg)
+        comp_note = ""
+        if (seed_x, seed_y) != (raw_x, raw_y):
+            comp_note = " (motion-compensated from %.2f, %.2f)" % (raw_x, raw_y)
         self.get_logger().warn(
             "published /initialpose reset to (%.2f, %.2f, z=%.2f, %.1f deg) score=%s "
-            "[candidate %d/%d]"
-            % (top["x"], top["y"], z, top["yaw_deg"], top["score"],
-               candidate_index + 1, len(self._candidates)))
+            "[candidate %d/%d]%s"
+            % (seed_x, seed_y, z, top["yaw_deg"], top["score"],
+               candidate_index + 1, len(self._candidates), comp_note))
+
+    def _compensate_seed(self, raw_x: float, raw_y: float):
+        """Forward-extrapolate (raw_x, raw_y) by the query->publish latency.
+
+        Records the raw fix (the true measured position) for the next call's
+        velocity estimate, then -- if enabled and a prior fix from an earlier query
+        exists -- returns the candidate pushed ahead along the inferred map-frame
+        velocity. Disabled, first-query, within-query-walk, or implausible-velocity
+        cases all return the raw position unchanged (see the policy module).
+        """
+        issue = self._query_issue_time
+        if not self.enable_seed_motion or issue is None:
+            return raw_x, raw_y
+        seed_x, seed_y = raw_x, raw_y
+        if self._prev_fix is not None:
+            prev_x, prev_y, prev_issue = self._prev_fix
+            velocity = rsp.estimate_seed_velocity(
+                (prev_x, prev_y), prev_issue, (raw_x, raw_y), issue,
+                max_speed_mps=self.max_seed_speed)
+            latency = time.monotonic() - issue
+            seed_x, seed_y = rsp.forward_compensate_xy(
+                (raw_x, raw_y), velocity, latency, max_latency_sec=self.max_seed_latency)
+        # Store the raw (un-compensated) fix: it is the actual measurement the next
+        # query's velocity estimate must difference against.
+        self._prev_fix = (raw_x, raw_y, issue)
+        return seed_x, seed_y
 
 
 def main() -> None:

@@ -339,6 +339,64 @@ def test_high_max_walk_candidates_restores_full_list_walk():
     assert events[-1][3] == rsp.STATE_STANDDOWN
 
 
+# --- seed motion compensation --------------------------------------------------
+#
+# The query->publish latency is the decisive G3 live blocker: a correct rank-1 fix
+# goes stale because the vehicle drives on while the BBS query runs. These tests
+# pin the forward-compensation helpers that push a seed ahead by the measured
+# latency, and -- crucially -- that a bad/implausible estimate is always a no-op so
+# compensation can never *worsen* a publish.
+
+
+def test_seed_velocity_from_consecutive_fixes():
+    # Two fixes 10 m apart in x over 5 s -> 2 m/s east.
+    v = rsp.estimate_seed_velocity((0.0, 0.0), 100.0, (10.0, 0.0), 105.0,
+                                   max_speed_mps=30.0)
+    assert v.valid
+    assert abs(v.vx - 2.0) < 1e-9
+    assert abs(v.vy - 0.0) < 1e-9
+
+
+def test_seed_velocity_rejects_within_query_walk():
+    # Same query (issue times within min_dt) -> not a motion sample, invalid.
+    v = rsp.estimate_seed_velocity((0.0, 0.0), 100.0, (50.0, 0.0), 100.1,
+                                   max_speed_mps=30.0)
+    assert not v.valid
+
+
+def test_seed_velocity_rejects_implausible_speed():
+    # A perceptual-aliasing wrong candidate jumps 200 m in 2 s = 100 m/s -> rejected,
+    # so a wrong/right fix pair never drives compensation.
+    v = rsp.estimate_seed_velocity((0.0, 0.0), 100.0, (200.0, 0.0), 102.0,
+                                   max_speed_mps=30.0)
+    assert not v.valid
+
+
+def test_forward_compensate_pushes_seed_ahead_by_latency():
+    v = rsp.SeedVelocity(vx=2.0, vy=1.0, valid=True)
+    # 8 s of query latency at (2, 1) m/s -> +16 m east, +8 m north.
+    x, y = rsp.forward_compensate_xy((100.0, 50.0), v, latency_sec=8.0,
+                                     max_latency_sec=30.0)
+    assert abs(x - 116.0) < 1e-9
+    assert abs(y - 58.0) < 1e-9
+
+
+def test_forward_compensate_clamps_latency():
+    v = rsp.SeedVelocity(vx=2.0, vy=0.0, valid=True)
+    # A 100 s query is clamped to max_latency_sec (30 s) -> +60 m, not +200 m.
+    x, _ = rsp.forward_compensate_xy((0.0, 0.0), v, latency_sec=100.0,
+                                     max_latency_sec=30.0)
+    assert abs(x - 60.0) < 1e-9
+
+
+def test_forward_compensate_invalid_velocity_is_noop():
+    # An invalid estimate must never move the seed -- compensation cannot worsen a
+    # publish, it can only help when the estimate is trustworthy.
+    x, y = rsp.forward_compensate_xy((7.0, 3.0), rsp.SeedVelocity(),
+                                     latency_sec=10.0, max_latency_sec=30.0)
+    assert (x, y) == (7.0, 3.0)
+
+
 if __name__ == "__main__":
     import pytest
     raise SystemExit(pytest.main([__file__, "-v"]))
