@@ -213,6 +213,17 @@ each candidate by NDT/GICP fitness so the *ranking* reflects registration qualit
 the BBS query-latency/staleness remain the next G3 work; live validation of the walk on
 the kidnap window is pending. See [g3_live_closed_loop.md](g3_live_closed_loop.md).
 
+**Recovery-evidence gate met (2026-06-15).** The final blocker turned out to be that the
+reset was published with z = 0: G2 candidates are 2D and the supervisor left
+`position.z = 0`, ~11 m above the true Koide ground, outside the NDT z-basin — so even an
+x/y/yaw-correct candidate never locked. The supervisor now carries z / roll / pitch from
+`/pcl_pose` onto the candidate. With that fix the full loop recovers live on the Koide
+kidnap window: after the guarded reset (`recovery_confirmed`) the localizer re-locks and
+fitness falls to ~0.1, then the supervisor stands down and re-arms. So *post-reset
+recovery evidence* — the last G3 Decision Gate — is now satisfied with a real localizer.
+Remaining work is quality, not correctness: faster/first-try recovery (cut BBS query
+latency, per-candidate registration scoring in G2).
+
 ## Non-Goals For Now
 
 - production-grade kidnapped-robot recovery claims

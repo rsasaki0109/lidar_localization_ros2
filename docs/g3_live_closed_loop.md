@@ -183,3 +183,45 @@ likely mechanics are the same ones the Boreas root-cause flagged — the alignme
 externally-injected reset pose — but confirming that needs **code-level investigation of
 the C++ component**, not more black-box replays. The five live runs have isolated the
 blocker by elimination; that investigation is the next step (Task #16, re-scoped).
+
+## Root cause and fix (2026-06-15) — RECOVERY ACHIEVED
+
+The code investigation found the blocker upstream of the localizer after all, and it is
+mundane: **the reset was published with z = 0**. A G2 candidate is 2D (`x, y, yaw`, with
+`z = seed_z_m = 0`) and the supervisor's `_publish_reset` set only `x / y` + yaw, leaving
+`position.z = 0`. On the Koide outdoor map the true z is ~-11 m, so every reset seeded the
+pose ~11 m above ground -- far outside the NDT z-basin -- and the lock never took even when
+`x / y / yaw` were correct. The fourth run's rank-1 candidate was 0.8 m / 6 deg off in
+`x / y / yaw` and *still* held fitness ~27 for exactly this reason. The HDL demo worked
+only because its map is flat (z ~ 0), so z = 0 happened to be right.
+
+**Fix.** The supervisor subscribes to the localizer pose (`/pcl_pose`) and carries its
+`z / roll / pitch` onto the 2D candidate, overriding only `x / y / yaw`. The vehicle's
+height and attitude drift slowly even while xy tracking is lost, so the last pose is a
+good carry-over (falls back to `reset_default_z_m` if no pose seen yet).
+
+**Result -- the recovery-evidence gate is met.** Re-running the clean kidnap with the fix,
+the reset now publishes `z ~ -9.4 / -7.3` (carried from the pose), and the loop recovers
+end-to-end:
+
+```
+published /initialpose reset to (-76.50, 55.24, z=-7.33, 90.0 deg) score=1.0 [candidate 1/16]
+supervisor: none -> standdown (recovery_confirmed)
+supervisor: none -> idle (standdown_cleared)
+```
+
+After that reset the localizer locked: `/pcl_pose` resumed and fitness fell to **0.10**
+(from ~30+ while lost), the supervisor saw recovery, stood down, and re-armed to idle for
+the next problem. So the full G3 closed loop -- kidnap -> tracking lost ->
+`/reinitialization_requested` -> G2 query -> ranked-candidate walk with z carried from the
+pose -> a candidate locks -> fitness recovers -> `recovery_confirmed` -> stand down /
+re-arm -- is validated live on the Koide window.
+
+**Remaining (quality, not correctness).** Recovery here took two queries and a full
+16-candidate walk (~140 s of replay) before a candidate matched the by-then-current
+position, because query latency + walk latency keep the candidates somewhat stale; cutting
+the BBS query further (C++ / coarser) and per-candidate registration scoring in G2 would
+make recovery faster and first-try. The test harness should also republish the seed until
+the localizer acknowledges (the transient-local discovery race still occasionally drops the
+healthy baseline at slow replay rates). But the gate question -- *does tracking recover
+after the guarded reset* -- is now answered yes.
