@@ -143,6 +143,7 @@ install(PROGRAMS
   scripts/make_map_grid_relocalization_attempts.py
   scripts/make_bbs_relocalization_attempts.py
   scripts/generate_bbs_golden_fixtures.py
+  scripts/benchmark_bbs_backends.py
   scripts/global_localization_query.py
   scripts/global_localization_node.py
   scripts/reinitialization_supervisor_policy.py
