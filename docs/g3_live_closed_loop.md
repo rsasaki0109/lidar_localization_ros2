@@ -153,3 +153,33 @@ recovery to low-speed / stationary kidnaps and say so. The ranked-candidate walk
 right mechanism for *aliasing* (true pose present but not at rank 0); it is not a remedy
 for *staleness*, which is a latency problem. The test harness should also republish the
 seed until the localizer acknowledges, to remove the discovery race.
+
+## Clean run (2026-06-15, fourth run) — the decisive blocker is the localizer re-lock
+
+With the seed harness fixed (the publisher now holds the transient-local latch instead of
+exiting), the fourth run had everything the previous ones lacked at once: a **healthy
+baseline** (seed received, 106 accepted poses, fitness 0.07–0.23), a **fast query**
+(`runtime_sec` 5.365 then 3.595), and a **correct, fresh, rank-1 candidate**. Query 1's
+top candidate was `(-106.10, 9.04, 150°)`; ground truth at the query time (sim 855) was
+`(-106.8, 8.6, 156°)` — **0.8 m and 6° off, in full 3-DOF**, published ~5 s after the
+scan it was computed from.
+
+It still did not re-lock. After the candidate was published, the localizer logged
+`initialPoseReceived`, immediately went `tracking -> recovering (reject_measurement)`, and
+streamed `fitness score is over 6.0` continuously; the counter shows `/pcl_pose` sitting
+at the seed `(-106.1, 9.0)` with fitness ~27 and no accept — at a pose that is ~0.8 m from
+truth and where the **same area scored fitness 0.23 during healthy tracking minutes
+earlier**. Across the whole post-kidnap window there were 28 `initialPoseReceived` (every
+reset) and 517 over-threshold rejections, with only 2 brief `recovering -> tracking`
+accepts.
+
+**This eliminates every hypothesis upstream of the localizer.** Candidate generation
+(rank-1 correct in 3-DOF), ranking, the walk, query latency, and yaw were all adequate
+here, yet recovery failed. The decisive blocker is in the **localizer's own post-reset
+re-lock path**: it does not re-converge to low fitness from a correct externally-published
+`/initialpose`, even though it tracks that exact area at fitness 0.2 in steady state. The
+likely mechanics are the same ones the Boreas root-cause flagged — the alignment
+`init_guess` / local-map-crop centering during the `recovering` state not following an
+externally-injected reset pose — but confirming that needs **code-level investigation of
+the C++ component**, not more black-box replays. The five live runs have isolated the
+blocker by elimination; that investigation is the next step (Task #16, re-scoped).
