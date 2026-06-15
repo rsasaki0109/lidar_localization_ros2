@@ -197,12 +197,21 @@ write-up in [g3_live_closed_loop.md](g3_live_closed_loop.md). Two results:
   at BBS score ≈ 0.99) on 2 of 3 attempts; the correct pose (5.5 m, score 0.998) arrived
   too late. The BBS occupancy score does not separate right from wrong.
 
-So the recovery-evidence gate now has a concrete, evidence-backed blocker: **the
-supervisor must validate a candidate by registration fitness before publishing** (the
-"registration scoring from runtime-available inputs" gate), e.g. G2 returning per-
-candidate NDT/GICP fitness and/or the supervisor walking the ranked candidate list
-rather than only the top. That — plus the BBS query-latency/staleness already noted in
-the G1 optimization entry — is the next G3 work.
+So the recovery-evidence gate had a concrete, evidence-backed blocker: the supervisor
+trusted the BBS score, which does not separate right from wrong.
+
+**Ranked-candidate walk implemented (2026-06-15):** the supervisor now walks the ranked
+candidate list from a single query, using the localizer's NDT fitness as the
+registration oracle the BBS score is not — publish the best, and if fitness does not
+recover within `settle_timeout_sec`, publish the next-best from the same query. Walking
+does not spend a `max_attempts` slot (only re-querying does), so the ceiling still bounds
+queries while one query can try every pose it found. G2 returns the full ranked
+`candidates` list in its reply; the policy and node carry a candidate index; the new
+behaviour is regression-tested (policy walk + list-exhaust + score-floor cases, plus a
+ROS integration test that walks 0→1 and recovers). The complementary piece — G2 scoring
+each candidate by NDT/GICP fitness so the *ranking* reflects registration quality — and
+the BBS query-latency/staleness remain the next G3 work; live validation of the walk on
+the kidnap window is pending. See [g3_live_closed_loop.md](g3_live_closed_loop.md).
 
 ## Non-Goals For Now
 

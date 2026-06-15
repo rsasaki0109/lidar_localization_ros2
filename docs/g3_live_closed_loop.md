@@ -65,18 +65,33 @@ intervention needed` and latched `exhausted`.
    ceiling and inside the closing bag window. **The BBS score does not separate right
    from wrong**: 0.99 labelled a 190 m error and 0.998 labelled the 5.5 m hit.
 
-## Next requirement (now evidence-backed, not optional)
+## Fix: ranked-candidate walk (implemented 2026-06-15)
 
-The supervisor must **validate a candidate by registration fitness before publishing**,
-rather than trusting the BBS occupancy score — exactly the roadmap's "registration
-scoring from runtime-available inputs" decision gate. Concretely, one of:
+The first of the two remedies below is now implemented. The insight is that the
+localizer's own NDT fitness *is* the registration oracle the BBS score is not, so the
+supervisor should let it adjudicate the ranked list rather than trusting rank 0:
 
-- have G2 score each candidate by NDT/GICP fitness against the map at the candidate
-  pose and return that fitness, so `min_candidate_score` can gate on registration
-  quality instead of BBS hit ratio; and/or
-- have the supervisor walk the **ranked** candidate list (G2 already publishes a
-  `PoseArray`) instead of only the top candidate, trying the next-best when a reset does
-  not lower fitness within the settle window.
+- **Walk the ranked candidate list within one query** (done). G2 now returns the full
+  ranked `candidates` list in its `~/query` reply (not just `top`). The supervisor
+  publishes the best candidate, waits `settle_timeout_sec` for recovery, and if the
+  localizer's fitness does not drop, publishes the *next* candidate from the same query
+  — using the localizer's fitness to reject aliased poses. Walking within a query does
+  **not** spend a `max_attempts` slot (only re-querying does), so the ceiling stays a
+  true bound on queries while one query can try all the poses it found. A wrong reset is
+  rejected by the localizer (high fitness, no accepted pose), so walking cannot cause
+  the Phase 3 acceptance blowup. Covered by `test_reinitialization_supervisor_policy.py`
+  (walk recovers on a lower-ranked candidate without spending attempts; the list-exhaust
+  path still respects `max_attempts`; the score floor still truncates the walk) and by
+  the ROS integration test (the node walks 0→1 within one query and recovers).
+- **Per-candidate registration scoring in G2** (still future work). Have G2 score each
+  candidate by NDT/GICP fitness against the 3D map at the candidate pose, so the ranking
+  itself reflects registration quality — the complement to the walk for when the correct
+  pose is not even in the BBS top-K.
 
-Query latency is a secondary factor: attempt 3 was correct but stale by the time it was
-published. The G1 optimization note's coarse-yaw / C++ path applies here.
+Query latency remains a secondary factor: attempt 3 was correct but stale by the time it
+was published. The G1 optimization note's coarse-yaw / C++ path applies here.
+
+**Live validation of the walk on this exact kidnap window is still pending** — the unit
+and integration tests prove the supervisor walks and recovers given a ranked list whose
+list contains the true pose; whether the real BBS top-K at this kidnap location actually
+contains it (and within the staleness budget) is the next thing to confirm on the bag.

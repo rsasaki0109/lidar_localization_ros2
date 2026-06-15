@@ -64,11 +64,13 @@ def run(
 
 
 def actions(events):
-    return [a for (_, a, _, _) in events]
+    # Tolerates both the 4-tuple events from run() and the 5-tuple events from
+    # run_ranked() (which also carries the published candidate_index).
+    return [e[1] for e in events]
 
 
 def reset_times(events):
-    return [t for (t, a, _, _) in events if a == rsp.ACTION_PUBLISH_RESET]
+    return [e[0] for e in events if e[1] == rsp.ACTION_PUBLISH_RESET]
 
 
 # --- Gate: nothing happens without a sustained request -----------------------
@@ -199,6 +201,111 @@ def test_decide_is_pure_same_inputs_same_outputs():
     assert d1 == d2
     # Input state object is not mutated.
     assert state == rsp.initial_state()
+
+
+# --- Gate: ranked-candidate walk (the 2026-06-15 live-run lesson) -------------
+#
+# A query's top candidate can be confidently wrong (BBS occupancy score does not
+# separate a 190 m error from a 5 m hit). The supervisor must walk the ranked list
+# from one query, using the localizer's fitness as the registration oracle, before
+# spending another attempt -- and the bounds must still hold.
+
+def run_ranked(
+    params,
+    ticks,
+    *,
+    requested,
+    candidate_scores,
+    recover_on_index=None,
+    query_latency=1,
+    dt=1.0,
+):
+    """Drive the policy delivering a ranked candidate list once per query.
+
+    ``recover_on_index`` is the rank index whose published reset the localizer
+    accepts (fitness drops); None means no candidate ever recovers. Fitness is high
+    while any other (or no) candidate is the most recently published one.
+    """
+    state = rsp.initial_state()
+    events = []
+    deliver_at = None
+    published_index = None
+
+    for i in range(ticks):
+        now = i * dt
+        req = bool(requested(now)) if callable(requested) else bool(requested)
+        scores = None
+        if deliver_at is not None and i == deliver_at:
+            scores = tuple(candidate_scores)
+            deliver_at = None
+        fit = None
+        if published_index is not None:
+            fit = 0.2 if published_index == recover_on_index else 9.0
+        obs = rsp.SupervisorObservation(
+            now, req, candidate_scores=scores, best_fitness=fit)
+        dec = rsp.decide(params, state, obs)
+        state = dec.state
+        events.append((now, dec.action, dec.reason, state.name, dec.candidate_index))
+        if dec.action == rsp.ACTION_QUERY:
+            deliver_at = i + query_latency
+            published_index = None
+        if dec.action == rsp.ACTION_PUBLISH_RESET:
+            published_index = dec.candidate_index
+    return events
+
+
+def published_indices(events):
+    return [ci for (_, a, _, _, ci) in events if a == rsp.ACTION_PUBLISH_RESET]
+
+
+def test_walk_recovers_on_lower_ranked_candidate_within_one_query():
+    # Top two candidates are aliased-wrong; rank 2 is the true pose. A single query
+    # (max_attempts=1) must walk 0 -> 1 -> 2 and recover, without giving up: walking
+    # does not spend attempts, so the ceiling is never hit.
+    params = rsp.SupervisorParams(
+        request_debounce_sec=1.0, min_candidate_score=0.6, settle_timeout_sec=3.0,
+        max_attempts=1, recovery_fitness_threshold=1.5)
+    events = run_ranked(
+        params, 60, requested=True,
+        candidate_scores=[0.99, 0.98, 0.97], recover_on_index=2)
+    assert published_indices(events) == [0, 1, 2]
+    assert actions(events).count(rsp.ACTION_QUERY) == 1
+    assert rsp.ACTION_GIVE_UP not in actions(events)
+    reasons = [r for (_, _, r, _, _) in events]
+    assert "next_candidate" in reasons
+    assert "recovery_confirmed" in reasons
+    assert events[-1][3] == rsp.STATE_STANDDOWN
+
+
+def test_walk_exhausts_list_then_respects_max_attempts():
+    # No candidate ever recovers. Each query walks its whole list (2 candidates),
+    # then a fresh query costs one attempt. The reset count must stay bounded by
+    # max_attempts * list_length, and it must give up -- never loop forever.
+    params = rsp.SupervisorParams(
+        request_debounce_sec=1.0, min_candidate_score=0.6, settle_timeout_sec=3.0,
+        min_seconds_between_attempts=2.0, max_attempts=2)
+    events = run_ranked(
+        params, 300, requested=True,
+        candidate_scores=[0.99, 0.98], recover_on_index=None)
+    assert actions(events).count(rsp.ACTION_QUERY) <= params.max_attempts
+    # Two candidates walked per query, at most max_attempts queries.
+    assert len(reset_times(events)) <= params.max_attempts * 2
+    assert rsp.ACTION_GIVE_UP in actions(events)
+    assert events[-1][3] == rsp.STATE_EXHAUSTED
+
+
+def test_walk_stops_at_min_candidate_score_floor():
+    # Rank 0 is strong, rank 1 is below the score floor: the walk must not publish
+    # the sub-floor candidate even though the list has more entries.
+    params = rsp.SupervisorParams(
+        request_debounce_sec=1.0, min_candidate_score=0.6, settle_timeout_sec=3.0,
+        max_attempts=1)
+    events = run_ranked(
+        params, 60, requested=True,
+        candidate_scores=[0.99, 0.4], recover_on_index=None)
+    # Only the top candidate is ever published; index 1 (score 0.4) is never tried.
+    assert published_indices(events) == [0]
+    assert rsp.ACTION_GIVE_UP in actions(events)
 
 
 if __name__ == "__main__":

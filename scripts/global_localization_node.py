@@ -117,19 +117,25 @@ class GlobalLocalizationNode(Node):
             pose_array.poses.append(pose)
         self.candidates_pub.publish(pose_array)
 
+        ranked = [
+            {
+                "x": round(c.x_m, 3),
+                "y": round(c.y_m, 3),
+                "yaw_deg": round(math.degrees(c.yaw_rad), 1),
+                "score": round(c.score, 4),
+            }
+            for c in result.candidates
+        ]
         summary = {
             "candidate_count": len(result.candidates),
             "scan_point_count": result.scan_point_count,
             "runtime_sec": round(runtime_sec, 3),
+            # Full ranked list (high-to-low) so a consumer can walk past an
+            # aliased top candidate; "top" kept for back-compat.
+            "candidates": ranked,
         }
-        if result.candidates:
-            top = result.candidates[0]
-            summary["top"] = {
-                "x": round(top.x_m, 3),
-                "y": round(top.y_m, 3),
-                "yaw_deg": round(math.degrees(top.yaw_rad), 1),
-                "score": round(top.score, 4),
-            }
+        if ranked:
+            summary["top"] = ranked[0]
         response.success = bool(result.candidates)
         response.message = json.dumps(summary)
         self.get_logger().info("query answered: %s" % response.message)

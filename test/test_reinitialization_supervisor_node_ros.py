@@ -15,6 +15,7 @@ import json
 import sys
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -40,9 +41,14 @@ _REL.reliability = ReliabilityPolicy.RELIABLE
 
 
 class _Harness(Node):
-    """Fakes the localizer + G2 service and watches /initialpose."""
+    """Fakes the localizer + G2 service and watches /initialpose.
 
-    def __init__(self):
+    The G2 reply carries a ranked ``candidates`` list (top is aliased-wrong). If
+    ``recover_on_second`` is set, fitness drops to recovered only after the node has
+    walked to the second candidate -- exercising the ranked-candidate walk glue.
+    """
+
+    def __init__(self, recover_on_second=False):
         super().__init__("g3_test_harness")
         self.create_service(Trigger, "/global_localization_node/query", self._on_query)
         self._reinit = self.create_publisher(Bool, "/reinitialization_requested", _REL)
@@ -50,26 +56,36 @@ class _Harness(Node):
         self.create_subscription(
             PoseWithCovarianceStamped, "/initialpose", self._on_pose, _REL)
         self.query_calls = 0
-        self.initialpose = None
+        self.recover_on_second = recover_on_second
+        self.poses = []
         self.create_timer(0.1, self._drive)
+
+    @property
+    def initialpose(self):
+        return self.poses[-1] if self.poses else None
 
     def _on_query(self, request, response):
         self.query_calls += 1
         response.success = True
-        response.message = json.dumps(
-            {"candidate_count": 1,
-             "top": {"x": 12.0, "y": 34.0, "yaw_deg": 45.0, "score": 0.99}})
+        response.message = json.dumps({
+            "candidate_count": 2,
+            "candidates": [
+                {"x": 12.0, "y": 34.0, "yaw_deg": 45.0, "score": 0.99},
+                {"x": 99.0, "y": 88.0, "yaw_deg": -90.0, "score": 0.98},
+            ],
+        })
         return response
 
     def _on_pose(self, msg):
-        self.initialpose = msg
+        self.poses.append(msg)
 
     def _drive(self):
-        # Sustained reinit request + persistently-bad fitness (no premature recovery).
         self._reinit.publish(Bool(data=True))
-        status = DiagnosticStatus()
+        # Recover only once the node has walked to the 2nd candidate, else stay bad.
+        recovered = self.recover_on_second and len(self.poses) >= 2
         kv = KeyValue()
-        kv.key, kv.value = "fitness_score", "9.0"
+        kv.key, kv.value = "fitness_score", ("0.2" if recovered else "9.0")
+        status = DiagnosticStatus()
         status.values = [kv]
         array = DiagnosticArray()
         array.status = [status]
@@ -99,6 +115,42 @@ def test_supervisor_node_closes_the_loop():
         assert abs(harness.initialpose.pose.covariance[0] - 0.25) < 1e-3
         # Having published a reset, the policy is now awaiting recovery evidence.
         assert sup.state.name == rsn.rsp.STATE_SETTLING
+    finally:
+        executor.shutdown()
+        sup.destroy_node()
+        harness.destroy_node()
+        rclpy.shutdown()
+
+
+def test_supervisor_node_walks_to_second_candidate_and_recovers():
+    # The top candidate is aliased-wrong (fitness stays bad); the node must walk to
+    # the second candidate from the same query, at which point the localizer locks.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    # Walk fast and within a single query (max_attempts=1 proves walking does not
+    # spend attempts -- a fresh query would have given up).
+    sup.params = replace(
+        sup.params, settle_timeout_sec=2.0, request_debounce_sec=0.5,
+        min_seconds_between_attempts=1.0, max_attempts=1)
+    harness = _Harness(recover_on_second=True)
+    executor = SingleThreadedExecutor()
+    executor.add_node(sup)
+    executor.add_node(harness)
+    spin = threading.Thread(target=executor.spin, daemon=True)
+    spin.start()
+    try:
+        deadline = time.monotonic() + 15.0
+        while (time.monotonic() < deadline
+               and sup.state.name != rsn.rsp.STATE_STANDDOWN):
+            time.sleep(0.1)
+
+        assert len(harness.poses) >= 2, "node never walked to the second candidate"
+        first, second = harness.poses[0].pose.pose, harness.poses[1].pose.pose
+        assert abs(first.position.x - 12.0) < 1e-3 and abs(first.position.y - 34.0) < 1e-3
+        assert abs(second.position.x - 99.0) < 1e-3 and abs(second.position.y - 88.0) < 1e-3
+        # Recovered on the walked candidate, within one query, without giving up.
+        assert sup.state.name == rsn.rsp.STATE_STANDDOWN
+        assert harness.query_calls == 1
     finally:
         executor.shutdown()
         sup.destroy_node()

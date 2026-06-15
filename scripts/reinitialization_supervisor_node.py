@@ -82,11 +82,15 @@ class ReinitializationSupervisorNode(Node):
         # Latest observed signals.
         self._requested = False
         self._fitness = None
-        # One-shot service reply: (score, pose-dict) delivered to the policy once.
+        # One-shot service reply delivered to the policy once: a tuple of ranked
+        # candidate scores (high-to-low), or () for a reply that carried no usable
+        # candidate. None means no reply is pending this tick.
         self._pending_reply = None
         self._query_in_flight = False
-        # The candidate most recently approved for publication.
-        self._last_top = None
+        # Ranked candidate poses from the most recent query reply, indexed by the
+        # policy's candidate_index when it asks for a publish (the ranked-candidate
+        # walk -- see reinitialization_supervisor_policy).
+        self._candidates = []
 
         reliable = QoSProfile(depth=1)
         reliable.reliability = ReliabilityPolicy.RELIABLE
@@ -127,15 +131,15 @@ class ReinitializationSupervisorNode(Node):
 
     def _tick(self) -> None:
         now = time.monotonic()
-        score = None
+        candidate_scores = None
         if self._pending_reply is not None:
-            score, self._last_top = self._pending_reply
+            candidate_scores = self._pending_reply
             self._pending_reply = None
 
         obs = rsp.SupervisorObservation(
             now_sec=now,
             reinitialization_requested=self._requested,
-            best_candidate_score=score,
+            candidate_scores=candidate_scores,
             best_fitness=self._fitness,
         )
         decision = rsp.decide(self.params, self.state, obs)
@@ -144,7 +148,7 @@ class ReinitializationSupervisorNode(Node):
         if decision.action == rsp.ACTION_QUERY:
             self._issue_query()
         elif decision.action == rsp.ACTION_PUBLISH_RESET:
-            self._publish_reset()
+            self._publish_reset(decision.candidate_index)
         elif decision.action == rsp.ACTION_GIVE_UP:
             self.get_logger().error(
                 "reinitialization gave up (%s) after %d attempt(s); operator "
@@ -173,24 +177,30 @@ class ReinitializationSupervisorNode(Node):
             return
         if not response.success:
             self.get_logger().info("query returned no candidate: %s" % response.message)
-            # Deliver a sub-threshold score so the policy counts a failed attempt.
-            self._pending_reply = (float("-inf"), None)
+            # Empty reply -> the policy counts a failed attempt.
+            self._candidates = []
+            self._pending_reply = ()
             return
         try:
             summary = json.loads(response.message)
-            top = summary["top"]
-            score = float(top["score"])
-        except (ValueError, KeyError) as exc:
+            candidates = summary.get("candidates")
+            if not candidates:
+                # Back-compat with a G2 that only reports the single "top" candidate.
+                candidates = [summary["top"]]
+            scores = tuple(float(c["score"]) for c in candidates)
+        except (ValueError, KeyError, TypeError) as exc:
             self.get_logger().warn("could not parse query reply: %s" % exc)
-            self._pending_reply = (float("-inf"), None)
+            self._candidates = []
+            self._pending_reply = ()
             return
-        self._pending_reply = (score, top)
+        self._candidates = candidates
+        self._pending_reply = scores
 
-    def _publish_reset(self) -> None:
-        if self._last_top is None:
+    def _publish_reset(self, candidate_index: int = 0) -> None:
+        if not self._candidates or candidate_index >= len(self._candidates):
             self.get_logger().error("publish_reset requested with no candidate; skipping")
             return
-        top = self._last_top
+        top = self._candidates[candidate_index]
         yaw = math.radians(top["yaw_deg"])
         msg = PoseWithCovarianceStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -206,8 +216,10 @@ class ReinitializationSupervisorNode(Node):
         msg.pose.covariance = cov
         self.initialpose_pub.publish(msg)
         self.get_logger().warn(
-            "published /initialpose reset to (%.2f, %.2f, %.1f deg) score=%s"
-            % (top["x"], top["y"], top["yaw_deg"], top["score"]))
+            "published /initialpose reset to (%.2f, %.2f, %.1f deg) score=%s "
+            "[candidate %d/%d]"
+            % (top["x"], top["y"], top["yaw_deg"], top["score"],
+               candidate_index + 1, len(self._candidates)))
 
 
 def main() -> None:
