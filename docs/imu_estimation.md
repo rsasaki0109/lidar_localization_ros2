@@ -136,6 +136,34 @@ The MID-360 launch (`mid360_legged_localization.launch.py`) already wires
   improvement over pure NDT on a specific dataset. Do not cite it as an accuracy
   claim without a controlled run.
 
+### Turnkey A/B benchmark (idle-ready)
+
+A controlled Koide A/B is committed and ready to run the moment the machine is
+quiet (timing/accuracy on this shared box is only trustworthy at load < ~5):
+
+- `param/benchmark/koide_hard_localization_outdoor_hard_01a_full380_ndt_omp_imu_off.yaml`
+- `param/benchmark/koide_hard_localization_outdoor_hard_01a_full380_ndt_omp_imu_on.yaml`
+
+Both are the Phase 1 NDT_OMP winner config on the real `outdoor_hard_01a` bag
+(which carries `/livox/imu`, 75947 samples over 380 s, plus GT); they differ
+**only** in `use_imu_preintegration` (and `output_dir` / `ros_domain_id`), so any
+metric delta is attributable to the Forster preintegration smoother. Run both
+back-to-back and compare:
+
+```bash
+ros2 run lidar_localization_ros2 benchmark_from_manifest --manifest \
+  param/benchmark/koide_hard_localization_outdoor_hard_01a_full380_ndt_omp_imu_off.yaml
+ros2 run lidar_localization_ros2 benchmark_from_manifest --manifest \
+  param/benchmark/koide_hard_localization_outdoor_hard_01a_full380_ndt_omp_imu_on.yaml
+```
+
+**Read the metrics the Phase 1 way** (docs/phase1_koide_backend_comparison.md): a
+lower translation RMSE alone is a trap on this hard sequence — an estimator can
+look better while tracking far fewer poses. Judge on **ok-rate, longest lost
+window, and pose count first**, then RMSE among the survivors. Only after this
+run lands may the preintegration path be described as an accuracy win (or not)
+on Koide; until then the limits above stand.
+
 ## Related docs
 
 - [pose_covariance.md](pose_covariance.md) — the twist-EKF hybrid covariance path
