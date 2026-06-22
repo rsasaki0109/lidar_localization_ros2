@@ -241,6 +241,35 @@ def test_seed_motion_history_uses_one_fix_per_query(monkeypatch):
         rclpy.shutdown()
 
 
+def test_seed_motion_uses_candidate_age_from_query_reply(monkeypatch):
+    # New G2 replies include candidate_age_sec: the seed should be compensated
+    # from the scan time, not from the query issue time. This matters when the
+    # latest scan was already a little old or a publish happens after response.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    try:
+        sup.enable_seed_motion = True
+        sup.max_seed_speed = 30.0
+        sup.max_seed_latency = 30.0
+        sup._prev_fix = (0.0, 0.0, 100.0)
+        sup._query_issue_time = 110.0
+        sup._current_query_issue_time = 110.0
+        sup._current_query_candidate_age_sec = 3.0
+        sup._current_query_response_sec = 113.0
+
+        monkeypatch.setattr(rsn.time, "monotonic", lambda: 115.0)
+        compensated = sup._compensate_seed(10.0, 0.0, candidate_index=0)
+
+        assert compensated == (15.0, 0.0)
+        # The stored fix timestamp is response_time - candidate_age, not the
+        # query issue timestamp.
+        assert sup._prev_fix == (10.0, 0.0, 110.0)
+        assert "candidate age" in sup._last_seed_motion_status
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
 def test_first_query_seed_motion_uses_local_pose_delta(monkeypatch):
     # The first query has no previous BBS fix, but the localizer still publishes
     # /pcl_pose. Use that local pose delta to compensate query latency.
@@ -287,6 +316,30 @@ def test_first_query_seed_motion_falls_back_to_last_pose_velocity(monkeypatch):
 
         assert compensated == (-109.0, 26.0)
         assert sup._current_query_pose_delta == (0.0, 12.0)
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
+def test_first_query_velocity_fallback_uses_candidate_age(monkeypatch):
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    try:
+        sup.enable_seed_motion = True
+        sup.max_seed_speed = 3.0
+        sup.max_seed_latency = 30.0
+        sup._query_issue_time = 100.0
+        sup._current_query_issue_time = 100.0
+        sup._query_issue_pose = None
+        sup._query_issue_velocity = rsn.rsp.SeedVelocity(0.0, 1.2, True)
+        sup._current_query_candidate_age_sec = 3.0
+        sup._current_query_response_sec = 104.0
+
+        monkeypatch.setattr(rsn.time, "monotonic", lambda: 106.0)
+        compensated = sup._compensate_seed(-109.0, 14.0, candidate_index=0)
+
+        assert compensated == (-109.0, 20.0)
+        assert sup._current_query_pose_delta == (0.0, 6.0)
     finally:
         sup.destroy_node()
         rclpy.shutdown()

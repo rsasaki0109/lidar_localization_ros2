@@ -165,6 +165,8 @@ class ReinitializationSupervisorNode(Node):
         self._current_query_velocity = rsp.SeedVelocity()
         self._current_query_pose_delta = None
         self._current_query_issue_time = None
+        self._current_query_candidate_age_sec = None
+        self._current_query_response_sec = None
         self._last_seed_motion_status = "disabled"
 
         reliable = QoSProfile(depth=1)
@@ -304,6 +306,8 @@ class ReinitializationSupervisorNode(Node):
         self._current_query_velocity = rsp.SeedVelocity()
         self._current_query_pose_delta = None
         self._current_query_issue_time = None
+        self._current_query_candidate_age_sec = None
+        self._current_query_response_sec = None
 
     def _issue_query(self) -> None:
         if not self.query_client.service_is_ready():
@@ -336,6 +340,8 @@ class ReinitializationSupervisorNode(Node):
             self.get_logger().info("query returned no candidate: %s" % response.message)
             # Empty reply -> the policy counts a failed attempt.
             self._candidates = []
+            self._current_query_candidate_age_sec = None
+            self._current_query_response_sec = None
             self._pending_reply = ()
             return
         try:
@@ -345,15 +351,33 @@ class ReinitializationSupervisorNode(Node):
                 # Back-compat with a G2 that only reports the single "top" candidate.
                 candidates = [summary["top"]]
             scores = tuple(float(c["score"]) for c in candidates)
+            candidate_age_sec = self._parse_nonnegative_float(
+                summary.get("candidate_age_sec"))
         except (ValueError, KeyError, TypeError) as exc:
             self.get_logger().warn("could not parse query reply: %s" % exc)
             self._candidates = []
+            self._current_query_candidate_age_sec = None
+            self._current_query_response_sec = None
             self._pending_reply = ()
             return
         self._candidates = candidates
         self._pending_reply = scores
         self._current_query_velocity = rsp.SeedVelocity()
         self._current_query_issue_time = self._query_issue_time
+        self._current_query_candidate_age_sec = candidate_age_sec
+        self._current_query_response_sec = time.monotonic()
+
+    @staticmethod
+    def _parse_nonnegative_float(value):
+        if value is None:
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(number) or number < 0.0:
+            return None
+        return number
 
     def _publish_reset(self, candidate_index: int = 0) -> None:
         if not self._candidates or candidate_index >= len(self._candidates):
@@ -387,7 +411,8 @@ class ReinitializationSupervisorNode(Node):
         self.initialpose_pub.publish(msg)
         comp_note = ""
         if (seed_x, seed_y) != (raw_x, raw_y):
-            comp_note = " (motion-compensated from %.2f, %.2f)" % (raw_x, raw_y)
+            comp_note = " (motion-compensated from %.2f, %.2f; %s)" % (
+                raw_x, raw_y, self._last_seed_motion_status)
         elif self.enable_seed_motion:
             comp_note = " (motion-compensation skipped: %s)" % (
                 self._last_seed_motion_status,)
@@ -422,13 +447,14 @@ class ReinitializationSupervisorNode(Node):
 
         if candidate_index == 0:
             velocity = rsp.SeedVelocity()
+            fix_time = self._current_query_fix_time(issue)
             if self._prev_fix is not None:
-                prev_x, prev_y, prev_issue = self._prev_fix
+                prev_x, prev_y, prev_fix_time = self._prev_fix
                 velocity = rsp.estimate_seed_velocity(
-                    (prev_x, prev_y), prev_issue, (raw_x, raw_y), issue,
+                    (prev_x, prev_y), prev_fix_time, (raw_x, raw_y), fix_time,
                     max_speed_mps=self.max_seed_speed)
                 if not velocity.valid:
-                    dt = issue - prev_issue
+                    dt = fix_time - prev_fix_time
                     if dt > 0.0:
                         speed = math.hypot(raw_x - prev_x, raw_y - prev_y) / dt
                         self._last_seed_motion_status = (
@@ -449,7 +475,7 @@ class ReinitializationSupervisorNode(Node):
             self._current_query_velocity = velocity
             # Store the raw, top-ranked fix for the next query's velocity
             # estimate. Do not store walked candidates from the same query.
-            self._prev_fix = (raw_x, raw_y, issue)
+            self._prev_fix = (raw_x, raw_y, fix_time)
         else:
             if self._current_query_pose_delta is not None:
                 dx, dy = self._current_query_pose_delta
@@ -463,11 +489,25 @@ class ReinitializationSupervisorNode(Node):
             dx, dy = self._current_query_pose_delta
             return raw_x + dx, raw_y + dy
         if velocity.valid:
-            latency = time.monotonic() - issue
-            self._last_seed_motion_status = "applied latency %.2fs" % (latency,)
+            latency, latency_source = self._seed_latency_sec(issue)
+            self._last_seed_motion_status = "applied %s %.2fs" % (
+                latency_source, latency)
             return rsp.forward_compensate_xy(
                 (raw_x, raw_y), velocity, latency, max_latency_sec=self.max_seed_latency)
         return raw_x, raw_y
+
+    def _seed_latency_sec(self, issue):
+        if (self._current_query_candidate_age_sec is not None
+                and self._current_query_response_sec is not None):
+            response_age = max(0.0, time.monotonic() - self._current_query_response_sec)
+            return self._current_query_candidate_age_sec + response_age, "candidate age"
+        return time.monotonic() - issue, "latency"
+
+    def _current_query_fix_time(self, fallback_issue):
+        if (self._current_query_candidate_age_sec is not None
+                and self._current_query_response_sec is not None):
+            return self._current_query_response_sec - self._current_query_candidate_age_sec
+        return fallback_issue
 
     def _estimate_pose_delta_since_query_issue(self):
         if self._query_issue_pose is None:
@@ -491,7 +531,7 @@ class ReinitializationSupervisorNode(Node):
     def _estimate_pose_delta_from_query_velocity(self):
         if not self._query_issue_velocity.valid or self._query_issue_time is None:
             return None
-        latency = time.monotonic() - self._query_issue_time
+        latency, _latency_source = self._seed_latency_sec(self._query_issue_time)
         if latency <= 0.0 or latency > self.max_seed_latency:
             return None
         speed = math.hypot(self._query_issue_velocity.vx, self._query_issue_velocity.vy)
