@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+
+import os
+import re
+import sys
+import unittest
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+ROS_RUN_SCRIPTS = {
+    "scripts/check_lidar_localization_bringup.py",
+    "scripts/create_lidar_localization_config.py",
+    "scripts/prepare_koide_hard_relocalization_assets.sh",
+    "scripts/run_koide_hard_imu_deskew_smoke.sh",
+    "scripts/run_lidar_localization_imu_comparison.py",
+    "scripts/validate_lidar_localization_imu.py",
+}
+BOOTSTRAP_SCRIPT = "scripts/bootstrap_colcon_workspace.sh"
+
+
+def cmake_install_programs() -> set[str]:
+    text = (REPO_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    match = re.search(
+        r"install\(PROGRAMS(?P<body>.*?)DESTINATION\s+lib/\$\{PROJECT_NAME\}\)",
+        text,
+        re.DOTALL,
+    )
+    if match is None:
+        raise AssertionError("install(PROGRAMS ... DESTINATION lib/${PROJECT_NAME}) not found")
+    programs = set()
+    for line in match.group("body").splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            programs.add(stripped)
+    return programs
+
+
+class TestPackageInstallContract(unittest.TestCase):
+    def test_user_facing_ros_run_scripts_are_installed(self):
+        installed = cmake_install_programs()
+
+        self.assertFalse(
+            ROS_RUN_SCRIPTS - installed,
+            f"missing install(PROGRAMS) entries: {sorted(ROS_RUN_SCRIPTS - installed)}",
+        )
+
+    def test_user_facing_ros_run_scripts_are_executable(self):
+        for relative_path in sorted(ROS_RUN_SCRIPTS):
+            with self.subTest(relative_path=relative_path):
+                path = REPO_ROOT / relative_path
+
+                self.assertTrue(path.exists())
+                self.assertTrue(os.access(path, os.X_OK), f"{relative_path} is not executable")
+
+    def test_lidar_localization_mid360_helper_package_is_installed_as_directory(self):
+        cmake_text = (REPO_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+
+        self.assertIn("scripts/lidar_localization_mid360", cmake_text)
+        self.assertTrue((REPO_ROOT / "scripts/lidar_localization_mid360/__init__.py").exists())
+        self.assertTrue((REPO_ROOT / "scripts/lidar_localization_mid360/validation_model.py").exists())
+
+    def test_colcon_bootstrap_script_is_executable(self):
+        path = REPO_ROOT / BOOTSTRAP_SCRIPT
+
+        self.assertTrue(path.exists())
+        self.assertTrue(os.access(path, os.X_OK), f"{BOOTSTRAP_SCRIPT} is not executable")
+
+    def test_dependencies_repos_lists_required_ndt_dependency(self):
+        repos_text = (REPO_ROOT / "dependencies.repos").read_text(encoding="utf-8")
+
+        self.assertIn("ndt_omp_ros2:", repos_text)
+        self.assertIn("https://github.com/rsasaki0109/ndt_omp_ros2.git", repos_text)
+
+
+if __name__ == "__main__":
+    sys.exit(unittest.main())

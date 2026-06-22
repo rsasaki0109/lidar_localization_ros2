@@ -95,6 +95,34 @@ Istanbul-only tuning.
 
 ### Koide smoke manifests
 
+To download the Koide assets and run a short IMU/deskew real-bag smoke in one
+step:
+
+```bash
+source scripts/setup_local_env.sh
+scripts/run_koide_hard_imu_deskew_smoke.sh --download
+```
+
+After the dataset is staged, rerun without `--download`. Use `--mode deskew`
+for a faster deskew-only check, or `--duration 60` for a longer smoke.
+
+To prepare the same public bag for the guarded G2/G3 recovery launch, including
+the route-cropped BBS occupancy map:
+
+```bash
+source scripts/setup_local_env.sh
+scripts/prepare_koide_hard_relocalization_assets.sh --download --mode imu_preintegration
+```
+
+Use `--mode deskew` to generate a continuous-time deskew localization YAML for
+the same recovery launch. The command prints the exact launch and bag replay
+commands; automatic recovery remains an explicit experimental path. The printed
+G2 launch defaults use the compiled backend with a coarser `10 deg` / `256 point`
+BBS query because the default `5 deg` / `512 point` search is too stale on the
+moving Koide bag. The Koide recovery command also re-queries after the top
+candidate (`supervisor_max_walk_candidates:=1`) and enables seed motion
+compensation, matching the latest real-bag recovery experiment.
+
 After staging Koide maps, GT, and sequence bags under `data/public/koide_hard_localization`, use:
 
 ```bash
@@ -113,6 +141,60 @@ ros2 run lidar_localization_ros2 benchmark_from_manifest \
 
 Latest local Koide snapshot:
 
+- `2026-06-21`, guarded G2/G3 recovery live check on `outdoor_hard_01a` with
+  lowered reinit trigger (`threshold=0.40`, `gap_scale=10 s`) and C++ BBS:
+  - default BBS (`5 deg`, `512 points`) answered in `24.674 s`; it published
+    four resets, but the first candidate was already `30.09 m` stale at publish
+    time and the request window remained unrecovered.
+  - fast BBS (`10 deg`, `256 points`) answered in `6.176 s` then `4.345 s`;
+    the second query's top reset was much closer (`6.64 m`, `2.0 deg`), but
+    the run still had `0` recovered request windows. This validates the request
+    and guarded publish path, not automatic recovery.
+  - follow-up runs on 2026-06-22 removed three false-positive paths: stale
+    pre-reset fitness can no longer confirm recovery, recovery now needs
+    consecutive post-reset low-fitness samples, and those samples must also be
+    stable-tracking `/alignment_status` diagnostics. `/initialpose` also uses a
+    dedicated callback group, removing the earlier 9-36 s delay between supervisor
+    publish and localizer `initialPoseReceived`.
+  - lowering G2 NMS (`g2_nms_radius_m:=0.5`) keeps near-by/yaw-alternative
+    hypotheses, but walking a stale list remains a bad spend on Koide:
+    `/tmp/lidarloc_koide_recovery_imu_120_nms05_walk4_20260622_124750` still had
+    `recovered=0`; by the 4th walked candidate the reset was tens of metres stale.
+    Re-querying quickly (`supervisor_settle_timeout_sec:=8.0`,
+    `supervisor_max_walk_candidates:=1`) is safer.
+  - latest 120 s checks still report `0` stable recovered request windows. The
+    best safety result is
+    `/tmp/lidarloc_koide_recovery_imu_120_nms05_requery8_stable_20260622_125720`:
+    `ok_rows=101/204`, `reinitialization_requested_rows=31`, `recovered=0`,
+    `max_accepted_gap=15.4 s`, `recovery_confirmed=0`. G2/G3 now publishes
+    guarded resets promptly and avoids false `recovery_confirmed`; robust recovery
+    is still blocked by stale or wrong G2 candidates on the moving outdoor sequence.
+- `2026-06-21`, `outdoor_hard_01a` 120 s IMU/deskew boundary check with the
+  same wrapper (`/tmp/lidarloc_koide_wrapper_allmodes_smoke120_strict`):
+  - `lidar_only`: `translation_rmse_m=0.145`, `rotation_rmse_deg=2.164`,
+    `Last pose s=22.7`
+  - `imu_preintegration`: IMU active / seed source `19.1%`, fallback `0`,
+    `translation_rmse_m=0.087`, `rotation_rmse_deg=0.855`, `Last pose s=21.4`
+  - `deskew`: IMU active / seed source `12.1%`, deskew applied `10.5%`,
+    fallback `0`, `translation_rmse_m=0.161`, `rotation_rmse_deg=1.926`,
+    `Last pose s=32.7`
+  - Treat these RMSE values as short-coverage metrics, not 120 s accuracy. The
+    localizer rejects stale local minima after the first tracking cliff.
+- `2026-06-21`, `outdoor_hard_01a` 60 s IMU/deskew smoke with Koide wrapper
+  open-loop strict gate (`/tmp/lidarloc_koide_wrapper_allmodes_smoke60_strict`):
+  - `lidar_only`: `translation_rmse_m=0.163`, `rotation_rmse_deg=2.137`
+  - `imu_preintegration`: IMU active / seed source `34.4%`, fallback `0`,
+    `translation_rmse_m=0.082`, `rotation_rmse_deg=0.810`
+  - `deskew`: IMU active / seed source `35.4%`, deskew applied `31.2%`,
+    fallback `0`, `translation_rmse_m=0.081`, `rotation_rmse_deg=0.771`
+  - open-loop strict gate rejected stale local minima; max matched translation
+    error was `0.156 m` for both IMU and deskew pose traces.
+- `2026-06-21`, `outdoor_hard_01a` 20 s IMU/deskew smoke with the same wrapper:
+  - `lidar_only`: `translation_rmse_m=0.0796`, `rotation_rmse_deg=0.722`
+  - `imu_preintegration`: IMU active / seed source `91.7%`, fallback `0`,
+    `translation_rmse_m=0.085`, `rotation_rmse_deg=0.613`
+  - `deskew`: IMU active / seed source `88.9%`, deskew applied `86.1%`,
+    fallback `0`, `translation_rmse_m=0.083`, `rotation_rmse_deg=0.541`
 - `2026-06-10`, `outdoor_hard_01a_smoke60` + `recovery_retry r3_gap1_seed15`: `translation_rmse_m=0.228`, `rotation_rmse_deg=2.696`, `ok_rows=244/246`
 - `2026-06-10`, `outdoor_hard_01a_120` + `recovery_retry r3_gap1_seed15` (tuning run): `translation_rmse_m=0.192`, `rotation_rmse_deg=1.923`, `ok_rows=441/461`
 - `2026-06-10`, `outdoor_hard_01a_120` + `recovery_retry r3_gap1_seed15` (reconfirm run): `translation_rmse_m=0.315`, `ok_rows=221/447` — `fitness_exploded` outlier ~`104 s`
@@ -577,6 +659,7 @@ Without `--execute`, it only writes a no-publish execution report.
 Core run and evaluation:
 
 - `benchmark_runner`
+- `run_lidar_localization_imu_comparison.py`
 - `benchmark_from_manifest`
 - `benchmark_pose_recorder`
 - `benchmark_diagnostic_recorder`
@@ -590,6 +673,8 @@ Dataset preparation:
 - `fetch_official_hdl_localization_sample.sh`
 - `fetch_official_autoware_istanbul_dataset.sh`
 - `fetch_koide_hard_pointcloud_localization_dataset.sh`
+- `prepare_koide_hard_relocalization_assets.sh`
+- `run_koide_hard_imu_deskew_smoke.sh`
 - `convert_boreas_sequence_to_rosbag2.py`
 - `scaffold_mapless_public_dataset_bundle.py`
 - `benchmark_make_graph_dataset`

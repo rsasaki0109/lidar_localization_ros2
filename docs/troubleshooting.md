@@ -60,6 +60,79 @@ The `message` field is the primary reject reason. Key-value pairs carry context.
 | `map_received` | map not loaded yet; wait for `map_path` load or `/map` |
 | `initialpose_received` | no valid `/initialpose` in `map` frame yet |
 
+### IMU preintegration state
+
+When `use_imu_preintegration` is enabled, these keys explain why the IMU seed is
+or is not being used:
+
+| Key | Meaning |
+| --- | --- |
+| `imu_preintegration_status` | one of `imu_preintegration_prediction_active`, `imu_preintegration_waiting_for_imu`, `imu_preintegration_waiting_for_smoother_initialization`, `imu_preintegration_transform_unavailable`, `imu_preintegration_non_finite_sample`, `imu_preintegration_invalid_delta_time`, `imu_preintegration_waiting_for_new_imu`, `imu_preintegration_stale_imu`, `imu_preintegration_prediction_non_finite`, or `imu_preintegration_fallback_mode` |
+| `imu_received_sample_count` / `imu_integrated_sample_count` | IMU samples seen vs samples actually integrated for the current scan interval |
+| `registration_seed_source` | registration seed source for the scan, such as `imu_preintegration`, `twist_prediction`, `previous_delta`, `current_pose`, or `not_selected` |
+| `imu_skipped_sample_count` | samples skipped before integration |
+| `imu_transform_failure_count` | samples skipped because `base_frame <- imu_frame` TF was unavailable |
+| `imu_invalid_dt_count` / `imu_last_dt_sec` | samples skipped because timestamps were duplicated, reversed, or too far apart |
+| `imu_last_sample_age_sec` | scan stamp minus latest IMU stamp; large values mean the IMU stream is late or stopped |
+| `imu_integration_window_sec` | IMU time available since the previous scan update |
+| `imu_preintegration_fallback_mode` | `true` after the correction guard disables IMU preintegration for the run |
+
+If the status is `imu_preintegration_waiting_for_imu`, check `/imu` remapping and
+the bringup doctor's `--require-imu` check. If it is
+`imu_preintegration_stale_imu`, check timestamp synchronization before tuning
+NDT or IMU noise. If `imu_received_sample_count` is nonzero but
+`imu_integrated_sample_count` is zero, inspect the skip counters before tuning
+noise values.
+
+For `--imu-mode preintegration`, successful scan updates should normally report
+`registration_seed_source=imu_preintegration`. If IMU counters are healthy but
+the seed source is `previous_delta` or `twist_prediction`, check whether the IMU
+smoother is initialized, whether new IMU samples arrived after the previous
+scan, and whether `imu_preintegration_status` is active.
+
+### Per-point scan time state
+
+These keys show whether the incoming `PointCloud2` stream has usable per-point
+timing for future continuous-time / deskew work. They are diagnostics only; the
+default registration path remains scan-to-map NDT/GICP.
+
+| Key | Meaning |
+| --- | --- |
+| `scan_time_status` | one of `scan_time_range_ready`, `scan_time_field_missing`, `scan_time_field_invalid`, or `scan_time_range_too_large` |
+| `scan_time_field` | field selected from `time`, `t`, `timestamp`, or `offset_time` |
+| `scan_time_duration_sec` | observed scan span after normalizing per-point times |
+| `scan_time_valid_point_count` / `scan_time_invalid_point_count` | points with readable vs unreadable timing |
+| `deskew_ready` | `true` only when scan timing and IMU preintegration are both ready for a future deskew stage |
+| `deskew_readiness_status` | first blocker for continuous-time deskew inputs, such as `deskew_scan_time_field_missing`, `deskew_imu_transform_unavailable`, or `deskew_ready` |
+| `continuous_time_deskew_enabled` / `continuous_time_deskew_applied` | whether the experimental runtime hook is enabled and used on the latest scan |
+| `continuous_time_deskew_status` | applied/skip reason, such as `continuous_time_deskew_applied`, `continuous_time_deskew_scan_time_not_ready`, or `continuous_time_deskew_waiting_for_new_imu` |
+| `continuous_time_deskew_point_count` | points deskewed before optional voxel filtering |
+| `continuous_time_deskew_skipped_invalid_time_count` / `continuous_time_deskew_clamped_time_count` | invalid or out-of-range per-point times kept safe by the hook |
+
+Run the bringup doctor with `--require-cloud-time-field` when you want this to
+be a hard gate. If you use `create_lidar_localization_config.py`, pass
+`--enable-continuous-time-deskew` to write the default-off deskew parameters and
+print a doctor command that requires IMU data plus per-point cloud timing.
+Without that flag, LiDAR-only localization can keep running and the doctor
+reports invalid or oversized timing as a warning.
+
+During bag replay, `validate_lidar_localization_imu.py` summarizes these same
+diagnostics over a time window and fails if IMU preintegration is not active
+often enough. When generating a bag replay launch command with
+`create_lidar_localization_config.py`, add `--use-sim-time` so localization
+uses `/clock`:
+
+```bash
+ros2 run lidar_localization_ros2 validate_lidar_localization_imu.py \
+  --duration-sec 30 \
+  --min-imu-active-ratio 0.5 \
+  --require-imu-seed-source
+```
+
+`--require-imu-seed-source` is the strict check for "IMU preintegration is
+actually seeding registration"; it fails unless enough samples report
+`registration_seed_source=imu_preintegration`.
+
 ### Failure category (one-key triage)
 
 The `failure_category` key classifies the current state into a single dominant
@@ -196,7 +269,7 @@ Short version:
 
 | Sensor / setup | Check |
 | --- | --- |
-| Livox MID-360 | [mid360_legged_jetson.md](mid360_legged_jetson.md), `check_mid360_legged_bringup.py` |
+| Livox MID-360 | [mid360_legged_jetson.md](mid360_legged_jetson.md), `check_lidar_localization_bringup.py --profile mid360` |
 | Ouster / Velodyne / RoboSense | set `cloud_topic` and lidar `frame_id` in launch YAML |
 | Nav2 full stack | need 3D map + 2D `map_yaml` + `odom -> base_link`; see README Nav2 section |
 

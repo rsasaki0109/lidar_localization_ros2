@@ -30,9 +30,10 @@ non-self-resetting bounds:
   (no *unsafe publication*);
 * never publish two resets closer than ``min_seconds_between_attempts``;
 * after a reset, require *post-reset recovery evidence* (fitness back under
-  ``recovery_fitness_threshold`` within ``settle_timeout_sec``) before standing
-  down -- and if it never recovers, give up after ``max_attempts`` instead of
-  looping (no *false-acceptance loop*);
+  ``recovery_fitness_threshold`` for ``recovery_confirmation_samples`` consecutive
+  observations, and stable-tracking diagnostics when the node provides them,
+  within ``settle_timeout_sec``) before standing down -- and if it never recovers,
+  give up after ``max_attempts`` instead of looping (no *false-acceptance loop*);
 * the attempt counter only resets on a confirmed recovery or when the request
   clears, never as a side effect of attempting -- so it is a true ceiling.
 
@@ -121,6 +122,10 @@ class SupervisorParams:
     settle_timeout_sec: float = 8.0
     # Post-reset alignment fitness at or below this counts as recovered.
     recovery_fitness_threshold: float = 1.5
+    # Require this many consecutive post-reset low-fitness observations before
+    # confirming recovery. A single transient low score can still be a wrong pose
+    # passing briefly through a local basin.
+    recovery_confirmation_samples: int = 3
     # Walk at most this many candidates from one query (counting the top one)
     # before abandoning the whole query and re-querying with a fresh scan. The
     # 2026-06-15 live run (docs/g3_live_closed_loop.md) showed a stale query can
@@ -151,6 +156,8 @@ class SupervisorState:
     # without spending another attempt.
     candidate_scores: Tuple[float, ...] = field(default_factory=tuple)
     candidate_index: int = 0
+    recovery_evidence_count: int = 0
+    last_recovery_fitness_observed_sec: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -167,6 +174,14 @@ class SupervisorObservation:
     candidate_scores: Optional[Tuple[float, ...]] = None
     # Current alignment fitness, if known (lower is better).
     best_fitness: Optional[float] = None
+    # Optional unique timestamp for the fitness observation. When supplied, the
+    # reducer counts a recovery sample only once even if the node ticks faster
+    # than /alignment_status arrives.
+    fitness_observed_sec: Optional[float] = None
+    # Optional health classification from /alignment_status. When supplied,
+    # recovery evidence must be both low-fitness and stable tracking, not just a
+    # transient low score from a degraded/recovering state.
+    stable_tracking: Optional[bool] = None
 
 
 @dataclass(frozen=True)
@@ -188,7 +203,8 @@ def _cooldown(state: SupervisorState, now_sec: float, reason: str) -> Supervisor
         ACTION_NONE,
         reason,
         replace(state, name=STATE_COOLDOWN, cooldown_since_sec=now_sec,
-                query_issued_sec=None),
+                query_issued_sec=None, recovery_evidence_count=0,
+                last_recovery_fitness_observed_sec=None),
     )
 
 
@@ -243,10 +259,16 @@ def decide(
     if name == STATE_AWAIT_QUERY:
         if not requested:
             return SupervisorDecision(
-                ACTION_NONE, "request_cleared", replace(state, name=STATE_IDLE, attempts=0))
+                ACTION_NONE, "request_cleared",
+                replace(
+                    state, name=STATE_IDLE, attempts=0, recovery_evidence_count=0,
+                    last_recovery_fitness_observed_sec=None))
         if state.attempts >= params.max_attempts:
             return SupervisorDecision(
-                ACTION_GIVE_UP, "attempts_exhausted", replace(state, name=STATE_EXHAUSTED))
+                ACTION_GIVE_UP, "attempts_exhausted",
+                replace(
+                    state, name=STATE_EXHAUSTED, recovery_evidence_count=0,
+                    last_recovery_fitness_observed_sec=None))
         # Respect spacing relative to the previous reset, if any.
         if (state.last_reset_sec is not None
                 and now - state.last_reset_sec < params.min_seconds_between_attempts):
@@ -264,7 +286,9 @@ def decide(
                     ACTION_PUBLISH_RESET, "reset_published",
                     replace(state, name=STATE_SETTLING, last_reset_sec=now,
                             query_issued_sec=None, attempts=state.attempts + 1,
-                            candidate_scores=tuple(reply_scores), candidate_index=0),
+                            candidate_scores=tuple(reply_scores), candidate_index=0,
+                            recovery_evidence_count=0,
+                            last_recovery_fitness_observed_sec=None),
                     candidate_index=0)
             # Empty list or confidently-bad best candidate: never publish; count attempt.
             return _cooldown(
@@ -279,16 +303,40 @@ def decide(
         return SupervisorDecision(ACTION_NONE, "awaiting_candidates", state)
 
     if name == STATE_SETTLING:
-        recovered = (obs.best_fitness is not None
-                     and obs.best_fitness <= params.recovery_fitness_threshold)
+        recovery_confirmation_samples = max(1, int(params.recovery_confirmation_samples))
+        fitness_observed_sec = obs.fitness_observed_sec
+        has_new_fitness = obs.best_fitness is not None
+        if (has_new_fitness and fitness_observed_sec is not None
+                and fitness_observed_sec == state.last_recovery_fitness_observed_sec):
+            has_new_fitness = False
+        if has_new_fitness:
+            has_recovery_evidence = (
+                obs.best_fitness is not None
+                and obs.best_fitness <= params.recovery_fitness_threshold
+                and obs.stable_tracking is not False)
+            recovery_evidence_count = (
+                state.recovery_evidence_count + 1 if has_recovery_evidence else 0)
+            last_recovery_fitness_observed_sec = fitness_observed_sec
+        else:
+            recovery_evidence_count = state.recovery_evidence_count
+            last_recovery_fitness_observed_sec = state.last_recovery_fitness_observed_sec
+        state_with_evidence = replace(
+            state,
+            recovery_evidence_count=recovery_evidence_count,
+            last_recovery_fitness_observed_sec=last_recovery_fitness_observed_sec)
+        recovered = recovery_evidence_count >= recovery_confirmation_samples
         if recovered:
             # Confirmed recovery: stand down and clear the ceiling, but wait for
             # the request to de-assert before re-arming (edge-triggered next time).
             return SupervisorDecision(
                 ACTION_NONE, "recovery_confirmed",
-                replace(state, name=STATE_STANDDOWN, attempts=0, last_reset_sec=None,
-                        cooldown_since_sec=None, candidate_scores=(), candidate_index=0))
-        if state.last_reset_sec is not None and now - state.last_reset_sec >= params.settle_timeout_sec:
+                replace(state_with_evidence, name=STATE_STANDDOWN, attempts=0,
+                        last_reset_sec=None, cooldown_since_sec=None,
+                        candidate_scores=(), candidate_index=0,
+                        recovery_evidence_count=0,
+                        last_recovery_fitness_observed_sec=None))
+        if (state.last_reset_sec is not None
+                and now - state.last_reset_sec >= params.settle_timeout_sec):
             # This candidate did not take. Walk to the next-best candidate from the
             # same query (the localizer's fitness is the registration oracle) before
             # spending another attempt -- only re-querying consumes max_attempts.
@@ -298,28 +346,46 @@ def decide(
                     and state.candidate_scores[next_index] >= params.min_candidate_score):
                 return SupervisorDecision(
                     ACTION_PUBLISH_RESET, "next_candidate",
-                    replace(state, last_reset_sec=now, candidate_index=next_index),
+                    replace(
+                        state_with_evidence,
+                        last_reset_sec=now,
+                        candidate_index=next_index,
+                        recovery_evidence_count=0,
+                        last_recovery_fitness_observed_sec=None),
                     candidate_index=next_index)
             # Ranked list exhausted: the whole query failed. Give up if the attempt
             # ceiling is reached, else cool down and re-query.
             if state.attempts >= params.max_attempts:
                 return SupervisorDecision(
                     ACTION_GIVE_UP, "recovery_failed_exhausted",
-                    replace(state, name=STATE_EXHAUSTED))
+                    replace(state_with_evidence, name=STATE_EXHAUSTED,
+                            recovery_evidence_count=0,
+                            last_recovery_fitness_observed_sec=None))
             return _cooldown(
-                replace(state, candidate_scores=(), candidate_index=0),
+                replace(
+                    state_with_evidence,
+                    candidate_scores=(),
+                    candidate_index=0,
+                    recovery_evidence_count=0,
+                    last_recovery_fitness_observed_sec=None),
                 now, "recovery_unconfirmed")
-        return SupervisorDecision(ACTION_NONE, "settling", state)
+        return SupervisorDecision(ACTION_NONE, "settling", state_with_evidence)
 
     if name == STATE_COOLDOWN:
         if state.cooldown_since_sec is not None and now - state.cooldown_since_sec < params.min_seconds_between_attempts:
             return SupervisorDecision(ACTION_NONE, "cooldown", state)
         if state.attempts >= params.max_attempts:
             return SupervisorDecision(
-                ACTION_GIVE_UP, "attempts_exhausted", replace(state, name=STATE_EXHAUSTED))
+                ACTION_GIVE_UP, "attempts_exhausted",
+                replace(
+                    state, name=STATE_EXHAUSTED, recovery_evidence_count=0,
+                    last_recovery_fitness_observed_sec=None))
         if not requested:
             return SupervisorDecision(
-                ACTION_NONE, "request_cleared", replace(state, name=STATE_IDLE, attempts=0))
+                ACTION_NONE, "request_cleared",
+                replace(
+                    state, name=STATE_IDLE, attempts=0, recovery_evidence_count=0,
+                    last_recovery_fitness_observed_sec=None))
         return SupervisorDecision(
             ACTION_NONE, "cooldown_elapsed",
             replace(state, name=STATE_AWAIT_QUERY, cooldown_since_sec=None))
@@ -329,7 +395,10 @@ def decide(
         if not requested:
             return SupervisorDecision(
                 ACTION_NONE, "standdown_cleared",
-                replace(state, name=STATE_IDLE, attempts=0, request_since_sec=None))
+                replace(
+                    state, name=STATE_IDLE, attempts=0, request_since_sec=None,
+                    recovery_evidence_count=0,
+                    last_recovery_fitness_observed_sec=None))
         return SupervisorDecision(ACTION_NONE, "standdown", state)
 
     if name == STATE_EXHAUSTED:
@@ -339,7 +408,8 @@ def decide(
             return SupervisorDecision(
                 ACTION_NONE, "exhausted_cleared",
                 replace(state, name=STATE_IDLE, attempts=0, last_reset_sec=None,
-                        cooldown_since_sec=None))
+                        cooldown_since_sec=None, recovery_evidence_count=0,
+                        last_recovery_fitness_observed_sec=None))
         return SupervisorDecision(ACTION_NONE, "exhausted", state)
 
     raise ValueError(f"unknown supervisor state: {name!r}")

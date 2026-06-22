@@ -118,6 +118,28 @@ void test_localization_rejected_seed_maps_to_prediction_update_result()
   assert(!result.continue_to_pose_publish);
 }
 
+void test_warning_status_does_not_revive_rejected_measurement()
+{
+  const auto rejected = ll::makePoseBackendResultFromLocalizationUpdate(
+    pose_x(8.0f),
+    1,
+    "fitness_score_over_threshold_rejected",
+    ll::makePredictionAdvanceLocalizationUpdateDecision());
+
+  const auto warned = ll::applyPoseBackendWarningStatus(
+    rejected,
+    true,
+    1,
+    "imu_smoother_diverged_imu_reset");
+
+  assert(warned.status_message == "imu_smoother_diverged_imu_reset");
+  assert(!warned.update_current_pose);
+  assert(!warned.update_prediction_state);
+  assert(warned.advance_prediction_without_measurement);
+  assert(!warned.fill_pose_covariance);
+  assert(!warned.continue_to_pose_publish);
+}
+
 int main()
 {
   test_pose_backend_result_carries_pose_and_status();
@@ -127,5 +149,6 @@ int main()
   test_localization_accept_maps_to_pose_backend_result();
   test_localization_reject_maps_to_prediction_advance_result();
   test_localization_rejected_seed_maps_to_prediction_update_result();
+  test_warning_status_does_not_revive_rejected_measurement();
   return 0;
 }

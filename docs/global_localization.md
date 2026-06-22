@@ -39,14 +39,18 @@ ros2 service call /global_localization_node/query std_srvs/srv/Trigger
 ```
 
 The response `message` is JSON (`candidate_count`, `scan_point_count`,
-`runtime_sec`, and the `top` candidate `x`/`y`/`yaw_deg`/`score`). The full ranked
-list is also published once as a `geometry_msgs/PoseArray` on
+`runtime_sec`, `scan_stamp_sec`, `scan_age_sec`, `candidate_age_sec`, and the
+`top` candidate `x`/`y`/`yaw_deg`/`score`). The full ranked list is also
+published once as a `geometry_msgs/PoseArray` on
 `/global_localization_node/candidates`. To relocalize manually, publish the top
-candidate to `/initialpose`.
+candidate to `/initialpose`. On moving bags, `candidate_age_sec` is the first
+thing to check when a plausible candidate still fails to lock.
 
 Key parameters (see the node for the full list): `z_min_m` / `z_max_m` (scan
 height band), `max_scan_points`, `angular_resolution_deg`, `pyramid_depth`,
-`max_candidates`, `nms_radius_m`. Query latency on a validated window is a few
+`max_candidates`, `nms_radius_m`. Lower `nms_radius_m` keeps more near-by or
+alternate-yaw candidates for G3 candidate walking; higher values return more
+spatially diverse candidates. Query latency on a validated window is a few
 seconds; see the roadmap for the speed/coverage envelope.
 
 ## G3: guarded automatic reinitialization
@@ -85,7 +89,8 @@ candidate is allowed to be published repeatedly (the Phase 3 lesson). They are:
 | `min_candidate_score` | A reset is never published from a candidate scoring below this (no *unsafe publication*). |
 | `min_seconds_between_attempts` | Two resets are never closer than this. |
 | `request_debounce_sec` | The request must persist this long before the first query (ignores transient blips). |
-| `recovery_fitness_threshold` | After a reset the supervisor waits for `/alignment_status` fitness back under this as *recovery evidence* before standing down. |
+| `recovery_fitness_threshold` | After a reset the supervisor waits for `/alignment_status` fitness back under this as *recovery evidence*. |
+| `recovery_confirmation_samples` | The low-fitness recovery evidence must arrive for this many consecutive fresh, stable-tracking diagnostic samples before standing down. |
 | `settle_timeout_sec` | If recovery is not observed within this long, the attempt is counted failed. |
 | `max_attempts` | Hard ceiling on attempts for one continuous problem; it only resets on confirmed recovery or when the request clears — never as a side effect of attempting — then the supervisor **gives up** and surfaces an error for an operator rather than looping. |
 | `query_timeout_sec` | A query that returns nothing within this long is abandoned (counts against `max_attempts`). |
@@ -97,7 +102,15 @@ line that stays (or is stuck) high cannot re-fire it — it is edge-triggered on
 
 ### Status
 
-G3 logic is complete and tested offline; a live/replay smoke on the Koide
-kidnapped-start window and the post-reset recovery-evidence capture are still
-pending an idle machine. Track it in
+G3 logic is complete and tested offline. The Koide live/replay path now exercises
+request -> G2 query -> guarded `/initialpose` publish with immediate localizer
+reset consumption. Follow-up real-bag checks removed the earlier false
+`recovery_confirmed` cases by requiring fresh, consecutive, stable-tracking
+recovery evidence.
+The latest local 120 s Koide run
+(`/tmp/lidarloc_koide_recovery_imu_120_nms05_requery8_stable_20260622_125720`)
+still has `0` stable recovered request windows and `0` false
+`recovery_confirmed` events, so treat this as a guarded publish path, not a
+robust automatic recovery claim.
+Track the remaining candidate freshness/ranking work in
 [global_localization_roadmap.md](global_localization_roadmap.md) (G3 section).

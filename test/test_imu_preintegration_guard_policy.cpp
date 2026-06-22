@@ -97,7 +97,25 @@ void test_backend_state_skips_smoother_when_already_in_fallback()
   assert(ll::shouldUseImuMeasurementPose(state));
 }
 
-void test_backend_state_enters_fallback_on_prediction_guard()
+void test_backend_state_skips_smoother_until_prediction_is_ready()
+{
+  const auto params = default_params();
+  ll::ImuPredictionCorrectionGuardInput input;
+  input.fallback_mode = false;
+  input.imu_prediction_ready = false;
+  input.correction_translation_m = 100.0;
+  input.correction_yaw_deg = 100.0;
+
+  const auto state = ll::beginImuPreintegrationBackendState(params, input);
+
+  assert(!state.fallback_mode);
+  assert(!state.state_reset);
+  assert(!state.correction_guard_tripped);
+  assert(!state.should_update_smoother);
+  assert(!ll::shouldUseImuMeasurementPose(state));
+}
+
+void test_backend_state_resets_without_fallback_on_prediction_guard()
 {
   const auto params = default_params();
   ll::ImuPredictionCorrectionGuardInput input;
@@ -106,14 +124,15 @@ void test_backend_state_enters_fallback_on_prediction_guard()
 
   const auto state = ll::beginImuPreintegrationBackendState(params, input);
 
-  assert(state.fallback_mode);
+  assert(!state.fallback_mode);
   assert(state.state_reset);
   assert(state.correction_guard_tripped);
   assert(!state.smoother_diverged);
   assert(!state.should_update_smoother);
+  assert(ll::shouldUseImuMeasurementPose(state));
 }
 
-void test_backend_state_enters_fallback_on_smoother_divergence()
+void test_backend_state_resets_without_fallback_on_smoother_divergence()
 {
   const auto params = default_params();
   ll::ImuPredictionCorrectionGuardInput correction_input;
@@ -129,11 +148,12 @@ void test_backend_state_enters_fallback_on_smoother_divergence()
   divergence_input.measurement_rotation_delta_deg = 0.0;
   state = ll::applyImuSmootherDivergenceDecision(state, params, divergence_input);
 
-  assert(state.fallback_mode);
+  assert(!state.fallback_mode);
   assert(state.state_reset);
   assert(!state.correction_guard_tripped);
   assert(state.smoother_diverged);
   assert(!state.should_update_smoother);
+  assert(ll::shouldUseImuMeasurementPose(state));
 }
 
 void test_backend_status_overload_uses_backend_state()
@@ -145,13 +165,13 @@ void test_backend_status_overload_uses_backend_state()
   auto status = ll::decideImuPreintegrationStatus(state, true);
   assert(status.warning);
   assert(std::string(status.status_message) ==
-         "imu_prediction_correction_guard_imu_disabled");
+         "imu_prediction_correction_guard_imu_reset");
 
   state.correction_guard_tripped = false;
   state.smoother_diverged = true;
   status = ll::decideImuPreintegrationStatus(state, true);
   assert(status.warning);
-  assert(std::string(status.status_message) == "imu_smoother_diverged_imu_disabled");
+  assert(std::string(status.status_message) == "imu_smoother_diverged_imu_reset");
 }
 
 void test_status_decision_prioritizes_reset_reasons()
@@ -180,8 +200,9 @@ int main()
   test_prediction_correction_guard_checks_translation_or_yaw();
   test_smoother_divergence_rejects_non_finite_or_large_delta();
   test_backend_state_skips_smoother_when_already_in_fallback();
-  test_backend_state_enters_fallback_on_prediction_guard();
-  test_backend_state_enters_fallback_on_smoother_divergence();
+  test_backend_state_skips_smoother_until_prediction_is_ready();
+  test_backend_state_resets_without_fallback_on_prediction_guard();
+  test_backend_state_resets_without_fallback_on_smoother_divergence();
   test_backend_status_overload_uses_backend_state();
   test_status_decision_prioritizes_reset_reasons();
   return 0;

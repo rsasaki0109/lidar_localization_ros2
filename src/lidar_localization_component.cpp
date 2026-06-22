@@ -6,6 +6,9 @@
 #include "lidar_localization/alignment_retry_policy.hpp"
 #include "lidar_localization/alignment_diagnostics_policy.hpp"
 #include "lidar_localization/alignment_status_policy.hpp"
+#include "lidar_localization/continuous_time_deskew_policy.hpp"
+#include "lidar_localization/deskew_readiness_policy.hpp"
+#include "lidar_localization/imu_preintegration_diagnostics_policy.hpp"
 #include "lidar_localization/imu_preintegration_guard_policy.hpp"
 #include "lidar_localization/local_map_target_policy.hpp"
 #include "lidar_localization/localization_update_policy.hpp"
@@ -104,6 +107,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("scan_min_range", 1.0);
   declare_parameter("scan_period", 0.1);
   declare_parameter("cloud_queue_depth", 1);
+  declare_parameter("imu_queue_depth", 2000);
   declare_parameter("min_scan_interval_sec", 0.0);
   declare_parameter("use_pcd_map", false);
   declare_parameter("map_path", "/map/map.pcd");
@@ -145,6 +149,8 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   // IMU preintegration parameters
   declare_parameter("use_imu_preintegration", true);
   declare_parameter("imu_preintegration_use_base_frame_transform", false);
+  declare_parameter("use_continuous_time_deskew", false);
+  declare_parameter("continuous_time_deskew_reference_time_sec", 0.0);
   declare_parameter("imu_gyro_noise_density", 0.01);
   declare_parameter("imu_accel_noise_density", 0.1);
   declare_parameter("imu_gyro_random_walk", 0.0001);
@@ -155,7 +161,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("imu_bias_prior_sigma_gyro", 0.01);
   declare_parameter("imu_bias_prior_sigma_accel", 0.1);
   declare_parameter("imu_prediction_correction_guard_translation_m", 2.0);
-  declare_parameter("imu_prediction_correction_guard_yaw_deg", 4.0);
+  declare_parameter("imu_prediction_correction_guard_yaw_deg", 10.0);
   declare_parameter("enable_debug", false);
   declare_parameter("predict_pose_from_previous_delta", true);
   declare_parameter("enable_local_map_crop", false);
@@ -423,6 +429,8 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   twist_sub_.reset();
   cloud_sub_.reset();
   imu_sub_.reset();
+  initial_pose_callback_group_.reset();
+  imu_callback_group_.reset();
 
   latest_twist_msg_.reset();
   last_scan_ptr_.reset();
@@ -445,7 +453,24 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   small_gicp_registration_.reset();
 #endif
 
-  imu_preintegration_fallback_mode_ = false;
+  {
+    std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
+    imu_preintegration_fallback_mode_ = false;
+    last_imu_stamp_ = 0.0;
+    last_scan_stamp_for_imu_ = 0.0;
+    latest_imu_seed_has_new_samples_ = false;
+    latest_imu_seed_prediction_finite_ = true;
+    latest_imu_seed_received_sample_count_ = 0;
+    latest_imu_seed_integrated_sample_count_ = 0;
+    latest_imu_seed_skipped_sample_count_ = 0;
+    latest_imu_seed_transform_failure_count_ = 0;
+    latest_imu_seed_non_finite_sample_count_ = 0;
+    latest_imu_seed_invalid_dt_count_ = 0;
+    latest_imu_seed_last_dt_sec_ = std::numeric_limits<double>::quiet_NaN();
+    latest_imu_seed_last_sample_age_sec_ = std::numeric_limits<double>::quiet_NaN();
+    latest_imu_seed_integration_window_sec_ = 0.0;
+    resetImuPreintegrationSampleCounters();
+  }
   reinitialization_requested_ = false;
   reinitialization_request_reason_ = "not_requested";
   reinitialization_request_score_ = 0.0;
@@ -457,8 +482,6 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   recovery_supervisor_action_ = "idle";
   recovery_supervisor_state_entered_stamp_sec_ = 0.0;
   recovery_supervisor_transition_count_ = 0;
-  last_imu_stamp_ = 0.0;
-  last_scan_stamp_for_imu_ = 0.0;
   recent_source_clouds_.clear();
   if (leak_target_clouds_for_shutdown) {
     // NDT_OMP can still hold shutdown-path ownership relationships to the last
@@ -517,6 +540,15 @@ void PCLLocalization::initializeParameters()
     RCLCPP_WARN(
       get_logger(), "cloud_queue_depth must be positive; using %d", cloud_queue_depth_);
   }
+  int requested_imu_queue_depth = imu_queue_depth_;
+  get_parameter("imu_queue_depth", requested_imu_queue_depth);
+  const auto imu_queue_depth =
+    lidar_localization::normalizePositiveIntParameter(requested_imu_queue_depth);
+  imu_queue_depth_ = imu_queue_depth.value;
+  if (imu_queue_depth.was_adjusted) {
+    RCLCPP_WARN(
+      get_logger(), "imu_queue_depth must be positive; using %d", imu_queue_depth_);
+  }
   get_parameter("min_scan_interval_sec", min_scan_interval_sec_);
   get_parameter("use_pcd_map", use_pcd_map_);
   get_parameter("map_path", map_path_);
@@ -569,6 +601,10 @@ void PCLLocalization::initializeParameters()
   get_parameter(
     "imu_preintegration_use_base_frame_transform",
     imu_preintegration_use_base_frame_transform_);
+  get_parameter("use_continuous_time_deskew", use_continuous_time_deskew_);
+  get_parameter(
+    "continuous_time_deskew_reference_time_sec",
+    continuous_time_deskew_reference_time_sec_);
   if (use_imu_preintegration_) {
     ImuGtsamSmoother::Params imu_params;
     // Reuse GTSAM NDT sigmas for x, y, yaw
@@ -756,6 +792,7 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(),"scan_min_range: %lf", scan_min_range_);
   RCLCPP_INFO(get_logger(),"scan_period: %lf", scan_period_);
   RCLCPP_INFO(get_logger(),"cloud_queue_depth: %d", cloud_queue_depth_);
+  RCLCPP_INFO(get_logger(),"imu_queue_depth: %d", imu_queue_depth_);
   RCLCPP_INFO(get_logger(),"min_scan_interval_sec: %lf", min_scan_interval_sec_);
   RCLCPP_INFO(get_logger(),"use_pcd_map: %d", use_pcd_map_);
   RCLCPP_INFO(get_logger(),"map_path: %s", map_path_.c_str());
@@ -771,6 +808,10 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "imu_preintegration_use_base_frame_transform: %d",
     imu_preintegration_use_base_frame_transform_);
+  RCLCPP_INFO(get_logger(), "use_continuous_time_deskew: %d", use_continuous_time_deskew_);
+  RCLCPP_INFO(
+    get_logger(), "continuous_time_deskew_reference_time_sec: %lf",
+    continuous_time_deskew_reference_time_sec_);
   RCLCPP_INFO(get_logger(),"use_twist_ekf: %d", use_twist_ekf_);
   RCLCPP_INFO(get_logger(),"use_gtsam_smoother: %d", use_gtsam_smoother_);
   RCLCPP_INFO(get_logger(),"enable_debug: %d", enable_debug_);
@@ -907,9 +948,17 @@ void PCLLocalization::initializePubSub()
     "initial_map",
     rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
 
+  rclcpp::SubscriptionOptions initial_pose_subscription_options;
+  initial_pose_callback_group_ =
+    create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  initial_pose_subscription_options.callback_group = initial_pose_callback_group_;
   initial_pose_sub_ = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
     "initialpose", rclcpp::SystemDefaultsQoS(),
-    std::bind(&PCLLocalization::initialPoseReceived, this, std::placeholders::_1));
+    std::bind(&PCLLocalization::initialPoseReceived, this, std::placeholders::_1),
+    initial_pose_subscription_options);
+  RCLCPP_INFO(
+    get_logger(),
+    "Initial pose subscription uses a dedicated callback group");
 
   map_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
     "map", rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable(),
@@ -927,9 +976,18 @@ void PCLLocalization::initializePubSub()
     "cloud", rclcpp::SensorDataQoS().keep_last(cloud_queue_depth_),
     std::bind(&PCLLocalization::cloudReceived, this, std::placeholders::_1));
 
+  rclcpp::SubscriptionOptions imu_subscription_options;
+  if (use_imu_preintegration_ && !use_imu_) {
+    imu_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    imu_subscription_options.callback_group = imu_callback_group_;
+    RCLCPP_INFO(
+      get_logger(),
+      "IMU preintegration subscription uses a dedicated callback group");
+  }
   imu_sub_ = create_subscription<sensor_msgs::msg::Imu>(
-    "imu", rclcpp::SensorDataQoS(),
-    std::bind(&PCLLocalization::imuReceived, this, std::placeholders::_1));
+    "imu", rclcpp::SensorDataQoS().keep_last(imu_queue_depth_),
+    std::bind(&PCLLocalization::imuReceived, this, std::placeholders::_1),
+    imu_subscription_options);
 
   if (enable_timer_publishing_) {
     pose_publish_timer_ = create_wall_timer(
@@ -1070,7 +1128,11 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   }
   initialpose_recieved_ = true;
   corrent_pose_with_cov_stamped_ptr_ = msg;
-  imu_preintegration_fallback_mode_ = false;
+  {
+    std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
+    imu_preintegration_fallback_mode_ = false;
+    resetImuPreintegrationSampleCounters();
+  }
   reinitialization_request_latched_ = false;
   reinitialization_request_latch_reason_ = "not_requested";
   reinitialization_request_latch_score_ = 0.0;
@@ -1117,20 +1179,23 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
     RCLCPP_INFO(get_logger(), "GTSAM smoother initialized from initial pose");
   }
 
-  if (use_imu_preintegration_ && last_imu_stamp_ > 0.0) {
-    tf2::Quaternion q_imu;
-    tf2::fromMsg(msg->pose.pose.orientation, q_imu);
-    double roll_i, pitch_i, yaw_i;
-    tf2::Matrix3x3(q_imu).getRPY(roll_i, pitch_i, yaw_i);
-    imu_smoother_.initialize(
-      msg->pose.pose.position.x,
-      msg->pose.pose.position.y,
-      msg->pose.pose.position.z,
-      roll_i, pitch_i, yaw_i,
-      0.0, 0.0, 0.0,  // initial velocity = 0
-      stamp_to_sec(msg->header.stamp));
-    last_scan_stamp_for_imu_ = stamp_to_sec(msg->header.stamp);
-    RCLCPP_INFO(get_logger(), "IMU preintegration smoother initialized from initial pose");
+  {
+    std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
+    if (use_imu_preintegration_ && last_imu_stamp_ > 0.0) {
+      tf2::Quaternion q_imu;
+      tf2::fromMsg(msg->pose.pose.orientation, q_imu);
+      double roll_i, pitch_i, yaw_i;
+      tf2::Matrix3x3(q_imu).getRPY(roll_i, pitch_i, yaw_i);
+      imu_smoother_.initialize(
+        msg->pose.pose.position.x,
+        msg->pose.pose.position.y,
+        msg->pose.pose.position.z,
+        roll_i, pitch_i, yaw_i,
+        0.0, 0.0, 0.0,  // initial velocity = 0
+        stamp_to_sec(msg->header.stamp));
+      last_scan_stamp_for_imu_ = stamp_to_sec(msg->header.stamp);
+      RCLCPP_INFO(get_logger(), "IMU preintegration smoother initialized from initial pose");
+    }
   }
   pose_pub_->publish(*corrent_pose_with_cov_stamped_ptr_);
   if (publishPoseTransform(msg->header.stamp, corrent_pose_with_cov_stamped_ptr_->pose.pose)) {
@@ -1307,59 +1372,87 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
   Eigen::Vector3d preintegration_accel(
     msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
   bool preintegration_sample_ready = true;
-
-  if (
-    use_imu_preintegration_ &&
-    !imu_preintegration_fallback_mode_ &&
-    imu_preintegration_use_base_frame_transform_ &&
-    msg->header.frame_id != base_frame_id_) {
-    try {
-      const geometry_msgs::msg::TransformStamped transform = tfbuffer_.lookupTransform(
-        base_frame_id_, msg->header.frame_id, tf2::TimePointZero);
-
-      geometry_msgs::msg::Vector3Stamped angular_velocity;
-      geometry_msgs::msg::Vector3Stamped linear_acceleration;
-      geometry_msgs::msg::Vector3Stamped transformed_angular_velocity;
-      geometry_msgs::msg::Vector3Stamped transformed_linear_acceleration;
-      angular_velocity.header = msg->header;
-      angular_velocity.vector = msg->angular_velocity;
-      linear_acceleration.header = msg->header;
-      linear_acceleration.vector = msg->linear_acceleration;
-
-      tf2::doTransform(angular_velocity, transformed_angular_velocity, transform);
-      tf2::doTransform(linear_acceleration, transformed_linear_acceleration, transform);
-
-      preintegration_gyro = Eigen::Vector3d(
-        transformed_angular_velocity.vector.x,
-        transformed_angular_velocity.vector.y,
-        transformed_angular_velocity.vector.z);
-      preintegration_accel = Eigen::Vector3d(
-        transformed_linear_acceleration.vector.x,
-        transformed_linear_acceleration.vector.y,
-        transformed_linear_acceleration.vector.z);
-    } catch (tf2::TransformException & ex) {
-      preintegration_sample_ready = false;
-      RCLCPP_WARN_THROTTLE(
-        get_logger(), *get_clock(), 5000,
-        "Failed to transform IMU preintegration sample from %s to %s: %s",
-        msg->header.frame_id.c_str(), base_frame_id_.c_str(), ex.what());
+  {
+    std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
+    const bool collect_preintegration_sample =
+      use_imu_preintegration_ && !imu_preintegration_fallback_mode_;
+    if (collect_preintegration_sample) {
+      ++imu_preintegration_received_sample_count_since_scan_;
     }
-  }
 
-  if (
-    use_imu_preintegration_ &&
-    !imu_preintegration_fallback_mode_ &&
-    preintegration_sample_ready) {
-    double stamp_sec = stamp_to_sec(msg->header.stamp);
+    if (
+      collect_preintegration_sample &&
+      imu_preintegration_use_base_frame_transform_ &&
+      msg->header.frame_id != base_frame_id_) {
+      try {
+        const geometry_msgs::msg::TransformStamped transform = tfbuffer_.lookupTransform(
+          base_frame_id_, msg->header.frame_id, tf2::TimePointZero);
 
-    // Feed to smoother for dead-reckoning
-    if (imu_smoother_.isInitialized() && last_imu_stamp_ > 0.0) {
-      double dt = stamp_sec - last_imu_stamp_;
-      if (dt > 0.0 && dt < 0.5) {
-        imu_smoother_.integrateImu(preintegration_gyro, preintegration_accel, dt);
+        geometry_msgs::msg::Vector3Stamped angular_velocity;
+        geometry_msgs::msg::Vector3Stamped linear_acceleration;
+        geometry_msgs::msg::Vector3Stamped transformed_angular_velocity;
+        geometry_msgs::msg::Vector3Stamped transformed_linear_acceleration;
+        angular_velocity.header = msg->header;
+        angular_velocity.vector = msg->angular_velocity;
+        linear_acceleration.header = msg->header;
+        linear_acceleration.vector = msg->linear_acceleration;
+
+        tf2::doTransform(angular_velocity, transformed_angular_velocity, transform);
+        tf2::doTransform(linear_acceleration, transformed_linear_acceleration, transform);
+
+        preintegration_gyro = Eigen::Vector3d(
+          transformed_angular_velocity.vector.x,
+          transformed_angular_velocity.vector.y,
+          transformed_angular_velocity.vector.z);
+        preintegration_accel = Eigen::Vector3d(
+          transformed_linear_acceleration.vector.x,
+          transformed_linear_acceleration.vector.y,
+          transformed_linear_acceleration.vector.z);
+      } catch (tf2::TransformException & ex) {
+        preintegration_sample_ready = false;
+        ++imu_preintegration_transform_failure_count_since_scan_;
+        ++imu_preintegration_skipped_sample_count_since_scan_;
+        RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 5000,
+          "Failed to transform IMU preintegration sample from %s to %s: %s",
+          msg->header.frame_id.c_str(), base_frame_id_.c_str(), ex.what());
       }
     }
-    last_imu_stamp_ = stamp_sec;
+
+    if (
+      collect_preintegration_sample &&
+      preintegration_sample_ready &&
+      (!preintegration_gyro.allFinite() || !preintegration_accel.allFinite()))
+    {
+      preintegration_sample_ready = false;
+      ++imu_preintegration_non_finite_sample_count_since_scan_;
+      ++imu_preintegration_skipped_sample_count_since_scan_;
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "Skipping non-finite IMU preintegration sample");
+    }
+
+    if (collect_preintegration_sample && preintegration_sample_ready) {
+      double stamp_sec = stamp_to_sec(msg->header.stamp);
+
+      // Feed to smoother for dead-reckoning
+      if (imu_smoother_.isInitialized() && last_imu_stamp_ > 0.0) {
+        double dt = stamp_sec - last_imu_stamp_;
+        imu_preintegration_last_dt_sec_ = dt;
+        if (lidar_localization::isValidImuPreintegrationDt(dt)) {
+          imu_smoother_.integrateImu(preintegration_gyro, preintegration_accel, dt);
+          ++imu_preintegration_integrated_sample_count_since_scan_;
+        } else {
+          ++imu_preintegration_invalid_dt_count_since_scan_;
+          ++imu_preintegration_skipped_sample_count_since_scan_;
+          RCLCPP_WARN_THROTTLE(
+            get_logger(), *get_clock(), 5000,
+            "Skipping IMU preintegration sample with invalid dt %.6f sec",
+            dt);
+        }
+      }
+      last_imu_stamp_ = stamp_sec;
+    }
   }
 
   if (!use_imu_) {return;}
@@ -1433,9 +1526,15 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
 
   const SelectedRegistrationSeed selected_seed = selectRegistrationSeed(scan_stamp_sec);
   const bool imu_prediction_ready = selected_seed.imu_prediction_ready;
+  const std::string registration_seed_source =
+    lidar_localization::registrationSeedSourceName(selected_seed.source);
   Eigen::Matrix4f init_guess =
     refineSeedWithNdtInitializer(tmp_ptr, selected_seed.init_guess);
-  const auto pipeline_result = runAlignmentPipelineForScan(init_guess, scan_stamp_sec);
+  const auto pipeline_result = runAlignmentPipelineForScan(
+    init_guess,
+    scan_stamp_sec,
+    selected_seed.source,
+    imu_prediction_ready);
 
   logAlignmentPipelineRecovery(pipeline_result);
   if (handleTerminalAlignmentPipelineResult(
@@ -1443,7 +1542,8 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       pipeline_result,
       filtered_point_count,
       scan_stamp_sec,
-      imu_prediction_ready))
+      imu_prediction_ready,
+      registration_seed_source))
   {
     return;
   }
@@ -1452,7 +1552,8 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       pipeline_result,
       filtered_point_count,
       scan_stamp_sec,
-      imu_prediction_ready))
+      imu_prediction_ready,
+      registration_seed_source))
   {
     return;
   }
@@ -1537,12 +1638,71 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
   double scan_stamp_sec)
 {
   PreparedScanCloud prepared_scan;
+  latest_continuous_time_deskew_applied_ = false;
+  latest_continuous_time_deskew_status_ = use_continuous_time_deskew_ ?
+    "continuous_time_deskew_scan_not_prepared" :
+    "continuous_time_deskew_disabled";
+  latest_continuous_time_deskew_point_count_ = 0;
+  latest_continuous_time_deskew_skipped_invalid_time_count_ = 0;
+  latest_continuous_time_deskew_clamped_time_count_ = 0;
 
   const bool cloud_has_intensity = lidar_localization::hasPointField(msg->fields, "intensity");
   if (!cloud_has_intensity) {
     RCLCPP_WARN_THROTTLE(
       get_logger(), *get_clock(), 5000,
       "Input cloud does not contain intensity. Falling back to xyz with zero intensity.");
+  }
+  const lidar_localization::PointRelativeTimes point_relative_times =
+    lidar_localization::extractPointRelativeTimesSeconds(*msg);
+  const lidar_localization::ScanTimeRangeStatus point_time_status =
+    lidar_localization::classifyScanTimeRange(
+    lidar_localization::ScanTimeRangeEvaluationInput{
+      point_relative_times.has_time_field,
+      point_relative_times.valid,
+      point_relative_times.duration_sec,
+      point_relative_times.valid_point_count,
+      point_relative_times.invalid_point_count,
+      scan_period_,
+      2.0});
+  latest_scan_time_status_ = point_time_status;
+  latest_scan_time_field_ = point_relative_times.has_time_field ?
+    point_relative_times.field_name :
+    "none";
+  latest_scan_time_duration_sec_ = point_relative_times.duration_sec;
+  latest_scan_time_valid_point_count_ = point_relative_times.valid_point_count;
+  latest_scan_time_invalid_point_count_ = point_relative_times.invalid_point_count;
+  switch (point_time_status) {
+    case lidar_localization::ScanTimeRangeStatus::kNoTimeField:
+      RCLCPP_DEBUG_THROTTLE(
+        get_logger(), *get_clock(), 10000,
+        "Input cloud has no per-point time field; continuous-time deskew diagnostics are unavailable.");
+      break;
+    case lidar_localization::ScanTimeRangeStatus::kInvalid:
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "Input cloud per-point time field '%s' is invalid (valid_points=%zu, invalid_points=%zu); "
+        "continuous-time deskew diagnostics are unavailable for this scan.",
+        point_relative_times.field_name.c_str(),
+        point_relative_times.valid_point_count,
+        point_relative_times.invalid_point_count);
+      break;
+    case lidar_localization::ScanTimeRangeStatus::kDurationTooLarge:
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "Input cloud per-point time field '%s' spans %.6f s, expected scan_period %.6f s; "
+        "check driver time units before enabling continuous-time deskew.",
+        point_relative_times.field_name.c_str(),
+        point_relative_times.duration_sec,
+        scan_period_);
+      break;
+    case lidar_localization::ScanTimeRangeStatus::kReady:
+      RCLCPP_DEBUG_THROTTLE(
+        get_logger(), *get_clock(), 10000,
+        "Input cloud per-point time field '%s' spans %.6f s (%zu valid points).",
+        point_relative_times.field_name.c_str(),
+        point_relative_times.duration_sec,
+        point_relative_times.valid_point_count);
+      break;
   }
   const bool can_direct_range_filter =
     lidar_localization::shouldUseDirectRangeFilter(
@@ -1589,12 +1749,25 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
           point.x, point.y, point.z, scan_min_range_, scan_max_range_))
       {
         tmp.push_back(point);
+        if (point_relative_times.has_time_field) {
+          prepared_scan.pre_voxel_relative_times_sec.push_back(
+            lidar_localization::relativeTimeOrNaN(point_relative_times, point_idx));
+        }
       }
     }
     prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(tmp));
+    if (point_relative_times.has_time_field) {
+      prepared_scan.relative_times_sec = prepared_scan.pre_voxel_relative_times_sec;
+      prepared_scan.relative_times_aligned_with_cloud =
+        prepared_scan.relative_times_sec.size() == prepared_scan.cloud->size();
+    }
+    applyContinuousTimeDeskewIfEnabled(prepared_scan, scan_stamp_sec);
   } else {
-    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
-    lidar_localization::convertSensorCloudToXyzi(*msg, *cloud_ptr);
+    lidar_localization::TimedXyziCloud timed_cloud =
+      lidar_localization::convertSensorCloudToTimedXyzi(*msg, point_relative_times);
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_ptr(
+      new pcl::PointCloud<pcl::PointXYZI>(timed_cloud.cloud));
+    std::vector<double> cloud_relative_times = std::move(timed_cloud.relative_times_sec);
 
     // If your cloud is not robot-centric, convert to base_frame.
     if (msg->header.frame_id != base_frame_id_) {
@@ -1628,15 +1801,26 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
 
     pcl::PointCloud<pcl::PointXYZI> tmp;
     tmp.reserve(cloud_ptr->size());
-    for (const auto & point : cloud_ptr->points) {
+    for (std::size_t point_idx = 0; point_idx < cloud_ptr->points.size(); ++point_idx) {
+      const auto & point = cloud_ptr->points[point_idx];
       if (lidar_localization::isPointInScanRange(
           point.x, point.y, point.z, scan_min_range_, scan_max_range_))
       {
         tmp.push_back(point);
+        if (point_relative_times.has_time_field) {
+          prepared_scan.pre_voxel_relative_times_sec.push_back(
+            lidar_localization::relativeTimeOrNaN(cloud_relative_times, point_idx));
+        }
       }
     }
     prepared_scan.filtered_point_count = tmp.size();
     prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(tmp));
+    if (point_relative_times.has_time_field) {
+      prepared_scan.relative_times_sec = prepared_scan.pre_voxel_relative_times_sec;
+      prepared_scan.relative_times_aligned_with_cloud =
+        prepared_scan.relative_times_sec.size() == prepared_scan.cloud->size();
+    }
+    applyContinuousTimeDeskewIfEnabled(prepared_scan, scan_stamp_sec);
 
     if (enable_scan_voxel_filter_ && !prepared_scan.cloud->empty()) {
       pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(
@@ -1647,6 +1831,8 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
       scan_voxel_grid_filter.filter(*filtered_cloud_ptr);
       prepared_scan.filtered_point_count = filtered_cloud_ptr->size();
       prepared_scan.cloud = filtered_cloud_ptr;
+      prepared_scan.relative_times_sec.clear();
+      prepared_scan.relative_times_aligned_with_cloud = false;
     }
   }
 
@@ -1655,6 +1841,108 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
     true,
     !prepared_scan.cloud || prepared_scan.cloud->empty());
   return prepared_scan;
+}
+
+bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
+  PreparedScanCloud & prepared_scan,
+  double scan_stamp_sec)
+{
+  (void)scan_stamp_sec;
+  latest_continuous_time_deskew_applied_ = false;
+  latest_continuous_time_deskew_point_count_ = 0;
+  latest_continuous_time_deskew_skipped_invalid_time_count_ = 0;
+  latest_continuous_time_deskew_clamped_time_count_ = 0;
+
+  if (!use_continuous_time_deskew_) {
+    latest_continuous_time_deskew_status_ =
+      lidar_localization::continuousTimeDeskewStatusMessage(
+      lidar_localization::ContinuousTimeDeskewStatus::kDisabled);
+    return false;
+  }
+
+  Eigen::Matrix4f scan_start_pose = Eigen::Matrix4f::Identity();
+  Eigen::Matrix4f scan_end_pose = Eigen::Matrix4f::Identity();
+  bool prediction_finite = false;
+  bool imu_samples_ready_for_deskew = false;
+  bool imu_smoother_initialized = false;
+  bool imu_preintegration_fallback_mode = false;
+  {
+    std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
+    imu_smoother_initialized = imu_smoother_.isInitialized();
+    imu_preintegration_fallback_mode = imu_preintegration_fallback_mode_;
+    const bool has_new_imu_samples =
+      lidar_localization::hasNewImuSamples(last_imu_stamp_, last_scan_stamp_for_imu_);
+    const double imu_integration_window_sec =
+      lidar_localization::imuIntegrationWindowSec(last_imu_stamp_, last_scan_stamp_for_imu_);
+    const bool imu_window_too_large =
+      lidar_localization::isImuIntegrationWindowTooLarge(
+        imu_integration_window_sec,
+        lidar_localization::imuMaximumIntegrationWindowSec(scan_period_));
+    imu_samples_ready_for_deskew = has_new_imu_samples && !imu_window_too_large;
+    if (
+      use_imu_preintegration_ &&
+      !imu_preintegration_fallback_mode &&
+      imu_smoother_initialized &&
+      imu_samples_ready_for_deskew)
+    {
+      scan_start_pose = imu_smoother_.poseMatrix();
+      scan_end_pose = imu_smoother_.predictedPoseMatrix();
+      prediction_finite = scan_start_pose.allFinite() && scan_end_pose.allFinite();
+    }
+  }
+
+  const std::size_t cloud_size = prepared_scan.cloud ? prepared_scan.cloud->size() : 0;
+  const auto decision = lidar_localization::decideContinuousTimeDeskew(
+    lidar_localization::ContinuousTimeDeskewDecisionInput{
+      use_continuous_time_deskew_,
+      !prepared_scan.cloud || prepared_scan.cloud->empty(),
+      latest_scan_time_status_,
+      prepared_scan.relative_times_aligned_with_cloud,
+      prepared_scan.relative_times_sec.size(),
+      cloud_size,
+      use_imu_preintegration_,
+      imu_preintegration_fallback_mode,
+      imu_smoother_initialized,
+      imu_samples_ready_for_deskew,
+      prediction_finite});
+  if (!decision.should_apply) {
+    latest_continuous_time_deskew_status_ =
+      lidar_localization::continuousTimeDeskewStatusMessage(decision.status);
+    return false;
+  }
+
+  const Eigen::Matrix4f start_to_end_motion = scan_start_pose.inverse() * scan_end_pose;
+  const auto deskew_result = lidar_localization::deskewPointCloudWithRelativeMotion(
+    *prepared_scan.cloud,
+    prepared_scan.relative_times_sec,
+    latest_scan_time_duration_sec_,
+    start_to_end_motion,
+    continuous_time_deskew_reference_time_sec_);
+  if (!deskew_result.applied) {
+    latest_continuous_time_deskew_status_ =
+      lidar_localization::continuousTimeDeskewStatusMessage(
+      lidar_localization::ContinuousTimeDeskewStatus::kNotApplied);
+    return false;
+  }
+
+  prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(deskew_result.cloud));
+  prepared_scan.relative_times_aligned_with_cloud =
+    prepared_scan.relative_times_sec.size() == prepared_scan.cloud->size();
+  latest_continuous_time_deskew_applied_ = true;
+  latest_continuous_time_deskew_status_ =
+    lidar_localization::continuousTimeDeskewStatusMessage(
+    lidar_localization::ContinuousTimeDeskewStatus::kApplied);
+  latest_continuous_time_deskew_point_count_ = deskew_result.deskewed_point_count;
+  latest_continuous_time_deskew_skipped_invalid_time_count_ =
+    deskew_result.skipped_invalid_time_count;
+  latest_continuous_time_deskew_clamped_time_count_ = deskew_result.clamped_time_count;
+  RCLCPP_DEBUG_THROTTLE(
+    get_logger(), *get_clock(), 10000,
+    "Continuous-time deskew applied to %zu points (skipped_invalid_time=%zu, clamped_time=%zu).",
+    latest_continuous_time_deskew_point_count_,
+    latest_continuous_time_deskew_skipped_invalid_time_count_,
+    latest_continuous_time_deskew_clamped_time_count_);
+  return true;
 }
 
 void PCLLocalization::handleScanPreparationFailure(
@@ -1694,33 +1982,90 @@ void PCLLocalization::handleScanPreparationFailure(
   }
 }
 
+void PCLLocalization::resetImuPreintegrationSampleCounters()
+{
+  imu_preintegration_received_sample_count_since_scan_ = 0;
+  imu_preintegration_integrated_sample_count_since_scan_ = 0;
+  imu_preintegration_skipped_sample_count_since_scan_ = 0;
+  imu_preintegration_transform_failure_count_since_scan_ = 0;
+  imu_preintegration_non_finite_sample_count_since_scan_ = 0;
+  imu_preintegration_invalid_dt_count_since_scan_ = 0;
+  imu_preintegration_last_dt_sec_ = std::numeric_limits<double>::quiet_NaN();
+}
+
+void PCLLocalization::snapshotImuPreintegrationSampleCountersForScan()
+{
+  latest_imu_seed_received_sample_count_ =
+    imu_preintegration_received_sample_count_since_scan_;
+  latest_imu_seed_integrated_sample_count_ =
+    imu_preintegration_integrated_sample_count_since_scan_;
+  latest_imu_seed_skipped_sample_count_ =
+    imu_preintegration_skipped_sample_count_since_scan_;
+  latest_imu_seed_transform_failure_count_ =
+    imu_preintegration_transform_failure_count_since_scan_;
+  latest_imu_seed_non_finite_sample_count_ =
+    imu_preintegration_non_finite_sample_count_since_scan_;
+  latest_imu_seed_invalid_dt_count_ =
+    imu_preintegration_invalid_dt_count_since_scan_;
+  latest_imu_seed_last_dt_sec_ = imu_preintegration_last_dt_sec_;
+  resetImuPreintegrationSampleCounters();
+}
+
 PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSeed(
   double scan_stamp_sec)
 {
   SelectedRegistrationSeed selected_seed;
   selected_seed.init_guess = currentPoseMatrix();
-
-  const bool imu_has_new_samples =
-    lidar_localization::hasNewImuSamples(last_imu_stamp_, last_scan_stamp_for_imu_);
-  const bool imu_candidate_ready =
-    use_imu_preintegration_ &&
-    !imu_preintegration_fallback_mode_ &&
-    imu_smoother_.isInitialized() &&
-    imu_has_new_samples;
   Eigen::Matrix4f imu_init_guess = Eigen::Matrix4f::Identity();
+  bool imu_preintegration_fallback_mode = false;
+  bool imu_smoother_initialized = false;
+  bool imu_has_usable_new_samples = false;
   bool imu_prediction_finite = false;
-  if (imu_candidate_ready) {
-    imu_init_guess = imu_smoother_.predictedPoseMatrix();
-    imu_prediction_finite = imu_init_guess.allFinite();
+  {
+    std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
+    snapshotImuPreintegrationSampleCountersForScan();
+
+    const bool imu_has_new_samples =
+      lidar_localization::hasNewImuSamples(last_imu_stamp_, last_scan_stamp_for_imu_);
+    latest_imu_seed_has_new_samples_ = imu_has_new_samples;
+    latest_imu_seed_last_sample_age_sec_ =
+      lidar_localization::imuLastSampleAgeSec(scan_stamp_sec, last_imu_stamp_);
+    latest_imu_seed_integration_window_sec_ =
+      lidar_localization::imuIntegrationWindowSec(last_imu_stamp_, last_scan_stamp_for_imu_);
+    const double max_imu_integration_window_sec =
+      lidar_localization::imuMaximumIntegrationWindowSec(scan_period_);
+    const bool imu_window_too_large =
+      lidar_localization::isImuIntegrationWindowTooLarge(
+        latest_imu_seed_integration_window_sec_, max_imu_integration_window_sec);
+    if (imu_has_new_samples && imu_window_too_large) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "Ignoring IMU preintegration prediction because its integration window %.3f sec exceeds %.3f sec.",
+        latest_imu_seed_integration_window_sec_,
+        max_imu_integration_window_sec);
+    }
+    imu_preintegration_fallback_mode = imu_preintegration_fallback_mode_;
+    imu_smoother_initialized = imu_smoother_.isInitialized();
+    imu_has_usable_new_samples = imu_has_new_samples && !imu_window_too_large;
+    const bool imu_candidate_ready =
+      use_imu_preintegration_ &&
+      !imu_preintegration_fallback_mode &&
+      imu_smoother_initialized &&
+      imu_has_usable_new_samples;
+    if (imu_candidate_ready) {
+      imu_init_guess = imu_smoother_.predictedPoseMatrix();
+      imu_prediction_finite = imu_init_guess.allFinite();
+    }
+    latest_imu_seed_prediction_finite_ = !imu_candidate_ready || imu_prediction_finite;
   }
 
   const lidar_localization::RegistrationSeedPolicyDecision seed_decision =
     lidar_localization::chooseRegistrationSeed(
     lidar_localization::RegistrationSeedPolicyInput{
       use_imu_preintegration_,
-      imu_preintegration_fallback_mode_,
-      imu_smoother_.isInitialized(),
-      imu_has_new_samples,
+      imu_preintegration_fallback_mode,
+      imu_smoother_initialized,
+      imu_has_usable_new_samples,
       imu_prediction_finite,
       use_gtsam_smoother_,
       gtsam_smoother_.isInitialized(),
@@ -1730,6 +2075,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       have_last_accepted_pose_,
       static_cast<bool>(latest_twist_msg_),
       predict_pose_from_previous_delta_});
+  selected_seed.source = seed_decision.source;
   selected_seed.imu_prediction_ready = seed_decision.imu_prediction_ready;
 
   switch (seed_decision.source) {
@@ -1964,10 +2310,21 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
 
 lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelineForScan(
   const Eigen::Matrix4f & init_guess,
-  double scan_stamp_sec)
+  double scan_stamp_sec,
+  lidar_localization::RegistrationSeedSource seed_source,
+  bool imu_prediction_ready)
 {
   const lidar_localization::AlignmentAttempt primary_attempt =
     runAlignmentAttempt(init_guess, init_guess, scan_stamp_sec);
+  const bool force_retry_from_last_pose =
+    seed_source == lidar_localization::RegistrationSeedSource::kImuPreintegration &&
+    lidar_localization::isImuPredictionCorrectionGuardTripped(
+      imuPreintegrationGuardParams(),
+      lidar_localization::ImuPredictionCorrectionGuardInput{
+        false,
+        imu_prediction_ready,
+        primary_attempt.correction_translation_m,
+        primary_attempt.correction_yaw_deg});
   return lidar_localization::runAlignmentPipeline(
     primary_attempt,
     lidar_localization::AlignmentPipelineInput{
@@ -1975,7 +2332,9 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
       consecutive_rejected_updates_,
       scan_stamp_sec,
       last_accepted_pose_time_sec_,
-      recoveryRetryFromLastPoseParams()},
+      recoveryRetryFromLastPoseParams(),
+      force_retry_from_last_pose,
+      "imu_prediction_correction_guard_rejected"},
     [&]() {
       return runAlignmentAttempt(
         last_accepted_pose_matrix_, last_accepted_pose_matrix_, scan_stamp_sec);
@@ -2025,7 +2384,8 @@ bool PCLLocalization::handleTerminalAlignmentPipelineResult(
   const lidar_localization::AlignmentPipelineResult & pipeline_result,
   std::size_t filtered_point_count,
   double scan_stamp_sec,
-  bool imu_prediction_ready)
+  bool imu_prediction_ready,
+  const std::string & registration_seed_source)
 {
   const auto handling = lidar_localization::decideAlignmentPipelineHandling(pipeline_result);
   if (!handling.publish_terminal_status) {
@@ -2038,7 +2398,8 @@ bool PCLLocalization::handleTerminalAlignmentPipelineResult(
     pipeline_result.status_message,
     pipeline_result.selected_attempt,
     filtered_point_count,
-    imu_prediction_ready);
+    imu_prediction_ready,
+    registration_seed_source);
   if (handling.warn_registration_not_converged) {
     RCLCPP_WARN(get_logger(), "The registration didn't converge.");
   }
@@ -2053,7 +2414,8 @@ bool PCLLocalization::applyAcceptedAlignmentPipelineResult(
   const lidar_localization::AlignmentPipelineResult & pipeline_result,
   std::size_t filtered_point_count,
   double scan_stamp_sec,
-  bool imu_prediction_ready)
+  bool imu_prediction_ready,
+  const std::string & registration_seed_source)
 {
   const auto handling = lidar_localization::decideAlignmentPipelineHandling(pipeline_result);
   if (!handling.continue_to_backend) {
@@ -2070,7 +2432,8 @@ bool PCLLocalization::applyAcceptedAlignmentPipelineResult(
       stamp,
       filtered_point_count,
       scan_stamp_sec,
-      imu_prediction_ready))
+      imu_prediction_ready,
+      registration_seed_source))
   {
     return false;
   }
@@ -2268,7 +2631,8 @@ bool PCLLocalization::applyRegistrationPoseBackend(
   const builtin_interfaces::msg::Time & stamp,
   std::size_t filtered_point_count,
   double stamp_sec,
-  bool imu_prediction_ready)
+  bool imu_prediction_ready,
+  const std::string & registration_seed_source)
 {
   const PoseBackendApplyContext context{
     observation,
@@ -2277,17 +2641,23 @@ bool PCLLocalization::applyRegistrationPoseBackend(
     stamp,
     filtered_point_count,
     stamp_sec,
-    imu_prediction_ready};
+    imu_prediction_ready,
+    registration_seed_source};
   return dispatchRegistrationPoseBackend(selectRegistrationPoseBackend(), context);
 }
 
 lidar_localization::PoseBackendKind PCLLocalization::selectRegistrationPoseBackend() const
 {
+  bool has_imu_stamp = false;
+  {
+    std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
+    has_imu_stamp = last_imu_stamp_ > 0.0;
+  }
   return lidar_localization::selectPoseBackend(
     lidar_localization::PoseBackendSelectionInput{
       use_gtsam_smoother_,
       use_imu_preintegration_,
-      last_imu_stamp_ > 0.0,
+      has_imu_stamp,
       use_twist_ekf_});
 }
 
@@ -2384,13 +2754,35 @@ bool PCLLocalization::applyPlanarSmootherPoseBackendUpdate(
     backend_result.status_message,
     context.attempt,
     context.filtered_point_count,
-    context.imu_prediction_ready);
+    context.imu_prediction_ready,
+    context.registration_seed_source);
   return true;
 }
 
 bool PCLLocalization::applyImuPreintegrationPoseBackend(
   const PoseBackendApplyContext & context)
 {
+  const auto localization_update =
+    lidar_localization::decideLocalizationUpdate(context.gate_result);
+  if (localization_update.action != lidar_localization::LocalizationUpdateAction::kAcceptMeasurement) {
+    const auto backend_result =
+      lidar_localization::makePoseBackendResultFromLocalizationUpdate(
+      context.attempt.final_transformation,
+      context.gate_result.status_level,
+      context.gate_result.status_message,
+      localization_update);
+    publishAlignmentStatusForAttempt(
+      context.stamp,
+      backend_result.status_level,
+      backend_result.status_message,
+      context.attempt,
+      context.filtered_point_count,
+      context.imu_prediction_ready,
+      context.registration_seed_source);
+    return applyPoseBackendResult(
+      backend_result, context.stamp, context.stamp_sec, context.attempt.fitness_score);
+  }
+
   const auto imu_update = updateImuPreintegrationBackend(
     context.observation, context.attempt, context.stamp_sec, context.imu_prediction_ready);
   logImuPreintegrationBackendWarnings(imu_update, context.attempt);
@@ -2405,7 +2797,8 @@ bool PCLLocalization::applyImuPreintegrationPoseBackend(
     backend_result.status_message,
     context.attempt,
     context.filtered_point_count,
-    context.imu_prediction_ready);
+    context.imu_prediction_ready,
+    context.registration_seed_source);
   return true;
 }
 
@@ -2427,6 +2820,13 @@ void PCLLocalization::initializeImuPreintegrationSmootherIfNeeded(
     return;
   }
 
+  resetImuPreintegrationSmootherToObservation(observation, stamp_sec);
+}
+
+void PCLLocalization::resetImuPreintegrationSmootherToObservation(
+  const lidar_localization::RegistrationObservation & observation,
+  double stamp_sec)
+{
   imu_smoother_.initialize(
     observation.x, observation.y, observation.z,
     observation.roll, observation.pitch, observation.yaw,
@@ -2440,6 +2840,7 @@ PCLLocalization::updateImuPreintegrationBackend(
   double stamp_sec,
   bool imu_prediction_ready)
 {
+  std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
   initializeImuPreintegrationSmootherIfNeeded(observation, stamp_sec);
 
   ImuPreintegrationBackendUpdate update;
@@ -2478,8 +2879,14 @@ PCLLocalization::updateImuPreintegrationBackend(
         update.smoother_measurement_rotation_delta_deg});
   }
 
+  if (!update.state.fallback_mode) {
+    resetImuPreintegrationSmootherToObservation(observation, stamp_sec);
+  }
   imu_preintegration_fallback_mode_ = update.state.fallback_mode;
-  if (lidar_localization::shouldUseImuMeasurementPose(update.state)) {
+  if (
+    !update.state.fallback_mode ||
+    lidar_localization::shouldUseImuMeasurementPose(update.state))
+  {
     update.pose = observation.pose_matrix;
     update.updated = true;
   }
@@ -2495,7 +2902,7 @@ void PCLLocalization::logImuPreintegrationBackendWarnings(
   if (update.state.correction_guard_tripped) {
     RCLCPP_WARN(
       get_logger(),
-      "IMU prediction required a large measurement correction (translation=%.3f m, yaw=%.3f deg). Disabling IMU preintegration for the remainder of this run.",
+      "IMU prediction required a large measurement correction (translation=%.3f m, yaw=%.3f deg). Resetting IMU preintegration to the latest LiDAR measurement.",
       attempt.correction_translation_m,
       attempt.correction_yaw_deg);
   }
@@ -2503,7 +2910,7 @@ void PCLLocalization::logImuPreintegrationBackendWarnings(
   if (update.state.smoother_diverged) {
     RCLCPP_WARN(
       get_logger(),
-      "IMU smoother diverged from measurement (translation=%.3f m, rotation=%.3f deg). Disabling IMU preintegration for the remainder of this run.",
+      "IMU smoother diverged from measurement (translation=%.3f m, rotation=%.3f deg). Resetting IMU preintegration to the latest LiDAR measurement.",
       update.smoother_measurement_translation_delta_m,
       update.smoother_measurement_rotation_delta_deg);
   }
@@ -2551,7 +2958,8 @@ bool PCLLocalization::applyRawRegistrationPoseBackend(
     backend_result.status_message,
     context.attempt,
     context.filtered_point_count,
-    context.imu_prediction_ready);
+    context.imu_prediction_ready,
+    context.registration_seed_source);
 
   return applyPoseBackendResult(
     backend_result, context.stamp, context.stamp_sec, context.attempt.fitness_score);
@@ -2812,7 +3220,8 @@ void PCLLocalization::publishAlignmentStatusForAttempt(
   const std::string & message,
   const lidar_localization::AlignmentAttempt & attempt,
   std::size_t filtered_point_count,
-  bool imu_prediction_active)
+  bool imu_prediction_active,
+  const std::string & registration_seed_source)
 {
   publishAlignmentStatus(
     stamp,
@@ -2827,7 +3236,8 @@ void PCLLocalization::publishAlignmentStatusForAttempt(
     attempt.seed_translation_since_accept_m,
     attempt.seed_yaw_since_accept_deg,
     attempt.accepted_gap_sec,
-    imu_prediction_active);
+    imu_prediction_active,
+    registration_seed_source);
 }
 
 void PCLLocalization::publishAlignmentStatus(
@@ -2843,7 +3253,8 @@ void PCLLocalization::publishAlignmentStatus(
   double seed_translation_since_accept_m,
   double seed_yaw_since_accept_deg,
   double accepted_gap_sec,
-  bool imu_prediction_active)
+  bool imu_prediction_active,
+  const std::string & registration_seed_source)
 {
   if (!status_pub_) {return;}
 
@@ -2860,7 +3271,8 @@ void PCLLocalization::publishAlignmentStatus(
     seed_translation_since_accept_m,
     seed_yaw_since_accept_deg,
     accepted_gap_sec,
-    imu_prediction_active};
+    imu_prediction_active,
+    registration_seed_source};
 
   const auto evaluation = evaluateAlignmentStatus(stamp, publish_input);
   auto status = makeAlignmentDiagnosticStatus(evaluation.status_input);
@@ -2892,7 +3304,8 @@ lidar_localization::AlignmentStatusInput PCLLocalization::makeAlignmentStatusInp
       input.seed_translation_since_accept_m,
       input.seed_yaw_since_accept_deg,
       input.accepted_gap_sec,
-      input.imu_prediction_active},
+      input.imu_prediction_active,
+      input.registration_seed_source},
     makeAlignmentStatusRuntimeContext(stamp_sec));
 }
 
@@ -2961,7 +3374,7 @@ PCLLocalization::prepareAlignmentDiagnosticValuesInput(
   const lidar_localization::AlignmentStatusPreparation & status_preparation,
   const ReinitializationRequestDecision & reinitialization_request) const
 {
-  return lidar_localization::makeAlignmentStatusDiagnosticValuesInput(
+  auto diagnostic_input = lidar_localization::makeAlignmentStatusDiagnosticValuesInput(
     lidar_localization::makeAlignmentStatusDiagnosticInput(
       status_input,
       status_preparation,
@@ -2973,6 +3386,72 @@ PCLLocalization::prepareAlignmentDiagnosticValuesInput(
         recovery_supervisor_transition_count_,
         reinitialization_request_latched_,
         reinitialization_request_latch_stamp_sec_}));
+  const auto imu_diagnostics = lidar_localization::makeImuPreintegrationDiagnostics(
+    makeImuPreintegrationDiagnosticsInput(status_input));
+  diagnostic_input.imu_preintegration_enabled = imu_diagnostics.enabled;
+  diagnostic_input.imu_preintegration_status =
+    lidar_localization::imuPreintegrationDiagnosticStatusMessage(imu_diagnostics.status);
+  diagnostic_input.imu_preintegration_fallback_mode = imu_diagnostics.fallback_mode;
+  diagnostic_input.imu_smoother_initialized = imu_diagnostics.smoother_initialized;
+  diagnostic_input.imu_has_new_samples = imu_diagnostics.has_new_samples;
+  diagnostic_input.imu_received_sample_count = imu_diagnostics.received_sample_count;
+  diagnostic_input.imu_integrated_sample_count = imu_diagnostics.integrated_sample_count;
+  diagnostic_input.imu_skipped_sample_count = imu_diagnostics.skipped_sample_count;
+  diagnostic_input.imu_transform_failure_count = imu_diagnostics.transform_failure_count;
+  diagnostic_input.imu_non_finite_sample_count = imu_diagnostics.non_finite_sample_count;
+  diagnostic_input.imu_invalid_dt_count = imu_diagnostics.invalid_dt_count;
+  diagnostic_input.imu_last_dt_sec = imu_diagnostics.last_dt_sec;
+  diagnostic_input.imu_last_sample_age_sec = imu_diagnostics.last_sample_age_sec;
+  diagnostic_input.imu_integration_window_sec = imu_diagnostics.integration_window_sec;
+  diagnostic_input.scan_time_status =
+    lidar_localization::scanTimeRangeStatusMessage(latest_scan_time_status_);
+  diagnostic_input.scan_time_field = latest_scan_time_field_;
+  diagnostic_input.scan_time_duration_sec = latest_scan_time_duration_sec_;
+  diagnostic_input.scan_time_valid_point_count = latest_scan_time_valid_point_count_;
+  diagnostic_input.scan_time_invalid_point_count = latest_scan_time_invalid_point_count_;
+  const auto deskew_readiness = lidar_localization::makeDeskewReadinessDiagnostics(
+    lidar_localization::DeskewReadinessInput{
+      latest_scan_time_status_,
+      imu_diagnostics.status});
+  diagnostic_input.deskew_ready = deskew_readiness.ready;
+  diagnostic_input.deskew_readiness_status =
+    lidar_localization::deskewReadinessStatusMessage(deskew_readiness.status);
+  diagnostic_input.continuous_time_deskew_enabled = use_continuous_time_deskew_;
+  diagnostic_input.continuous_time_deskew_applied = latest_continuous_time_deskew_applied_;
+  diagnostic_input.continuous_time_deskew_status = latest_continuous_time_deskew_status_;
+  diagnostic_input.continuous_time_deskew_point_count =
+    latest_continuous_time_deskew_point_count_;
+  diagnostic_input.continuous_time_deskew_skipped_invalid_time_count =
+    latest_continuous_time_deskew_skipped_invalid_time_count_;
+  diagnostic_input.continuous_time_deskew_clamped_time_count =
+    latest_continuous_time_deskew_clamped_time_count_;
+  return diagnostic_input;
+}
+
+lidar_localization::ImuPreintegrationDiagnosticsInput
+PCLLocalization::makeImuPreintegrationDiagnosticsInput(
+  const lidar_localization::AlignmentStatusInput & status_input) const
+{
+  std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
+  return lidar_localization::ImuPreintegrationDiagnosticsInput{
+    use_imu_preintegration_,
+    imu_preintegration_fallback_mode_,
+    imu_smoother_.isInitialized(),
+    last_imu_stamp_ > 0.0,
+    latest_imu_seed_has_new_samples_,
+    status_input.imu_prediction_active,
+    latest_imu_seed_prediction_finite_,
+    latest_imu_seed_received_sample_count_,
+    latest_imu_seed_integrated_sample_count_,
+    latest_imu_seed_skipped_sample_count_,
+    latest_imu_seed_transform_failure_count_,
+    latest_imu_seed_non_finite_sample_count_,
+    latest_imu_seed_invalid_dt_count_,
+    latest_imu_seed_last_dt_sec_,
+    latest_imu_seed_last_sample_age_sec_,
+    latest_imu_seed_integration_window_sec_,
+    lidar_localization::imuStaleSampleAgeThresholdSec(scan_period_),
+    lidar_localization::imuMaximumIntegrationWindowSec(scan_period_)};
 }
 
 void PCLLocalization::appendAlignmentDiagnosticValues(

@@ -186,6 +186,64 @@ void test_target_missing_can_recover_by_retry()
   assert(gate_calls == 1);
 }
 
+void test_forced_retry_success_replaces_primary_without_rejection_streak()
+{
+  auto input = default_input();
+  input.consecutive_rejected_updates = 0;
+  input.force_retry_from_last_pose = true;
+  input.forced_retry_rejection_message = "imu_prediction_correction_guard_rejected";
+  int retry_calls = 0;
+  int gate_calls = 0;
+
+  const auto result = ll::runAlignmentPipeline(
+    make_attempt(true, true, 4.0),
+    input,
+    [&]() {
+      ++retry_calls;
+      return make_attempt(true, true, 1.0);
+    },
+    [&](const ll::AlignmentAttempt &) {
+      ++gate_calls;
+      return accepted_gate();
+    });
+
+  assert(result.should_continue);
+  assert(result.recovered_by_retry_from_last_pose);
+  assert(result.selected_attempt.fitness_score == 1.0);
+  assert(result.status_message == "recovery_retry_from_last_pose_recovered");
+  assert(retry_calls == 1);
+  assert(gate_calls == 1);
+}
+
+void test_forced_retry_failure_rejects_primary()
+{
+  auto input = default_input();
+  input.consecutive_rejected_updates = 0;
+  input.force_retry_from_last_pose = true;
+  input.forced_retry_rejection_message = "imu_prediction_correction_guard_rejected";
+  int retry_calls = 0;
+  int gate_calls = 0;
+
+  const auto result = ll::runAlignmentPipeline(
+    make_attempt(true, true, 4.0),
+    input,
+    [&]() {
+      ++retry_calls;
+      return make_attempt(true, true, 9.0);
+    },
+    [&](const ll::AlignmentAttempt &) {
+      ++gate_calls;
+      return rejected_gate();
+    });
+
+  assert(result.should_continue);
+  assert(!result.recovered_by_retry_from_last_pose);
+  assert(result.gate_result.reject_measurement);
+  assert(result.status_message == "imu_prediction_correction_guard_rejected");
+  assert(retry_calls == 1);
+  assert(gate_calls == 1);
+}
+
 void test_terminal_handling_publishes_and_advances()
 {
   ll::AlignmentPipelineResult result =
@@ -224,6 +282,8 @@ int main()
   test_fitness_reject_remains_rejected_when_retry_denied();
   test_retry_success_replaces_rejected_primary_attempt();
   test_target_missing_can_recover_by_retry();
+  test_forced_retry_success_replaces_primary_without_rejection_streak();
+  test_forced_retry_failure_rejects_primary();
   test_terminal_handling_publishes_and_advances();
   test_continuing_recovery_handling_logs_and_uses_backend();
   return 0;

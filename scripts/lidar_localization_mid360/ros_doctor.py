@@ -25,8 +25,12 @@ def stamp_to_sec(stamp) -> float:
 
 
 class Mid360BringupDoctor(Node):
-    def __init__(self, config: BringupCheckConfig):
-        super().__init__("mid360_legged_bringup_doctor")
+    def __init__(
+        self,
+        config: BringupCheckConfig,
+        node_name: str = "mid360_legged_bringup_doctor",
+    ):
+        super().__init__(node_name)
         self.config = config
         self.cloud = TopicStats()
         self.imu = TopicStats()
@@ -70,6 +74,7 @@ class Mid360BringupDoctor(Node):
         self.cloud.last_point_count = int(msg.width) * int(msg.height)
         field_names = {field.name for field in msg.fields}
         self.cloud.has_xyz_fields = {"x", "y", "z"}.issubset(field_names)
+        self.cloud.field_names = tuple(sorted(field_names))
 
     def on_imu(self, msg: Imu) -> None:
         self.imu.mark(msg.header.frame_id, stamp_to_sec(msg.header.stamp), time.monotonic())
@@ -83,6 +88,9 @@ class Mid360BringupDoctor(Node):
             latest = msg.status[0]
             self.status.last_status_level = int(latest.level)
             self.status.last_status_message = latest.message
+            self.status.status_values = {
+                key_value.key: key_value.value for key_value in latest.values
+            }
 
     def have_tf(self, target: str, source: str) -> bool:
         try:
@@ -90,10 +98,24 @@ class Mid360BringupDoctor(Node):
         except Exception:
             return False
 
+    def published_topic_types(self) -> Dict[str, list]:
+        topic_types: Dict[str, list] = {}
+        for topic_name, _ in self.get_topic_names_and_types():
+            publisher_infos = self.get_publishers_info_by_topic(topic_name)
+            publisher_types = sorted(
+                {info.topic_type for info in publisher_infos if info.topic_type}
+            )
+            if publisher_types:
+                topic_types[topic_name] = publisher_types
+        return topic_types
+
     def snapshot(self) -> BringupSnapshot:
         availability: Dict[str, bool] = {
             f"{self.config.base_frame} <- {self.config.lidar_frame}": self.have_tf(
                 self.config.base_frame, self.config.lidar_frame
+            ),
+            f"{self.config.base_frame} <- {self.config.imu_frame}": self.have_tf(
+                self.config.base_frame, self.config.imu_frame
             ),
             f"{self.config.odom_frame} <- {self.config.base_frame}": self.have_tf(
                 self.config.odom_frame, self.config.base_frame
@@ -108,4 +130,5 @@ class Mid360BringupDoctor(Node):
             pose=self.pose,
             status=self.status,
             tf_checks=build_tf_checks(self.config, availability),
+            topic_types=self.published_topic_types(),
         )

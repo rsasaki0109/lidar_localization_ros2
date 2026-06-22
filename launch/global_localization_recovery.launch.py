@@ -18,13 +18,14 @@ still opt-in -- this launch is never part of the default bringup, and the
 supervisor publishes nothing until ``/reinitialization_requested`` is asserted
 and the guards pass.
 
-Example (Koide outdoor_hard_01a, dataset TF tree)::
+Example (Koide outdoor_hard_01a, Livox frame)::
 
     ros2 launch lidar_localization_ros2 global_localization_recovery.launch.py \\
-        cloud_topic:=/velodyne_points \\
+        cloud_topic:=/livox/points imu_topic:=/livox/imu \\
         occupancy_yaml:=/path/to/occupancy.yaml \\
         localization_param_dir:=/path/to/localization.yaml \\
-        use_dataset_tf_tree:=true dataset_root_frame:=camera_base \\
+        base_frame_id:=livox_frame lidar_frame_id:=livox_frame \\
+        publish_lidar_tf:=false use_imu_preintegration:=true \\
         use_sim_time:=true
 
 Then replay the bag with ``set_initial_pose:=false`` (or let tracking diverge);
@@ -50,14 +51,27 @@ def generate_launch_description():
     cloud_topic = LaunchConfiguration('cloud_topic')
     occupancy_yaml = LaunchConfiguration('occupancy_yaml')
     global_frame_id = LaunchConfiguration('global_frame_id')
+    odom_frame_id = LaunchConfiguration('odom_frame_id')
+    base_frame_id = LaunchConfiguration('base_frame_id')
     use_sim_time = LaunchConfiguration('use_sim_time')
     localization_param_dir = LaunchConfiguration('localization_param_dir')
 
     # Pass-through to the core localization launch so dataset TF trees (Koide
     # bags) and the lidar frame can be selected from this single entry point.
+    twist_topic = LaunchConfiguration('twist_topic')
+    imu_topic = LaunchConfiguration('imu_topic')
     use_dataset_tf_tree = LaunchConfiguration('use_dataset_tf_tree')
     dataset_root_frame = LaunchConfiguration('dataset_root_frame')
+    publish_lidar_tf = LaunchConfiguration('publish_lidar_tf')
     lidar_frame_id = LaunchConfiguration('lidar_frame_id')
+    publish_imu_tf = LaunchConfiguration('publish_imu_tf')
+    imu_frame_id = LaunchConfiguration('imu_frame_id')
+    use_imu_preintegration = LaunchConfiguration('use_imu_preintegration')
+    imu_preintegration_use_base_frame_transform = LaunchConfiguration(
+        'imu_preintegration_use_base_frame_transform')
+    use_continuous_time_deskew = LaunchConfiguration('use_continuous_time_deskew')
+    continuous_time_deskew_reference_time_sec = LaunchConfiguration(
+        'continuous_time_deskew_reference_time_sec')
 
     # Supervisor guards most likely to be tuned per scenario; the rest keep the
     # node's own defaults (see reinitialization_supervisor_policy).
@@ -66,8 +80,12 @@ def generate_launch_description():
     # G2's BBS query can take ~10-25 s; query/settle timeouts must allow for it.
     supervisor_query_timeout_sec = LaunchConfiguration('supervisor_query_timeout_sec')
     supervisor_settle_timeout_sec = LaunchConfiguration('supervisor_settle_timeout_sec')
+    supervisor_recovery_confirmation_samples = LaunchConfiguration(
+        'supervisor_recovery_confirmation_samples')
     supervisor_max_walk_candidates = LaunchConfiguration('supervisor_max_walk_candidates')
     supervisor_enable_seed_motion = LaunchConfiguration('supervisor_enable_seed_motion_compensation')
+    supervisor_max_seed_speed_mps = LaunchConfiguration('supervisor_max_seed_speed_mps')
+    supervisor_max_seed_latency_sec = LaunchConfiguration('supervisor_max_seed_latency_sec')
 
     declared = [
         DeclareLaunchArgument(
@@ -80,14 +98,27 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'global_frame_id', default_value='map',
             description='Map frame shared by all three nodes and /initialpose.'),
+        DeclareLaunchArgument('odom_frame_id', default_value='odom'),
+        DeclareLaunchArgument('base_frame_id', default_value='base_link'),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument(
             'localization_param_dir',
             default_value=os.path.join(pkg_share, 'param', 'localization.yaml'),
             description='Parameter file for the core lidar_localization node.'),
+        DeclareLaunchArgument('twist_topic', default_value='/twist'),
+        DeclareLaunchArgument('imu_topic', default_value='/imu'),
         DeclareLaunchArgument('use_dataset_tf_tree', default_value='false'),
         DeclareLaunchArgument('dataset_root_frame', default_value='camera_base'),
+        DeclareLaunchArgument('publish_lidar_tf', default_value='true'),
         DeclareLaunchArgument('lidar_frame_id', default_value='velodyne'),
+        DeclareLaunchArgument('publish_imu_tf', default_value='false'),
+        DeclareLaunchArgument('imu_frame_id', default_value='imu_link'),
+        DeclareLaunchArgument('use_imu_preintegration', default_value='true'),
+        DeclareLaunchArgument(
+            'imu_preintegration_use_base_frame_transform', default_value='false'),
+        DeclareLaunchArgument('use_continuous_time_deskew', default_value='false'),
+        DeclareLaunchArgument(
+            'continuous_time_deskew_reference_time_sec', default_value='0.0'),
         DeclareLaunchArgument(
             'supervisor_min_candidate_score', default_value='0.6',
             description='No reset is published below this candidate score.'),
@@ -103,6 +134,10 @@ def generate_launch_description():
             description='Time to observe post-reset recovery before counting the '
                         'attempt failed.'),
         DeclareLaunchArgument(
+            'supervisor_recovery_confirmation_samples', default_value='3',
+            description='Consecutive post-reset low-fitness observations required '
+                        'before recovery is confirmed.'),
+        DeclareLaunchArgument(
             'supervisor_max_walk_candidates', default_value='4',
             description='Walk at most this many candidates from one (possibly stale) '
                         'query before re-querying on a fresher scan; a stale query '
@@ -115,6 +150,14 @@ def generate_launch_description():
                         'it was when the (slow) BBS query was issued. Velocity is inferred '
                         'from successive query fixes (g3_live_closed_loop.md). Off by '
                         'default; helps only on a moving vehicle with slow queries.'),
+        DeclareLaunchArgument(
+            'supervisor_max_seed_speed_mps', default_value='30.0',
+            description='Reject seed-motion velocity estimates faster than this; lower '
+                        'for slow bags to avoid compensating between aliased wrong '
+                        'candidates.'),
+        DeclareLaunchArgument(
+            'supervisor_max_seed_latency_sec', default_value='30.0',
+            description='Clamp seed-motion compensation latency to this many seconds.'),
         DeclareLaunchArgument(
             'g2_angular_resolution_deg', default_value='5.0',
             description='G2 BBS yaw sampling step; coarser = faster query, fresher '
@@ -129,6 +172,11 @@ def generate_launch_description():
             'g2_max_candidates', default_value='16',
             description='G2 ranked candidate count returned per query.'),
         DeclareLaunchArgument(
+            'g2_nms_radius_m', default_value='2.0',
+            description='G2 candidate non-maximum suppression radius. Lower values '
+                        'keep more near-by/yaw-alternative hypotheses for candidate '
+                        'walking; higher values improve spatial diversity.'),
+        DeclareLaunchArgument(
             'g2_use_cpp_backend', default_value='false',
             description='Use the compiled C++ BBS backend (bbs_cpp) when built; '
                         'falls back to the Python search if unavailable.'),
@@ -141,10 +189,24 @@ def generate_launch_description():
         launch_arguments={
             'localization_param_dir': localization_param_dir,
             'cloud_topic': cloud_topic,
+            'twist_topic': twist_topic,
+            'imu_topic': imu_topic,
+            'global_frame_id': global_frame_id,
+            'odom_frame_id': odom_frame_id,
+            'base_frame_id': base_frame_id,
             'use_sim_time': use_sim_time,
             'use_dataset_tf_tree': use_dataset_tf_tree,
             'dataset_root_frame': dataset_root_frame,
+            'publish_lidar_tf': publish_lidar_tf,
             'lidar_frame_id': lidar_frame_id,
+            'publish_imu_tf': publish_imu_tf,
+            'imu_frame_id': imu_frame_id,
+            'use_imu_preintegration': use_imu_preintegration,
+            'imu_preintegration_use_base_frame_transform':
+                imu_preintegration_use_base_frame_transform,
+            'use_continuous_time_deskew': use_continuous_time_deskew,
+            'continuous_time_deskew_reference_time_sec':
+                continuous_time_deskew_reference_time_sec,
         }.items())
 
     # 2. G2 on-demand global-localization service. The search-cost parameters are
@@ -168,6 +230,8 @@ def generate_launch_description():
                 LaunchConfiguration('g2_pyramid_depth'), value_type=int),
             'max_candidates': ParameterValue(
                 LaunchConfiguration('g2_max_candidates'), value_type=int),
+            'nms_radius_m': ParameterValue(
+                LaunchConfiguration('g2_nms_radius_m'), value_type=float),
             'use_cpp_backend': ParameterValue(
                 LaunchConfiguration('g2_use_cpp_backend'), value_type=bool),
             'use_sim_time': use_sim_time,
@@ -191,10 +255,16 @@ def generate_launch_description():
                 supervisor_query_timeout_sec, value_type=float),
             'settle_timeout_sec': ParameterValue(
                 supervisor_settle_timeout_sec, value_type=float),
+            'recovery_confirmation_samples': ParameterValue(
+                supervisor_recovery_confirmation_samples, value_type=int),
             'max_walk_candidates': ParameterValue(
                 supervisor_max_walk_candidates, value_type=int),
             'enable_seed_motion_compensation': ParameterValue(
                 supervisor_enable_seed_motion, value_type=bool),
+            'max_seed_speed_mps': ParameterValue(
+                supervisor_max_seed_speed_mps, value_type=float),
+            'max_seed_latency_sec': ParameterValue(
+                supervisor_max_seed_latency_sec, value_type=float),
             'use_sim_time': use_sim_time,
         }])
 

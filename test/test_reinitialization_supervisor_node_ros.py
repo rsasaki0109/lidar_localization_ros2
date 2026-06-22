@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from rclpy.executors import SingleThreadedExecutor          # noqa: E402
 from rclpy.node import Node                                  # noqa: E402
-from rclpy.qos import QoSProfile, ReliabilityPolicy          # noqa: E402
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy  # noqa: E402
 from std_msgs.msg import Bool                                # noqa: E402
 from std_srvs.srv import Trigger                             # noqa: E402
 from diagnostic_msgs.msg import (                            # noqa: E402
@@ -38,6 +38,9 @@ import reinitialization_supervisor_node as rsn               # noqa: E402
 
 _REL = QoSProfile(depth=1)
 _REL.reliability = ReliabilityPolicy.RELIABLE
+_POSE_QOS = QoSProfile(depth=10)
+_POSE_QOS.reliability = ReliabilityPolicy.RELIABLE
+_POSE_QOS.durability = DurabilityPolicy.TRANSIENT_LOCAL
 
 
 class _Harness(Node):
@@ -58,7 +61,7 @@ class _Harness(Node):
         # Optionally fake the localizer pose output so the supervisor can carry z.
         self._pose_z = pose_z
         self._pcl_pose = self.create_publisher(
-            PoseWithCovarianceStamped, "/pcl_pose", 10)
+            PoseWithCovarianceStamped, "/pcl_pose", _POSE_QOS)
         self.query_calls = 0
         self.recover_on_second = recover_on_second
         self.poses = []
@@ -87,10 +90,18 @@ class _Harness(Node):
         self._reinit.publish(Bool(data=True))
         # Recover only once the node has walked to the 2nd candidate, else stay bad.
         recovered = self.recover_on_second and len(self.poses) >= 2
-        kv = KeyValue()
-        kv.key, kv.value = "fitness_score", ("0.2" if recovered else "9.0")
+        def kv(key, value):
+            item = KeyValue()
+            item.key, item.value = key, value
+            return item
         status = DiagnosticStatus()
-        status.values = [kv]
+        status.message = "ok" if recovered else "fitness_score_over_threshold_rejected"
+        status.values = [
+            kv("fitness_score", "0.2" if recovered else "9.0"),
+            kv("reinitialization_requested", "false" if recovered else "true"),
+            kv("recovery_state", "tracking" if recovered else "reinitialization_requested"),
+            kv("recovery_action", "accept_measurement" if recovered else "request_reinitialization"),
+        ]
         array = DiagnosticArray()
         array.status = [status]
         self._status.publish(array)
@@ -194,4 +205,157 @@ def test_reset_carries_z_from_localizer_pose():
         executor.shutdown()
         sup.destroy_node()
         harness.destroy_node()
+        rclpy.shutdown()
+
+
+def test_seed_motion_history_uses_one_fix_per_query(monkeypatch):
+    # Candidate walking inside one query must not overwrite the previous-query
+    # motion sample. Otherwise a wrong walked candidate poisons the next query's
+    # velocity estimate and compensation never fires.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    try:
+        sup.enable_seed_motion = True
+        sup.max_seed_speed = 30.0
+        sup.max_seed_latency = 30.0
+        sup._prev_fix = (0.0, 0.0, 100.0)
+        sup._query_issue_time = 110.0
+        sup._current_query_issue_time = 110.0
+
+        monkeypatch.setattr(rsn.time, "monotonic", lambda: 115.0)
+        first = sup._compensate_seed(10.0, 0.0, candidate_index=0)
+        walked = sup._compensate_seed(99.0, 0.0, candidate_index=1)
+
+        assert first == (15.0, 0.0)
+        assert walked == (104.0, 0.0)
+        assert sup._prev_fix == (10.0, 0.0, 110.0)
+
+        sup._query_issue_time = 120.0
+        sup._current_query_issue_time = 120.0
+        monkeypatch.setattr(rsn.time, "monotonic", lambda: 122.0)
+        next_query = sup._compensate_seed(20.0, 0.0, candidate_index=0)
+
+        assert next_query == (22.0, 0.0)
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
+def test_first_query_seed_motion_uses_local_pose_delta(monkeypatch):
+    # The first query has no previous BBS fix, but the localizer still publishes
+    # /pcl_pose. Use that local pose delta to compensate query latency.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    try:
+        sup.enable_seed_motion = True
+        sup.max_seed_speed = 3.0
+        sup.max_seed_latency = 30.0
+        sup._query_issue_time = 100.0
+        sup._current_query_issue_time = 100.0
+        sup._query_issue_pose = (10.0, 20.0, 100.0)
+        sup._last_pose_x = 11.5
+        sup._last_pose_y = 24.0
+        sup._last_pose_observed_sec = 102.0
+
+        monkeypatch.setattr(rsn.time, "monotonic", lambda: 102.5)
+        compensated = sup._compensate_seed(-109.0, 14.0, candidate_index=0)
+
+        assert compensated == (-107.5, 18.0)
+        assert sup._prev_fix == (-109.0, 14.0, 100.0)
+        assert sup._current_query_pose_delta == (1.5, 4.0)
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
+def test_first_query_seed_motion_falls_back_to_last_pose_velocity(monkeypatch):
+    # If tracking is already lost, /pcl_pose may not update during the slow query.
+    # Use the last accepted local pose velocity to keep the first seed fresh.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    try:
+        sup.enable_seed_motion = True
+        sup.max_seed_speed = 3.0
+        sup.max_seed_latency = 30.0
+        sup._query_issue_time = 100.0
+        sup._current_query_issue_time = 100.0
+        sup._query_issue_pose = None
+        sup._query_issue_velocity = rsn.rsp.SeedVelocity(0.0, 1.2, True)
+
+        monkeypatch.setattr(rsn.time, "monotonic", lambda: 110.0)
+        compensated = sup._compensate_seed(-109.0, 14.0, candidate_index=0)
+
+        assert compensated == (-109.0, 26.0)
+        assert sup._current_query_pose_delta == (0.0, 12.0)
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
+def test_seed_motion_history_survives_brief_request_drop(monkeypatch):
+    # The C++ request line can briefly de-assert after a reset even when the whole
+    # episode has not actually recovered. Keep the previous top fix through that
+    # transient so the next fresh query can estimate velocity.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    try:
+        sup._requested = True
+        sup._prev_fix = (10.0, 0.0, 100.0)
+        sup.state = replace(
+            sup.state,
+            name=rsn.rsp.STATE_COOLDOWN,
+            attempts=1,
+            cooldown_since_sec=200.0,
+        )
+
+        sup._on_reinit(Bool(data=False))
+        assert sup._prev_fix == (10.0, 0.0, 100.0)
+
+        monkeypatch.setattr(rsn.time, "monotonic", lambda: 206.0)
+        sup._tick()
+        assert sup.state.name == rsn.rsp.STATE_IDLE
+        assert sup._prev_fix is None
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
+def test_recovery_confirmation_requires_post_reset_fitness(monkeypatch):
+    # A low fitness sample observed before /initialpose publication is not recovery
+    # evidence for that reset. The node must wait for a fresh alignment_status row.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    try:
+        sup._requested = True
+        sup._fitness = 0.1
+        sup._fitness_observed_sec = 99.0
+        sup.state = replace(
+            sup.state,
+            name=rsn.rsp.STATE_SETTLING,
+            attempts=1,
+            last_reset_sec=100.0,
+            candidate_scores=(0.9,),
+            candidate_index=0,
+        )
+
+        monkeypatch.setattr(rsn.time, "monotonic", lambda: 101.0)
+        sup._tick()
+        assert sup.state.name == rsn.rsp.STATE_SETTLING
+
+        sup._fitness_observed_sec = 101.5
+        monkeypatch.setattr(rsn.time, "monotonic", lambda: 102.0)
+        sup._tick()
+        assert sup.state.name == rsn.rsp.STATE_SETTLING
+
+        sup._fitness_observed_sec = 102.5
+        monkeypatch.setattr(rsn.time, "monotonic", lambda: 103.0)
+        sup._tick()
+        assert sup.state.name == rsn.rsp.STATE_SETTLING
+
+        sup._fitness_observed_sec = 103.5
+        monkeypatch.setattr(rsn.time, "monotonic", lambda: 104.0)
+        sup._tick()
+        assert sup.state.name == rsn.rsp.STATE_STANDDOWN
+    finally:
+        sup.destroy_node()
         rclpy.shutdown()

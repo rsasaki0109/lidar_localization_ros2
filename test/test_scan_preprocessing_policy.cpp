@@ -23,6 +23,28 @@ void test_scan_xyz_field_availability()
   assert(!ll::hasRequiredXyzFields({true, true, false}));
 }
 
+void test_scan_time_range_statuses_are_explicit()
+{
+  assert(
+    ll::classifyScanTimeRange({false, false, 0.0, 0, 0, 0.1, 2.0}) ==
+    ll::ScanTimeRangeStatus::kNoTimeField);
+  assert(
+    ll::classifyScanTimeRange({true, false, 0.0, 0, 10, 0.1, 2.0}) ==
+    ll::ScanTimeRangeStatus::kInvalid);
+  assert(
+    ll::classifyScanTimeRange({true, true, 0.25, 100, 0, 0.1, 2.0}) ==
+    ll::ScanTimeRangeStatus::kDurationTooLarge);
+  assert(
+    ll::classifyScanTimeRange({true, true, 0.08, 100, 0, 0.1, 2.0}) ==
+    ll::ScanTimeRangeStatus::kReady);
+
+  assert(ll::isScanTimeRangeReady(ll::ScanTimeRangeStatus::kReady));
+  assert(!ll::isScanTimeRangeReady(ll::ScanTimeRangeStatus::kInvalid));
+  assert(
+    std::string(ll::scanTimeRangeStatusMessage(
+      ll::ScanTimeRangeStatus::kDurationTooLarge)) == "scan_time_range_too_large");
+}
+
 void test_scan_preparation_status_priority_and_actions()
 {
   assert(
@@ -71,6 +93,7 @@ int main()
 {
   test_direct_range_filter_path_requires_no_voxel_no_imu_and_same_frame();
   test_scan_xyz_field_availability();
+  test_scan_time_range_statuses_are_explicit();
   test_scan_preparation_status_priority_and_actions();
   test_range_is_horizontal_and_exclusive();
   test_non_finite_points_are_rejected();

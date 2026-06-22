@@ -12,7 +12,7 @@ constexpr double kDefaultImuSmootherMeasurementRotationGuardDeg = 10.0;
 struct ImuPreintegrationGuardParams
 {
   double prediction_correction_guard_translation_m{2.0};
-  double prediction_correction_guard_yaw_deg{4.0};
+  double prediction_correction_guard_yaw_deg{10.0};
   double smoother_measurement_translation_guard_m{
     kDefaultImuSmootherMeasurementTranslationGuardM};
   double smoother_measurement_rotation_guard_deg{
@@ -72,9 +72,12 @@ inline ImuPreintegrationBackendState beginImuPreintegrationBackendState(
   ImuPreintegrationBackendState state;
   state.correction_guard_tripped =
     isImuPredictionCorrectionGuardTripped(params, input);
-  state.fallback_mode = input.fallback_mode || state.correction_guard_tripped;
+  state.fallback_mode = input.fallback_mode;
   state.state_reset = state.correction_guard_tripped;
-  state.should_update_smoother = !state.fallback_mode;
+  state.should_update_smoother =
+    !state.fallback_mode &&
+    !state.correction_guard_tripped &&
+    input.imu_prediction_ready;
   return state;
 }
 
@@ -103,7 +106,6 @@ inline ImuPreintegrationBackendState applyImuSmootherDivergenceDecision(
   ImuPreintegrationBackendState next = current;
   next.smoother_diverged = isImuSmootherDiverged(params, input);
   if (next.smoother_diverged) {
-    next.fallback_mode = true;
     next.state_reset = true;
     next.should_update_smoother = false;
   }
@@ -112,7 +114,9 @@ inline ImuPreintegrationBackendState applyImuSmootherDivergenceDecision(
 
 inline bool shouldUseImuMeasurementPose(const ImuPreintegrationBackendState & state)
 {
-  return state.fallback_mode;
+  return state.fallback_mode ||
+         state.correction_guard_tripped ||
+         state.smoother_diverged;
 }
 
 inline ImuPreintegrationStatusDecision decideImuPreintegrationStatus(
@@ -137,6 +141,12 @@ inline ImuPreintegrationStatusDecision decideImuPreintegrationStatus(
   const ImuPreintegrationBackendState & state,
   bool imu_updated)
 {
+  if (state.correction_guard_tripped) {
+    return {true, "imu_prediction_correction_guard_imu_reset"};
+  }
+  if (state.smoother_diverged) {
+    return {true, "imu_smoother_diverged_imu_reset"};
+  }
   return decideImuPreintegrationStatus(
     state.state_reset, state.correction_guard_tripped, imu_updated);
 }

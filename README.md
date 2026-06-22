@@ -102,27 +102,53 @@ status and limits (query latency, validated windows).
 
 ## Quick Start
 
-Expected workspace layout:
+Standard ROS workspace layout:
 
 ```text
 lidarloc_ws/
-  build_ws/
-  local_prefix/
-  repo/
+  src/
+    lidar_localization_ros2/
+    ndt_omp_ros2/
 ```
 
-Build:
+Prerequisites: ROS 2, `git`, and `colcon` (`python3-colcon-common-extensions`
+on Ubuntu).
+
+Fetch the package and its required NDT dependency:
 
 ```bash
-cd /path/to/lidarloc_ws/repo
-source scripts/setup_local_env.sh
-cd ../build_ws
-colcon build --symlink-install --packages-up-to lidar_localization_ros2
-cd ../repo
-source scripts/setup_local_env.sh
+mkdir -p ~/lidarloc_ws/src
+cd ~/lidarloc_ws/src
+git clone https://github.com/rsasaki0109/lidar_localization_ros2.git
+cd lidar_localization_ros2
+scripts/bootstrap_colcon_workspace.sh --build
+source ~/lidarloc_ws/install/setup.bash
 ```
 
-For the full no-sudo local-prefix workflow, see [docs/local_build.md](docs/local_build.md).
+Manual dependency import and build:
+
+```bash
+cd ~/lidarloc_ws
+vcs import src < src/lidar_localization_ros2/dependencies.repos
+```
+
+If `vcs` is not installed, clone the dependency manually:
+
+```bash
+git clone --branch humble https://github.com/rsasaki0109/ndt_omp_ros2.git src/ndt_omp_ros2
+```
+
+Build with colcon:
+
+```bash
+cd ~/lidarloc_ws
+source /opt/ros/${ROS_DISTRO:-jazzy}/setup.bash
+colcon build --symlink-install --packages-up-to lidar_localization_ros2
+source install/setup.bash
+```
+
+For the full no-sudo local-prefix workflow used by the maintainer's benchmark
+machine, see [docs/local_build.md](docs/local_build.md).
 
 ## Choose A Workflow
 
@@ -133,8 +159,167 @@ For the full no-sudo local-prefix workflow, see [docs/local_build.md](docs/local
 | Jetson + Livox MID-360 | `ros2 launch lidar_localization_ros2 mid360_legged_localization.launch.py map_path:=/absolute/path/to/map.pcd cloud_topic:=/livox/points imu_topic:=/livox/imu` |
 | Self-contained Nav2 smoke | `ros2 run lidar_localization_ros2 run_nav2_demo_smoke --map-yaml /absolute/path/to/map.yaml --initial-pose-x 0.0 --initial-pose-y 0.0 --goal-x 1.0 --goal-y 0.0` |
 | Real-localizer replay smoke | `ros2 run lidar_localization_ros2 run_nav2_replay_smoke --map-yaml /absolute/path/to/map.yaml --pcd-map-path /absolute/path/to/map.pcd --bag-path /absolute/path/to/bag` |
+| Koide IMU/recovery prep | `scripts/prepare_koide_hard_relocalization_assets.sh --download --mode imu_preintegration` |
 | **30-minute public demo** | `source scripts/setup_local_env.sh && scripts/run_public_demo.sh` |
 | Public regression | `source scripts/setup_local_env.sh && scripts/run_public_regression_suite.sh` |
+
+## Generate A First Config
+
+Create a small parameter file instead of hand-editing the full presets:
+
+```bash
+ros2 run lidar_localization_ros2 create_lidar_localization_config.py \
+  --profile standalone \
+  --map-path /absolute/path/to/map.pcd \
+  --output /tmp/lidar_localization.yaml
+```
+
+The command prints the matching `ros2 launch ...` line and a matching bringup
+doctor command. For rosbag replay, add `--use-sim-time` so the printed launch
+line includes `use_sim_time:=true`. Add an embedded initial pose when you know
+it:
+
+```bash
+ros2 run lidar_localization_ros2 create_lidar_localization_config.py \
+  --profile nav2 \
+  --map-path /absolute/path/to/map.pcd \
+  --lidar-tf 0 0 0 0 0 0 \
+  --initial-pose 0 0 0 0 0 0 1 \
+  --output /tmp/nav2_lidar_localization.yaml
+```
+
+If your robot already publishes the LiDAR TF through `robot_state_publisher` or
+the bag's `/tf_static`, add `--no-publish-lidar-tf`.
+
+For IMU extrinsics, add `--imu-tf X Y Z ROLL PITCH YAW`. If another node already
+publishes `base_frame -> imu_frame`, use `--no-publish-imu-tf`.
+
+IMU behavior is explicit: `--imu-mode off`, `--imu-mode preintegration`,
+`--imu-mode legacy`, or `--imu-mode both`. The `mid360` profile defaults to
+`preintegration`; use `--imu-mode off` while validating LiDAR-only bringup.
+For experimental continuous-time deskew, add
+`--enable-continuous-time-deskew`. The generator then writes the deskew
+parameters and makes the printed doctor command require both IMU data and
+per-point cloud timing.
+
+## Bringup Check
+
+After launching localization and starting your LiDAR/bag, run the doctor before
+tuning NDT parameters. If you used `create_lidar_localization_config.py`, copy
+the `Bringup check:` command printed by that tool.
+
+```bash
+ros2 run lidar_localization_ros2 check_lidar_localization_bringup.py --profile standalone
+```
+
+It prints `OK` / `WARN` / `FAIL` checks for the pointcloud topic, IMU topic,
+required TF links, localization pose, and `/alignment_status`, with hints for
+the launch argument or publisher to fix.
+
+When IMU preintegration rotates samples into `base_frame`, the generated doctor
+command also checks `base_frame <- imu_frame`.
+
+At runtime, `/alignment_status` reports `imu_preintegration_status`,
+`imu_integrated_sample_count`, `imu_transform_failure_count`,
+`imu_last_sample_age_sec`, `imu_integration_window_sec`, and
+`registration_seed_source`, so you can separate topic/TF/timestamp problems
+from whether the registration seed actually came from IMU preintegration.
+
+For future continuous-time deskew experiments, pass
+`--enable-continuous-time-deskew` to the config generator or add
+`--require-cloud-time-field` to the doctor command. The check verifies that the
+`PointCloud2` stream preserves per-point timing fields such as `time`,
+`timestamp`, or `offset_time`. Once `/alignment_status` is available, the doctor
+also reads `scan_time_status`, `scan_time_duration_sec`, and valid / invalid
+timing point counts. It also reports `deskew_readiness_status`, which summarizes
+the first missing input between per-point scan timing and IMU preintegration.
+
+The experimental runtime hook is off by default. When launched with
+`use_continuous_time_deskew:=true`, `/alignment_status` also reports
+`continuous_time_deskew_status` and point counters so you can see whether the
+pre-voxel scan was actually deskewed or why it was skipped.
+
+For a runtime smoke test during bag replay, run:
+
+```bash
+ros2 run lidar_localization_ros2 validate_lidar_localization_imu.py \
+  --duration-sec 30 \
+  --min-imu-active-ratio 0.5 \
+  --require-imu-seed-source
+```
+
+For the experimental deskew path, add `--require-deskew-applied`. This validates
+that the code path is active; it is not a trajectory accuracy claim.
+
+To run the three-way bag comparison, use:
+
+```bash
+ros2 run lidar_localization_ros2 run_lidar_localization_imu_comparison.py \
+  --bag-path /absolute/path/to/bag \
+  --map-path /absolute/path/to/map.pcd \
+  --profile mid360 \
+  --output-dir /tmp/lidarloc_imu_compare
+```
+
+Add `--reference-csv /absolute/path/to/reference.csv` when ground truth is
+available. The runner creates `lidar_only`, `imu_preintegration`, and `deskew`
+subdirectories with pose traces, `/alignment_status` CSVs, IMU validation
+reports, `comparison.json`, and a human-readable `comparison.md`.
+The report includes `Pose rows` and `Last pose s`, so a low RMSE from a short
+published-pose window is visible.
+Before running, it checks that the bag, map, and optional reference CSV exist;
+it also reads rosbag2 `metadata.yaml` to catch cloud/IMU topic mismatches before
+playback. Use `--print-only` when you only want to inspect generated commands.
+It also writes `run_commands.sh` for manual replay and supports
+`--report-only` to regenerate `comparison.md` from an existing output directory.
+
+For a turnkey public real-bag smoke on Koide `outdoor_hard_01a`, use:
+
+```bash
+scripts/run_koide_hard_imu_deskew_smoke.sh --download
+```
+
+After the dataset is staged, omit `--download`. The script runs the same
+three-way comparison and writes `comparison.md` under `/tmp` by default. The
+Koide smoke uses the open-loop strict score gate to reject stale local minima
+after long gaps. Latest local 60 s replay (`2026-06-21`) produced:
+
+| Mode | Trans RMSE m | Rot RMSE deg | Runtime check |
+| --- | ---: | ---: | --- |
+| `lidar_only` | 0.163 | 2.137 | n/a |
+| `imu_preintegration` | 0.082 | 0.810 | IMU active 34.4%, fallback 0 |
+| `deskew` | 0.081 | 0.771 | IMU active 35.4%, deskew applied 31.2%, fallback 0 |
+
+For the next guarded-recovery experiment on the same Koide bag, generate the
+localization YAML and BBS occupancy map together:
+
+```bash
+scripts/prepare_koide_hard_relocalization_assets.sh --download --mode imu_preintegration
+```
+
+The script prints the matching `global_localization_recovery.launch.py` command
+and `ros2 bag play ... --clock` command. This is still an experimental recovery
+path, not a production kidnapped-robot claim. The printed G2 settings prefer the
+compiled backend with a faster `10 deg` / `256 point` BBS query for moving bags,
+re-query after the top candidate (`supervisor_max_walk_candidates:=1`), and enable
+seed motion compensation for query latency. Recovery confirmation is conservative:
+the supervisor requires consecutive post-reset low-fitness samples before standing
+down, so a brief wrong-pose local minimum is not reported as recovered.
+
+Common profiles:
+
+```bash
+# Nav2 wrapper mode: expects odom -> base_link and map -> odom TF.
+ros2 run lidar_localization_ros2 check_lidar_localization_bringup.py --profile nav2
+
+# Livox MID-360 preset with IMU preintegration checks.
+ros2 run lidar_localization_ros2 check_lidar_localization_bringup.py \
+  --profile mid360 --require-imu --require-imu-base-tf
+
+# Other sensors: override only the names that differ.
+ros2 run lidar_localization_ros2 check_lidar_localization_bringup.py \
+  --cloud-topic /ouster/points --lidar-frame os_sensor
+```
 
 ## Frames And TF
 

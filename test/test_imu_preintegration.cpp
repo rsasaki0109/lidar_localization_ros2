@@ -13,6 +13,7 @@
 //       test/test_imu_preintegration.cpp -o /tmp/t && /tmp/t
 
 #include "lidar_localization/imu_preintegration.hpp"
+#include "lidar_localization/imu_gtsam_smoother.hpp"
 
 #include <Eigen/Eigenvalues>
 
@@ -204,6 +205,23 @@ void test_covariance_symmetric_and_grows()
   assert(es.eigenvalues().minCoeff() > -1e-12);
 }
 
+void test_smoother_handles_short_and_regular_imu_windows()
+{
+  ImuGtsamSmoother smoother;
+  smoother.params_.min_imu_factor_dt = 0.02;
+  smoother.initialize(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+
+  smoother.integrateImu(Eigen::Vector3d::Zero(), Eigen::Vector3d(0.0, 0.0, 9.81), 0.004);
+  assert(smoother.update(0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.004));
+  assert(smoother.poseMatrix().allFinite());
+
+  for (int i = 0; i < 20; ++i) {
+    smoother.integrateImu(Eigen::Vector3d::Zero(), Eigen::Vector3d(0.0, 0.0, 9.81), 0.005);
+  }
+  assert(smoother.update(0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.104));
+  assert(smoother.poseMatrix().allFinite());
+}
+
 }  // namespace
 
 int main()
@@ -215,5 +233,6 @@ int main()
   test_residual_zero_for_consistent_trajectory();
   test_bias_jacobian_matches_finite_difference();
   test_covariance_symmetric_and_grows();
+  test_smoother_handles_short_and_regular_imu_windows();
   return 0;
 }

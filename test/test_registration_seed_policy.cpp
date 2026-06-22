@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <string>
 
 namespace ll = lidar_localization;
 
@@ -91,11 +92,34 @@ void test_imu_sample_and_dt_helpers()
   assert(ll::clampPredictionDt(10.0, 9.0, -1.0) == 0.0);
 }
 
+void test_registration_seed_source_names_are_stable_for_diagnostics()
+{
+  assert(
+    std::string(ll::registrationSeedSourceName(ll::RegistrationSeedSource::kCurrentPose)) ==
+    "current_pose");
+  assert(
+    std::string(ll::registrationSeedSourceName(ll::RegistrationSeedSource::kImuPreintegration)) ==
+    "imu_preintegration");
+  assert(
+    std::string(ll::registrationSeedSourceName(ll::RegistrationSeedSource::kGtsamSmoother)) ==
+    "gtsam_smoother");
+  assert(
+    std::string(ll::registrationSeedSourceName(ll::RegistrationSeedSource::kTwistEkf)) ==
+    "twist_ekf");
+  assert(
+    std::string(ll::registrationSeedSourceName(ll::RegistrationSeedSource::kTwistPrediction)) ==
+    "twist_prediction");
+  assert(
+    std::string(ll::registrationSeedSourceName(ll::RegistrationSeedSource::kPreviousDelta)) ==
+    "previous_delta");
+}
+
 int main()
 {
   test_imu_preintegration_has_highest_priority_when_finite();
   test_non_finite_imu_prediction_blocks_lower_priority_sources();
   test_fallback_order_without_imu_candidate();
   test_imu_sample_and_dt_helpers();
+  test_registration_seed_source_names_are_stable_for_diagnostics();
   return 0;
 }

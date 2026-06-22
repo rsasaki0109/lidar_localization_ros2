@@ -30,6 +30,22 @@ from global_localization_query import GlobalLocalizationConfig  # noqa: E402
 from global_localization_query import GlobalLocalizationEngine  # noqa: E402
 
 
+def _stamp_to_sec(stamp) -> float:
+    return float(stamp.sec) + float(stamp.nanosec) * 1.0e-9
+
+
+def _round_optional(value, digits: int):
+    if value is None:
+        return None
+    return round(value, digits)
+
+
+def _scan_age_sec(now_sec: float, scan_stamp_sec: float):
+    if now_sec <= 0.0 or scan_stamp_sec <= 0.0:
+        return None
+    return max(0.0, now_sec - scan_stamp_sec)
+
+
 class GlobalLocalizationNode(Node):
     def __init__(self) -> None:
         super().__init__("global_localization_node")
@@ -108,10 +124,18 @@ class GlobalLocalizationNode(Node):
             return response
 
         cloud = self.latest_cloud
+        query_start_ros_sec = _stamp_to_sec(self.get_clock().now().to_msg())
+        scan_stamp_sec = _stamp_to_sec(cloud.header.stamp)
+        scan_age_at_start_sec = _scan_age_sec(query_start_ros_sec, scan_stamp_sec)
         points_xyz = bbs_engine.pointcloud2_xyz_array(cloud)
         started = time.monotonic()
         result = self.engine.query(points_xyz)
         runtime_sec = time.monotonic() - started
+        query_end_ros_sec = _stamp_to_sec(self.get_clock().now().to_msg())
+        scan_age_at_end_sec = _scan_age_sec(query_end_ros_sec, scan_stamp_sec)
+        candidate_age_sec = (
+            runtime_sec if scan_age_at_start_sec is None
+            else scan_age_at_start_sec + runtime_sec)
 
         pose_array = PoseArray()
         pose_array.header.stamp = cloud.header.stamp
@@ -139,6 +163,13 @@ class GlobalLocalizationNode(Node):
             "candidate_count": len(result.candidates),
             "scan_point_count": result.scan_point_count,
             "runtime_sec": round(runtime_sec, 3),
+            "scan_stamp_sec": round(scan_stamp_sec, 9),
+            "scan_frame_id": cloud.header.frame_id,
+            "query_start_sec": round(query_start_ros_sec, 9),
+            "query_end_sec": round(query_end_ros_sec, 9),
+            "scan_age_sec": _round_optional(scan_age_at_start_sec, 3),
+            "scan_age_at_response_sec": _round_optional(scan_age_at_end_sec, 3),
+            "candidate_age_sec": _round_optional(candidate_age_sec, 3),
             "backend": self.engine.backend,
             # Full ranked list (high-to-low) so a consumer can walk past an
             # aliased top candidate; "top" kept for back-compat.

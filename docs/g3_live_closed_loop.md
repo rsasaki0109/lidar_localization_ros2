@@ -236,11 +236,12 @@ burning **~95 s**, before cooling down and re-querying. The *second* query (on a
 distinctive scan) returned the true pose at rank 1 with score 1.0 and locked immediately.
 
 So past the top few BBS occupancy maxima, a fresh query beats a deeper walk into a stale
-list. The policy now caps the walk at `max_walk_candidates` (default 4): after the top few
-candidates fail to lock, it treats the whole query as a miss and re-queries (spending one
-attempt) instead of grinding through ranks 5-16. On this run that turns ~95 s of doomed
-walking into ~24 s, then a fresh query -- the one that actually recovered. The cap is a pure
-policy change (`reinitialization_supervisor_policy.py`), unit-tested in
+list. The policy caps the walk at `max_walk_candidates` (launch default 4): after the top
+few candidates fail to lock, it treats the whole query as a miss and re-queries (spending
+one attempt) instead of grinding through ranks 5-16. On the moving Koide recovery command
+we now use `supervisor_max_walk_candidates:=1`, so the loop tries the top candidate and
+then spends time on a fresher scan. The cap is a pure policy change
+(`reinitialization_supervisor_policy.py`), unit-tested in
 `test_reinitialization_supervisor_policy.py` (`test_walk_is_bounded_by_max_walk_candidates`,
 `test_high_max_walk_candidates_restores_full_list_walk`), and exposed as the
 `supervisor_max_walk_candidates` launch arg. Set it high to restore walking the full list.
@@ -284,6 +285,22 @@ launch arg), since it only helps a moving vehicle with slow queries.
 The compensation math is pure and unit-tested in `reinitialization_supervisor_policy.py`
 (`estimate_seed_velocity`, `forward_compensate_xy`) with `test_reinitialization_supervisor_policy.py`
 pinning the velocity estimate, the within-query-walk rejection, the implausible-speed
-rejection, the latency clamp, and the invalid-estimate no-op. Live verification on Koide
-(does the compensated seed lock where the raw one went stale) is the remaining idle-machine
-step.
+rejection, the latency clamp, and the invalid-estimate no-op.
+
+Follow-up Koide checks (`2026-06-22`) found that the earlier
+`/tmp/lidarloc_koide_recovery_imu_90_walk1_20260621_094906` `recovery_confirmed`
+event was not enough evidence for stable recovery: health still reported no stable
+recovered request window and later re-requested. The supervisor now rejects stale
+pre-reset fitness and requires consecutive post-reset low-fitness, stable-tracking
+diagnostic samples before standing down. `/initialpose` also runs in a dedicated
+localizer callback group, so reset callbacks are consumed immediately instead of
+waiting behind long scan registration callbacks. A later NMS/walk check
+(`/tmp/lidarloc_koide_recovery_imu_120_nms05_walk4_20260622_124750`) showed that
+walking four candidates from one stale query keeps publishing increasingly old
+poses, so the Koide helper now prefers quick re-querying
+(`supervisor_settle_timeout_sec:=8.0`, `supervisor_max_walk_candidates:=1`). The
+latest local 120 s run
+(`/tmp/lidarloc_koide_recovery_imu_120_nms05_requery8_stable_20260622_125720`)
+validates the guarded request/query/publish path without false
+`recovery_confirmed`, but still has `0` stable recovered request windows; remaining
+work is G2 candidate freshness and ranking on the moving outdoor sequence.

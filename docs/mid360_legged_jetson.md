@@ -35,7 +35,24 @@ Published outputs:
 
 ## Launch
 
-Use the MID-360 legged preset:
+Generate a small parameter file first. The tool prints the matching launch
+command and bringup doctor command, including the IMU frame checks used by the
+MID-360 preset:
+
+```bash
+ros2 run lidar_localization_ros2 create_lidar_localization_config.py \
+  --profile mid360 \
+  --map-path /absolute/path/to/map.pcd \
+  --lidar-tf 0 0 0 0 0 0 \
+  --imu-tf 0 0 0 0 0 0 \
+  --output /tmp/mid360_lidar_localization.yaml
+```
+
+For the experimental continuous-time deskew path, add
+`--enable-continuous-time-deskew`. The generated doctor command will require
+IMU data, `base_link -> livox_imu_frame`, and a per-point cloud timing field.
+
+Or launch the MID-360 legged preset directly:
 
 ```bash
 ros2 launch lidar_localization_ros2 mid360_legged_localization.launch.py \
@@ -69,6 +86,7 @@ Recommended TF tree:
 
 ```text
 map -> odom -> base_link -> livox_frame
+                       \-> livox_imu_frame
 ```
 
 The robot state estimator should publish `odom -> base_link`. This package
@@ -141,20 +159,30 @@ ros2 run tf2_ros tf2_echo map odom
 Or run the bringup doctor:
 
 ```bash
-ros2 run lidar_localization_ros2 check_mid360_legged_bringup.py \
+ros2 run lidar_localization_ros2 check_lidar_localization_bringup.py \
+  --profile mid360 \
   --duration-sec 5 \
   --cloud-topic /livox/points \
   --imu-topic /livox/imu \
   --base-frame base_link \
-  --lidar-frame livox_frame
+  --lidar-frame livox_frame \
+  --imu-frame livox_imu_frame \
+  --require-imu \
+  --require-imu-base-tf
 ```
+
+If you are preparing continuous-time deskew work by hand, add
+`--require-cloud-time-field`. The check fails unless the converted `PointCloud2`
+keeps a per-point timing field such as `time`, `timestamp`, or `offset_time`.
 
 For a stricter check after localization is active and the robot estimator is
 publishing odometry:
 
 ```bash
-ros2 run lidar_localization_ros2 check_mid360_legged_bringup.py \
+ros2 run lidar_localization_ros2 check_lidar_localization_bringup.py \
+  --profile mid360 \
   --require-imu \
+  --require-imu-base-tf \
   --require-map-odom-tf \
   --require-localization-output
 ```

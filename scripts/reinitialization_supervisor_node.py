@@ -33,7 +33,7 @@ from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 
@@ -87,6 +87,7 @@ class ReinitializationSupervisorNode(Node):
         self.declare_parameter("query_timeout_sec", 10.0)
         self.declare_parameter("settle_timeout_sec", 8.0)
         self.declare_parameter("recovery_fitness_threshold", 1.5)
+        self.declare_parameter("recovery_confirmation_samples", 3)
         self.declare_parameter("max_walk_candidates", 4)
         # Seed motion compensation: forward-extrapolate a candidate by the measured
         # query->publish latency so it lands where the moving vehicle is *now*, not
@@ -109,6 +110,8 @@ class ReinitializationSupervisorNode(Node):
             settle_timeout_sec=float(self.get_parameter("settle_timeout_sec").value),
             recovery_fitness_threshold=float(
                 self.get_parameter("recovery_fitness_threshold").value),
+            recovery_confirmation_samples=int(
+                self.get_parameter("recovery_confirmation_samples").value),
             max_walk_candidates=int(self.get_parameter("max_walk_candidates").value),
         )
         self.state = rsp.initial_state()
@@ -125,6 +128,8 @@ class ReinitializationSupervisorNode(Node):
         # Latest observed signals.
         self._requested = False
         self._fitness = None
+        self._fitness_observed_sec = None
+        self._stable_tracking = None
         # Latest z / roll / pitch from the localizer pose. A G2 candidate is 2D
         # (x, y, yaw, z=0); on an outdoor map the true z can be tens of metres from
         # zero, which seeds the reset outside the registration z-basin and the lock
@@ -132,6 +137,10 @@ class ReinitializationSupervisorNode(Node):
         # tracking is lost, so the most recent pose's z / roll / pitch are a good
         # carry-over -- we override only x / y / yaw from the candidate.
         self._last_pose_z = None
+        self._last_pose_x = None
+        self._last_pose_y = None
+        self._last_pose_observed_sec = None
+        self._last_pose_velocity = rsp.SeedVelocity()
         self._last_pose_roll = 0.0
         self._last_pose_pitch = 0.0
         # One-shot service reply delivered to the policy once: a tuple of ranked
@@ -145,12 +154,24 @@ class ReinitializationSupervisorNode(Node):
         self._candidates = []
         # Seed motion compensation bookkeeping: the monotonic time the in-flight
         # query was issued (a proxy for its fix's scan time), and the previously
-        # published candidate fix (x, y, issue_time) used to infer map velocity.
+        # published query's top fix (x, y, issue_time) used to infer map velocity.
+        # Candidate walking inside one query must not clobber this history: every
+        # candidate in that list came from the same scan time, so the first
+        # candidate of each new query is the representative motion sample.
         self._query_issue_time = None
+        self._query_issue_pose = None
+        self._query_issue_velocity = rsp.SeedVelocity()
         self._prev_fix = None
+        self._current_query_velocity = rsp.SeedVelocity()
+        self._current_query_pose_delta = None
+        self._current_query_issue_time = None
+        self._last_seed_motion_status = "disabled"
 
         reliable = QoSProfile(depth=1)
         reliable.reliability = ReliabilityPolicy.RELIABLE
+        pose_qos = QoSProfile(depth=10)
+        pose_qos.reliability = ReliabilityPolicy.RELIABLE
+        pose_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
 
         self.create_subscription(
             Bool, self.get_parameter("reinitialization_topic").value,
@@ -160,7 +181,7 @@ class ReinitializationSupervisorNode(Node):
             self._on_alignment_status, 10)
         self.create_subscription(
             PoseWithCovarianceStamped, self.get_parameter("pose_topic").value,
-            self._on_pose, 10)
+            self._on_pose, pose_qos)
         self.initialpose_pub = self.create_publisher(
             PoseWithCovarianceStamped, self.get_parameter("initialpose_topic").value,
             reliable)
@@ -171,30 +192,55 @@ class ReinitializationSupervisorNode(Node):
             float(self.get_parameter("tick_period_sec").value), self._tick)
         self.get_logger().info(
             "reinitialization supervisor ready (opt-in); guards=%s" % (self.params,))
+        self.get_logger().info(
+            "seed motion compensation: enabled=%s max_speed_mps=%.2f max_latency_sec=%.2f"
+            % (self.enable_seed_motion, self.max_seed_speed, self.max_seed_latency))
 
     # --- subscriptions -------------------------------------------------------
 
     def _on_reinit(self, msg: Bool) -> None:
-        requested = bool(msg.data)
-        if self._requested and not requested:
-            # Problem cleared: the next recovery episode is a fresh trajectory, so
-            # drop the previous fix rather than differencing across the gap.
-            self._prev_fix = None
-        self._requested = requested
+        self._requested = bool(msg.data)
 
     def _on_alignment_status(self, msg: DiagnosticArray) -> None:
         for status in msg.status:
-            for kv in status.values:
-                if kv.key == "fitness_score":
-                    try:
-                        self._fitness = float(kv.value)
-                    except ValueError:
-                        pass
-                    return
+            values = {kv.key: kv.value for kv in status.values}
+            if "fitness_score" not in values:
+                continue
+            try:
+                self._fitness = float(values["fitness_score"])
+                self._fitness_observed_sec = time.monotonic()
+                reinit_requested = (
+                    str(values.get("reinitialization_requested", "")).lower()
+                    == "true")
+                recovery_state = str(values.get("recovery_state", ""))
+                recovery_action = str(values.get("recovery_action", ""))
+                if recovery_state or recovery_action or "reinitialization_requested" in values:
+                    self._stable_tracking = (
+                        status.message == "ok"
+                        and recovery_state == "tracking"
+                        and recovery_action == "accept_measurement"
+                        and not reinit_requested)
+                else:
+                    self._stable_tracking = (status.message == "ok")
+            except ValueError:
+                pass
+            return
 
     def _on_pose(self, msg: PoseWithCovarianceStamped) -> None:
         p = msg.pose.pose
+        observed_sec = time.monotonic()
+        if (self._last_pose_x is not None and self._last_pose_y is not None
+                and self._last_pose_observed_sec is not None):
+            self._last_pose_velocity = rsp.estimate_seed_velocity(
+                (self._last_pose_x, self._last_pose_y),
+                self._last_pose_observed_sec,
+                (float(p.position.x), float(p.position.y)),
+                observed_sec,
+                max_speed_mps=self.max_seed_speed)
+        self._last_pose_x = float(p.position.x)
+        self._last_pose_y = float(p.position.y)
         self._last_pose_z = float(p.position.z)
+        self._last_pose_observed_sec = observed_sec
         self._last_pose_roll, self._last_pose_pitch = _roll_pitch_from_quat(
             p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w)
 
@@ -206,15 +252,37 @@ class ReinitializationSupervisorNode(Node):
         if self._pending_reply is not None:
             candidate_scores = self._pending_reply
             self._pending_reply = None
+        best_fitness = self._fitness
+        stable_tracking = self._stable_tracking
+        if (self.state.name == rsp.STATE_SETTLING
+                and self.state.last_reset_sec is not None
+                and (self._fitness_observed_sec is None
+                     or self._fitness_observed_sec <= self.state.last_reset_sec)):
+            # Recovery evidence must be observed after the reset was published.
+            # Otherwise a low fitness sample from before the reset can produce a
+            # false recovery_confirmed while the localizer has not consumed the
+            # /initialpose yet.
+            best_fitness = None
+            stable_tracking = None
 
         obs = rsp.SupervisorObservation(
             now_sec=now,
             reinitialization_requested=self._requested,
             candidate_scores=candidate_scores,
-            best_fitness=self._fitness,
+            best_fitness=best_fitness,
+            fitness_observed_sec=self._fitness_observed_sec,
+            stable_tracking=stable_tracking,
         )
         decision = rsp.decide(self.params, self.state, obs)
         self.state = decision.state
+
+        if decision.reason in (
+            "recovery_confirmed",
+            "request_cleared",
+            "standdown_cleared",
+            "exhausted_cleared",
+        ):
+            self._clear_seed_motion_history()
 
         if decision.action == rsp.ACTION_QUERY:
             self._issue_query()
@@ -231,6 +299,12 @@ class ReinitializationSupervisorNode(Node):
                 "supervisor: %s -> %s (%s)"
                 % (decision.action, self.state.name, decision.reason))
 
+    def _clear_seed_motion_history(self) -> None:
+        self._prev_fix = None
+        self._current_query_velocity = rsp.SeedVelocity()
+        self._current_query_pose_delta = None
+        self._current_query_issue_time = None
+
     def _issue_query(self) -> None:
         if not self.query_client.service_is_ready():
             self.get_logger().warn("query service not available; will retry")
@@ -241,6 +315,15 @@ class ReinitializationSupervisorNode(Node):
         # The candidate this query returns is a fix of the scan available now, so
         # stamp the issue time for the query->publish latency used in compensation.
         self._query_issue_time = time.monotonic()
+        if (self._last_pose_x is not None and self._last_pose_y is not None
+                and self._last_pose_observed_sec is not None
+                and self._query_issue_time - self._last_pose_observed_sec
+                <= self.max_seed_latency):
+            self._query_issue_pose = (
+                self._last_pose_x, self._last_pose_y, self._last_pose_observed_sec)
+        else:
+            self._query_issue_pose = None
+        self._query_issue_velocity = self._last_pose_velocity
 
     def _on_query_response(self, future) -> None:
         self._query_in_flight = False
@@ -269,6 +352,8 @@ class ReinitializationSupervisorNode(Node):
             return
         self._candidates = candidates
         self._pending_reply = scores
+        self._current_query_velocity = rsp.SeedVelocity()
+        self._current_query_issue_time = self._query_issue_time
 
     def _publish_reset(self, candidate_index: int = 0) -> None:
         if not self._candidates or candidate_index >= len(self._candidates):
@@ -277,7 +362,7 @@ class ReinitializationSupervisorNode(Node):
         top = self._candidates[candidate_index]
         yaw = math.radians(top["yaw_deg"])
         raw_x, raw_y = float(top["x"]), float(top["y"])
-        seed_x, seed_y = self._compensate_seed(raw_x, raw_y)
+        seed_x, seed_y = self._compensate_seed(raw_x, raw_y, candidate_index)
         # The candidate is 2D (x, y, yaw); carry z / roll / pitch from the last
         # localizer pose so the seed lands in the registration z-basin on a non-flat
         # map. Fall back to the configured default z if no pose seen yet.
@@ -303,37 +388,120 @@ class ReinitializationSupervisorNode(Node):
         comp_note = ""
         if (seed_x, seed_y) != (raw_x, raw_y):
             comp_note = " (motion-compensated from %.2f, %.2f)" % (raw_x, raw_y)
+        elif self.enable_seed_motion:
+            comp_note = " (motion-compensation skipped: %s)" % (
+                self._last_seed_motion_status,)
         self.get_logger().warn(
             "published /initialpose reset to (%.2f, %.2f, z=%.2f, %.1f deg) score=%s "
             "[candidate %d/%d]%s"
             % (seed_x, seed_y, z, top["yaw_deg"], top["score"],
                candidate_index + 1, len(self._candidates), comp_note))
 
-    def _compensate_seed(self, raw_x: float, raw_y: float):
+    def _compensate_seed(self, raw_x: float, raw_y: float, candidate_index: int = 0):
         """Forward-extrapolate (raw_x, raw_y) by the query->publish latency.
 
-        Records the raw fix (the true measured position) for the next call's
-        velocity estimate, then -- if enabled and a prior fix from an earlier query
-        exists -- returns the candidate pushed ahead along the inferred map-frame
-        velocity. Disabled, first-query, within-query-walk, or implausible-velocity
-        cases all return the raw position unchanged (see the policy module).
+        The first candidate of a new query is the representative fix used to
+        estimate velocity against the previous query. Within-query candidate
+        walking reuses that same velocity but does not update the history, because
+        all candidates in one reply correspond to the same scan time.
+
+        Disabled, first-query, or implausible-velocity cases return the raw
+        position unchanged (see the policy module).
         """
         issue = self._query_issue_time
-        if not self.enable_seed_motion or issue is None:
+        self._last_seed_motion_status = "disabled"
+        if not self.enable_seed_motion:
             return raw_x, raw_y
-        seed_x, seed_y = raw_x, raw_y
-        if self._prev_fix is not None:
-            prev_x, prev_y, prev_issue = self._prev_fix
-            velocity = rsp.estimate_seed_velocity(
-                (prev_x, prev_y), prev_issue, (raw_x, raw_y), issue,
-                max_speed_mps=self.max_seed_speed)
+        if issue is None:
+            self._last_seed_motion_status = "no query issue time"
+            return raw_x, raw_y
+        if self._current_query_issue_time != issue:
+            self._current_query_velocity = rsp.SeedVelocity()
+            self._current_query_pose_delta = None
+            self._current_query_issue_time = issue
+
+        if candidate_index == 0:
+            velocity = rsp.SeedVelocity()
+            if self._prev_fix is not None:
+                prev_x, prev_y, prev_issue = self._prev_fix
+                velocity = rsp.estimate_seed_velocity(
+                    (prev_x, prev_y), prev_issue, (raw_x, raw_y), issue,
+                    max_speed_mps=self.max_seed_speed)
+                if not velocity.valid:
+                    dt = issue - prev_issue
+                    if dt > 0.0:
+                        speed = math.hypot(raw_x - prev_x, raw_y - prev_y) / dt
+                        self._last_seed_motion_status = (
+                            "invalid velocity estimate %.2fm/s over %.2fs"
+                            % (speed, dt))
+                    else:
+                        self._last_seed_motion_status = "invalid velocity estimate"
+            else:
+                pose_delta = self._estimate_pose_delta_since_query_issue()
+                if pose_delta is not None:
+                    dx, dy, speed, dt = pose_delta
+                    self._current_query_pose_delta = (dx, dy)
+                    self._last_seed_motion_status = (
+                        "pose delta %.2fm/s over %.2fs" % (speed, dt))
+                else:
+                    if self._last_seed_motion_status == "disabled":
+                        self._last_seed_motion_status = "no previous query fix"
+            self._current_query_velocity = velocity
+            # Store the raw, top-ranked fix for the next query's velocity
+            # estimate. Do not store walked candidates from the same query.
+            self._prev_fix = (raw_x, raw_y, issue)
+        else:
+            if self._current_query_pose_delta is not None:
+                dx, dy = self._current_query_pose_delta
+                self._last_seed_motion_status = "applied query pose delta"
+                return raw_x + dx, raw_y + dy
+            velocity = self._current_query_velocity
+            if not velocity.valid:
+                self._last_seed_motion_status = "no valid velocity for current query"
+
+        if self._current_query_pose_delta is not None:
+            dx, dy = self._current_query_pose_delta
+            return raw_x + dx, raw_y + dy
+        if velocity.valid:
             latency = time.monotonic() - issue
-            seed_x, seed_y = rsp.forward_compensate_xy(
+            self._last_seed_motion_status = "applied latency %.2fs" % (latency,)
+            return rsp.forward_compensate_xy(
                 (raw_x, raw_y), velocity, latency, max_latency_sec=self.max_seed_latency)
-        # Store the raw (un-compensated) fix: it is the actual measurement the next
-        # query's velocity estimate must difference against.
-        self._prev_fix = (raw_x, raw_y, issue)
-        return seed_x, seed_y
+        return raw_x, raw_y
+
+    def _estimate_pose_delta_since_query_issue(self):
+        if self._query_issue_pose is None:
+            return self._estimate_pose_delta_from_query_velocity()
+        if (self._last_pose_x is None or self._last_pose_y is None
+                or self._last_pose_observed_sec is None):
+            return self._estimate_pose_delta_from_query_velocity()
+        issue_x, issue_y, issue_pose_sec = self._query_issue_pose
+        dt = self._last_pose_observed_sec - issue_pose_sec
+        if dt <= 0.0 or dt > self.max_seed_latency:
+            return self._estimate_pose_delta_from_query_velocity()
+        dx = self._last_pose_x - issue_x
+        dy = self._last_pose_y - issue_y
+        speed = math.hypot(dx, dy) / dt
+        if speed > self.max_seed_speed:
+            self._last_seed_motion_status = (
+                "invalid pose-delta velocity %.2fm/s over %.2fs" % (speed, dt))
+            return None
+        return dx, dy, speed, dt
+
+    def _estimate_pose_delta_from_query_velocity(self):
+        if not self._query_issue_velocity.valid or self._query_issue_time is None:
+            return None
+        latency = time.monotonic() - self._query_issue_time
+        if latency <= 0.0 or latency > self.max_seed_latency:
+            return None
+        speed = math.hypot(self._query_issue_velocity.vx, self._query_issue_velocity.vy)
+        if speed > self.max_seed_speed:
+            return None
+        return (
+            self._query_issue_velocity.vx * latency,
+            self._query_issue_velocity.vy * latency,
+            speed,
+            latency)
 
 
 def main() -> None:

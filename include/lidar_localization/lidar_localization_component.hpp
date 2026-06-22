@@ -5,9 +5,11 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include <Eigen/Geometry>
 #include <pcl/PCLPointCloud2.h>
@@ -57,6 +59,7 @@
 #include "lidar_localization/alignment_retry_policy.hpp"
 #include "lidar_localization/alignment_pipeline_policy.hpp"
 #include "lidar_localization/alignment_status_policy.hpp"
+#include "lidar_localization/imu_preintegration_diagnostics_policy.hpp"
 #include "lidar_localization/imu_preintegration_guard_policy.hpp"
 #include "lidar_localization/measurement_gate_policy.hpp"
 #include "lidar_localization/localization_update_policy.hpp"
@@ -111,6 +114,7 @@ public:
 
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::ConstSharedPtr
     initial_pose_sub_;
+  rclcpp::CallbackGroup::SharedPtr initial_pose_callback_group_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
     pose_pub_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr
@@ -131,6 +135,7 @@ public:
     cloud_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::ConstSharedPtr
     imu_sub_;
+  rclcpp::CallbackGroup::SharedPtr imu_callback_group_;
 
   pcl::Registration<pcl::PointXYZI, pcl::PointXYZI> * registration_{nullptr};
   pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr pcl_registration_;
@@ -140,10 +145,9 @@ public:
   small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>::Ptr small_gicp_registration_;
 #endif
   pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter_;
-  // Mutated and read from several callbacks (initial pose, scan, odom, imu,
-  // services). Safe without a mutex only because the node is spun by a
-  // SingleThreadedExecutor with the default mutually-exclusive callback group
-  // (see lidar_localization_node.cpp); add a guard before changing executors.
+  // Mutated and read from pose, scan, odom, and service callbacks. IMU
+  // preintegration and /initialpose use dedicated callback groups so high-rate
+  // replay and long scan registration do not starve reset handling.
   geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr corrent_pose_with_cov_stamped_ptr_;
   nav_msgs::msg::Path::SharedPtr path_ptr_;
   sensor_msgs::msg::PointCloud2::ConstSharedPtr last_scan_ptr_;
@@ -174,12 +178,38 @@ public:
   // IMU preintegration smoother
   bool use_imu_preintegration_{false};
   bool imu_preintegration_use_base_frame_transform_{false};
+  bool use_continuous_time_deskew_{false};
+  double continuous_time_deskew_reference_time_sec_{0.0};
   double imu_prediction_correction_guard_translation_m_{2.0};
-  double imu_prediction_correction_guard_yaw_deg_{4.0};
+  double imu_prediction_correction_guard_yaw_deg_{10.0};
   ImuGtsamSmoother imu_smoother_;
   double last_imu_stamp_{0.0};
   double last_scan_stamp_for_imu_{0.0};
   bool imu_preintegration_fallback_mode_{false};
+  mutable std::mutex imu_preintegration_mutex_;
+  bool latest_imu_seed_has_new_samples_{false};
+  bool latest_imu_seed_prediction_finite_{true};
+  std::size_t latest_imu_seed_received_sample_count_{0};
+  std::size_t latest_imu_seed_integrated_sample_count_{0};
+  std::size_t latest_imu_seed_skipped_sample_count_{0};
+  std::size_t latest_imu_seed_transform_failure_count_{0};
+  std::size_t latest_imu_seed_non_finite_sample_count_{0};
+  std::size_t latest_imu_seed_invalid_dt_count_{0};
+  double latest_imu_seed_last_dt_sec_{std::numeric_limits<double>::quiet_NaN()};
+  double latest_imu_seed_last_sample_age_sec_{std::numeric_limits<double>::quiet_NaN()};
+  double latest_imu_seed_integration_window_sec_{0.0};
+  bool latest_continuous_time_deskew_applied_{false};
+  std::string latest_continuous_time_deskew_status_{"continuous_time_deskew_disabled"};
+  std::size_t latest_continuous_time_deskew_point_count_{0};
+  std::size_t latest_continuous_time_deskew_skipped_invalid_time_count_{0};
+  std::size_t latest_continuous_time_deskew_clamped_time_count_{0};
+  std::size_t imu_preintegration_received_sample_count_since_scan_{0};
+  std::size_t imu_preintegration_integrated_sample_count_since_scan_{0};
+  std::size_t imu_preintegration_skipped_sample_count_since_scan_{0};
+  std::size_t imu_preintegration_transform_failure_count_since_scan_{0};
+  std::size_t imu_preintegration_non_finite_sample_count_since_scan_{0};
+  std::size_t imu_preintegration_invalid_dt_count_since_scan_{0};
+  double imu_preintegration_last_dt_sec_{std::numeric_limits<double>::quiet_NaN()};
 
 #ifdef LIDAR_LOCALIZATION_HAVE_NAV2_BOND
   // Nav2 lifecycle manager bond
@@ -196,6 +226,7 @@ public:
   double scan_min_range_;
   double scan_period_;
   int cloud_queue_depth_{1};
+  int imu_queue_depth_{2000};
   double min_scan_interval_sec_{0.0};
   rclcpp::Time last_cloud_process_time_{0, 0, RCL_ROS_TIME};
   double ndt_resolution_;
@@ -247,6 +278,13 @@ public:
   // imu
   LidarUndistortion lidar_undistortion_;
 
+  lidar_localization::ScanTimeRangeStatus latest_scan_time_status_{
+    lidar_localization::ScanTimeRangeStatus::kNoTimeField};
+  std::string latest_scan_time_field_{"none"};
+  double latest_scan_time_duration_sec_{std::numeric_limits<double>::quiet_NaN()};
+  std::size_t latest_scan_time_valid_point_count_{0};
+  std::size_t latest_scan_time_invalid_point_count_{0};
+
   // twist EKF
   TwistEkf twist_ekf_;
   // GTSAM smoother
@@ -283,10 +321,15 @@ public:
       lidar_localization::ScanPreparationStatus::kReady};
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud;
     std::size_t filtered_point_count{0};
+    std::vector<double> relative_times_sec;
+    bool relative_times_aligned_with_cloud{false};
+    std::vector<double> pre_voxel_relative_times_sec;
   };
   struct SelectedRegistrationSeed
   {
     Eigen::Matrix4f init_guess{Eigen::Matrix4f::Identity()};
+    lidar_localization::RegistrationSeedSource source{
+      lidar_localization::RegistrationSeedSource::kCurrentPose};
     bool imu_prediction_ready{false};
   };
   struct ImuPreintegrationBackendUpdate
@@ -312,6 +355,7 @@ public:
     std::size_t filtered_point_count;
     double stamp_sec;
     bool imu_prediction_ready;
+    std::string registration_seed_source;
   };
   struct AlignmentStatusPublishInput
   {
@@ -328,6 +372,7 @@ public:
     double seed_yaw_since_accept_deg;
     double accepted_gap_sec;
     bool imu_prediction_active;
+    std::string registration_seed_source;
   };
   struct AlignmentStatusEvaluation
   {
@@ -342,10 +387,15 @@ public:
   PreparedScanCloud prepareScanForRegistration(
     const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg,
     double scan_stamp_sec);
+  bool applyContinuousTimeDeskewIfEnabled(
+    PreparedScanCloud & prepared_scan,
+    double scan_stamp_sec);
   void handleScanPreparationFailure(
     const builtin_interfaces::msg::Time & stamp,
     const PreparedScanCloud & prepared_scan,
     double scan_stamp_sec);
+  void resetImuPreintegrationSampleCounters();
+  void snapshotImuPreintegrationSampleCountersForScan();
   SelectedRegistrationSeed selectRegistrationSeed(double scan_stamp_sec);
   Eigen::Matrix4f refineSeedWithNdtInitializer(
     const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud,
@@ -357,7 +407,9 @@ public:
     double scan_stamp_sec);
   lidar_localization::AlignmentPipelineResult runAlignmentPipelineForScan(
     const Eigen::Matrix4f & init_guess,
-    double scan_stamp_sec);
+    double scan_stamp_sec,
+    lidar_localization::RegistrationSeedSource seed_source,
+    bool imu_prediction_ready);
   lidar_localization::MeasurementGateDecision evaluateMeasurementGateForAttempt(
     const lidar_localization::AlignmentAttempt & attempt);
   void logAlignmentPipelineRecovery(
@@ -367,13 +419,15 @@ public:
     const lidar_localization::AlignmentPipelineResult & pipeline_result,
     std::size_t filtered_point_count,
     double scan_stamp_sec,
-    bool imu_prediction_ready);
+    bool imu_prediction_ready,
+    const std::string & registration_seed_source);
   bool applyAcceptedAlignmentPipelineResult(
     const builtin_interfaces::msg::Time & stamp,
     const lidar_localization::AlignmentPipelineResult & pipeline_result,
     std::size_t filtered_point_count,
     double scan_stamp_sec,
-    bool imu_prediction_ready);
+    bool imu_prediction_ready,
+    const std::string & registration_seed_source);
   void setRegistrationSourceCloud(const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud);
   void printAlignmentDebugInfo(
     const Eigen::Matrix4f & init_guess,
@@ -394,7 +448,8 @@ public:
     const builtin_interfaces::msg::Time & stamp,
     std::size_t filtered_point_count,
     double stamp_sec,
-    bool imu_prediction_ready);
+    bool imu_prediction_ready,
+    const std::string & registration_seed_source);
   lidar_localization::PoseBackendKind selectRegistrationPoseBackend() const;
   bool dispatchRegistrationPoseBackend(
     lidar_localization::PoseBackendKind backend,
@@ -416,6 +471,9 @@ public:
   bool applyImuPreintegrationPoseBackend(const PoseBackendApplyContext & context);
   lidar_localization::ImuPreintegrationGuardParams imuPreintegrationGuardParams() const;
   void initializeImuPreintegrationSmootherIfNeeded(
+    const lidar_localization::RegistrationObservation & observation,
+    double stamp_sec);
+  void resetImuPreintegrationSmootherToObservation(
     const lidar_localization::RegistrationObservation & observation,
     double stamp_sec);
   ImuPreintegrationBackendUpdate updateImuPreintegrationBackend(
@@ -468,7 +526,8 @@ public:
     const std::string & message,
     const lidar_localization::AlignmentAttempt & attempt,
     std::size_t filtered_point_count,
-    bool imu_prediction_active);
+    bool imu_prediction_active,
+    const std::string & registration_seed_source);
   ReinitializationRequestDecision applyReinitializationRequestLatch(
     const builtin_interfaces::msg::Time & stamp,
     const ReinitializationRequestDecision & decision);
@@ -495,6 +554,8 @@ public:
     const lidar_localization::AlignmentStatusInput & status_input,
     const lidar_localization::AlignmentStatusPreparation & status_preparation,
     const ReinitializationRequestDecision & reinitialization_request) const;
+  lidar_localization::ImuPreintegrationDiagnosticsInput makeImuPreintegrationDiagnosticsInput(
+    const lidar_localization::AlignmentStatusInput & status_input) const;
   void appendAlignmentDiagnosticValues(
     diagnostic_msgs::msg::DiagnosticStatus & status,
     const lidar_localization::AlignmentDiagnosticValuesInput & diagnostic_values_input) const;
@@ -517,5 +578,6 @@ public:
     double seed_translation_since_accept_m = std::numeric_limits<double>::quiet_NaN(),
     double seed_yaw_since_accept_deg = std::numeric_limits<double>::quiet_NaN(),
     double accepted_gap_sec = std::numeric_limits<double>::quiet_NaN(),
-    bool imu_prediction_active = false);
+    bool imu_prediction_active = false,
+    const std::string & registration_seed_source = "not_selected");
 };

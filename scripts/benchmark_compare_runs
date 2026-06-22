@@ -44,6 +44,14 @@ def load_json(path: Path) -> Any:
         return json.load(stream)
 
 
+def first_present(row: Dict[str, str], keys: List[str]) -> Optional[str]:
+    for key in keys:
+        value = row.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
 def expand_run_dirs(path: Path) -> List[Path]:
     summary_path = path / "summary.json"
     if summary_path.exists():
@@ -74,6 +82,9 @@ def summarize_alignment(diag_path: Path) -> Dict[str, Optional[float]]:
     if not diag_path.exists():
         return {
             "row_count": 0,
+            "first_stamp_sec": None,
+            "last_stamp_sec": None,
+            "duration_sec": None,
             "non_ok_row_count": 0,
             "alignment_time_median_sec": None,
             "alignment_time_max_sec": None,
@@ -101,6 +112,11 @@ def summarize_alignment(diag_path: Path) -> Dict[str, Optional[float]]:
     reinitialization_request_first_trigger_stamp_sec: Optional[float] = None
     reinitialization_request_first_trigger_reason: Optional[str] = None
     non_ok = 0
+    stamp_values = [
+        value
+        for value in (safe_float(row.get("stamp_sec")) for row in rows)
+        if value is not None
+    ]
 
     for row in rows:
         if row.get("level") not in ("0", "b'\\x00'"):
@@ -139,6 +155,13 @@ def summarize_alignment(diag_path: Path) -> Dict[str, Optional[float]]:
 
     return {
         "row_count": len(rows),
+        "first_stamp_sec": min(stamp_values) if stamp_values else None,
+        "last_stamp_sec": max(stamp_values) if stamp_values else None,
+        "duration_sec": (
+            max(stamp_values) - min(stamp_values)
+            if len(stamp_values) >= 2
+            else None
+        ),
         "non_ok_row_count": non_ok,
         "alignment_time_median_sec": median(alignment_times),
         "alignment_time_max_sec": max(alignment_times) if alignment_times else None,
@@ -162,6 +185,52 @@ def summarize_alignment(diag_path: Path) -> Dict[str, Optional[float]]:
     }
 
 
+def summarize_pose_trace(
+    pose_path: Path,
+    run_start_stamp_sec: Optional[float],
+    requested_duration_sec: Optional[float],
+) -> Dict[str, Optional[float]]:
+    if not pose_path.exists():
+        return {
+            "sample_count": 0,
+            "first_stamp_sec": None,
+            "last_stamp_sec": None,
+            "span_sec": None,
+            "last_elapsed_sec": None,
+            "requested_duration_ratio": None,
+        }
+
+    stamps: List[float] = []
+    with pose_path.open("r", encoding="utf-8", newline="") as stream:
+        for row in csv.DictReader(stream):
+            stamp = safe_float(first_present(row, ["stamp_sec", "timestamp", "time", "time_sec"]))
+            if stamp is not None:
+                stamps.append(stamp)
+
+    first_stamp = min(stamps) if stamps else None
+    last_stamp = max(stamps) if stamps else None
+    span_sec = last_stamp - first_stamp if first_stamp is not None and last_stamp is not None else None
+    start_stamp = run_start_stamp_sec if run_start_stamp_sec is not None else first_stamp
+    last_elapsed_sec = (
+        last_stamp - start_stamp
+        if last_stamp is not None and start_stamp is not None
+        else None
+    )
+    requested_duration_ratio = (
+        last_elapsed_sec / requested_duration_sec
+        if last_elapsed_sec is not None and requested_duration_sec and requested_duration_sec > 0.0
+        else None
+    )
+    return {
+        "sample_count": len(stamps),
+        "first_stamp_sec": first_stamp,
+        "last_stamp_sec": last_stamp,
+        "span_sec": span_sec,
+        "last_elapsed_sec": last_elapsed_sec,
+        "requested_duration_ratio": requested_duration_ratio,
+    }
+
+
 def summarize_run(run_dir: Path) -> Dict[str, object]:
     summary = load_json(run_dir / "summary.json")
     trajectory_eval_path = run_dir / "trajectory_eval.json"
@@ -169,16 +238,28 @@ def summarize_run(run_dir: Path) -> Dict[str, object]:
         trajectory_eval_path = run_dir / "eval.json"
     trajectory_eval = load_json(trajectory_eval_path) if trajectory_eval_path.exists() else {}
     alignment = summarize_alignment(run_dir / "alignment_status.csv")
+    timing = summary.get("timing_sec", {})
+    requested_duration = (
+        safe_float(timing.get("requested_bag_duration_seconds"))
+        if isinstance(timing, dict)
+        else None
+    )
+    pose_trace = summarize_pose_trace(
+        run_dir / "pose_trace.csv",
+        alignment.get("first_stamp_sec"),
+        requested_duration,
+    )
 
     result = {
         "run_dir": str(run_dir),
         "backend_hint": os.path.basename(str(run_dir)),
         "record_topic": summary.get("record_topic"),
         "diagnostic_topic": summary.get("diagnostic_topic"),
-        "timing_sec": summary.get("timing_sec", {}),
+        "timing_sec": timing,
         "return_codes": summary.get("return_codes", {}),
         "resource_monitor": summary.get("resource_monitor", {}).get("stats", {}),
         "trajectory_eval": trajectory_eval,
+        "pose_trace": pose_trace,
         "alignment": alignment,
     }
     return result
@@ -188,10 +269,14 @@ def print_human_summary(results: List[Dict[str, object]]) -> None:
     for result in results:
         resource = result["resource_monitor"]
         alignment = result["alignment"]
+        pose_trace = result["pose_trace"]
         trajectory = result["trajectory_eval"]
         print(result["backend_hint"])
         print(f"  run_dir: {result['run_dir']}")
         print(f"  matched_sample_count: {trajectory.get('matched_sample_count')}")
+        print(f"  pose_sample_count: {pose_trace.get('sample_count')}")
+        print(f"  last_pose_elapsed_sec: {pose_trace.get('last_elapsed_sec')}")
+        print(f"  pose_requested_duration_ratio: {pose_trace.get('requested_duration_ratio')}")
         print(f"  translation_rmse_m: {trajectory.get('translation_rmse_m')}")
         print(f"  rotation_rmse_deg: {trajectory.get('rotation_rmse_deg')}")
         print(f"  alignment_row_count: {alignment.get('row_count')}")

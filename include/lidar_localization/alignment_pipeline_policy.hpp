@@ -38,6 +38,8 @@ struct AlignmentPipelineInput
   double scan_stamp_sec{std::numeric_limits<double>::quiet_NaN()};
   double last_accepted_pose_time_sec{std::numeric_limits<double>::quiet_NaN()};
   RecoveryRetryFromLastPoseParams recovery_retry_params;
+  bool force_retry_from_last_pose{false};
+  std::string forced_retry_rejection_message{"primary_retry_from_last_pose_rejected"};
 };
 
 struct AlignmentPipelineResult
@@ -93,6 +95,16 @@ inline void syncPipelineStatusFromGate(AlignmentPipelineResult & result)
   result.status_message = result.gate_result.status_message;
 }
 
+inline MeasurementGateDecision makeForcedRetryRejectedGateDecision(
+  const std::string & status_message)
+{
+  MeasurementGateDecision gate;
+  gate.status_level = kMeasurementGateWarn;
+  gate.status_message = status_message;
+  gate.reject_measurement = true;
+  return gate;
+}
+
 template<typename RetryAttemptFn, typename GateEvaluatorFn>
 AlignmentPipelineResult runAlignmentPipeline(
   const AlignmentAttempt & primary_attempt,
@@ -103,17 +115,24 @@ AlignmentPipelineResult runAlignmentPipeline(
   AlignmentPipelineResult result;
   result.selected_attempt = primary_attempt;
 
-  auto try_recovery_retry = [&]() {
+  auto try_recovery_retry = [&](bool force_retry) {
       const double fallback_accepted_gap_sec =
         computeRecoveryRetryFallbackAcceptedGapSec(
           input.have_last_accepted_pose,
           input.scan_stamp_sec,
           input.last_accepted_pose_time_sec);
+      const std::size_t effective_rejected_updates =
+        force_retry ?
+        std::max(
+          input.consecutive_rejected_updates,
+          static_cast<std::size_t>(
+            std::max(0, input.recovery_retry_params.min_rejections))) :
+        input.consecutive_rejected_updates;
       const auto retry_decision = decideRecoveryRetryFromLastPose(
         input.recovery_retry_params,
         makeRecoveryRetryFromLastPoseInput(
           input.have_last_accepted_pose,
-          input.consecutive_rejected_updates,
+          effective_rejected_updates,
           result.selected_attempt.accepted_gap_sec,
           fallback_accepted_gap_sec,
           result.selected_attempt.seed_translation_since_accept_m));
@@ -144,8 +163,15 @@ AlignmentPipelineResult runAlignmentPipeline(
       return true;
     };
 
+  auto reject_forced_primary = [&]() {
+      result.gate_result =
+        makeForcedRetryRejectedGateDecision(input.forced_retry_rejection_message);
+      syncPipelineStatusFromGate(result);
+      return result;
+    };
+
   if (!result.selected_attempt.target_ready) {
-    if (try_recovery_retry()) {
+    if (try_recovery_retry(false)) {
       return result;
     }
     return makeTerminalAlignmentPipelineResult(
@@ -153,17 +179,24 @@ AlignmentPipelineResult runAlignmentPipeline(
   }
 
   if (!result.selected_attempt.has_converged) {
-    if (try_recovery_retry()) {
+    if (try_recovery_retry(false)) {
       return result;
     }
     return makeTerminalAlignmentPipelineResult(
       result.selected_attempt, "registration_not_converged");
   }
 
+  if (input.force_retry_from_last_pose) {
+    if (try_recovery_retry(true)) {
+      return result;
+    }
+    return reject_forced_primary();
+  }
+
   result.gate_result = evaluate_gate(result.selected_attempt);
   syncPipelineStatusFromGate(result);
   if (result.gate_result.reject_measurement) {
-    (void)try_recovery_retry();
+    (void)try_recovery_retry(false);
   }
   return result;
 }

@@ -8,6 +8,7 @@ testable without rclpy.
 """
 
 import math
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,26 @@ from typing import List
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import make_bbs_relocalization_attempts as bbs_engine  # noqa: E402
+
+
+def _candidate_bbs_cpp_module_dirs() -> List[Path]:
+    """Return likely directories for the optional installed bbs_cpp module."""
+    dirs = [
+        Path(__file__).resolve().parent,
+        Path(sys.argv[0]).absolute().parent,
+    ]
+    for prefix in os.environ.get("AMENT_PREFIX_PATH", "").split(os.pathsep):
+      if prefix:
+        dirs.append(Path(prefix) / "lib" / "lidar_localization_ros2")
+    return dirs
+
+
+def _append_bbs_cpp_module_dirs() -> None:
+    for directory in _candidate_bbs_cpp_module_dirs():
+        if directory.is_dir():
+            text = str(directory)
+            if text not in sys.path:
+                sys.path.insert(0, text)
 
 
 @dataclass(frozen=True)
@@ -72,6 +93,7 @@ class GlobalLocalizationEngine:
         self._search = bbs_engine.branch_and_bound_candidates
         if config.use_cpp_backend:
             try:
+                _append_bbs_cpp_module_dirs()
                 import bbs_cpp  # noqa: E402
                 self._search = bbs_cpp.branch_and_bound_candidates
                 self.backend = "cpp"

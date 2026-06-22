@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import math
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -92,7 +93,27 @@ def test_query_handles_empty_scan():
         assert result.scan_point_count == 0
 
 
+def test_bbs_cpp_search_path_includes_installed_lib_dir():
+    with tempfile.TemporaryDirectory() as tmp:
+        prefix = Path(tmp) / "install"
+        module_dir = prefix / "lib" / "lidar_localization_ros2"
+        module_dir.mkdir(parents=True)
+        old_ament = os.environ.get("AMENT_PREFIX_PATH")
+        old_path = list(sys.path)
+        try:
+            os.environ["AMENT_PREFIX_PATH"] = str(prefix)
+            glq._append_bbs_cpp_module_dirs()
+            assert str(module_dir) in sys.path
+        finally:
+            if old_ament is None:
+                os.environ.pop("AMENT_PREFIX_PATH", None)
+            else:
+                os.environ["AMENT_PREFIX_PATH"] = old_ament
+            sys.path[:] = old_path
+
+
 if __name__ == "__main__":
     test_query_recovers_known_pose()
     test_query_handles_empty_scan()
+    test_bbs_cpp_search_path_includes_installed_lib_dir()
     print("test_global_localization_query: all tests passed")

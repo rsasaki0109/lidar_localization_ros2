@@ -113,6 +113,119 @@ def test_sustained_request_strong_candidate_publishes_once_then_recovers():
     assert events[-1][3] == rsp.STATE_STANDDOWN
 
 
+def test_recovery_confirmation_requires_consecutive_low_fitness():
+    params = rsp.SupervisorParams(
+        request_debounce_sec=1.0,
+        min_candidate_score=0.6,
+        recovery_fitness_threshold=1.5,
+        recovery_confirmation_samples=3,
+        settle_timeout_sec=8.0,
+        max_attempts=1,
+    )
+
+    # One transient low-fitness sample is followed by a bad sample, then the pose
+    # becomes genuinely stable. Only the stable run should confirm recovery.
+    def fitness(now, last_reset_sec):
+        if last_reset_sec is None:
+            return 9.0
+        age = now - last_reset_sec
+        if 2.0 <= age < 3.0:
+            return 0.4
+        if age >= 5.0:
+            return 0.4
+        return 9.0
+
+    events = run(params, 40, requested=True, candidate_score=0.95, fitness=fitness)
+    reasons = [r for (_, _, r, _) in events]
+    assert "recovery_confirmed" in reasons
+    assert events[reasons.index("recovery_confirmed")][0] >= reset_times(events)[0] + 7.0
+
+
+def test_recovery_confirmation_does_not_double_count_same_fitness_sample():
+    params = rsp.SupervisorParams(
+        recovery_fitness_threshold=1.5,
+        recovery_confirmation_samples=2,
+        settle_timeout_sec=10.0,
+    )
+    state = rsp.SupervisorState(
+        name=rsp.STATE_SETTLING,
+        attempts=1,
+        last_reset_sec=100.0,
+        candidate_scores=(0.9,),
+    )
+    obs = rsp.SupervisorObservation(
+        now_sec=101.0,
+        reinitialization_requested=True,
+        best_fitness=0.4,
+        fitness_observed_sec=101.0,
+    )
+    first = rsp.decide(params, state, obs)
+    assert first.state.name == rsp.STATE_SETTLING
+    assert first.state.recovery_evidence_count == 1
+
+    duplicate = rsp.decide(params, first.state, rsp.SupervisorObservation(
+        now_sec=101.5,
+        reinitialization_requested=True,
+        best_fitness=0.4,
+        fitness_observed_sec=101.0,
+    ))
+    assert duplicate.state.name == rsp.STATE_SETTLING
+    assert duplicate.state.recovery_evidence_count == 1
+
+    second = rsp.decide(params, duplicate.state, rsp.SupervisorObservation(
+        now_sec=102.0,
+        reinitialization_requested=True,
+        best_fitness=0.4,
+        fitness_observed_sec=102.0,
+    ))
+    assert second.reason == "recovery_confirmed"
+    assert second.state.name == rsp.STATE_STANDDOWN
+
+
+def test_recovery_confirmation_requires_stable_tracking_when_available():
+    params = rsp.SupervisorParams(
+        recovery_fitness_threshold=1.5,
+        recovery_confirmation_samples=2,
+        settle_timeout_sec=10.0,
+    )
+    state = rsp.SupervisorState(
+        name=rsp.STATE_SETTLING,
+        attempts=1,
+        last_reset_sec=100.0,
+        candidate_scores=(0.9,),
+    )
+
+    degraded = rsp.decide(params, state, rsp.SupervisorObservation(
+        now_sec=101.0,
+        reinitialization_requested=False,
+        best_fitness=0.4,
+        fitness_observed_sec=101.0,
+        stable_tracking=False,
+    ))
+    assert degraded.state.name == rsp.STATE_SETTLING
+    assert degraded.state.recovery_evidence_count == 0
+
+    first_ok = rsp.decide(params, degraded.state, rsp.SupervisorObservation(
+        now_sec=102.0,
+        reinitialization_requested=False,
+        best_fitness=0.4,
+        fitness_observed_sec=102.0,
+        stable_tracking=True,
+    ))
+    assert first_ok.state.name == rsp.STATE_SETTLING
+    assert first_ok.state.recovery_evidence_count == 1
+
+    second_ok = rsp.decide(params, first_ok.state, rsp.SupervisorObservation(
+        now_sec=103.0,
+        reinitialization_requested=False,
+        best_fitness=0.4,
+        fitness_observed_sec=103.0,
+        stable_tracking=True,
+    ))
+    assert second_ok.reason == "recovery_confirmed"
+    assert second_ok.state.name == rsp.STATE_STANDDOWN
+
+
 # --- Gate: never publish an unsafe (low-score) candidate ---------------------
 
 def test_weak_candidates_are_never_published():
@@ -158,7 +271,7 @@ def test_resets_respect_minimum_spacing():
 def test_recovery_resets_attempt_budget_for_a_later_problem():
     params = rsp.SupervisorParams(
         request_debounce_sec=1.0, max_attempts=3, min_seconds_between_attempts=3.0,
-        settle_timeout_sec=3.0, recovery_fitness_threshold=1.5)
+        settle_timeout_sec=5.0, recovery_fitness_threshold=1.5)
 
     # Two separate problem episodes separated by a healthy stretch.
     def requested(now):

@@ -64,6 +64,39 @@ download_file() {
   curl -L --fail --continue-at - --output "${dst}" "${url}"
 }
 
+flatten_sequence_dir() {
+  local dest="$1"
+  local seq="$2"
+  local nested="${dest}/${seq}"
+
+  if [[ -f "${dest}/metadata.yaml" ]] || [[ ! -f "${nested}/metadata.yaml" ]]; then
+    return 0
+  fi
+
+  local -a other_entries=()
+  local item
+  shopt -s dotglob nullglob
+  for item in "${dest}"/*; do
+    if [[ "${item}" != "${nested}" ]]; then
+      other_entries+=("${item}")
+    fi
+  done
+  shopt -u dotglob nullglob
+
+  if [[ "${#other_entries[@]}" -gt 0 ]]; then
+    echo "Not flattening ${nested}: ${dest} contains other entries" >&2
+    return 0
+  fi
+
+  echo "Flattening ${nested} -> ${dest}"
+  shopt -s dotglob nullglob
+  for item in "${nested}"/*; do
+    mv "${item}" "${dest}/"
+  done
+  shopt -u dotglob nullglob
+  rmdir "${nested}"
+}
+
 output_dir="$(pwd)/data/public/koide_hard_localization"
 with_maps=0
 with_gt=0
@@ -137,12 +170,14 @@ for seq in "${sequences[@]}"; do
   download_file "${ZENODO_BASE}/${zip_name}?download=1" "${zip_path}"
   if [[ -d "${dest}" ]] && [[ "${force_sequences}" -eq 0 ]]; then
     echo "Using existing directory: ${dest}"
+    flatten_sequence_dir "${dest}" "${seq}"
     continue
   fi
   rm -rf "${dest}"
   mkdir -p "${dest}"
   echo "Unpacking ${zip_path} -> ${dest}"
   unzip -q -o "${zip_path}" -d "${dest}"
+  flatten_sequence_dir "${dest}" "${seq}"
 done
 
 map_hint=""

@@ -120,6 +120,25 @@ inline RegistrationSeedPolicyDecision chooseRegistrationSeed(
   return {};
 }
 
+inline const char * registrationSeedSourceName(RegistrationSeedSource source)
+{
+  switch (source) {
+    case RegistrationSeedSource::kCurrentPose:
+      return "current_pose";
+    case RegistrationSeedSource::kImuPreintegration:
+      return "imu_preintegration";
+    case RegistrationSeedSource::kGtsamSmoother:
+      return "gtsam_smoother";
+    case RegistrationSeedSource::kTwistEkf:
+      return "twist_ekf";
+    case RegistrationSeedSource::kTwistPrediction:
+      return "twist_prediction";
+    case RegistrationSeedSource::kPreviousDelta:
+      return "previous_delta";
+  }
+  return "unknown";
+}
+
 }  // namespace lidar_localization
 
 #endif  // LIDAR_LOCALIZATION_REGISTRATION_SEED_POLICY_HPP_

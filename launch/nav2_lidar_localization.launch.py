@@ -13,6 +13,7 @@ from launch.actions import TimerAction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 import lifecycle_msgs.msg
 
@@ -63,6 +64,14 @@ def generate_launch_description():
     imu_tf_roll = LaunchConfiguration('imu_tf_roll', default='0.0')
     imu_tf_pitch = LaunchConfiguration('imu_tf_pitch', default='0.0')
     imu_tf_yaw = LaunchConfiguration('imu_tf_yaw', default='0.0')
+    use_imu_preintegration = LaunchConfiguration(
+        'use_imu_preintegration', default='false')
+    imu_preintegration_use_base_frame_transform = LaunchConfiguration(
+        'imu_preintegration_use_base_frame_transform', default='false')
+    use_continuous_time_deskew = LaunchConfiguration(
+        'use_continuous_time_deskew', default='false')
+    continuous_time_deskew_reference_time_sec = LaunchConfiguration(
+        'continuous_time_deskew_reference_time_sec', default='0.0')
 
     ld.add_action(DeclareLaunchArgument('localization_param_dir', default_value=default_localization_param_dir))
     ld.add_action(DeclareLaunchArgument('global_frame_id', default_value='map'))
@@ -89,6 +98,10 @@ def generate_launch_description():
     ld.add_action(DeclareLaunchArgument('imu_tf_roll', default_value='0.0'))
     ld.add_action(DeclareLaunchArgument('imu_tf_pitch', default_value='0.0'))
     ld.add_action(DeclareLaunchArgument('imu_tf_yaw', default_value='0.0'))
+    ld.add_action(DeclareLaunchArgument('use_imu_preintegration', default_value='false'))
+    ld.add_action(DeclareLaunchArgument('imu_preintegration_use_base_frame_transform', default_value='false'))
+    ld.add_action(DeclareLaunchArgument('use_continuous_time_deskew', default_value='false'))
+    ld.add_action(DeclareLaunchArgument('continuous_time_deskew_reference_time_sec', default_value='0.0'))
 
     # Static TF: base_link → velodyne (adjust per robot)
     lidar_tf = Node(
@@ -118,11 +131,19 @@ def generate_launch_description():
         executable='lidar_localization_node',
         parameters=[localization_param_dir,
                     {
-                        'use_sim_time': use_sim_time,
-                        'enable_map_odom_tf': enable_map_odom_tf,
+                        'use_sim_time': ParameterValue(use_sim_time, value_type=bool),
+                        'enable_map_odom_tf': ParameterValue(enable_map_odom_tf, value_type=bool),
                         'global_frame_id': global_frame_id,
                         'odom_frame_id': odom_frame_id,
                         'base_frame_id': base_frame_id,
+                        'use_imu_preintegration': ParameterValue(
+                            use_imu_preintegration, value_type=bool),
+                        'imu_preintegration_use_base_frame_transform': ParameterValue(
+                            imu_preintegration_use_base_frame_transform, value_type=bool),
+                        'use_continuous_time_deskew': ParameterValue(
+                            use_continuous_time_deskew, value_type=bool),
+                        'continuous_time_deskew_reference_time_sec': ParameterValue(
+                            continuous_time_deskew_reference_time_sec, value_type=float),
                     }],  # Nav2: publish map→odom
         remappings=[
             ('/cloud', cloud_topic),

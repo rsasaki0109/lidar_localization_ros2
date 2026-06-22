@@ -4,13 +4,10 @@ import time
 from typing import Optional
 from typing import Sequence
 
-import rclpy
-
 from lidar_localization_mid360.bringup_model import BringupCheckConfig
 from lidar_localization_mid360.bringup_model import evaluate_snapshot
 from lidar_localization_mid360.bringup_model import exit_code
 from lidar_localization_mid360.bringup_model import report_lines
-from lidar_localization_mid360.ros_doctor import Mid360BringupDoctor
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -26,7 +23,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--odom-frame", default="odom")
     parser.add_argument("--base-frame", default="base_link")
     parser.add_argument("--lidar-frame", default="livox_frame")
+    parser.add_argument("--imu-frame", default="livox_imu_frame")
     parser.add_argument("--require-imu", action="store_true")
+    parser.add_argument(
+        "--require-cloud-time-field",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Require a per-point timing field on PointCloud2 for continuous-time "
+            "deskew readiness checks."
+        ),
+    )
+    parser.add_argument(
+        "--require-imu-base-tf",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Require base_frame <- imu_frame TF when IMU preintegration uses base-frame rotation.",
+    )
     parser.add_argument("--require-map-odom-tf", action="store_true")
     parser.add_argument("--require-localization-output", action="store_true")
     return parser
@@ -42,7 +55,10 @@ def config_from_args(args: argparse.Namespace) -> BringupCheckConfig:
         odom_frame=args.odom_frame,
         base_frame=args.base_frame,
         lidar_frame=args.lidar_frame,
+        imu_frame=args.imu_frame,
         require_imu=args.require_imu,
+        require_cloud_time_field=args.require_cloud_time_field,
+        require_imu_base_tf=args.require_imu_base_tf,
         require_map_odom_tf=args.require_map_odom_tf,
         require_localization_output=args.require_localization_output,
     )
@@ -50,6 +66,11 @@ def config_from_args(args: argparse.Namespace) -> BringupCheckConfig:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_arg_parser().parse_args(argv)
+
+    import rclpy
+
+    from lidar_localization_mid360.ros_doctor import Mid360BringupDoctor
+
     config = config_from_args(args)
     rclpy.init()
     node = Mid360BringupDoctor(config)

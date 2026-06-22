@@ -34,6 +34,7 @@ struct AlignmentStatusInput
   double last_accepted_pose_time_sec{0.0};
   double fallback_seed_translation_since_accept_m{NAN};
   bool imu_prediction_active{false};
+  std::string registration_seed_source{"not_selected"};
   bool map_received{false};
   bool initialpose_received{false};
   MeasurementGateParams gate_params;
@@ -55,6 +56,7 @@ struct AlignmentStatusObservation
   double seed_yaw_since_accept_deg{NAN};
   double accepted_gap_sec{NAN};
   bool imu_prediction_active{false};
+  std::string registration_seed_source{"not_selected"};
 };
 
 struct AlignmentStatusRuntimeContext
@@ -128,6 +130,7 @@ inline AlignmentStatusInput makeAlignmentStatusInput(
   input.fallback_seed_translation_since_accept_m =
     context.fallback_seed_translation_since_accept_m;
   input.imu_prediction_active = observation.imu_prediction_active;
+  input.registration_seed_source = observation.registration_seed_source;
   input.map_received = context.map_received;
   input.initialpose_received = context.initialpose_received;
   input.gate_params = context.gate_params;
@@ -249,6 +252,7 @@ inline AlignmentDiagnosticValuesInput makeAlignmentStatusDiagnosticValuesInput(
   diagnostic_input.recovery_state_transition_count =
     input.recovery_state_transition_count;
   diagnostic_input.imu_prediction_active = status.imu_prediction_active;
+  diagnostic_input.registration_seed_source = status.registration_seed_source;
   diagnostic_input.reinitialization_requested =
     input.reinitialization_request.requested;
   diagnostic_input.reinitialization_request_reason =

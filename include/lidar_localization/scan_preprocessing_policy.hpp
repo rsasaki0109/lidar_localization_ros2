@@ -2,6 +2,7 @@
 #define LIDAR_LOCALIZATION_SCAN_PREPROCESSING_POLICY_HPP_
 
 #include <cmath>
+#include <cstddef>
 #include <string>
 
 namespace lidar_localization
@@ -22,12 +23,31 @@ struct ScanXyzFieldAvailability
   bool has_z{false};
 };
 
+struct ScanTimeRangeEvaluationInput
+{
+  bool has_time_field{false};
+  bool valid{false};
+  double duration_sec{0.0};
+  std::size_t valid_point_count{0};
+  std::size_t invalid_point_count{0};
+  double expected_scan_period_sec{0.0};
+  double max_duration_to_scan_period_ratio{2.0};
+};
+
 enum class ScanPreparationStatus
 {
   kReady = 0,
   kMissingXyzField,
   kTransformUnavailable,
   kFilteredScanEmpty,
+};
+
+enum class ScanTimeRangeStatus
+{
+  kNoTimeField = 0,
+  kInvalid,
+  kDurationTooLarge,
+  kReady,
 };
 
 inline bool shouldUseDirectRangeFilter(const ScanPreprocessingPathInput & input)
@@ -40,6 +60,25 @@ inline bool shouldUseDirectRangeFilter(const ScanPreprocessingPathInput & input)
 inline bool hasRequiredXyzFields(const ScanXyzFieldAvailability & fields)
 {
   return fields.has_x && fields.has_y && fields.has_z;
+}
+
+inline ScanTimeRangeStatus classifyScanTimeRange(const ScanTimeRangeEvaluationInput & input)
+{
+  if (!input.has_time_field) {
+    return ScanTimeRangeStatus::kNoTimeField;
+  }
+  if (!input.valid || input.valid_point_count == 0 || !std::isfinite(input.duration_sec)) {
+    return ScanTimeRangeStatus::kInvalid;
+  }
+  if (
+    input.expected_scan_period_sec > 0.0 &&
+    input.max_duration_to_scan_period_ratio > 0.0 &&
+    input.duration_sec >
+    input.expected_scan_period_sec * input.max_duration_to_scan_period_ratio)
+  {
+    return ScanTimeRangeStatus::kDurationTooLarge;
+  }
+  return ScanTimeRangeStatus::kReady;
 }
 
 inline ScanPreparationStatus classifyPreparedScan(
@@ -64,6 +103,11 @@ inline bool isPreparedScanReady(ScanPreparationStatus status)
   return status == ScanPreparationStatus::kReady;
 }
 
+inline bool isScanTimeRangeReady(ScanTimeRangeStatus status)
+{
+  return status == ScanTimeRangeStatus::kReady;
+}
+
 inline bool shouldAdvancePredictionAfterScanPreparationFailure(ScanPreparationStatus status)
 {
   return status == ScanPreparationStatus::kMissingXyzField ||
@@ -83,6 +127,21 @@ inline const char * scanPreparationStatusMessage(ScanPreparationStatus status)
       return "filtered_scan_empty";
   }
   return "unknown_scan_preparation_status";
+}
+
+inline const char * scanTimeRangeStatusMessage(ScanTimeRangeStatus status)
+{
+  switch (status) {
+    case ScanTimeRangeStatus::kNoTimeField:
+      return "scan_time_field_missing";
+    case ScanTimeRangeStatus::kInvalid:
+      return "scan_time_field_invalid";
+    case ScanTimeRangeStatus::kDurationTooLarge:
+      return "scan_time_range_too_large";
+    case ScanTimeRangeStatus::kReady:
+      return "scan_time_range_ready";
+  }
+  return "unknown_scan_time_range_status";
 }
 
 inline bool isFinitePoint(float x, float y, float z)

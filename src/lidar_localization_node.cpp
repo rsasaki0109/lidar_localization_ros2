@@ -1,16 +1,15 @@
 #include <lidar_localization/lidar_localization_component.hpp>
 
+#include <rclcpp/executors/multi_threaded_executor.hpp>
+
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
   {
-    // SingleThreadedExecutor is intentional: every subscription, timer and
-    // service callback runs in the default mutually-exclusive callback group
-    // on one thread, so the node's shared mutable state (e.g.
-    // corrent_pose_with_cov_stamped_ptr_) is serialized without locks. Switching
-    // to a MultiThreadedExecutor or adding a Reentrant callback group would
-    // introduce data races and requires guarding that state first.
-    rclcpp::executors::SingleThreadedExecutor executor;
+    // The default callback group remains mutually-exclusive. IMU preintegration
+    // can opt into its own guarded group so high-rate IMU callbacks are not
+    // starved by long cloud registration callbacks during bag replay.
+    rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 2);
     rclcpp::NodeOptions options;
     std::shared_ptr<PCLLocalization> pcl_l = std::make_shared<PCLLocalization>(options);
 

@@ -1,6 +1,15 @@
 cmake_minimum_required(VERSION 3.5)
 project(lidar_localization_ros2 VERSION 1.0.0)
 
+if(POLICY CMP0074)
+  cmake_policy(SET CMP0074 NEW)
+  set(CMAKE_POLICY_DEFAULT_CMP0074 NEW)
+endif()
+if(POLICY CMP0144)
+  cmake_policy(SET CMP0144 NEW)
+  set(CMAKE_POLICY_DEFAULT_CMP0144 NEW)
+endif()
+
 if(NOT CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 99)
 endif()
@@ -121,9 +130,11 @@ install(TARGETS
 install(PROGRAMS
   scripts/benchmark_analyze_drift_window
   scripts/benchmark_compare_runs
+  scripts/check_lidar_localization_bringup.py
   scripts/check_mid360_legged_bringup.py
   scripts/compare_nav2_reinit_supervisor_runs.py
   scripts/convert_boreas_sequence_to_rosbag2.py
+  scripts/create_lidar_localization_config.py
   scripts/benchmark_extract_pose_reference_from_rosbag2
   scripts/benchmark_from_manifest
   scripts/benchmark_make_graph_dataset
@@ -164,12 +175,15 @@ install(PROGRAMS
   scripts/publish_odom_from_twist.py
   scripts/publish_pose_from_odom.py
   scripts/publish_relocalization_reset_commands.py
+  scripts/prepare_koide_hard_relocalization_assets.sh
   scripts/republish_initialpose_on_reinit.py
   scripts/relay_localization_inputs_with_current_stamp.py
   scripts/record_hdl_localization_outputs.py
   scripts/run_borderline_gate_experiments.py
   scripts/run_experiment_suite.py
   scripts/run_imu_guard_experiments.py
+  scripts/run_koide_hard_imu_deskew_smoke.sh
+  scripts/run_lidar_localization_imu_comparison.py
   scripts/run_measurement_acceptance_experiments.py
   scripts/run_nav2_reinit_supervisor_sweep.sh
   scripts/run_nav2_reinit_supervisor_regression.sh
@@ -193,6 +207,7 @@ install(PROGRAMS
   scripts/select_relocalization_reset_candidates.py
   scripts/validate_relocalization_reset_commands.py
   scripts/validate_relocalization_reset_candidate_plan.py
+  scripts/validate_lidar_localization_imu.py
   scripts/score_relocalization_candidates_with_reference.py
   scripts/resolve_registration_relocalization_scans.py
   scripts/run_autoware_istanbul_60s_predictor_compare.sh
@@ -400,6 +415,35 @@ if(BUILD_TESTING)
     COMMAND test_imu_preintegration_guard_policy
   )
 
+  add_executable(test_imu_preintegration_diagnostics_policy
+    test/test_imu_preintegration_diagnostics_policy.cpp)
+  target_include_directories(test_imu_preintegration_diagnostics_policy PRIVATE
+    include)
+  add_test(
+    NAME imu_preintegration_diagnostics_policy
+    COMMAND test_imu_preintegration_diagnostics_policy
+  )
+
+  add_executable(test_deskew_readiness_policy
+    test/test_deskew_readiness_policy.cpp)
+  target_include_directories(test_deskew_readiness_policy PRIVATE
+    include)
+  add_test(
+    NAME deskew_readiness_policy
+    COMMAND test_deskew_readiness_policy
+  )
+
+  add_executable(test_continuous_time_deskew_policy
+    test/test_continuous_time_deskew_policy.cpp)
+  target_include_directories(test_continuous_time_deskew_policy PRIVATE
+    include ${EIGEN3_INCLUDE_DIRS})
+  target_link_libraries(test_continuous_time_deskew_policy
+    Eigen3::Eigen)
+  add_test(
+    NAME continuous_time_deskew_policy
+    COMMAND test_continuous_time_deskew_policy
+  )
+
   add_executable(test_imu_preintegration
     test/test_imu_preintegration.cpp)
   # Unlike the guard-policy header, imu_preintegration.hpp pulls in Eigen (via
@@ -576,6 +620,54 @@ if(BUILD_TESTING)
   add_test(
     NAME mid360_bringup_model
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_mid360_bringup_model.py
+  )
+  add_test(
+    NAME create_lidar_localization_config
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_create_lidar_localization_config.py
+  )
+  add_test(
+    NAME imu_runtime_validation_model
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_imu_runtime_validation_model.py
+  )
+  add_test(
+    NAME run_lidar_localization_imu_comparison
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_run_lidar_localization_imu_comparison.py
+  )
+  add_test(
+    NAME benchmark_compare_runs
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_benchmark_compare_runs.py
+  )
+  add_test(
+    NAME koide_hard_imu_deskew_smoke_script
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_koide_hard_imu_deskew_smoke_script.py
+  )
+  add_test(
+    NAME koide_hard_relocalization_assets_script
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_koide_hard_relocalization_assets_script.py
+  )
+  add_test(
+    NAME launch_argument_contract
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_launch_argument_contract.py
+  )
+  add_test(
+    NAME cli_command_contract
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_cli_command_contract.py
+  )
+  add_test(
+    NAME package_install_contract
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_package_install_contract.py
+  )
+  add_test(
+    NAME bootstrap_colcon_workspace_shell
+    COMMAND bash -n ${CMAKE_CURRENT_SOURCE_DIR}/scripts/bootstrap_colcon_workspace.sh
+  )
+  add_test(
+    NAME koide_hard_imu_deskew_smoke_shell
+    COMMAND bash -n ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_koide_hard_imu_deskew_smoke.sh
+  )
+  add_test(
+    NAME koide_hard_relocalization_assets_shell
+    COMMAND bash -n ${CMAKE_CURRENT_SOURCE_DIR}/scripts/prepare_koide_hard_relocalization_assets.sh
   )
   add_test(
     NAME registration_relocalization_job_ordering

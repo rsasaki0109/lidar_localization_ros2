@@ -27,6 +27,7 @@ ll::AlignmentStatusInput default_status_input()
   input.last_accepted_pose_time_sec = 12.0;
   input.fallback_seed_translation_since_accept_m = 9.0;
   input.imu_prediction_active = true;
+  input.registration_seed_source = "imu_preintegration";
   input.map_received = true;
   input.initialpose_received = true;
   input.gate_params.score_threshold = 7.0;
@@ -70,6 +71,7 @@ void test_make_alignment_status_input_combines_observation_and_context()
   observation.seed_yaw_since_accept_deg = 7.8;
   observation.accepted_gap_sec = 9.1;
   observation.imu_prediction_active = true;
+  observation.registration_seed_source = "twist_prediction";
 
   ll::AlignmentStatusRuntimeContext context;
   context.registration_method = "GICP";
@@ -103,6 +105,7 @@ void test_make_alignment_status_input_combines_observation_and_context()
   assert(input.last_accepted_pose_time_sec == 40.0);
   assert(input.fallback_seed_translation_since_accept_m == 2.5);
   assert(input.imu_prediction_active);
+  assert(input.registration_seed_source == "twist_prediction");
   assert(input.map_received);
   assert(!input.initialpose_received);
   assert(input.gate_params.score_threshold == 4.0);
@@ -158,6 +161,7 @@ void test_make_diagnostic_input_preserves_status_context()
   assert(diagnostic_input.effective_score_threshold == 5.0);
   assert(diagnostic_input.recovery_state == "reinitialization_requested");
   assert(diagnostic_input.recovery_action == "request_reinitialization");
+  assert(diagnostic_input.registration_seed_source == "imu_preintegration");
   assert(diagnostic_input.reinitialization_requested);
   assert(diagnostic_input.reinitialization_request_reason == "latched_request");
   assert(diagnostic_input.reinitialization_request_score == 0.75);

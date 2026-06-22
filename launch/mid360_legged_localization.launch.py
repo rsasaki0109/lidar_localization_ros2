@@ -46,6 +46,10 @@ def generate_launch_description():
         'use_imu_preintegration', default='true')
     imu_preintegration_use_base_frame_transform = LaunchConfiguration(
         'imu_preintegration_use_base_frame_transform', default='true')
+    use_continuous_time_deskew = LaunchConfiguration(
+        'use_continuous_time_deskew', default='false')
+    continuous_time_deskew_reference_time_sec = LaunchConfiguration(
+        'continuous_time_deskew_reference_time_sec', default='0.0')
 
     set_initial_pose = LaunchConfiguration('set_initial_pose', default='false')
     initial_pose_x = LaunchConfiguration('initial_pose_x', default='0.0')
@@ -126,6 +130,10 @@ def generate_launch_description():
                     use_imu_preintegration, value_type=bool),
                 'imu_preintegration_use_base_frame_transform': ParameterValue(
                     imu_preintegration_use_base_frame_transform, value_type=bool),
+                'use_continuous_time_deskew': ParameterValue(
+                    use_continuous_time_deskew, value_type=bool),
+                'continuous_time_deskew_reference_time_sec': ParameterValue(
+                    continuous_time_deskew_reference_time_sec, value_type=float),
                 'set_initial_pose': ParameterValue(set_initial_pose, value_type=bool),
                 'initial_pose_x': ParameterValue(initial_pose_x, value_type=float),
                 'initial_pose_y': ParameterValue(initial_pose_y, value_type=float),
@@ -189,6 +197,9 @@ def generate_launch_description():
         DeclareLaunchArgument('use_imu_preintegration', default_value='true'),
         DeclareLaunchArgument(
             'imu_preintegration_use_base_frame_transform', default_value='true'),
+        DeclareLaunchArgument('use_continuous_time_deskew', default_value='false'),
+        DeclareLaunchArgument(
+            'continuous_time_deskew_reference_time_sec', default_value='0.0'),
         DeclareLaunchArgument('set_initial_pose', default_value='false'),
         DeclareLaunchArgument('initial_pose_x', default_value='0.0'),
         DeclareLaunchArgument('initial_pose_y', default_value='0.0'),

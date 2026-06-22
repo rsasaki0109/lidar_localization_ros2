@@ -33,6 +33,8 @@ public:
     double fitness_reject = 50.0;
     double huber_k = 1.345;
     int window_size = 50;
+    double min_imu_factor_dt = 0.02;
+    double imu_factor_covariance_regularization = 1e-9;
 
     // Bias prior sigma
     double bias_prior_sigma_gyro = 0.01;
@@ -110,7 +112,7 @@ public:
 
     // Store IMU preintegration as between-factor
     entry.preint = current_preint_;
-    entry.has_imu_factor = (current_preint_.dt_sum > 0.001);
+    entry.has_imu_factor = (current_preint_.dt_sum >= params_.min_imu_factor_dt);
 
     // Store NDT measurement
     entry.has_ndt = true;
@@ -214,6 +216,16 @@ private:
         H(k, k) += anchor_w;
       }
 
+      // Velocity is only weakly observed when an interval has too little IMU
+      // data to form a stable factor. Keep those dimensions numerically tame.
+      double velocity_prior_w = 1e-6;
+      for (int i = 0; i < n; ++i) {
+        const int idx = i * POSE_DIM;
+        for (int k = 3; k < 6; ++k) {
+          H(idx + k, idx + k) += velocity_prior_w;
+        }
+      }
+
       // --- 2. IMU between-factors ---
       for (int i = 1; i < n; ++i) {
         if (!poses_[i].has_imu_factor) continue;
@@ -228,8 +240,12 @@ private:
           pj.position, pj.velocity, pj.R);
 
         // Information from preintegration covariance
+        Eigen::Matrix<double, 9, 9> covariance = preint.covariance;
+        covariance.diagonal().array() += params_.imu_factor_covariance_regularization;
+        if (!covariance.allFinite()) continue;
         Eigen::Matrix<double, 9, 9> info =
-          preint.covariance.inverse().eval();
+          covariance.ldlt().solve(Eigen::Matrix<double, 9, 9>::Identity());
+        if (!info.allFinite()) continue;
         // Symmetrize
         info = 0.5 * (info + info.transpose());
 
