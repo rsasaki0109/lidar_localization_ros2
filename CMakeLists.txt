@@ -257,6 +257,15 @@ if(BUILD_TESTING)
     COMMAND test_registration_seed_policy
   )
 
+  add_executable(test_registration_cloud_keep_alive_policy
+    test/test_registration_cloud_keep_alive_policy.cpp)
+  target_include_directories(test_registration_cloud_keep_alive_policy PRIVATE
+    include)
+  add_test(
+    NAME registration_cloud_keep_alive_policy
+    COMMAND test_registration_cloud_keep_alive_policy
+  )
+
   add_executable(test_scan_admission_policy
     test/test_scan_admission_policy.cpp)
   target_include_directories(test_scan_admission_policy PRIVATE
