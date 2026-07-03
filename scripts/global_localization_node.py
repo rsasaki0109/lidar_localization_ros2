@@ -66,6 +66,21 @@ class GlobalLocalizationNode(Node):
         # Opt-in C++ backend (bbs_cpp). Default False -> pure Python; if the
         # compiled module is unavailable the engine falls back to Python.
         self.declare_parameter("use_cpp_backend", False)
+        # Opt-in NDT registration scoring against a 3D map (g2_ndt_score).
+        self.declare_parameter("enable_registration_scoring", False)
+        self.declare_parameter("registration_refine_candidates", False)
+        self.declare_parameter("map_path", "")
+        self.declare_parameter("registration_score_gate", 6.0)
+        self.declare_parameter("ndt_resolution", 1.0)
+        self.declare_parameter("ndt_step_size", 0.1)
+        self.declare_parameter("ndt_transform_epsilon", 0.01)
+        self.declare_parameter("ndt_max_iterations", 30)
+        self.declare_parameter("ndt_num_threads", 1)
+        self.declare_parameter("ndt_scan_voxel_leaf_size", 1.0)
+        self.declare_parameter("ndt_target_voxel_leaf_size", 0.2)
+        self.declare_parameter("ndt_local_map_radius", 150.0)
+        self.declare_parameter("ndt_min_target_points", 100)
+        self.declare_parameter("registration_seed_z_m", 0.0)
 
         occupancy_yaml = (
             self.get_parameter("occupancy_yaml").get_parameter_value().string_value)
@@ -74,6 +89,9 @@ class GlobalLocalizationNode(Node):
                 "occupancy_yaml parameter is required (output of "
                 "generate_occupancy_map_from_pcd.py)")
 
+        map_path = self.get_parameter("map_path").get_parameter_value().string_value
+        enable_registration_scoring = bool(
+            self.get_parameter("enable_registration_scoring").value)
         config = GlobalLocalizationConfig(
             z_min_m=self.get_parameter("z_min_m").value,
             z_max_m=self.get_parameter("z_max_m").value,
@@ -87,6 +105,28 @@ class GlobalLocalizationNode(Node):
             dilate_cells=int(self.get_parameter("dilate_cells").value),
             seed_z_m=self.get_parameter("seed_z_m").value,
             use_cpp_backend=bool(self.get_parameter("use_cpp_backend").value),
+            enable_registration_scoring=enable_registration_scoring,
+            registration_refine_candidates=bool(
+                self.get_parameter("registration_refine_candidates").value),
+            map_path=map_path or None,
+            registration_score_gate=float(
+                self.get_parameter("registration_score_gate").value),
+            ndt_resolution=float(self.get_parameter("ndt_resolution").value),
+            ndt_step_size=float(self.get_parameter("ndt_step_size").value),
+            ndt_transform_epsilon=float(
+                self.get_parameter("ndt_transform_epsilon").value),
+            ndt_max_iterations=int(self.get_parameter("ndt_max_iterations").value),
+            ndt_num_threads=int(self.get_parameter("ndt_num_threads").value),
+            ndt_scan_voxel_leaf_size=float(
+                self.get_parameter("ndt_scan_voxel_leaf_size").value),
+            ndt_target_voxel_leaf_size=float(
+                self.get_parameter("ndt_target_voxel_leaf_size").value),
+            ndt_local_map_radius=float(
+                self.get_parameter("ndt_local_map_radius").value),
+            ndt_min_target_points=int(
+                self.get_parameter("ndt_min_target_points").value),
+            registration_seed_z_m=float(
+                self.get_parameter("registration_seed_z_m").value),
         )
         self.engine = GlobalLocalizationEngine(Path(occupancy_yaml), config)
         if config.use_cpp_backend and self.engine.backend != "cpp":
@@ -94,6 +134,16 @@ class GlobalLocalizationNode(Node):
                 "use_cpp_backend requested but bbs_cpp is unavailable (%s); "
                 "falling back to the Python search"
                 % self.engine.backend_error)
+        if enable_registration_scoring:
+            if self.engine.registration_scorer is None:
+                self.get_logger().warn(
+                    "enable_registration_scoring requested but g2_ndt_score is "
+                    "unavailable (%s); using BBS score only"
+                    % self.engine.registration_scoring_error)
+            else:
+                self.get_logger().info(
+                    "registration scoring enabled: map=%s gate=%.2f"
+                    % (map_path, config.registration_score_gate))
         self.global_frame_id = (
             self.get_parameter("global_frame_id").get_parameter_value().string_value)
         self.latest_cloud = None
@@ -150,15 +200,20 @@ class GlobalLocalizationNode(Node):
             pose_array.poses.append(pose)
         self.candidates_pub.publish(pose_array)
 
-        ranked = [
-            {
-                "x": round(c.x_m, 3),
-                "y": round(c.y_m, 3),
-                "yaw_deg": round(math.degrees(c.yaw_rad), 1),
-                "score": round(c.score, 4),
+        ranked = []
+        for candidate in result.candidates:
+            entry = {
+                "x": round(candidate.x_m, 3),
+                "y": round(candidate.y_m, 3),
+                "yaw_deg": round(math.degrees(candidate.yaw_rad), 1),
+                "score": round(candidate.score, 4),
+                "bbs_score": round(candidate.bbs_score, 4),
             }
-            for c in result.candidates
-        ]
+            if candidate.registration_fitness is not None:
+                entry["registration_fitness"] = round(candidate.registration_fitness, 4)
+            if candidate.registration_converged is not None:
+                entry["registration_converged"] = candidate.registration_converged
+            ranked.append(entry)
         summary = {
             "candidate_count": len(result.candidates),
             "scan_point_count": result.scan_point_count,
@@ -171,10 +226,15 @@ class GlobalLocalizationNode(Node):
             "scan_age_at_response_sec": _round_optional(scan_age_at_end_sec, 3),
             "candidate_age_sec": _round_optional(candidate_age_sec, 3),
             "backend": self.engine.backend,
+            "registration_scoring_enabled": result.registration_scoring_enabled,
             # Full ranked list (high-to-low) so a consumer can walk past an
             # aliased top candidate; "top" kept for back-compat.
             "candidates": ranked,
         }
+        if result.registration_scoring_backend:
+            summary["registration_scoring_backend"] = result.registration_scoring_backend
+        if result.registration_scoring_error:
+            summary["registration_scoring_error"] = result.registration_scoring_error
         if ranked:
             summary["top"] = ranked[0]
         response.success = bool(result.candidates)

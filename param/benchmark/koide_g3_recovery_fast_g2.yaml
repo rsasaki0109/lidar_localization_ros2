@@ -1,0 +1,51 @@
+# Koide outdoor_hard_01a 120 s G3 recovery helper manifest.
+# Uses the fast-G2 preset from global_localization_recovery.launch.py defaults:
+# 10 deg yaw, 256 scan points, C++ BBS backend, NDT registration scoring.
+#
+# Example:
+#   ros2 launch lidar_localization_ros2 global_localization_recovery.launch.py \
+#     cloud_topic:=/livox/points imu_topic:=/livox/imu \
+#     occupancy_yaml:=/path/to/outdoor_hard_occupancy.yaml \
+#     map_path:=/path/to/map_outdoor_hard.ply \
+#     localization_param_dir:=/path/to/koide_outdoor.yaml \
+#     base_frame_id:=livox_frame lidar_frame_id:=livox_frame \
+#     publish_lidar_tf:=false use_imu_preintegration:=true \
+#     use_sim_time:=true
+#     supervisor_reset_default_z_m:=-11.046818 supervisor_prefer_reset_default_z_m:=true
+#
+# Health rubric (2026-07-03): scripts/run_koide_g3_recovery_regression.sh
+
+mode: notes
+
+dataset:
+  bag_path: repo://data/public/koide_hard_localization/sequences/outdoor_hard_01a
+  map_path: repo://data/public/koide_hard_localization/map_outdoor_hard.ply
+  occupancy_yaml: repo://data/public/koide_hard_localization/outdoor_hard_occupancy.yaml
+  cloud_topic: /livox/points
+  imu_topic: /livox/imu
+
+g2:
+  angular_resolution_deg: 10.0
+  max_scan_points: 256
+  use_cpp_backend: true
+  enable_registration_scoring: true
+  registration_score_gate: 6.0
+
+supervisor:
+  min_candidate_score: 0.15
+  max_walk_candidates: 4
+  settle_timeout_sec: 20.0
+  query_timeout_sec: 45.0
+  max_attempts: 5
+  enable_seed_motion_compensation: true
+  seed_motion_skip_registration_fitness_threshold: 1.0
+  reset_default_z_m: -11.046818
+  prefer_reset_default_z_m: true
+
+g2_ndt:
+  scan_voxel_leaf_size: 1.0
+  target_voxel_leaf_size: 0.2
+
+health_check:
+  script: scripts/check_koide_recovery_health.py
+  min_stable_windows: 1

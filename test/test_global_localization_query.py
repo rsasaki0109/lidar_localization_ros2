@@ -102,7 +102,7 @@ def test_bbs_cpp_search_path_includes_installed_lib_dir():
         old_path = list(sys.path)
         try:
             os.environ["AMENT_PREFIX_PATH"] = str(prefix)
-            glq._append_bbs_cpp_module_dirs()
+            glq._append_module_dirs("bbs_cpp")
             assert str(module_dir) in sys.path
         finally:
             if old_ament is None:
@@ -112,8 +112,130 @@ def test_bbs_cpp_search_path_includes_installed_lib_dir():
             sys.path[:] = old_path
 
 
+class _FakeScoreResult:
+    def __init__(self, fitness, converged, refined_x, refined_y, refined_z, refined_yaw):
+        self.fitness = fitness
+        self.converged = converged
+        self.refined_x = refined_x
+        self.refined_y = refined_y
+        self.refined_z = refined_z
+        self.refined_yaw = refined_yaw
+        self.target_point_count = 1000
+        self.source_point_count = 512
+
+
+class _FakeRegistrationScorer:
+    def __init__(self, results):
+        self._results = results
+
+    def score_candidate(self, scan_xyz, x, y, z, yaw):
+        return self._results[(x, y, z, yaw)]
+
+
+def test_score_with_registration_rewrites_converged_candidate_pose():
+    with tempfile.TemporaryDirectory() as tmp:
+        yaml_path = write_occupancy_map(Path(tmp))
+        engine = glq.GlobalLocalizationEngine(
+            yaml_path,
+            glq.GlobalLocalizationConfig(registration_refine_candidates=True))
+        engine.registration_scorer = _FakeRegistrationScorer({
+            (-13.5, 29.7, 0.0, math.radians(10.0)): _FakeScoreResult(
+                fitness=0.042,
+                converged=True,
+                refined_x=-10.5,
+                refined_y=27.1,
+                refined_z=1.2,
+                refined_yaw=math.radians(12.0),
+            ),
+            (5.0, 6.0, 0.0, math.radians(20.0)): _FakeScoreResult(
+                fitness=float("inf"),
+                converged=False,
+                refined_x=99.0,
+                refined_y=99.0,
+                refined_z=99.0,
+                refined_yaw=math.radians(99.0),
+            ),
+        })
+        raw_candidates = [
+            glq.GlobalLocalizationCandidate(
+                x_m=-13.5,
+                y_m=29.7,
+                z_m=0.0,
+                yaw_rad=math.radians(10.0),
+                score=0.99,
+                hit_count=100,
+                point_count=512,
+                bbs_score=0.99,
+            ),
+            glq.GlobalLocalizationCandidate(
+                x_m=5.0,
+                y_m=6.0,
+                z_m=0.0,
+                yaw_rad=math.radians(20.0),
+                score=0.95,
+                hit_count=90,
+                point_count=512,
+                bbs_score=0.95,
+            ),
+        ]
+        ranked = engine._score_with_registration(
+            np.zeros((8, 3), dtype=np.float64), raw_candidates)
+
+        assert ranked[0].x_m == -10.5
+        assert ranked[0].y_m == 27.1
+        assert ranked[0].z_m == 1.2
+        assert ranked[0].yaw_rad == math.radians(12.0)
+        assert ranked[0].bbs_score == 0.99
+        assert ranked[0].registration_fitness == 0.042
+
+        unconverged = next(
+            candidate for candidate in ranked
+            if candidate.x_m == 5.0 and candidate.y_m == 6.0)
+        assert unconverged.yaw_rad == math.radians(20.0)
+        assert unconverged.z_m == 0.0
+        assert not unconverged.registration_converged
+
+
+def test_score_with_registration_keeps_raw_pose_by_default():
+    with tempfile.TemporaryDirectory() as tmp:
+        yaml_path = write_occupancy_map(Path(tmp))
+        engine = glq.GlobalLocalizationEngine(
+            yaml_path, glq.GlobalLocalizationConfig())
+        engine.registration_scorer = _FakeRegistrationScorer({
+            (-13.5, 29.7, 0.0, math.radians(10.0)): _FakeScoreResult(
+                fitness=0.042,
+                converged=True,
+                refined_x=-10.5,
+                refined_y=27.1,
+                refined_z=1.2,
+                refined_yaw=math.radians(12.0),
+            ),
+        })
+        raw_candidates = [
+            glq.GlobalLocalizationCandidate(
+                x_m=-13.5,
+                y_m=29.7,
+                z_m=0.0,
+                yaw_rad=math.radians(10.0),
+                score=0.99,
+                hit_count=100,
+                point_count=512,
+                bbs_score=0.99,
+            ),
+        ]
+        ranked = engine._score_with_registration(
+            np.zeros((8, 3), dtype=np.float64), raw_candidates)
+
+        assert ranked[0].x_m == -13.5
+        assert ranked[0].y_m == 29.7
+        assert ranked[0].yaw_rad == math.radians(10.0)
+        assert ranked[0].registration_fitness == 0.042
+
+
 if __name__ == "__main__":
     test_query_recovers_known_pose()
     test_query_handles_empty_scan()
     test_bbs_cpp_search_path_includes_installed_lib_dir()
+    test_score_with_registration_rewrites_converged_candidate_pose()
+    test_score_with_registration_keeps_raw_pose_by_default()
     print("test_global_localization_query: all tests passed")

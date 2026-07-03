@@ -304,3 +304,81 @@ latest local 120 s run
 validates the guarded request/query/publish path without false
 `recovery_confirmed`, but still has `0` stable recovered request windows; remaining
 work is G2 candidate freshness and ranking on the moving outdoor sequence.
+
+### 2026-07-03 Koide G3 stable recovery (Sprint A closeout)
+
+Sprint A added G2 per-candidate NDT registration scoring (`g2_ndt_score`),
+registration-aware supervisor defaults, and `scripts/check_koide_recovery_health.py`
+(stable window required, not just a lone `recovery_confirmed`). The validated harness:
+
+```bash
+scripts/run_koide_g3_recovery_replay.sh --skip-prepare --duration-sec 120 --rate 0.4
+# or: scripts/run_koide_g3_recovery_regression.sh --skip-prepare
+```
+
+Reference pass (`2026-07-03`, idle machine, `ROS_DOMAIN_ID=181` after killing stale
+G2/supervisor processes on the same domain):
+
+- Output: `/tmp/lidarloc_koide_g3_recovery_regscore_20260703_075246`
+- Events: `reset_published` → candidate walk (`next_candidate` ×2) →
+  `recovery_confirmed` → `stable_recovered_request_window`
+- Health JSON: `"ok": true`, `recovery_confirmed_count=1`,
+  `stable_recovered_request_windows=1`
+
+Launch defaults in `global_localization_recovery.launch.py` now match the registration-scored
+preset (`min_candidate_score=0.15`, `query_timeout_sec=45`, `settle_timeout_sec=20`,
+`max_attempts=5`, NDT target voxel `0.2`). Koide-specific z and frame overrides stay in
+the replay script / `param/benchmark/koide_g3_recovery_fast_g2.yaml`. Release regression
+includes the Koide stage via `run_release_regression_suite.sh` (`--skip-koide-g3` to omit).
+
+### 2026-07-03 HDL hdl_400 second scenario
+
+Second-scenario validation for G3 recovery: the official `hdl_localization` `hdl_400_ros2`
+bag (Velodyne campus, ~126 s, epoch-based stamps), `map.pcd`, lidar-only NDT profile
+(voxel filter on), kidnap injected 22 s after first `/clock` (wrong pose x=20, y=-15,
+z=1.76, yaw=90°), bag rate 0.5, `ROS_DOMAIN_ID=183`. Harness:
+`scripts/prepare_hdl_recovery_assets.sh` + `scripts/run_hdl_g3_recovery_replay.sh`
+(or `scripts/run_hdl_g3_recovery_regression.sh` for the release-style wrapper).
+
+**Result (3 consecutive passes):** detect → debounce → G2 query (~8–11 s wall) → guarded
+`/initialpose` reset → `recovery_confirmed` ~9 s after reset → `standdown_cleared` →
+`stable_recovered_request_window`. Representative pass (r08): 1 reset,
+`recovery_confirmed_count=1`, stable window 1, longest lost window 4.3 s, 9
+reinit-requested rows. Other passes saw longest lost windows 10.7–18.6 s and candidate
+walks on a naturally hard section around bag t≈90–100 s that the supervisor also handled
+(retry loop, no unbounded resets). Koide 120 s replay re-validated after the changes
+(`recovery_confirmed` + stable window, longest lost 9.7 s).
+
+**What the HDL scenario needed** (each was a live failure first):
+
+1. **Epoch-based bag stamps:** `inject_koide_kidnap_initialpose.py` gained
+   `trigger_after_first_clock_sec` (relative trigger; absolute `trigger_sim_sec` default
+   unchanged for Koide).
+2. **No `/tf_static` in the bag:** recovery launch needed `publish_lidar_tf:=true` +
+   `lidar_frame_id:=velodyne` (identity base_link→velodyne, same as the proven regression
+   profile).
+3. **Scan voxel filter must stay enabled:** 61k raw Velodyne points push NDT to ~0.9 s/scan
+   (overload, never settles after reset). The standalone profile disables it; the prep
+   script re-enables it.
+4. **HDL IMU preintegration diverged 2–3 m/scan** ("IMU smoother diverged" every scan) —
+   known-marginal on this dataset — so the recovery profile is lidar-only.
+5. **z-basin again** (the Koide lesson at a different height): the hdl_400 route sits at
+   z≈1.76 (range 1.63–1.90 from a clean replay pose trace), not 0.
+   `supervisor_reset_default_z_m:=1.76`, `g2_registration_seed_z_m:=1.76`.
+6. **Full-map BBS query took ~9.5 s wall** while the robot walks ~1 m/s: at rate 1.0 the
+   first reset lands ~10–14 m behind the robot and the first query has no velocity history
+   for seed motion compensation. Fixed by cropping the occupancy grid to the route + 20 m
+   (x [-34, 27], y [-20, 88]) and replaying at rate 0.5.
+7. **G2 refined-pose opt-in (`g2_registration_refine_candidates`, default false):**
+   `g2_ndt_score` runs a full NDT align per candidate but used to discard
+   `getFinalTransformation()`; raw BBS cell poses up to ~3 m off were published while
+   their refinement was essentially exact (fitness 0.03–0.9). With refinement ON, HDL
+   passes 3/3 (was ~50% flaky). With refinement forced on for Koide it FAILED: refinement
+   snaps wrong (aliased) hypotheses to locally-perfect alignments and collapses nearby walk
+   candidates onto a single pose (candidates 1–4 all refined to the same (-108.06, -2.26)
+   pose) — one falsely confirmed. Hence opt-in per scenario: HDL on, Koide off (default).
+
+**Operational gotcha:** two Koide runs failed because stray localizer/G2/supervisor nodes
+from an earlier aborted run were still alive on the same domain; after `pkill` the same
+replay passed. The replay scripts already `pkill` at start; check
+`pgrep -af lidar_localization` before trusting a surprising failure.

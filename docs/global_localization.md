@@ -48,10 +48,16 @@ thing to check when a plausible candidate still fails to lock.
 
 Key parameters (see the node for the full list): `z_min_m` / `z_max_m` (scan
 height band), `max_scan_points`, `angular_resolution_deg`, `pyramid_depth`,
-`max_candidates`, `nms_radius_m`. Lower `nms_radius_m` keeps more near-by or
-alternate-yaw candidates for G3 candidate walking; higher values return more
-spatially diverse candidates. Query latency on a validated window is a few
-seconds; see the roadmap for the speed/coverage envelope.
+`max_candidates`, `nms_radius_m`, `registration_refine_candidates` (node param;
+launch arg `g2_registration_refine_candidates`, default `false`). When enabled,
+`g2_ndt_score` publishes each candidate's NDT-refined pose instead of the raw BBS
+cell center — required for the HDL hdl_400 recovery replay (raw poses up to ~3 m
+off) but harmful on Koide, where refinement can snap aliased hypotheses to
+locally-perfect alignments and collapse walk candidates onto one pose. Lower
+`nms_radius_m` keeps more near-by or alternate-yaw candidates for G3 candidate
+walking; higher values return more spatially diverse candidates. Query latency
+on a validated window is a few seconds; see the roadmap for the speed/coverage
+envelope.
 
 ## G3: guarded automatic reinitialization
 
@@ -114,3 +120,17 @@ still has `0` stable recovered request windows and `0` false
 robust automatic recovery claim.
 Track the remaining candidate freshness/ranking work in
 [global_localization_roadmap.md](global_localization_roadmap.md) (G3 section).
+
+### Replay harnesses
+
+Kidnapped-recovery closed-loop replays (prepare assets, launch recovery stack, inject
+kidnap, play bag, run health rubric):
+
+| Scenario | Prepare | Replay | Regression wrapper |
+| --- | --- | --- | --- |
+| Koide `outdoor_hard_01a` | `scripts/prepare_koide_hard_relocalization_assets.sh` | `scripts/run_koide_g3_recovery_replay.sh` | `scripts/run_koide_g3_recovery_regression.sh` |
+| HDL `hdl_400_ros2` | `scripts/prepare_hdl_recovery_assets.sh` | `scripts/run_hdl_g3_recovery_replay.sh` | `scripts/run_hdl_g3_recovery_regression.sh` |
+
+Both wrappers write `recovery_health.json` and `regression_result.json` under
+`artifacts/public/<scenario>_g3_recovery_regression` by default and skip gracefully
+when the dataset is absent.

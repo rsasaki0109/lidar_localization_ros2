@@ -208,12 +208,13 @@ does not spend a `max_attempts` slot (only re-querying does), so the ceiling sti
 queries while one query can try every pose it found. G2 returns the full ranked
 `candidates` list in its reply; the policy and node carry a candidate index; the new
 behaviour is regression-tested (policy walk + list-exhaust + score-floor cases, plus a
-ROS integration test that walks 0→1 and recovers). The complementary piece — G2 scoring
-each candidate by NDT/GICP fitness so the *ranking* reflects registration quality — and
-the BBS query-latency/staleness remain the next G3 work; live validation of the walk on
-the kidnap window is pending. See [g3_live_closed_loop.md](g3_live_closed_loop.md).
+ROS integration test that walks 0→1 and recovers). G2 per-candidate NDT registration
+scoring (`g2_ndt_score`, Sprint A 2026-07-03) re-ranks BBS hypotheses by localizer-like
+fitness; the Koide outdoor_hard_01a 120 s kidnap replay passes the stable-recovery health
+rubric (`recovery_confirmed` + `stable_recovered_request_window`). See
+[g3_live_closed_loop.md](g3_live_closed_loop.md).
 
-**Recovery-evidence gate met (2026-06-15).** The final blocker turned out to be that the
+**Recovery-evidence gate met (2026-06-15; stable window 2026-07-03).** The final blocker turned out to be that the
 reset was published with z = 0: G2 candidates are 2D and the supervisor left
 `position.z = 0`, ~11 m above the true Koide ground, outside the NDT z-basin — so even an
 x/y/yaw-correct candidate never locked. The supervisor now carries z / roll / pitch from
@@ -221,8 +222,21 @@ x/y/yaw-correct candidate never locked. The supervisor now carries z / roll / pi
 kidnap window: after the guarded reset (`recovery_confirmed`) the localizer re-locks and
 fitness falls to ~0.1, then the supervisor stands down and re-arms. So *post-reset
 recovery evidence* — the last G3 Decision Gate — is now satisfied with a real localizer.
-Remaining work is quality, not correctness: faster/first-try recovery (cut BBS query
-latency, per-candidate registration scoring in G2).
+The HDL second scenario is now validated too (2026-07-03): official `hdl_400_ros2`
+kidnap replay passes the same health rubric 3/3 with `g2_registration_refine_candidates`
+enabled; see [g3_live_closed_loop.md](g3_live_closed_loop.md). Remaining work is breadth
+and speed: Koide 180 s, G2 query-latency reduction, and Phase 1 backend comparison
+follow-ups on Koide.
+
+**HDL hdl_400 second scenario validated (2026-07-03).** The Velodyne campus bag
+(~126 s, epoch-based stamps) needed route-cropped BBS occupancy (x [-34, 27], y [-20, 88])
+and replay at rate 0.5 so the ~8–11 s G2 query does not land the first reset 10–14 m
+behind a ~1 m/s robot. Route z sits at ~1.76 m (not 0); lidar-only NDT with voxel filter
+on; `publish_lidar_tf:=true` because the bag has no `/tf_static`. G2 refined-pose opt-in
+(`g2_registration_refine_candidates`, default false) is required for HDL (raw BBS cell
+poses were up to ~3 m off while NDT refinement was exact) but must stay off for Koide,
+where refinement snaps aliased hypotheses to locally-perfect alignments and collapses
+nearby walk candidates onto one falsely confirmed pose.
 
 ## Non-Goals For Now
 

@@ -1,6 +1,6 @@
 # Development Plan
 
-Last updated: 2026-06-13
+Last updated: 2026-07-03
 
 This document is the working development plan for `lidar_localization_ros2`. It is more
 detailed and more dated than [competitive_roadmap.md](competitive_roadmap.md): the roadmap
@@ -16,10 +16,19 @@ Related documents:
 - [v1_status.md](v1_status.md): what v1.0.0 means and its validated boundary
 - [public_validation_log.md](public_validation_log.md): recorded validation snapshots
 
-## Current State (2026-06-13)
+## Current State (2026-07-03)
 
 What is true right now:
 
+- **G3 guarded automatic reinitialization is validated on Koide outdoor_hard_01a (120 s).**
+  Sprint A landed G2 per-candidate NDT registration scoring (`g2_ndt_score`), the
+  `check_koide_recovery_health.py` stable-recovery rubric, and the fast-G2 recovery
+  preset in `global_localization_recovery.launch.py`. The replay harness
+  `scripts/run_koide_g3_recovery_replay.sh` passes with `recovery_confirmed` plus at
+  least one `stable_recovered_request_window` (validated 2026-07-03 on an idle
+  machine; load `< ~5` required for timing). Release regression now includes
+  `scripts/run_koide_g3_recovery_regression.sh` (skip with `--skip-koide-g3` when the
+  Koide dataset is absent).
 - `v1.1.0` is released and tagged (commit `668fff2`): the accumulated reliability batch
   (Sprint 1/2 crash fixes #76/#56/#47, the frame/troubleshooting/map-alignment/covariance
   documentation set, Istanbul drift tuning, Koide recovery tuning, Boreas diagnostics) is
@@ -41,9 +50,11 @@ What is true right now:
   and the opt-in `global_localization_node.py` runtime service (`~/query` ->
   `~/candidates`) is validated end-to-end on the HDL bag with a kidnapped start. A demo GIF
   of the full kidnapped-start -> relocalize -> resume flow is in the README.
-- Open work, in priority order, is the Phase 1 Koide backend comparison (needs an idle
-  machine), G3 guarded automatic reinitialization (needs faster queries), and Phase 2
-  Boreas recovery. None are started.
+- Open work, in priority order, is **G3 second-scenario validation** (HDL
+  kidnapped-start or Koide 180 s), then Phase 2 Boreas recovery. Phase 1 Koide
+  backend comparison smoke60 harness is complete (2026-07-03); the full 380 s
+  ranking and NDT_OMP default are documented in
+  [phase1_koide_backend_comparison.md](phase1_koide_backend_comparison.md).
 
 Known execution constraints:
 
@@ -116,16 +127,19 @@ A follow-on `Unreleased` batch has since accumulated on `main` (diagnostics taxo
 calibrated covariance, BBS speedup, the G2 service); it will roll into the next tagged
 release once Phase 1 / G3 work reaches a natural boundary.
 
-## Phase 1: Koide Benchmark Track — IN PROGRESS
+## Phase 1: Koide Benchmark Track — COMPLETE (smoke harness + full-window verdict)
 
 Goal: make the Koide hard-localization dataset the controlled public benchmark for
 recovery and backend ranking, replacing Istanbul as the research driver.
 
-Status: the first G1 evaluation on `outdoor_hard_01a` ran 2026-06-11 (see execution log).
-It established that the 180 s window is a recovery problem, not a candidate-generation
-problem (GT pose scores fitness 9.6 there). The backend comparison (step 2) is the main
-open item and is **blocked on an idle machine** — it needs `load < ~5` for meaningful
-alignment-time numbers, and the shared machine is usually busy.
+Status: the backend comparison harness (`run_koide_phase1_backend_comparison.sh`,
+`summarize_koide_phase1_backend_comparison.py`, `run_koide_phase1_regression.sh`)
+landed 2026-07-03. Smoke60 reruns on all three backends confirm the existing full
+380 s verdict: **NDT_OMP is the recommended default**; GICP backends can show low
+RMSE on early poses while losing lock for most of the window. Release regression
+includes the Phase 1 stage (`--skip-koide-phase1` when Koide data or an idle
+machine is unavailable). Step 1 recovery validation on Koide is covered by G3
+120 s (2026-07-03).
 
 Steps:
 
@@ -611,17 +625,14 @@ and capture of the post-reset recovery evidence for the roadmap's evidence gate.
 
 ## Suggested Order Of Work
 
-Phase 0, Phase 3 (all three steps), G1, the BBS speedup, and G2 are complete. Remaining,
-in priority order:
+Phase 0, Phase 3 (all three steps), G1, the BBS speedup, G2, **G3 Koide 120 s
+recovery**, and **Phase 1 Koide backend comparison (smoke harness + full 380 s
+verdict)** are complete. Remaining, in priority order:
 
-1. **Phase 1 Koide backend comparison** (`NDT_OMP` vs `SMALL_GICP` vs `SMALL_VGICP`) on an
-   idle machine — needs `load < ~5`; this is the main blocker, since the shared machine is
-   usually busy. Reuse the existing Koide manifests; confirm the new `failure_category` and
-   `error_floor` covariance columns also appear in the replay outputs while there.
-2. **G3 guarded automatic reinitialization** — wire `/reinitialization_requested` to the
-   G2 service behind the recovery supervisor. Machine-independent design work can start
-   now; the runtime path needs the faster query (coarse-yaw or C++ port) first.
-3. **Phase 2 Boreas recovery** — root-cause the `local_map_crop_too_small` cliff;
+1. **G3 second-scenario validation** — repeat the stable-recovery rubric on HDL
+   kidnapped-start or Koide outdoor 180 s; optional G2 query-latency work (C++ NDT batch
+   scoring) if stale seeds reappear on faster bags.
+2. **Phase 2 Boreas recovery** — root-cause the `local_map_crop_too_small` cliff;
    long-running sweeps interleave well with the above.
-4. **Next release tag** once Phase 1 or G3 reaches a boundary, rolling up the current
-   `Unreleased` batch.
+3. **Next release tag** once the second G3 scenario reaches a boundary, rolling up the
+   current `Unreleased` batch.

@@ -27,6 +27,8 @@ Wiring::
 import json
 import math
 import time
+import csv
+from pathlib import Path
 
 import rclpy
 from diagnostic_msgs.msg import DiagnosticArray
@@ -38,6 +40,17 @@ from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 
 import reinitialization_supervisor_policy as rsp
+
+_ACCEPT_MEASUREMENT_ACTIONS = frozenset({
+    "accept_measurement",
+    "accept_measurement_with_warning",
+    "accept_measurement_after_recovery",
+})
+_ACCEPT_TRACKING_STATES = frozenset({
+    "tracking",
+    "degraded",
+    "recovering",
+})
 
 
 def _roll_pitch_from_quat(x: float, y: float, z: float, w: float):
@@ -76,6 +89,7 @@ class ReinitializationSupervisorNode(Node):
         self.declare_parameter("pose_topic", "/pcl_pose")
         # Fallback z if no pose has been observed yet (e.g. a cold kidnapped start).
         self.declare_parameter("reset_default_z_m", 0.0)
+        self.declare_parameter("prefer_reset_default_z_m", False)
         # Initial-pose covariance to advertise on a reset (diagonal x, y, yaw).
         self.declare_parameter("reset_position_std_m", 0.5)
         self.declare_parameter("reset_yaw_std_rad", 0.25)
@@ -99,6 +113,8 @@ class ReinitializationSupervisorNode(Node):
         self.declare_parameter("enable_seed_motion_compensation", False)
         self.declare_parameter("max_seed_speed_mps", 30.0)
         self.declare_parameter("max_seed_latency_sec", 30.0)
+        self.declare_parameter("seed_motion_skip_registration_fitness_threshold", 1.0)
+        self.declare_parameter("event_log_csv", "")
 
         self.params = rsp.SupervisorParams(
             request_debounce_sec=float(self.get_parameter("request_debounce_sec").value),
@@ -120,10 +136,25 @@ class ReinitializationSupervisorNode(Node):
         self.position_std = float(self.get_parameter("reset_position_std_m").value)
         self.yaw_std = float(self.get_parameter("reset_yaw_std_rad").value)
         self.reset_default_z = float(self.get_parameter("reset_default_z_m").value)
+        self.prefer_reset_default_z = bool(
+            self.get_parameter("prefer_reset_default_z_m").value)
         self.enable_seed_motion = bool(
             self.get_parameter("enable_seed_motion_compensation").value)
         self.max_seed_speed = float(self.get_parameter("max_seed_speed_mps").value)
         self.max_seed_latency = float(self.get_parameter("max_seed_latency_sec").value)
+        self.seed_motion_skip_registration_fitness = float(
+            self.get_parameter("seed_motion_skip_registration_fitness_threshold").value)
+        event_log_csv = (
+            self.get_parameter("event_log_csv").get_parameter_value().string_value)
+        self._event_log_csv = Path(event_log_csv) if event_log_csv else None
+        self._stable_window_count = 0
+        self._awaiting_stable_window = False
+        self._stable_window_logged = False
+        if self._event_log_csv is not None:
+            self._event_log_csv.parent.mkdir(parents=True, exist_ok=True)
+            if not self._event_log_csv.is_file():
+                with self._event_log_csv.open("w", newline="", encoding="utf-8") as handle:
+                    csv.writer(handle).writerow(["stamp_sec", "event"])
 
         # Latest observed signals.
         self._requested = False
@@ -195,13 +226,23 @@ class ReinitializationSupervisorNode(Node):
         self.get_logger().info(
             "reinitialization supervisor ready (opt-in); guards=%s" % (self.params,))
         self.get_logger().info(
-            "seed motion compensation: enabled=%s max_speed_mps=%.2f max_latency_sec=%.2f"
-            % (self.enable_seed_motion, self.max_seed_speed, self.max_seed_latency))
+            "seed motion compensation: enabled=%s max_speed_mps=%.2f max_latency_sec=%.2f "
+            "skip_registration_fitness<=%.2f"
+            % (self.enable_seed_motion, self.max_seed_speed, self.max_seed_latency,
+               self.seed_motion_skip_registration_fitness))
+        if self.prefer_reset_default_z:
+            self.get_logger().info(
+                "seed z: using reset_default_z_m=%.3f (prefer_reset_default_z_m=true)"
+                % self.reset_default_z)
 
     # --- subscriptions -------------------------------------------------------
 
     def _on_reinit(self, msg: Bool) -> None:
         self._requested = bool(msg.data)
+
+    def _wall_now_sec(self) -> float:
+        """Wall clock for supervisor policy timing and G2 query latency."""
+        return time.monotonic()
 
     def _on_alignment_status(self, msg: DiagnosticArray) -> None:
         for status in msg.status:
@@ -210,7 +251,7 @@ class ReinitializationSupervisorNode(Node):
                 continue
             try:
                 self._fitness = float(values["fitness_score"])
-                self._fitness_observed_sec = time.monotonic()
+                self._fitness_observed_sec = self._wall_now_sec()
                 reinit_requested = (
                     str(values.get("reinitialization_requested", "")).lower()
                     == "true")
@@ -219,8 +260,8 @@ class ReinitializationSupervisorNode(Node):
                 if recovery_state or recovery_action or "reinitialization_requested" in values:
                     self._stable_tracking = (
                         status.message == "ok"
-                        and recovery_state == "tracking"
-                        and recovery_action == "accept_measurement"
+                        and recovery_state in _ACCEPT_TRACKING_STATES
+                        and recovery_action in _ACCEPT_MEASUREMENT_ACTIONS
                         and not reinit_requested)
                 else:
                     self._stable_tracking = (status.message == "ok")
@@ -230,7 +271,7 @@ class ReinitializationSupervisorNode(Node):
 
     def _on_pose(self, msg: PoseWithCovarianceStamped) -> None:
         p = msg.pose.pose
-        observed_sec = time.monotonic()
+        observed_sec = self._wall_now_sec()
         if (self._last_pose_x is not None and self._last_pose_y is not None
                 and self._last_pose_observed_sec is not None):
             self._last_pose_velocity = rsp.estimate_seed_velocity(
@@ -249,7 +290,7 @@ class ReinitializationSupervisorNode(Node):
     # --- main loop -----------------------------------------------------------
 
     def _tick(self) -> None:
-        now = time.monotonic()
+        now = self._wall_now_sec()
         candidate_scores = None
         if self._pending_reply is not None:
             candidate_scores = self._pending_reply
@@ -286,6 +327,25 @@ class ReinitializationSupervisorNode(Node):
         ):
             self._clear_seed_motion_history()
 
+        if decision.reason == "recovery_confirmed":
+            self._awaiting_stable_window = True
+            self._stable_window_count = 0
+            self._stable_window_logged = False
+            self._log_event("recovery_confirmed")
+        elif decision.reason in (
+            "reset_published",
+            "next_candidate",
+            "recovery_failed_exhausted",
+            "attempts_exhausted",
+            "query_timeout",
+            "weak_candidate_rejected",
+            "recovery_unconfirmed",
+            "standdown_cleared",
+        ):
+            self._log_event(decision.reason)
+
+        self._update_stable_window_tracking()
+
         if decision.action == rsp.ACTION_QUERY:
             self._issue_query()
         elif decision.action == rsp.ACTION_PUBLISH_RESET:
@@ -300,6 +360,24 @@ class ReinitializationSupervisorNode(Node):
             self.get_logger().info(
                 "supervisor: %s -> %s (%s)"
                 % (decision.action, self.state.name, decision.reason))
+
+    def _log_event(self, event_name: str) -> None:
+        if self._event_log_csv is None:
+            return
+        with self._event_log_csv.open("a", newline="", encoding="utf-8") as handle:
+            csv.writer(handle).writerow([f"{time.time():.6f}", event_name])
+
+    def _update_stable_window_tracking(self) -> None:
+        if not self._awaiting_stable_window or self._stable_window_logged:
+            return
+        if self._requested or self._stable_tracking is not True:
+            self._stable_window_count = 0
+            return
+        self._stable_window_count += 1
+        if self._stable_window_count >= self.params.recovery_confirmation_samples:
+            self._log_event("stable_recovered_request_window")
+            self._stable_window_logged = True
+            self._awaiting_stable_window = False
 
     def _clear_seed_motion_history(self) -> None:
         self._prev_fix = None
@@ -318,7 +396,7 @@ class ReinitializationSupervisorNode(Node):
         self._query_in_flight = True
         # The candidate this query returns is a fix of the scan available now, so
         # stamp the issue time for the query->publish latency used in compensation.
-        self._query_issue_time = time.monotonic()
+        self._query_issue_time = self._wall_now_sec()
         if (self._last_pose_x is not None and self._last_pose_y is not None
                 and self._last_pose_observed_sec is not None
                 and self._query_issue_time - self._last_pose_observed_sec
@@ -365,7 +443,7 @@ class ReinitializationSupervisorNode(Node):
         self._current_query_velocity = rsp.SeedVelocity()
         self._current_query_issue_time = self._query_issue_time
         self._current_query_candidate_age_sec = candidate_age_sec
-        self._current_query_response_sec = time.monotonic()
+        self._current_query_response_sec = self._wall_now_sec()
 
     @staticmethod
     def _parse_nonnegative_float(value):
@@ -390,7 +468,10 @@ class ReinitializationSupervisorNode(Node):
         # The candidate is 2D (x, y, yaw); carry z / roll / pitch from the last
         # localizer pose so the seed lands in the registration z-basin on a non-flat
         # map. Fall back to the configured default z if no pose seen yet.
-        z = self._last_pose_z if self._last_pose_z is not None else self.reset_default_z
+        if self.prefer_reset_default_z:
+            z = self.reset_default_z
+        else:
+            z = self._last_pose_z if self._last_pose_z is not None else self.reset_default_z
         qx, qy, qz, qw = _quat_from_rpy(
             self._last_pose_roll, self._last_pose_pitch, yaw)
         msg = PoseWithCovarianceStamped()
@@ -435,6 +516,14 @@ class ReinitializationSupervisorNode(Node):
         """
         issue = self._query_issue_time
         self._last_seed_motion_status = "disabled"
+        if candidate_index < len(self._candidates):
+            reg_fit = self._candidates[candidate_index].get("registration_fitness")
+            if (reg_fit is not None
+                    and float(reg_fit) <= self.seed_motion_skip_registration_fitness):
+                self._last_seed_motion_status = (
+                    "skipped: registration_fitness %.3f <= %.3f"
+                    % (float(reg_fit), self.seed_motion_skip_registration_fitness))
+                return raw_x, raw_y
         if not self.enable_seed_motion:
             return raw_x, raw_y
         if issue is None:
@@ -499,9 +588,10 @@ class ReinitializationSupervisorNode(Node):
     def _seed_latency_sec(self, issue):
         if (self._current_query_candidate_age_sec is not None
                 and self._current_query_response_sec is not None):
-            response_age = max(0.0, time.monotonic() - self._current_query_response_sec)
+            response_age = max(
+                0.0, self._wall_now_sec() - self._current_query_response_sec)
             return self._current_query_candidate_age_sec + response_age, "candidate age"
-        return time.monotonic() - issue, "latency"
+        return self._wall_now_sec() - issue, "latency"
 
     def _current_query_fix_time(self, fallback_issue):
         if (self._current_query_candidate_age_sec is not None

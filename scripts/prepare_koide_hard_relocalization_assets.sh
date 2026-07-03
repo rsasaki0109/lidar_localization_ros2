@@ -362,6 +362,9 @@ launch_cmd=(
   ros2 launch lidar_localization_ros2 global_localization_recovery.launch.py
   "localization_param_dir:=${localization_yaml}"
   "occupancy_yaml:=${occupancy_yaml}"
+  "map_path:=${map_path}"
+  "g2_enable_registration_scoring:=true"
+  "g2_registration_seed_z_m:=-11.046818"
   "cloud_topic:=/livox/points"
   "imu_topic:=/livox/imu"
   "global_frame_id:=map"

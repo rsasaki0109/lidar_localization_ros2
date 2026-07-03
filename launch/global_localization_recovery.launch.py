@@ -50,6 +50,7 @@ def generate_launch_description():
 
     cloud_topic = LaunchConfiguration('cloud_topic')
     occupancy_yaml = LaunchConfiguration('occupancy_yaml')
+    map_path = LaunchConfiguration('map_path')
     global_frame_id = LaunchConfiguration('global_frame_id')
     odom_frame_id = LaunchConfiguration('odom_frame_id')
     base_frame_id = LaunchConfiguration('base_frame_id')
@@ -86,6 +87,14 @@ def generate_launch_description():
     supervisor_enable_seed_motion = LaunchConfiguration('supervisor_enable_seed_motion_compensation')
     supervisor_max_seed_speed_mps = LaunchConfiguration('supervisor_max_seed_speed_mps')
     supervisor_max_seed_latency_sec = LaunchConfiguration('supervisor_max_seed_latency_sec')
+    supervisor_event_log_csv = LaunchConfiguration('supervisor_event_log_csv')
+    supervisor_reset_default_z_m = LaunchConfiguration('supervisor_reset_default_z_m')
+    supervisor_prefer_reset_default_z_m = LaunchConfiguration(
+        'supervisor_prefer_reset_default_z_m')
+    supervisor_seed_motion_skip_registration_fitness_threshold = LaunchConfiguration(
+        'supervisor_seed_motion_skip_registration_fitness_threshold')
+    g2_ndt_scan_voxel_leaf_size = LaunchConfiguration('g2_ndt_scan_voxel_leaf_size')
+    g2_ndt_target_voxel_leaf_size = LaunchConfiguration('g2_ndt_target_voxel_leaf_size')
 
     declared = [
         DeclareLaunchArgument(
@@ -95,6 +104,24 @@ def generate_launch_description():
             'occupancy_yaml', default_value='',
             description='Occupancy grid YAML for the G2 BBS_2D search '
                         '(scripts/generate_occupancy_map_from_pcd.py).'),
+        DeclareLaunchArgument(
+            'map_path', default_value='',
+            description='3D map PCD/PLY for optional G2 NDT registration scoring.'),
+        DeclareLaunchArgument(
+            'g2_enable_registration_scoring', default_value='true',
+            description='Re-rank BBS candidates by NDT fitness when map_path is set.'),
+        DeclareLaunchArgument(
+            'g2_registration_score_gate', default_value='6.0',
+            description='NDT fitness gate used to map registration scores to [0, 1].'),
+        DeclareLaunchArgument(
+            'g2_registration_refine_candidates', default_value='false',
+            description='Report the NDT-refined pose of converged candidates instead '
+                        'of the raw BBS cell pose. Off by default: on high-aliasing '
+                        'maps refinement snaps wrong hypotheses to locally-perfect '
+                        'poses and collapses walk-candidate diversity.'),
+        DeclareLaunchArgument(
+            'g2_registration_seed_z_m', default_value='0.0',
+            description='Map-frame z used for NDT registration scoring on 2D candidates.'),
         DeclareLaunchArgument(
             'global_frame_id', default_value='map',
             description='Map frame shared by all three nodes and /initialpose.'),
@@ -120,19 +147,21 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'continuous_time_deskew_reference_time_sec', default_value='0.0'),
         DeclareLaunchArgument(
-            'supervisor_min_candidate_score', default_value='0.6',
-            description='No reset is published below this candidate score.'),
+            'supervisor_min_candidate_score', default_value='0.15',
+            description='No reset is published below this candidate score. '
+                        'Use ~0.15 when G2 registration scoring maps NDT fitness to '
+                        '[0, 1]; use ~0.6 for BBS-only scores.'),
         DeclareLaunchArgument(
-            'supervisor_max_attempts', default_value='3',
-            description='Hard ceiling on resets for one continuous problem.'),
+            'supervisor_max_attempts', default_value='5',
+            description='Hard ceiling on query attempts for one continuous problem.'),
         DeclareLaunchArgument(
-            'supervisor_query_timeout_sec', default_value='10.0',
+            'supervisor_query_timeout_sec', default_value='45.0',
             description='Abandon a G2 query that returns nothing within this long '
-                        '(raise above the BBS query latency, ~10-25 s).'),
+                        '(raise above the BBS+NDT query latency, ~15-30 s).'),
         DeclareLaunchArgument(
-            'supervisor_settle_timeout_sec', default_value='8.0',
+            'supervisor_settle_timeout_sec', default_value='20.0',
             description='Time to observe post-reset recovery before counting the '
-                        'attempt failed.'),
+                        'attempt failed (wall seconds; allow headroom for slow bag replay).'),
         DeclareLaunchArgument(
             'supervisor_recovery_confirmation_samples', default_value='3',
             description='Consecutive post-reset low-fitness observations required '
@@ -159,11 +188,32 @@ def generate_launch_description():
             'supervisor_max_seed_latency_sec', default_value='30.0',
             description='Clamp seed-motion compensation latency to this many seconds.'),
         DeclareLaunchArgument(
-            'g2_angular_resolution_deg', default_value='5.0',
+            'supervisor_event_log_csv', default_value='',
+            description='Optional CSV path for supervisor recovery events.'),
+        DeclareLaunchArgument(
+            'supervisor_reset_default_z_m', default_value='0.0',
+            description='Fallback map-frame z for /initialpose seeds.'),
+        DeclareLaunchArgument(
+            'supervisor_prefer_reset_default_z_m', default_value='false',
+            description='When true, always use reset_default_z_m for seed z instead of '
+                        'the last /pcl_pose z (outdoor kidnapped-start helper).'),
+        DeclareLaunchArgument(
+            'supervisor_seed_motion_skip_registration_fitness_threshold',
+            default_value='1.0',
+            description='Skip seed motion compensation when a candidate registration '
+                        'fitness is at or below this value.'),
+        DeclareLaunchArgument(
+            'g2_ndt_scan_voxel_leaf_size', default_value='1.0',
+            description='G2 NDT scoring scan voxel size; 0 disables downsampling.'),
+        DeclareLaunchArgument(
+            'g2_ndt_target_voxel_leaf_size', default_value='0.2',
+            description='G2 NDT scoring map voxel size (match localizer target).'),
+        DeclareLaunchArgument(
+            'g2_angular_resolution_deg', default_value='10.0',
             description='G2 BBS yaw sampling step; coarser = faster query, fresher '
                         'seed (e.g. 10.0).'),
         DeclareLaunchArgument(
-            'g2_max_scan_points', default_value='512',
+            'g2_max_scan_points', default_value='256',
             description='G2 BBS scan points; fewer = faster query (e.g. 256).'),
         DeclareLaunchArgument(
             'g2_pyramid_depth', default_value='4',
@@ -177,7 +227,7 @@ def generate_launch_description():
                         'keep more near-by/yaw-alternative hypotheses for candidate '
                         'walking; higher values improve spatial diversity.'),
         DeclareLaunchArgument(
-            'g2_use_cpp_backend', default_value='false',
+            'g2_use_cpp_backend', default_value='true',
             description='Use the compiled C++ BBS backend (bbs_cpp) when built; '
                         'falls back to the Python search if unavailable.'),
     ]
@@ -222,6 +272,20 @@ def generate_launch_description():
             'occupancy_yaml': occupancy_yaml,
             'cloud_topic': cloud_topic,
             'global_frame_id': global_frame_id,
+            'map_path': map_path,
+            'enable_registration_scoring': ParameterValue(
+                LaunchConfiguration('g2_enable_registration_scoring'), value_type=bool),
+            'registration_score_gate': ParameterValue(
+                LaunchConfiguration('g2_registration_score_gate'), value_type=float),
+            'registration_refine_candidates': ParameterValue(
+                LaunchConfiguration('g2_registration_refine_candidates'),
+                value_type=bool),
+            'registration_seed_z_m': ParameterValue(
+                LaunchConfiguration('g2_registration_seed_z_m'), value_type=float),
+            'ndt_scan_voxel_leaf_size': ParameterValue(
+                g2_ndt_scan_voxel_leaf_size, value_type=float),
+            'ndt_target_voxel_leaf_size': ParameterValue(
+                g2_ndt_target_voxel_leaf_size, value_type=float),
             'angular_resolution_deg': ParameterValue(
                 LaunchConfiguration('g2_angular_resolution_deg'), value_type=float),
             'max_scan_points': ParameterValue(
@@ -265,6 +329,14 @@ def generate_launch_description():
                 supervisor_max_seed_speed_mps, value_type=float),
             'max_seed_latency_sec': ParameterValue(
                 supervisor_max_seed_latency_sec, value_type=float),
+            'reset_default_z_m': ParameterValue(
+                supervisor_reset_default_z_m, value_type=float),
+            'prefer_reset_default_z_m': ParameterValue(
+                supervisor_prefer_reset_default_z_m, value_type=bool),
+            'seed_motion_skip_registration_fitness_threshold': ParameterValue(
+                supervisor_seed_motion_skip_registration_fitness_threshold,
+                value_type=float),
+            'event_log_csv': supervisor_event_log_csv,
             'use_sim_time': use_sim_time,
         }])
 

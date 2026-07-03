@@ -156,6 +156,12 @@ install(PROGRAMS
   scripts/generate_bbs_golden_fixtures.py
   scripts/benchmark_bbs_backends.py
   scripts/global_localization_query.py
+  scripts/g2_candidate_registration_rank_policy.py
+  scripts/check_koide_recovery_health.py
+  scripts/inject_koide_kidnap_initialpose.py
+  scripts/run_koide_g3_recovery_replay.sh
+  scripts/prepare_hdl_recovery_assets.sh
+  scripts/run_hdl_g3_recovery_replay.sh
   scripts/global_localization_node.py
   scripts/reinitialization_supervisor_policy.py
   scripts/reinitialization_supervisor_node.py
@@ -235,6 +241,20 @@ if(pybind11_FOUND AND Python3_Development.Module_FOUND)
     LIBRARY DESTINATION lib/${PROJECT_NAME})
   set(BBS_CPP_BACKEND_BUILT TRUE)
   message(STATUS "lidar_localization: building optional bbs_cpp pybind11 backend")
+
+  pybind11_add_module(g2_ndt_score src/g2_ndt_score_pybind.cpp)
+  target_include_directories(g2_ndt_score PRIVATE
+    include
+    ${PCL_INCLUDE_DIRS}
+    ${ndt_omp_ros2_INCLUDE_DIRS})
+  target_compile_features(g2_ndt_score PRIVATE cxx_std_17)
+  target_link_libraries(g2_ndt_score PRIVATE
+    ${ndt_omp_ros2_LIBRARIES}
+    ${PCL_LIBRARIES})
+  install(TARGETS g2_ndt_score
+    LIBRARY DESTINATION lib/${PROJECT_NAME})
+  set(G2_NDT_SCORE_BUILT TRUE)
+  message(STATUS "lidar_localization: building optional g2_ndt_score pybind11 backend")
 else()
   message(STATUS "lidar_localization: pybind11/Python3 Development.Module not found; bbs_cpp backend disabled (Python fallback)")
 endif()
@@ -693,6 +713,14 @@ if(BUILD_TESTING)
   add_test(
     NAME global_localization_query
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_global_localization_query.py
+  )
+  add_test(
+    NAME g2_candidate_registration_rank_policy
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_g2_candidate_registration_rank_policy.py
+  )
+  add_test(
+    NAME check_koide_recovery_health
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_check_koide_recovery_health.py
   )
   # Parity check for the optional C++ backend: compares bbs_cpp against the
   # Python reference when the compiled module is importable, and skips cleanly
