@@ -37,10 +37,26 @@ void test_default_limits_are_small_bounded_windows()
   assert(ll::kDefaultRegistrationTargetCloudKeepAliveCount == 8);
 }
 
+void test_normalize_registration_cloud_keep_alive_count()
+{
+  const auto negative = ll::normalizeRegistrationCloudKeepAliveCount(-1, 8);
+  assert(negative.value == 8);
+  assert(negative.was_adjusted);
+
+  const auto zero = ll::normalizeRegistrationCloudKeepAliveCount(0, 8);
+  assert(zero.value == 0);
+  assert(!zero.was_adjusted);
+
+  const auto positive = ll::normalizeRegistrationCloudKeepAliveCount(4, 8);
+  assert(positive.value == 4);
+  assert(!positive.was_adjusted);
+}
+
 int main()
 {
   test_keep_alive_retains_only_recent_entries();
   test_keep_alive_ignores_empty_inputs();
   test_default_limits_are_small_bounded_windows();
+  test_normalize_registration_cloud_keep_alive_count();
   return 0;
 }

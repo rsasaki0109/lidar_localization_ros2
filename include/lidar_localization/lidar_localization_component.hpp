@@ -66,6 +66,7 @@
 #include "lidar_localization/pose_backend_result_policy.hpp"
 #include "lidar_localization/pose_covariance_policy.hpp"
 #include "lidar_localization/pose_backend_selection_policy.hpp"
+#include "lidar_localization/registration_cloud_keep_alive_policy.hpp"
 #include "lidar_localization/registration_observation_policy.hpp"
 #include "lidar_localization/registration_seed_policy.hpp"
 #include "lidar_localization/recovery_supervisor.hpp"
@@ -160,6 +161,10 @@ public:
   bool map_bounds_valid_{false};
   std::deque<pcl::PointCloud<pcl::PointXYZI>::Ptr> recent_source_clouds_;
   std::deque<pcl::PointCloud<pcl::PointXYZI>::Ptr> recent_target_clouds_;
+  std::size_t registration_source_cloud_keep_alive_count_{
+    lidar_localization::kDefaultRegistrationSourceCloudKeepAliveCount};
+  std::size_t registration_target_cloud_keep_alive_count_{
+    lidar_localization::kDefaultRegistrationTargetCloudKeepAliveCount};
   bool use_local_map_crop_{false};
   bool enable_local_map_crop_{false};
   double local_map_radius_{150.0};
