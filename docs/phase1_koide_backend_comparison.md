@@ -125,7 +125,44 @@ deceptively small. SMALL_VGICP stays non-competitive, and **NDT_OMP remains the
 recommended default**. (Methodological echo of the smoke-vs-full reversal: read
 ok-rate + lost-window + pose-count *before* RMSE.)
 
+## 2026-07-03 automated harness rerun (smoke60, voxel 0.5)
+
+Re-run via `scripts/run_koide_phase1_backend_comparison.sh` after wiring the
+comparison harness and fixing workspace-root detection in
+`scripts/setup_local_env.sh`. Machine load was idle; outputs under
+`/tmp/lidarloc_koide_*` and summarized to
+`artifacts/public/koide_phase1_backend_comparison/comparison_summary.json`.
+
+| backend | max align time | poses | ok-rate | trans RMSE | rot RMSE | longest lost window |
+| --- | --- | --- | --- | --- | --- | --- |
+| NDT_OMP | 0.180 s | 84 | 40.0% | 2.57 m | 4.3 deg | **14.3 s** |
+| SMALL_GICP | 1.03 s | 23 | 33.3% | 5.73 m | 1.0 deg | 23.0 s |
+| SMALL_VGICP | 1.21 s | 23 | 41.1% | **0.067 m** | 1.0 deg | 36.4 s |
+
+This window is harder than the 2026-06 easy-first-60 s table above (lower
+ok-rates, higher NDT RMSE), but the same lesson holds: **read ok-rate and lost
+window before RMSE.** SMALL_VGICP looks best on translation RMSE yet has the
+longest lost window (36 s) and 11 `registration_not_converged` rows; NDT_OMP
+remains the recommended default. The full 380 s ranking in the section above
+is unchanged and is the definitive verdict.
+
+Release regression now includes `scripts/run_koide_phase1_regression.sh`
+(`--skip-koide-phase1` on the release suite when the dataset or idle machine
+is unavailable).
+
 ## Reproduce
+
+Install `small_gicp` into the workspace local prefix, rebuild, then run the harness:
+
+```bash
+source scripts/setup_local_env.sh
+colcon build --packages-select lidar_localization_ros2 \
+  --cmake-force-configure \
+  --cmake-args -DCMAKE_PREFIX_PATH="${LIDAR_LOCALIZATION_WS_ROOT}/local_prefix"
+scripts/run_koide_phase1_backend_comparison.sh
+```
+
+Or run manifests individually:
 
 ```bash
 source scripts/setup_local_env.sh
@@ -135,8 +172,6 @@ python3 scripts/benchmark_from_manifest \
   --manifest param/benchmark/koide_hard_localization_outdoor_hard_01a_smoke60_small_gicp_ds.yaml
 python3 scripts/benchmark_from_manifest \
   --manifest param/benchmark/koide_hard_localization_outdoor_hard_01a_smoke60_small_vgicp_ds.yaml
+python3 scripts/summarize_koide_phase1_backend_comparison.py \
+  --output-json artifacts/public/koide_phase1_backend_comparison/comparison_summary.json
 ```
-
-Run only on an idle machine (`load < ~5`) for valid alignment-time numbers. Read
-`trajectory_eval.json` (RMSE) and `health_summary.json` (`max_alignment_time_sec`,
-`ok_rate_percent`, `message_counts`) from each output dir.

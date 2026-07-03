@@ -7,7 +7,13 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 fi
 
 _lidarloc_repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-_lidarloc_ws_root="${LIDAR_LOCALIZATION_WS_ROOT:-$(cd "${_lidarloc_repo_root}/.." && pwd)}"
+_lidarloc_ws_root_default="$(cd "${_lidarloc_repo_root}/../.." && pwd)"
+if [[ -n "${LIDAR_LOCALIZATION_WS_ROOT:-}" && -f "${LIDAR_LOCALIZATION_WS_ROOT}/install/setup.bash" ]]; then
+  _lidarloc_ws_root="${LIDAR_LOCALIZATION_WS_ROOT}"
+else
+  _lidarloc_ws_root="${_lidarloc_ws_root_default}"
+fi
+unset _lidarloc_ws_root_default
 _lidarloc_prefix="${LIDAR_LOCALIZATION_LOCAL_PREFIX:-${_lidarloc_ws_root}/local_prefix}"
 _lidarloc_overlay="${LIDAR_LOCALIZATION_OVERLAY:-${_lidarloc_ws_root}/build_ws/install/setup.bash}"
 
