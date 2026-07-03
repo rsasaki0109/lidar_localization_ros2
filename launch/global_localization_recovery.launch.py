@@ -167,6 +167,11 @@ def generate_launch_description():
             description='Consecutive post-reset low-fitness observations required '
                         'before recovery is confirmed.'),
         DeclareLaunchArgument(
+            'supervisor_recovery_fitness_threshold', default_value='1.5',
+            description='Post-reset fitness below this confirms recovery. Some map '
+                        'sections score ~1.5-1.7 even when tracking is correct; raise '
+                        'with care (a looser threshold also admits false confirms).'),
+        DeclareLaunchArgument(
             'supervisor_max_walk_candidates', default_value='4',
             description='Walk at most this many candidates from one (possibly stale) '
                         'query before re-querying on a fresher scan; a stale query '
@@ -321,6 +326,9 @@ def generate_launch_description():
                 supervisor_settle_timeout_sec, value_type=float),
             'recovery_confirmation_samples': ParameterValue(
                 supervisor_recovery_confirmation_samples, value_type=int),
+            'recovery_fitness_threshold': ParameterValue(
+                LaunchConfiguration('supervisor_recovery_fitness_threshold'),
+                value_type=float),
             'max_walk_candidates': ParameterValue(
                 supervisor_max_walk_candidates, value_type=int),
             'enable_seed_motion_compensation': ParameterValue(

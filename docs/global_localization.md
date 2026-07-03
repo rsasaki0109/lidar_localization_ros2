@@ -95,7 +95,7 @@ candidate is allowed to be published repeatedly (the Phase 3 lesson). They are:
 | `min_candidate_score` | A reset is never published from a candidate scoring below this (no *unsafe publication*). |
 | `min_seconds_between_attempts` | Two resets are never closer than this. |
 | `request_debounce_sec` | The request must persist this long before the first query (ignores transient blips). |
-| `recovery_fitness_threshold` | After a reset the supervisor waits for `/alignment_status` fitness back under this as *recovery evidence*. |
+| `recovery_fitness_threshold` | After a reset the supervisor waits for `/alignment_status` fitness back under this as *recovery evidence*. Launch arg `supervisor_recovery_fitness_threshold` (default `1.5`). **Do not loosen** on repetitive outdoor maps without GT cross-check: threshold `2.0` on Koide 180 s produced a rubric PASS that ground truth showed was an along-route aliased false confirm (~25–28 m off); see [g3_live_closed_loop.md](g3_live_closed_loop.md) (Koide 180 s boundary characterization, 2026-07-03). |
 | `recovery_confirmation_samples` | The low-fitness recovery evidence must arrive for this many consecutive fresh, stable-tracking diagnostic samples before standing down. |
 | `settle_timeout_sec` | If recovery is not observed within this long, the attempt is counted failed. |
 | `max_attempts` | Hard ceiling on attempts for one continuous problem; it only resets on confirmed recovery or when the request clears — never as a side effect of attempting — then the supervisor **gives up** and surfaces an error for an operator rather than looping. |
@@ -134,3 +134,17 @@ kidnap, play bag, run health rubric):
 Both wrappers write `recovery_health.json` and `regression_result.json` under
 `artifacts/public/<scenario>_g3_recovery_regression` by default and skip gracefully
 when the dataset is absent.
+
+The Koide replay script accepts `--recovery-fitness-threshold X` (default `1.5`), passed
+through as launch arg `supervisor_recovery_fitness_threshold` on
+`global_localization_recovery.launch.py`. Use it only for boundary characterization; the
+default is the intended production value. Example:
+
+```bash
+scripts/run_koide_g3_recovery_replay.sh --skip-prepare --duration-sec 180 --rate 0.4
+scripts/run_koide_g3_recovery_replay.sh --skip-prepare --duration-sec 180 --rate 0.4 \
+  --recovery-fitness-threshold 2.0 --output-dir /tmp/lidarloc_koide_g3_recovery_180s_thr20
+```
+
+The three-node recovery bringup (`ros2 launch ... global_localization_recovery.launch.py`)
+also exposes `supervisor_recovery_fitness_threshold` directly when not using the harness.

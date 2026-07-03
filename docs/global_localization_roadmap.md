@@ -1,6 +1,6 @@
 # Global Localization Roadmap
 
-Last updated: 2026-06-11
+Last updated: 2026-07-03
 
 This document defines how global localization (pose estimation without a user-provided
 initial pose) enters this repository without breaking the claim discipline in
@@ -237,6 +237,29 @@ on; `publish_lidar_tf:=true` because the bag has no `/tf_static`. G2 refined-pos
 poses were up to ~3 m off while NDT refinement was exact) but must stay off for Koide,
 where refinement snaps aliased hypotheses to locally-perfect alignments and collapses
 nearby walk candidates onto one falsely confirmed pose.
+
+**Koide 180 s boundary characterization (2026-07-03).** Two 180 s replays of
+`outdoor_hard_01a` (kidnap at bag 22 s, rate 0.4) with GT comparison against
+`gt/traj_lidar_outdoor_hard_01.txt` characterize the longer outdoor boundary. Full
+write-up in [g3_live_closed_loop.md](g3_live_closed_loop.md).
+
+- At `recovery_fitness_threshold` **1.5** (default), the 180 s window **fails by design**:
+  health rubric FAIL, but containment is safe (two queries, candidate walks, score-floor
+  rejections, cooldowns, no false confirm, bounded resets).
+- Loosening the threshold to **2.0** is **rejected**: the fitness-only rubric PASSed, but
+  ground truth shows a **false confirm** (~25–28 m aliased along the repetitive route).
+- G2/BBS raw fixes were accurate in both runs (**1.1–2.1 m**, **~0.5–1.7 deg** at scan
+  stamps); recovery fails **downstream** — seed staleness under **13–19 s** query latency
+  (5–8 s bag time at rate 0.4, robot ~1.3 m/s) plus untrusted seed motion compensation
+  (baseline: compensation skipped, seeds 5.9–35.0 m stale; thr 2.0: velocity from
+  kidnapped pose history, seeds 14–28 m stale, one aliased confirm at bag ~77 s).
+- Keep threshold at **1.5**; `--recovery-fitness-threshold` stays a characterization knob.
+
+Next steps: (1) sample seed velocity only while tracking is stable and bound its age,
+(2) re-anchor walk candidates with trusted velocity, (3) post-confirm G2 cross-check
+before declaring recovery, (4) optional GT-based confirm validation in the replay rubric,
+(5) reduce G2 query latency. Koide **180 s does not pass** the recovery health rubric at
+the default threshold and must not be described as passing.
 
 ## Non-Goals For Now
 

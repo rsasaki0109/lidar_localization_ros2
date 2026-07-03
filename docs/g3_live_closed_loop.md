@@ -382,3 +382,107 @@ walks on a naturally hard section around bag t≈90–100 s that the supervisor 
 from an earlier aborted run were still alive on the same domain; after `pkill` the same
 replay passed. The replay scripts already `pkill` at start; check
 `pgrep -af lidar_localization` before trusting a surprising failure.
+
+### Koide 180 s boundary characterization (2026-07-03)
+
+The 120 s G3 pass above does not extend to the longer outdoor boundary. Two 180 s replays
+of `outdoor_hard_01a` (kidnap at bag 22 s, rate 0.4) were run with ground-truth
+comparison against `gt/traj_lidar_outdoor_hard_01.txt`. The harness gained
+`--recovery-fitness-threshold` (default `1.5`), which passes launch arg
+`supervisor_recovery_fitness_threshold` to the supervisor's `recovery_fitness_threshold`
+param (`global_localization_recovery.launch.py`). Otherwise the stack matches the
+validated 120 s preset (registration-scored G2, `supervisor_max_walk_candidates` at the
+launch default `4`, seed motion compensation on).
+
+#### Setup
+
+```bash
+scripts/run_koide_g3_recovery_replay.sh --skip-prepare --duration-sec 180 --rate 0.4
+# threshold experiment:
+scripts/run_koide_g3_recovery_replay.sh --skip-prepare --duration-sec 180 --rate 0.4 \
+  --recovery-fitness-threshold 2.0 --output-dir /tmp/lidarloc_koide_g3_recovery_180s_thr20
+```
+
+- Baseline artifacts: `/tmp/lidarloc_koide_g3_recovery_180s`
+- Threshold-2.0 artifacts: `/tmp/lidarloc_koide_g3_recovery_180s_thr20`
+
+#### Baseline (`recovery_fitness_threshold` 1.5)
+
+Health rubric **FAIL** (`ok=false`): no `recovery_confirmed`, no stable recovered request
+window. Containment was safe: two G2 queries, candidate walks, three
+`weak_candidate_rejected` events at the `0.15` score floor, cooldowns between attempts,
+no false confirm, bounded resets. G2/BBS itself was accurate — raw top candidates were
+**1.1–2.1 m** and **~0.5–1.7 deg** from ground truth at their scan stamps (query 1:
+1.1 m). Recovery failed **downstream** of the fix.
+
+**Correction of an earlier baseline read.** A prior interpretation of this window held that
+fitness ~1.5–1.7 in the bag **70–110 s** section indicated correct tracking. Ground-truth
+comparison disproves that: the baseline walk seeds published in that window were **6–35 m**
+off truth (see motion-compensation analysis below), so the localizer was in **aliased
+tracking**, not correct tracking, even while fitness sat in that band.
+
+#### Threshold-2.0 experiment — rubric PASS, ground-truth FALSE POSITIVE
+
+With `--recovery-fitness-threshold 2.0`, the fitness-only health rubric **PASS**ed
+(`ok=true`, `recovery_confirmed_count=1`, `stable_recovered_request_windows=1`,
+`longest_lost_window_sec=26.0`, `false_recovery_confirmed=false`). Ground-truth comparison
+shows this is a **false positive**: the confirmed pose was **~25–28 m** from ground truth
+(aliased along the repetitive outdoor route). The fitness-only rubric cannot detect
+along-route aliasing on this map.
+
+G2/BBS remained accurate: query 2 raw top candidate was **0.4 m** from GT at its scan
+stamp; query 1 raw fix was **1.1 m / 0.5 deg**.
+
+| Event | Bag time (s) | GT error (m) | Notes |
+| --- | --- | --- | --- |
+| Kidnap injected | 22.0 | — | tracking lost, reinit requested |
+| Query 1 scan stamp | 43.2 | 1.1 m, 0.5 deg | raw G2 fix accurate |
+| Walk seed published | 48.7 | 14.0 | motion-compensated, stale |
+| Walk seed published | 56.7 | 11.9 | motion-compensated, stale |
+| Walk seed published | 65.2 | 15.6 | motion-compensated, stale |
+| Walk seed published | 73.2 | 27.8 | motion-compensated, stale |
+| False `recovery_confirmed` | ~77.2 | ~25–28 | 3 fitness samples ≤ 2.0; aliased alignment |
+| Post-confirm "tracking" | ~77–102 | — | fitness 3.4–7.2 for ~25 s |
+| Query 2 scan stamp | 105.8 | 0.4 m | raw G2 fix accurate |
+| Query 2 outcome | — | — | `recovery_unconfirmed` → cooldown |
+| Tail | 150–180 | — | unconfirmable, contained (no further confirms) |
+
+#### Root cause: seed staleness and untrusted motion compensation
+
+Query latency was **13–19 s wall** (= **5–8 s** bag time at rate 0.4). The robot drives
+~**1.3 m/s**, so any uncompensated seed is several metres stale before publish. Both seed
+motion-compensation failure modes appeared:
+
+1. **Baseline (threshold 1.5):** compensation was **skipped** because top-candidate
+   registration fitness was ≤ the `1.0` skip gate, so published walk seeds went
+   **5.9 → 16.5 → 26.0 → 35.0 m** stale as the robot drove away.
+2. **Threshold 2.0:** compensation **fired** but used velocity estimated from the
+   **kidnapped** localizer's pose history (`pose delta 1.29 m/s` in the log — wrong
+   direction and magnitude), pushing four near-perfect raw fixes to **14.0 / 11.9 / 15.6 /
+   27.8 m** error at publish time. The **27.8 m** seed then "confirmed" at bag ~77 s.
+
+The real blocker is therefore **seed staleness under query latency**, compounded by
+motion-compensation velocity that is not trustworthy while tracking is lost — not G2
+candidate generation.
+
+#### Rubric blind spot
+
+A fitness-only confirm gate can pass when the localizer locks onto an along-route alias
+(low fitness at the wrong place on a self-similar map). Koide ships ground truth; the replay
+rubric should optionally cross-check confirmed poses against GT before treating a run as
+recovered.
+
+#### Conclusion
+
+Keep `recovery_fitness_threshold` at **1.5**. Loosening it to **2.0** admits aliased false
+confirms on this map. The `--recovery-fitness-threshold` flag remains a **characterization
+knob only**, not a recommended production setting.
+
+#### Next steps
+
+1. Sample seed velocity only while tracking is stable, and bound its age.
+2. Re-anchor walk candidates with trusted velocity before publish.
+3. Post-confirm cross-check: re-query G2 and compare against the localizer pose before
+   declaring recovery.
+4. Optional GT-based confirm validation in the replay rubric (dataset ships ground truth).
+5. Reduce G2 query latency.

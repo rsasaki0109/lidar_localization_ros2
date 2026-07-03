@@ -189,8 +189,15 @@ sleep 2
 
 pids=()
 cleanup() {
+  # Children are setsid leaders, so kill the whole process group of each; a
+  # plain kill on the leader leaves localizer/G2/supervisor nodes alive to
+  # poison later runs on the same domain.
   for pid in "${pids[@]}"; do
-    kill "${pid}" 2>/dev/null || true
+    kill -TERM -- "-${pid}" 2>/dev/null || kill "${pid}" 2>/dev/null || true
+  done
+  sleep 2
+  for pid in "${pids[@]}"; do
+    kill -KILL -- "-${pid}" 2>/dev/null || true
   done
 }
 trap cleanup EXIT

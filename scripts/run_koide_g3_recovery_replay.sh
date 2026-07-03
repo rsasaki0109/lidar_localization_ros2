@@ -15,6 +15,8 @@ Options:
   --duration-sec N       Bag replay duration. Default: 120.
   --rate X               Bag replay rate. Default: 0.4.
   --ros-domain-id N      ROS domain id. Default: 181.
+  --recovery-fitness-threshold X
+                         Supervisor post-reset confirm threshold. Default: 1.5.
   --skip-prepare         Skip asset regeneration.
   --print-only           Print commands without running.
   -h, --help             Show this help.
@@ -28,6 +30,7 @@ output_dir=""
 duration_sec="120"
 play_rate="0.4"
 ros_domain_id="181"
+recovery_fitness_threshold="1.5"
 skip_prepare=0
 print_only=0
 
@@ -38,6 +41,7 @@ while [[ $# -gt 0 ]]; do
     --duration-sec) shift; duration_sec="$1" ;;
     --rate) shift; play_rate="$1" ;;
     --ros-domain-id) shift; ros_domain_id="$1" ;;
+    --recovery-fitness-threshold) shift; recovery_fitness_threshold="$1" ;;
     --skip-prepare) skip_prepare=1 ;;
     --print-only) print_only=1 ;;
     -h|--help) usage; exit 0 ;;
@@ -112,6 +116,7 @@ launch_cmd=(
   "supervisor_prefer_reset_default_z_m:=true"
   "supervisor_enable_seed_motion_compensation:=true"
   "supervisor_max_seed_speed_mps:=3.0"
+  "supervisor_recovery_fitness_threshold:=${recovery_fitness_threshold}"
   "supervisor_event_log_csv:=${supervisor_events_csv}"
 )
 
@@ -168,8 +173,15 @@ sleep 2
 
 pids=()
 cleanup() {
+  # Children are setsid leaders, so kill the whole process group of each; a
+  # plain kill on the leader leaves localizer/G2/supervisor nodes alive to
+  # poison later runs on the same domain.
   for pid in "${pids[@]}"; do
-    kill "${pid}" 2>/dev/null || true
+    kill -TERM -- "-${pid}" 2>/dev/null || kill "${pid}" 2>/dev/null || true
+  done
+  sleep 2
+  for pid in "${pids[@]}"; do
+    kill -KILL -- "-${pid}" 2>/dev/null || true
   done
 }
 trap cleanup EXIT
