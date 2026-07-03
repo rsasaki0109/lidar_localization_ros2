@@ -87,6 +87,8 @@ def generate_launch_description():
     supervisor_enable_seed_motion = LaunchConfiguration('supervisor_enable_seed_motion_compensation')
     supervisor_max_seed_speed_mps = LaunchConfiguration('supervisor_max_seed_speed_mps')
     supervisor_max_seed_latency_sec = LaunchConfiguration('supervisor_max_seed_latency_sec')
+    supervisor_seed_velocity_max_age_sec = LaunchConfiguration(
+        'supervisor_seed_velocity_max_age_sec')
     supervisor_event_log_csv = LaunchConfiguration('supervisor_event_log_csv')
     supervisor_reset_default_z_m = LaunchConfiguration('supervisor_reset_default_z_m')
     supervisor_prefer_reset_default_z_m = LaunchConfiguration(
@@ -192,6 +194,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'supervisor_max_seed_latency_sec', default_value='30.0',
             description='Clamp seed-motion compensation latency to this many seconds.'),
+        DeclareLaunchArgument(
+            'supervisor_seed_velocity_max_age_sec', default_value='60.0',
+            description='Reject pose-derived seed velocity older than this many seconds; '
+                        'constant-velocity extrapolation decays under cornering.'),
         DeclareLaunchArgument(
             'supervisor_event_log_csv', default_value='',
             description='Optional CSV path for supervisor recovery events.'),
@@ -337,6 +343,8 @@ def generate_launch_description():
                 supervisor_max_seed_speed_mps, value_type=float),
             'max_seed_latency_sec': ParameterValue(
                 supervisor_max_seed_latency_sec, value_type=float),
+            'seed_velocity_max_age_sec': ParameterValue(
+                supervisor_seed_velocity_max_age_sec, value_type=float),
             'reset_default_z_m': ParameterValue(
                 supervisor_reset_default_z_m, value_type=float),
             'prefer_reset_default_z_m': ParameterValue(

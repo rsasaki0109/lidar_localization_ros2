@@ -385,6 +385,19 @@ replay passed. The replay scripts already `pkill` at start; check
 
 ### Koide 180 s boundary characterization (2026-07-03)
 
+> **Superseded (2026-07-04): the kidnap never fired in any archived Koide run.**
+> The bag clock is epoch-stamped (1694532825...), so `trigger_sim_sec:=22.0` fired
+> on the first clock tick, where the not-yet-tracking localizer dropped it —
+> verified by pose traces (error 0.02 m through "kidnap" time) and every archived
+> `kidnap_injector.log` ("injected at sim 1694532825.015"). Every Koide G3 run to
+> date, including the 120 s "validated" scenario and both 180 s runs below, tested
+> recovery from *natural tracking loss* around bag 40–70 s, not a kidnap; and
+> ground-truth pose comparison shows the fitness-confirmed recoveries below were
+> along-route aliases. The harness now uses `trigger_after_first_clock_sec:=22.0`,
+> records `pose_trace.csv`, and fails unless `check_recovery_pose_gt.py` returns a
+> ground-truth-verified recovery. Real-kidnap re-baseline is in progress; the
+> staleness/velocity analysis below remains valid.
+
 The 120 s G3 pass above does not extend to the longer outdoor boundary. Two 180 s replays
 of `outdoor_hard_01a` (kidnap at bag 22 s, rate 0.4) were run with ground-truth
 comparison against `gt/traj_lidar_outdoor_hard_01.txt`. The harness gained

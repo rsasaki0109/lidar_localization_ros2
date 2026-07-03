@@ -158,6 +158,7 @@ install(PROGRAMS
   scripts/global_localization_query.py
   scripts/g2_candidate_registration_rank_policy.py
   scripts/check_koide_recovery_health.py
+  scripts/check_recovery_pose_gt.py
   scripts/inject_koide_kidnap_initialpose.py
   scripts/run_koide_g3_recovery_replay.sh
   scripts/prepare_hdl_recovery_assets.sh

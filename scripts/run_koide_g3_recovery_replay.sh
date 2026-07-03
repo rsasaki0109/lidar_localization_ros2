@@ -17,6 +17,10 @@ Options:
   --ros-domain-id N      ROS domain id. Default: 181.
   --recovery-fitness-threshold X
                          Supervisor post-reset confirm threshold. Default: 1.5.
+  --max-walk-candidates N
+                         Candidates walked per query before re-query. Default: 4.
+                         With g2_nms_radius_m 0.5 the walk candidates are near-
+                         duplicates, so each walk step mostly adds seed staleness.
   --skip-prepare         Skip asset regeneration.
   --print-only           Print commands without running.
   -h, --help             Show this help.
@@ -31,6 +35,7 @@ duration_sec="120"
 play_rate="0.4"
 ros_domain_id="181"
 recovery_fitness_threshold="1.5"
+max_walk_candidates="4"
 skip_prepare=0
 print_only=0
 
@@ -42,6 +47,7 @@ while [[ $# -gt 0 ]]; do
     --rate) shift; play_rate="$1" ;;
     --ros-domain-id) shift; ros_domain_id="$1" ;;
     --recovery-fitness-threshold) shift; recovery_fitness_threshold="$1" ;;
+    --max-walk-candidates) shift; max_walk_candidates="$1" ;;
     --skip-prepare) skip_prepare=1 ;;
     --print-only) print_only=1 ;;
     -h|--help) usage; exit 0 ;;
@@ -80,8 +86,12 @@ supervisor_events_csv="${output_dir}/supervisor_events.csv"
 launch_log="${output_dir}/recovery_launch.log"
 bag_log="${output_dir}/bag_play.log"
 diagnostic_log="${output_dir}/diagnostic_recorder.log"
+pose_trace_csv="${output_dir}/pose_trace.csv"
+pose_log="${output_dir}/pose_recorder.log"
 injector_log="${output_dir}/kidnap_injector.log"
 health_json="${output_dir}/recovery_health.json"
+pose_gt_json="${output_dir}/pose_gt_check.json"
+gt_traj="${data_dir}/gt/traj_lidar_outdoor_hard_01.txt"
 
 for required in "${localization_yaml}" "${occupancy_yaml}" "${map_path}" "${bag_path}/metadata.yaml"; do
   if [[ ! -e "${required}" ]]; then
@@ -117,12 +127,17 @@ launch_cmd=(
   "supervisor_enable_seed_motion_compensation:=true"
   "supervisor_max_seed_speed_mps:=3.0"
   "supervisor_recovery_fitness_threshold:=${recovery_fitness_threshold}"
+  "supervisor_max_walk_candidates:=${max_walk_candidates}"
   "supervisor_event_log_csv:=${supervisor_events_csv}"
 )
 
 injector_cmd=(
   python3 "${script_dir}/inject_koide_kidnap_initialpose.py"
-  --ros-args -p use_sim_time:=true -p trigger_sim_sec:=22.0 -p z:=-11.046818
+  # trigger_after_first_clock_sec, NOT trigger_sim_sec: the bag clock is
+  # epoch-stamped (1694532825...), so an absolute trigger of 22.0 fires on the
+  # first clock tick, where the not-yet-tracking localizer drops it -- every
+  # archived run before 2026-07-03 silently tested natural loss, not a kidnap.
+  --ros-args -p use_sim_time:=true -p trigger_after_first_clock_sec:=22.0 -p z:=-11.046818
 )
 
 recorder_cmd=(
@@ -131,6 +146,17 @@ recorder_cmd=(
   -p use_sim_time:=true
   -p topic:=/alignment_status
   -p "output_path:=${alignment_csv}"
+)
+
+# Pose trace enables ground-truth comparison of confirmed recoveries
+# (gt/traj_lidar_outdoor_hard_01.txt); fitness alone cannot distinguish a
+# genuine recovery from an along-route alias on this map.
+pose_recorder_cmd=(
+  ros2 run lidar_localization_ros2 benchmark_pose_recorder
+  --ros-args
+  -p use_sim_time:=true
+  -p topic:=/pcl_pose
+  -p "output_path:=${pose_trace_csv}"
 )
 
 bag_cmd=(
@@ -146,6 +172,7 @@ if [[ "${print_only}" -eq 1 ]]; then
   printf '%q ' "${launch_cmd[@]}"; echo
   printf '%q ' "${injector_cmd[@]}"; echo
   printf '%q ' "${recorder_cmd[@]}"; echo
+  printf '%q ' "${pose_recorder_cmd[@]}"; echo
   printf '%q ' "${bag_cmd[@]}"; echo
   exit 0
 fi
@@ -192,6 +219,8 @@ sleep 8
 
 setsid stdbuf -oL -eL "${recorder_cmd[@]}" >"${diagnostic_log}" 2>&1 &
 pids+=("$!")
+setsid stdbuf -oL -eL "${pose_recorder_cmd[@]}" >"${pose_log}" 2>&1 &
+pids+=("$!")
 setsid stdbuf -oL -eL "${injector_cmd[@]}" >"${injector_log}" 2>&1 &
 pids+=("$!")
 
@@ -219,6 +248,22 @@ if [[ -f "${supervisor_events_csv}" ]]; then
 else
   echo "No supervisor event log produced." >&2
   health_status=1
+fi
+
+pose_gt_status=0
+if [[ -f "${gt_traj}" && -f "${pose_trace_csv}" ]]; then
+  echo "Pose ground-truth check:"
+  python3 "${script_dir}/check_recovery_pose_gt.py" \
+    --pose-trace "${pose_trace_csv}" \
+    --gt "${gt_traj}" \
+    --output-json "${pose_gt_json}" || pose_gt_status=$?
+  if [[ "${pose_gt_status}" -ne 0 ]]; then
+    health_status="${pose_gt_status}"
+  fi
+elif [[ ! -f "${gt_traj}" ]]; then
+  echo "Skipping pose GT check: ground truth not found at ${gt_traj}"
+else
+  echo "Skipping pose GT check: pose trace not found at ${pose_trace_csv}"
 fi
 
 exit "${health_status}"

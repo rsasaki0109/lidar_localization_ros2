@@ -238,6 +238,17 @@ poses were up to ~3 m off while NDT refinement was exact) but must stay off for 
 where refinement snaps aliased hypotheses to locally-perfect alignments and collapses
 nearby walk candidates onto one falsely confirmed pose.
 
+**Superseded (2026-07-04): no archived Koide G3 run ever kidnapped the localizer.**
+The injector's absolute `trigger_sim_sec:=22.0` fired on the first epoch-stamped
+clock tick and was dropped by the not-yet-tracking localizer, so all Koide G3
+results to date — including the 120 s "validated 3/3" claim and the 180 s entry
+below — actually exercised recovery from natural tracking loss, and their
+fitness-confirmed recoveries were ground-truth-false (along-route aliases; see
+`check_recovery_pose_gt.py` and the superseded note in `g3_live_closed_loop.md`).
+The Koide 120 s scenario must be treated as **unvalidated** until the real-kidnap
+re-baseline passes the new pose-GT gate. HDL results are unaffected (that harness
+already used `trigger_after_first_clock_sec`).
+
 **Koide 180 s boundary characterization (2026-07-03).** Two 180 s replays of
 `outdoor_hard_01a` (kidnap at bag 22 s, rate 0.4) with GT comparison against
 `gt/traj_lidar_outdoor_hard_01.txt` characterize the longer outdoor boundary. Full

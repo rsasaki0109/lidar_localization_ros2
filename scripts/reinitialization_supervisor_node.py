@@ -113,6 +113,7 @@ class ReinitializationSupervisorNode(Node):
         self.declare_parameter("enable_seed_motion_compensation", False)
         self.declare_parameter("max_seed_speed_mps", 30.0)
         self.declare_parameter("max_seed_latency_sec", 30.0)
+        self.declare_parameter("seed_velocity_max_age_sec", 60.0)
         self.declare_parameter("seed_motion_skip_registration_fitness_threshold", 1.0)
         self.declare_parameter("event_log_csv", "")
 
@@ -142,6 +143,8 @@ class ReinitializationSupervisorNode(Node):
             self.get_parameter("enable_seed_motion_compensation").value)
         self.max_seed_speed = float(self.get_parameter("max_seed_speed_mps").value)
         self.max_seed_latency = float(self.get_parameter("max_seed_latency_sec").value)
+        self.seed_velocity_max_age = float(
+            self.get_parameter("seed_velocity_max_age_sec").value)
         self.seed_motion_skip_registration_fitness = float(
             self.get_parameter("seed_motion_skip_registration_fitness_threshold").value)
         event_log_csv = (
@@ -171,7 +174,7 @@ class ReinitializationSupervisorNode(Node):
         self._last_pose_x = None
         self._last_pose_y = None
         self._last_pose_observed_sec = None
-        self._last_pose_velocity = rsp.SeedVelocity()
+        self._seed_velocity_tracker = rsp.TrustedSeedVelocityTracker(self.max_seed_speed)
         self._last_pose_roll = 0.0
         self._last_pose_pitch = 0.0
         # One-shot service reply delivered to the policy once: a tuple of ranked
@@ -191,6 +194,7 @@ class ReinitializationSupervisorNode(Node):
         # candidate of each new query is the representative motion sample.
         self._query_issue_time = None
         self._query_issue_pose = None
+        self._query_issue_pose_trusted = False
         self._query_issue_velocity = rsp.SeedVelocity()
         self._prev_fix = None
         self._current_query_velocity = rsp.SeedVelocity()
@@ -227,9 +231,9 @@ class ReinitializationSupervisorNode(Node):
             "reinitialization supervisor ready (opt-in); guards=%s" % (self.params,))
         self.get_logger().info(
             "seed motion compensation: enabled=%s max_speed_mps=%.2f max_latency_sec=%.2f "
-            "skip_registration_fitness<=%.2f"
+            "velocity_max_age_sec=%.2f skip_registration_fitness<=%.2f"
             % (self.enable_seed_motion, self.max_seed_speed, self.max_seed_latency,
-               self.seed_motion_skip_registration_fitness))
+               self.seed_velocity_max_age, self.seed_motion_skip_registration_fitness))
         if self.prefer_reset_default_z:
             self.get_logger().info(
                 "seed z: using reset_default_z_m=%.3f (prefer_reset_default_z_m=true)"
@@ -269,17 +273,16 @@ class ReinitializationSupervisorNode(Node):
                 pass
             return
 
+    def _pose_velocity_trusted(self) -> bool:
+        return bool(self._stable_tracking) and self.state.name in (
+            rsp.STATE_IDLE, rsp.STATE_STANDDOWN)
+
     def _on_pose(self, msg: PoseWithCovarianceStamped) -> None:
         p = msg.pose.pose
         observed_sec = self._wall_now_sec()
-        if (self._last_pose_x is not None and self._last_pose_y is not None
-                and self._last_pose_observed_sec is not None):
-            self._last_pose_velocity = rsp.estimate_seed_velocity(
-                (self._last_pose_x, self._last_pose_y),
-                self._last_pose_observed_sec,
-                (float(p.position.x), float(p.position.y)),
-                observed_sec,
-                max_speed_mps=self.max_seed_speed)
+        self._seed_velocity_tracker.observe(
+            float(p.position.x), float(p.position.y), observed_sec,
+            self._pose_velocity_trusted())
         self._last_pose_x = float(p.position.x)
         self._last_pose_y = float(p.position.y)
         self._last_pose_z = float(p.position.z)
@@ -397,6 +400,7 @@ class ReinitializationSupervisorNode(Node):
         # The candidate this query returns is a fix of the scan available now, so
         # stamp the issue time for the query->publish latency used in compensation.
         self._query_issue_time = self._wall_now_sec()
+        self._query_issue_pose_trusted = self._pose_velocity_trusted()
         if (self._last_pose_x is not None and self._last_pose_y is not None
                 and self._last_pose_observed_sec is not None
                 and self._query_issue_time - self._last_pose_observed_sec
@@ -405,7 +409,8 @@ class ReinitializationSupervisorNode(Node):
                 self._last_pose_x, self._last_pose_y, self._last_pose_observed_sec)
         else:
             self._query_issue_pose = None
-        self._query_issue_velocity = self._last_pose_velocity
+        self._query_issue_velocity = self._seed_velocity_tracker.velocity_at(
+            self._query_issue_time, self.seed_velocity_max_age)
 
     def _on_query_response(self, future) -> None:
         self._query_in_flight = False
@@ -600,6 +605,10 @@ class ReinitializationSupervisorNode(Node):
         return fallback_issue
 
     def _estimate_pose_delta_since_query_issue(self):
+        if (not self._query_issue_pose_trusted
+                or not self._pose_velocity_trusted()):
+            self._last_seed_motion_status = "pose history untrusted during episode"
+            return self._estimate_pose_delta_from_query_velocity()
         if self._query_issue_pose is None:
             return self._estimate_pose_delta_from_query_velocity()
         if (self._last_pose_x is None or self._last_pose_y is None
@@ -619,7 +628,13 @@ class ReinitializationSupervisorNode(Node):
         return dx, dy, speed, dt
 
     def _estimate_pose_delta_from_query_velocity(self):
-        if not self._query_issue_velocity.valid or self._query_issue_time is None:
+        if self._query_issue_time is None:
+            return None
+        if not self._query_issue_velocity.valid:
+            reason = self._seed_velocity_tracker.velocity_rejection_reason(
+                self._query_issue_time, self.seed_velocity_max_age)
+            if reason is not None:
+                self._last_seed_motion_status = reason
             return None
         latency, _latency_source = self._seed_latency_sec(self._query_issue_time)
         if latency <= 0.0 or latency > self.max_seed_latency:

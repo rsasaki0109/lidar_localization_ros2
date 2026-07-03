@@ -480,6 +480,79 @@ def estimate_seed_velocity(
     return SeedVelocity(vx=vx, vy=vy, valid=True)
 
 
+class TrustedSeedVelocityTracker:
+    """Map-frame velocity from consecutive trusted localizer poses only.
+
+    The Koide 180 s boundary characterization (docs/g3_live_closed_loop.md) showed
+    that extrapolating reset seeds with velocity from the kidnapped localizer's pose
+    history yields wrong direction and magnitude -- turning 1 m-accurate G2 fixes into
+    14-28 m seed errors. Pose-derived velocity is trustworthy only while tracking was
+    stable and no recovery episode was active; during the episode itself the pose
+    stream is exactly what we must not trust.
+
+    Pair history is cleared across untrusted gaps so a later trusted pose never
+    pairs with one from before the gap. The last computed velocity and its timestamp
+    are retained across gaps so a recent pre-episode estimate can still be used
+    within an age bound. Constant-velocity extrapolation decays with time (e.g.
+    cornering), so ``velocity_at`` rejects estimates older than ``max_age_sec``.
+    """
+
+    def __init__(self, max_speed_mps: float, min_pair_dt_sec: float = 0.5) -> None:
+        self._max_speed_mps = max_speed_mps
+        # Poses can arrive faster than min_pair_dt_sec (the estimate_seed_velocity
+        # floor below which a pair is indistinguishable from noise). The anchor is
+        # held until the baseline is long enough; advancing it on every message
+        # would make every pair sub-floor and the tracker permanently invalid.
+        self._min_pair_dt_sec = min_pair_dt_sec
+        self._prev_x: Optional[float] = None
+        self._prev_y: Optional[float] = None
+        self._prev_sec: Optional[float] = None
+        self._prev_trusted = False
+        self._velocity = SeedVelocity()
+        self._velocity_sec: Optional[float] = None
+
+    def observe(self, x: float, y: float, observed_sec: float, trusted: bool) -> None:
+        if trusted:
+            if (self._prev_trusted and self._prev_x is not None
+                    and self._prev_y is not None and self._prev_sec is not None):
+                if observed_sec - self._prev_sec < self._min_pair_dt_sec:
+                    return  # hold the anchor until the baseline is long enough
+                new_velocity = estimate_seed_velocity(
+                    (self._prev_x, self._prev_y), self._prev_sec,
+                    (x, y), observed_sec, self._max_speed_mps,
+                    min_dt_sec=self._min_pair_dt_sec)
+                if new_velocity.valid:
+                    self._velocity = new_velocity
+                    self._velocity_sec = observed_sec
+            self._prev_x = x
+            self._prev_y = y
+            self._prev_sec = observed_sec
+            self._prev_trusted = True
+            return
+        self._prev_x = None
+        self._prev_y = None
+        self._prev_sec = None
+        self._prev_trusted = False
+
+    def velocity_at(self, now_sec: float, max_age_sec: float) -> SeedVelocity:
+        if not self._velocity.valid or self._velocity_sec is None:
+            return SeedVelocity()
+        if now_sec - self._velocity_sec > max_age_sec:
+            return SeedVelocity()
+        return self._velocity
+
+    def velocity_rejection_reason(
+        self, now_sec: float, max_age_sec: float,
+    ) -> Optional[str]:
+        """Human-readable reason ``velocity_at`` would return invalid, or None."""
+        if not self._velocity.valid or self._velocity_sec is None:
+            return "no trusted velocity"
+        age = now_sec - self._velocity_sec
+        if age > max_age_sec:
+            return "stale trusted velocity (age %.1fs > %.1fs)" % (age, max_age_sec)
+        return None
+
+
 def forward_compensate_xy(
     xy: Tuple[float, float],
     velocity: SeedVelocity,

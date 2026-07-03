@@ -510,6 +510,71 @@ def test_forward_compensate_invalid_velocity_is_noop():
     assert (x, y) == (7.0, 3.0)
 
 
+def test_trusted_velocity_tracker_from_two_trusted_samples():
+    tracker = rsp.TrustedSeedVelocityTracker(max_speed_mps=30.0)
+    tracker.observe(0.0, 0.0, 100.0, trusted=True)
+    tracker.observe(10.0, 0.0, 105.0, trusted=True)
+    v = tracker.velocity_at(105.0, max_age_sec=60.0)
+    assert v.valid
+    assert abs(v.vx - 2.0) < 1e-9
+    assert abs(v.vy - 0.0) < 1e-9
+
+
+def test_trusted_velocity_tracker_untrusted_gap_prevents_pairing():
+    tracker = rsp.TrustedSeedVelocityTracker(max_speed_mps=30.0)
+    tracker.observe(0.0, 0.0, 100.0, trusted=True)
+    tracker.observe(10.0, 0.0, 105.0, trusted=True)
+    v_before = tracker.velocity_at(105.0, max_age_sec=60.0)
+    assert v_before.valid
+    assert abs(v_before.vx - 2.0) < 1e-9
+    tracker.observe(20.0, 0.0, 110.0, trusted=False)
+    tracker.observe(100.0, 0.0, 120.0, trusted=True)
+    v_mid = tracker.velocity_at(120.0, max_age_sec=60.0)
+    assert v_mid.valid
+    assert abs(v_mid.vx - v_before.vx) < 1e-9
+    tracker.observe(200.0, 0.0, 121.0, trusted=True)
+    v_after = tracker.velocity_at(121.0, max_age_sec=60.0)
+    assert v_after.valid
+    assert abs(v_after.vx - v_before.vx) < 1e-9
+
+
+def test_trusted_velocity_tracker_rejects_stale_velocity():
+    tracker = rsp.TrustedSeedVelocityTracker(max_speed_mps=30.0)
+    tracker.observe(0.0, 0.0, 100.0, trusted=True)
+    tracker.observe(10.0, 0.0, 105.0, trusted=True)
+    assert tracker.velocity_at(160.0, max_age_sec=60.0).valid
+    assert not tracker.velocity_at(166.0, max_age_sec=60.0).valid
+    reason = tracker.velocity_rejection_reason(166.0, max_age_sec=60.0)
+    assert reason is not None
+    assert "stale trusted velocity" in reason
+
+
+def test_trusted_velocity_tracker_rejects_implausible_speed_update():
+    tracker = rsp.TrustedSeedVelocityTracker(max_speed_mps=5.0)
+    tracker.observe(0.0, 0.0, 100.0, trusted=True)
+    tracker.observe(10.0, 0.0, 105.0, trusted=True)
+    v_good = tracker.velocity_at(105.0, max_age_sec=60.0)
+    assert v_good.valid
+    assert abs(v_good.vx - 2.0) < 1e-9
+    tracker.observe(200.0, 0.0, 107.0, trusted=True)
+    v_after = tracker.velocity_at(107.0, max_age_sec=60.0)
+    assert v_after.valid
+    assert abs(v_after.vx - v_good.vx) < 1e-9
+    assert abs(v_after.vy - v_good.vy) < 1e-9
+
+
 if __name__ == "__main__":
     import pytest
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+def test_trusted_velocity_tracker_high_rate_stream_still_estimates():
+    # Poses arrive faster than the 0.5 s pair floor (e.g. 4 Hz wall in a replay).
+    # The anchor must be held across sub-floor samples -- advancing it every
+    # message would make every pair sub-floor and the tracker permanently invalid.
+    tracker = rsp.TrustedSeedVelocityTracker(max_speed_mps=30.0)
+    for i in range(9):  # 0.25 s apart, 1.0 m/s in +x
+        tracker.observe(0.25 * i, 0.0, 100.0 + 0.25 * i, trusted=True)
+    v = tracker.velocity_at(102.0, max_age_sec=60.0)
+    assert v.valid
+    assert abs(v.vx - 1.0) < 1e-9
+    assert abs(v.vy - 0.0) < 1e-9
