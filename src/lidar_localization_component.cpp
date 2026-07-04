@@ -43,11 +43,6 @@ double stamp_to_sec(const builtin_interfaces::msg::Time & stamp)
   return static_cast<double>(stamp.sec) + static_cast<double>(stamp.nanosec) * 1e-9;
 }
 
-constexpr std::size_t kRegistrationSourceCloudKeepAliveCount =
-  lidar_localization::kDefaultRegistrationSourceCloudKeepAliveCount;
-constexpr std::size_t kRegistrationTargetCloudKeepAliveCount =
-  lidar_localization::kDefaultRegistrationTargetCloudKeepAliveCount;
-
 lidar_localization::PredictionStateSnapshot make_prediction_state_snapshot(
   bool have_last_accepted_pose,
   const Eigen::Matrix4f & last_accepted_pose_matrix,
@@ -156,6 +151,12 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("enable_local_map_crop", false);
   declare_parameter("local_map_radius", 150.0);
   declare_parameter("local_map_min_points", 100);
+  declare_parameter(
+    "registration_source_cloud_keep_alive_count",
+    static_cast<int>(lidar_localization::kDefaultRegistrationSourceCloudKeepAliveCount));
+  declare_parameter(
+    "registration_target_cloud_keep_alive_count",
+    static_cast<int>(lidar_localization::kDefaultRegistrationTargetCloudKeepAliveCount));
   declare_parameter("reject_above_score_threshold", true);
   declare_parameter("enable_consistency_recovery_gate", false);
   declare_parameter("consistency_recovery_min_rejections", 10);
@@ -637,6 +638,40 @@ void PCLLocalization::initializeParameters()
     RCLCPP_WARN(
       get_logger(), "local_map_min_points must be positive; using %zu",
       local_map_min_points_);
+  }
+  int requested_registration_source_cloud_keep_alive_count =
+    static_cast<int>(registration_source_cloud_keep_alive_count_);
+  get_parameter(
+    "registration_source_cloud_keep_alive_count",
+    requested_registration_source_cloud_keep_alive_count);
+  const auto registration_source_cloud_keep_alive_count =
+    lidar_localization::normalizeRegistrationCloudKeepAliveCount(
+    requested_registration_source_cloud_keep_alive_count,
+    lidar_localization::kDefaultRegistrationSourceCloudKeepAliveCount);
+  registration_source_cloud_keep_alive_count_ =
+    registration_source_cloud_keep_alive_count.value;
+  if (registration_source_cloud_keep_alive_count.was_adjusted) {
+    RCLCPP_WARN(
+      get_logger(),
+      "registration_source_cloud_keep_alive_count must be >= 0; using %zu",
+      registration_source_cloud_keep_alive_count_);
+  }
+  int requested_registration_target_cloud_keep_alive_count =
+    static_cast<int>(registration_target_cloud_keep_alive_count_);
+  get_parameter(
+    "registration_target_cloud_keep_alive_count",
+    requested_registration_target_cloud_keep_alive_count);
+  const auto registration_target_cloud_keep_alive_count =
+    lidar_localization::normalizeRegistrationCloudKeepAliveCount(
+    requested_registration_target_cloud_keep_alive_count,
+    lidar_localization::kDefaultRegistrationTargetCloudKeepAliveCount);
+  registration_target_cloud_keep_alive_count_ =
+    registration_target_cloud_keep_alive_count.value;
+  if (registration_target_cloud_keep_alive_count.was_adjusted) {
+    RCLCPP_WARN(
+      get_logger(),
+      "registration_target_cloud_keep_alive_count must be >= 0; using %zu",
+      registration_target_cloud_keep_alive_count_);
   }
   get_parameter("reject_above_score_threshold", measurement_gate_config_.reject_above_score_threshold);
   get_parameter("enable_consistency_recovery_gate", measurement_gate_config_.enable_consistency_recovery_gate);
@@ -1236,12 +1271,12 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
     voxel_grid_filter_.filter(*filtered_cloud_ptr);
     registration_->setInputTarget(filtered_cloud_ptr);
     lidar_localization::keepRegistrationCloudAlive(
-      recent_target_clouds_, filtered_cloud_ptr, kRegistrationTargetCloudKeepAliveCount);
+      recent_target_clouds_, filtered_cloud_ptr, registration_target_cloud_keep_alive_count_);
 
   } else {
     registration_->setInputTarget(map_cloud_ptr);
     lidar_localization::keepRegistrationCloudAlive(
-      recent_target_clouds_, map_cloud_ptr, kRegistrationTargetCloudKeepAliveCount);
+      recent_target_clouds_, map_cloud_ptr, registration_target_cloud_keep_alive_count_);
   }
 
   map_recieved_ = true;
@@ -2240,11 +2275,11 @@ bool PCLLocalization::setInputTargetForPose(const Eigen::Matrix4f & center_pose_
   {
     registration_->setInputTarget(filtered_local_map);
     lidar_localization::keepRegistrationCloudAlive(
-      recent_target_clouds_, filtered_local_map, kRegistrationTargetCloudKeepAliveCount);
+      recent_target_clouds_, filtered_local_map, registration_target_cloud_keep_alive_count_);
   } else {
     registration_->setInputTarget(local_map);
     lidar_localization::keepRegistrationCloudAlive(
-      recent_target_clouds_, local_map, kRegistrationTargetCloudKeepAliveCount);
+      recent_target_clouds_, local_map, registration_target_cloud_keep_alive_count_);
   }
 
   const auto success_decision = lidar_localization::handleLocalMapTargetSuccess();
@@ -2438,7 +2473,7 @@ void PCLLocalization::setRegistrationSourceCloud(
 {
   registration_->setInputSource(source_cloud);
   lidar_localization::keepRegistrationCloudAlive(
-    recent_source_clouds_, source_cloud, kRegistrationSourceCloudKeepAliveCount);
+    recent_source_clouds_, source_cloud, registration_source_cloud_keep_alive_count_);
 }
 
 void PCLLocalization::printAlignmentDebugInfo(
