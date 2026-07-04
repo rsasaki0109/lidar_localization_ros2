@@ -395,7 +395,8 @@ replay passed. The replay scripts already `pkill` at start; check
 > ground-truth pose comparison shows the fitness-confirmed recoveries below were
 > along-route aliases. The harness now uses `trigger_after_first_clock_sec:=22.0`,
 > records `pose_trace.csv`, and fails unless `check_recovery_pose_gt.py` returns a
-> ground-truth-verified recovery. Real-kidnap re-baseline is in progress; the
+> ground-truth-verified recovery. The re-baseline landed the same day — see
+> "Real-kidnap re-baseline (2026-07-04)" at the end of this document; the
 > staleness/velocity analysis below remains valid.
 
 The 120 s G3 pass above does not extend to the longer outdoor boundary. Two 180 s replays
@@ -499,3 +500,95 @@ knob only**, not a recommended production setting.
    declaring recovery.
 4. Optional GT-based confirm validation in the replay rubric (dataset ships ground truth).
 5. Reduce G2 query latency.
+
+All five next steps above were implemented on 2026-07-04; see the re-baseline
+section below for what each one exposed.
+
+### Real-kidnap re-baseline (2026-07-04) — kidnap recovery validated, run gate still red
+
+The re-baseline turned into a defect hunt: getting one honest pass required nine
+fixes across the localizer, the supervisor, and the harness. Every one of them
+was found because the pose-GT gate (`check_recovery_pose_gt.py`) refused a run
+that the fitness rubric had passed.
+
+#### The defect chain
+
+| # | Defect (verified from replay artifacts) | Fix |
+| --- | --- | --- |
+| 1 | `/initialpose` evaporates while scans are being accepted: an in-flight scan seeded from the pre-reset belief is accepted right after the reset and the IMU smoother divergence guard re-anchors to it. Race is bistable — it randomly nullified both kidnap injections and supervisor resets. | Scan admission causality guard (drop scans stamped before the latest initialpose) **and** a seed-generation counter (discard alignment results whose seed predates the newest initialpose — the initialpose callback group runs concurrently with scan alignment). |
+| 2 | Even admitted resets got re-anchored to the old track after a few rejections: the crop-failure guard and retry paths fall back to `last_accepted_pose_`, which `/initialpose` never updated. | `initialPoseReceived` now re-anchors `last_accepted_pose_*` (and rejection counters) to the reset pose — the initialpose is authoritative for every anchor. |
+| 3 | Post-reset death spiral: the smoother re-initializes with velocity 0, so on a moving platform every correct NDT correction exceeds the 2 m `imu_prediction_correction_guard` and is rejected (observed: fitness 1.03–1.33 attempts discarded every scan until divergence). | `imu_prediction_correction_guard_warmup_accepts` (default 5): the guard stands down until N corrections have been accepted after an initialpose. |
+| 4 | Wall-clock seed motion compensation produced garbage three distinct ways: kidnapped-history velocity (14–28 m seeds), corner extrapolation, and drift-onset velocity sampled from the last pre-loss poses (27.7 m extrapolation of a 1 m-accurate fix). | `seed_motion_wall_fallback` default `false`: only the sim-clock fix-to-fix path (two consecutive G2 fixes on bag-stamped scan times) compensates; otherwise the raw fix is published. |
+| 5 | Fitness-only confirm accepts along-corridor aliases (three separate runs confirmed 9–28 m off at both 1.5 and 2.0 thresholds; the corridor at y≈44–57 tracks aliases at fitness 1.4–2.0). | Post-confirm cross-check: after settle-confirm the supervisor issues one more G2 query and compares the fix against the localizer pose at the fix scan stamp; mismatch > `cross_check_mismatch_m` (5 m) resumes the episode. |
+| 6 | The localizer can settle onto an alias, report tracking, and de-assert the reinitialization request — the supervisor stood down and G3 never re-engaged (run ended 64 m off). | Self-clear cross-check: a request de-assert during an episode whose reset never confirmed triggers the same verify query; a detected mismatch sets `alias_confirmed` and the episode proceeds regardless of the request flag. A good fix with **no** pose near its stamp counts as mismatch (a dead track is not "cannot tell"). |
+| 7 | GT rubric blind spot: any qualifying recovered window passed the run, even when it ended lost (an instantly-escaped kidnap provided an early window; the run ended 32 m off and "passed"). | `check_recovery_pose_gt.py` now requires `ends_recovered` (last matched sample within the recovered threshold, or the last window reaching the end of the trace). |
+| 8 | Alias rounds burned the attempt ceiling twice over (reset + mismatch each charged one) and each round re-queried from scratch, adding a full query runtime of staleness. | Mismatch detection no longer charges an attempt; on mismatch the supervisor **reseeds immediately from the verify fix** (`cross_check_reseed`) — the freshest trustworthy fix, which also just refreshed the fix-to-fix velocity. |
+| 9 | Seed staleness dominated seed error: 16 candidates registration-scored single-threaded ran 17–21 wall-s (7–8 bag-s at rate 0.4), landing seeds 2.4–5.8 m off — inside alias capture range. | `g2_max_candidates:=8` in the Koide harness roughly halves the query. A `g2_ndt_num_threads` launch arg exists but **must stay 1**: pclomp NDT_OMP scoring with its default KDTREE neighborhood search is not thread-safe — 4 threads degraded HDL registration fitness from 0.03–0.9 to 5–12 (every fix rejected, robot never recovered) with **no** runtime gain. Revisit only with `setNeighborhoodSearchMethod(DIRECT7)` wired and re-validated. |
+
+The kidnap injector also gained `repeat_count` / `repeat_period_sec` (the Koide
+harness publishes 5× at 1 s) — with fix #1 in place a single publish sticks, but
+the repeats keep the injection deterministic under load.
+
+#### Canonical result (120 s, rate 0.4, kidnap at bag 22 s)
+
+Artifacts: `/tmp/lidarloc_koide_g3_recovery_realkidnap_120_final3`.
+
+- The kidnap now **sticks**: the estimate freezes at the kidnap pose and the
+  localizer requests reinitialization (all archived pre-07-04 runs silently
+  tested natural loss instead — see the superseded note above).
+- Episode: `reset_published` (raw fix, no velocity yet) → `recovery_unconfirmed`
+  → `self_clear_cross_check_query` → `cross_check_reseed` (fresh verify fix,
+  fix-to-fix compensated) → settle confirm → `confirm_cross_check_query` →
+  **`recovery_confirmed`** → `stable_recovered_request_window`. Two resets,
+  ~68 wall-s from first reset to verified confirm.
+- Ground truth: a **26.4 s qualifying recovered window** (161 samples < 1 m).
+  The 150 s variant of the same stack shows the same shape: genuine recovery at
+  bag 90.7–106.9 with **0.03–0.08 m** error, cross-check verified.
+- Fitness rubric: `ok=true`, no false confirms anywhere in the run (the
+  cross-check killed every alias confirm attempt in every run of the day).
+- **Run-to-run variance:** per-attempt alias-vs-truth capture is stochastic. A
+  rerun of the same config burned all `max_attempts` on reseeds that each
+  settle-confirmed on an alias and were each caught by the verify query (zero
+  false confirms, honest exhaustion). The suspected root is that Koide runs with
+  `g2_registration_refine_candidates` off (see the HDL entry for why), so
+  reseeds inherit raw BBS cell quantization (~1.5–3 m) — exactly the alias
+  capture radius. Whether refinement is safe for the *reseed* path now that the
+  cross-check guards confirms is the first question of the next iteration.
+
+#### Why the run-level GT gate is still red
+
+`check_recovery_pose_gt.py` still returns `recovered_false` for the full window:
+after the verified recovery, the localizer loses tracking **again** at the
+corner near (−55, 66) (bag ≈ 96–107; the same corner fragility under load that
+caused the original natural losses), and the robot then enters the north
+stretch (y ≈ 73–75, x ≈ −50…−1) where BBS 2D occupancy matching is genuinely
+ambiguous: fixes land in the south corridor 140–160 m away with scores decaying
+to 0.0. The occupancy grid covers the area (x −138…127, y −139…187) — this is
+matching ambiguity, not missing coverage. G3 behaves correctly there: every
+wrong fix is rejected by the cross-check or the score floor, no false confirm
+is produced, and the run honestly ends lost.
+
+Remaining work, in order of leverage:
+
+1. Localizer corner fragility (second losses at turns; deskew is disabled
+   because the Livox per-point time field spans 0.2–0.3 s against the 0.1 s
+   `scan_period` — worth resolving to survive turns).
+2. BBS ambiguity on the north stretch (route-crop the occupancy prior, or gate
+   BBS candidates with 3D structure).
+3. The per-attempt alias-vs-truth capture with 2–5 m seeds is stochastic;
+   `cross_check_reseed` improved the odds (sub-metre reseeds) but corner-window
+   turns still degrade the fix-to-fix velocity direction.
+4. pclomp NDT_OMP thread safety: wire `setNeighborhoodSearchMethod(DIRECT7)`
+   into `g2_ndt_candidate_score.hpp` before enabling `g2_ndt_num_threads` > 1.
+
+#### HDL re-validation under the new stack (2026-07-04)
+
+The localizer changes apply to every scenario, so the HDL `hdl_400_ros2`
+regression was re-run. First run **failed** — every G2 fix registered at fitness
+5–12 and was score-floor rejected — which A/B-tested down to the (then-default)
+`g2_ndt_num_threads:=4`: multithreaded pclomp scoring, not the localizer changes.
+With threads back at 1 the regression **passes** under the full new stack
+(`/tmp/lidarloc_hdl_g3_regression_thr1`: kidnap sticks, first fix fitness 0.055,
+one reset, `recovery_confirmed`, stable window, `overall_pass=true`). Note the
+HDL kidnap now also genuinely sticks (pre-07-04 passes were exposed to the same
+evaporation race), so this pass is the first fully honest HDL validation.

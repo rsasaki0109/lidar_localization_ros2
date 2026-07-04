@@ -100,6 +100,18 @@ candidate is allowed to be published repeatedly (the Phase 3 lesson). They are:
 | `settle_timeout_sec` | If recovery is not observed within this long, the attempt is counted failed. |
 | `max_attempts` | Hard ceiling on attempts for one continuous problem; it only resets on confirmed recovery or when the request clears — never as a side effect of attempting — then the supervisor **gives up** and surfaces an error for an operator rather than looping. |
 | `query_timeout_sec` | A query that returns nothing within this long is abandoned (counts against `max_attempts`). |
+| `confirm_cross_check` / `cross_check_mismatch_m` | Fitness alone confirms along-corridor aliases on self-similar maps, so after a settle-confirm (and after a localizer *self-cleared* recovery inside an episode whose reset never confirmed) the supervisor issues one more G2 query and compares the fix against the localizer pose at the fix scan stamp. Mismatch above the threshold (default `5.0` m) — or a trustworthy fix with **no** pose near its stamp — resumes the episode (`alias_confirmed` overrides the request flag) and immediately reseeds from the verify fix (`cross_check_reseed`, the freshest fix with fresh fix-to-fix velocity). A weak fix (below `min_candidate_score`) fails open: G2 must not override the localizer with garbage. Launch args `supervisor_confirm_cross_check` (default `true`), `supervisor_cross_check_mismatch_m`. |
+| `seed_motion_wall_fallback` | Wall-clock seed motion compensation (pose-delta / trusted-velocity paths) produced wrong seeds three distinct ways (kidnapped-history velocity, corner extrapolation, drift-onset velocity) and is **off by default**; only the sim-clock fix-to-fix path (two consecutive G2 fixes on bag-stamped scan times) compensates. Launch arg `supervisor_seed_motion_wall_fallback` (default `false`). |
+
+Two related localizer-side guards (component params, not supervisor):
+`imu_prediction_correction_guard_warmup_accepts` (default `5`) stands the IMU
+prediction-correction guard down until N corrections are accepted after an
+`/initialpose` — the smoother re-initializes with velocity 0, so on a moving
+platform the guard would otherwise reject every correct post-reset NDT correction.
+An accepted `/initialpose` is also **authoritative**: scans stamped before it are
+dropped, alignment results seeded before it are discarded (generation counter),
+and every anchor (`last_accepted_pose`, prediction state, smoothers) moves with
+it — otherwise an in-flight scan can silently undo the reset.
 
 After any terminal outcome (recovery or give-up) the supervisor waits for
 `/reinitialization_requested` to de-assert before it will act again, so a request
@@ -108,18 +120,17 @@ line that stays (or is stuck) high cannot re-fire it — it is edge-triggered on
 
 ### Status
 
-G3 logic is complete and tested offline. The Koide live/replay path now exercises
-request -> G2 query -> guarded `/initialpose` publish with immediate localizer
-reset consumption. Follow-up real-bag checks removed the earlier false
-`recovery_confirmed` cases by requiring fresh, consecutive, stable-tracking
-recovery evidence.
-The latest local 120 s Koide run
-(`/tmp/lidarloc_koide_recovery_imu_120_nms05_requery8_stable_20260622_125720`)
-still has `0` stable recovered request windows and `0` false
-`recovery_confirmed` events, so treat this as a guarded publish path, not a
-robust automatic recovery claim.
-Track the remaining candidate freshness/ranking work in
-[global_localization_roadmap.md](global_localization_roadmap.md) (G3 section).
+G3 logic is complete and tested offline, and as of 2026-07-04 the Koide
+real-kidnap recovery is ground-truth-validated end to end: kidnap sticks, one
+reseeded reset chain, `recovery_confirmed` verified by the post-confirm
+cross-check, 26.4 s GT-recovered window (canonical 120 s run). The run-level GT
+gate (`check_recovery_pose_gt.py`, which requires the trace to *end* recovered)
+stays red because of two problems outside G3 — localizer corner fragility and
+BBS ambiguity on the north stretch; no run on 2026-07-04 produced a false
+confirm. Full defect chain and artifacts in
+[g3_live_closed_loop.md](g3_live_closed_loop.md) ("Real-kidnap re-baseline");
+remaining work in [global_localization_roadmap.md](global_localization_roadmap.md)
+(G3 section).
 
 ### Replay harnesses
 

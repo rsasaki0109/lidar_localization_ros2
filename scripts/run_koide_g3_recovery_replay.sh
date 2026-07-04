@@ -120,6 +120,12 @@ launch_cmd=(
   "use_imu_preintegration:=true"
   "imu_preintegration_use_base_frame_transform:=false"
   "g2_use_cpp_backend:=true"
+  # Fix staleness at reset-publish time is the dominant seed error term: 16
+  # candidates scored single-threaded ran 17-21 wall-s (~7-8 bag-s at rate 0.4),
+  # putting seeds 2.4-5.8 m off and into along-corridor alias capture. Scoring 8
+  # candidates roughly halves that. (Do NOT add g2_ndt_num_threads: pclomp
+  # NDT_OMP scoring is not thread-safe with its default KDTREE search.)
+  "g2_max_candidates:=8"
   "g2_nms_radius_m:=0.5"
   "g2_registration_seed_z_m:=-11.046818"
   "supervisor_reset_default_z_m:=-11.046818"
@@ -137,7 +143,10 @@ injector_cmd=(
   # epoch-stamped (1694532825...), so an absolute trigger of 22.0 fires on the
   # first clock tick, where the not-yet-tracking localizer drops it -- every
   # archived run before 2026-07-03 silently tested natural loss, not a kidnap.
+  # Repeated publishes defeat the in-flight-scan race so the kidnap sticks
+  # deterministically.
   --ros-args -p use_sim_time:=true -p trigger_after_first_clock_sec:=22.0 -p z:=-11.046818
+  -p repeat_count:=5 -p repeat_period_sec:=1.0
 )
 
 recorder_cmd=(

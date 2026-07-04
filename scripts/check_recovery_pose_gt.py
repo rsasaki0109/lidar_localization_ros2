@@ -64,6 +64,8 @@ class RecoveryPoseGtSummary:
     longest_recovered_window_sec: float
     last_sample_error_m: Optional[float]
     max_error_after_loss_m: Optional[float]
+    ends_recovered: bool
+    last_window_end_gap_sec: Optional[float]
     error_buckets: Dict[str, int]
 
     @property
@@ -261,10 +263,9 @@ def summarize_recovery_pose_gt(
     errors = compute_pose_errors(pose_samples, ground_truth, max_gt_stamp_delta_sec)
     first_pose_stamp = pose_samples[0].stamp_sec
     first_loss = find_first_loss_sec(errors, loss_threshold_m)
-    last_error = next(
-        (sample.error_m for sample in reversed(errors) if sample.error_m is not None),
-        None,
-    )
+    matched_errors = [sample for sample in errors if sample.error_m is not None]
+    last_matched = matched_errors[-1] if matched_errors else None
+    last_error = last_matched.error_m if last_matched is not None else None
 
     if first_loss is None:
         return RecoveryPoseGtSummary(
@@ -275,6 +276,8 @@ def summarize_recovery_pose_gt(
             longest_recovered_window_sec=0.0,
             last_sample_error_m=last_error,
             max_error_after_loss_m=None,
+            ends_recovered=True,
+            last_window_end_gap_sec=None,
             error_buckets=bucket_errors(errors),
         )
 
@@ -293,14 +296,31 @@ def summarize_recovery_pose_gt(
     max_after_loss = max(after_loss_errors) if after_loss_errors else None
     longest_window = max((window.duration_sec for window in windows), default=0.0)
 
+    last_window_end_gap_sec = None
+    ends_recovered = False
+    if last_matched is not None:
+        ends_recovered = last_matched.error_m <= recovered_threshold_m
+        if windows:
+            last_window = windows[-1]
+            last_window_end_gap_sec = last_matched.stamp_sec - last_window.end_sec
+            if last_window_end_gap_sec <= max_sample_gap_sec:
+                ends_recovered = True
+
+    if windows and ends_recovered:
+        verdict = "recovered_true"
+    else:
+        verdict = "recovered_false"
+
     return RecoveryPoseGtSummary(
-        verdict="recovered_true" if windows else "recovered_false",
+        verdict=verdict,
         first_loss_sec=first_loss,
         first_loss_sec_bag_relative=first_loss - first_pose_stamp,
         qualifying_window_count=len(windows),
         longest_recovered_window_sec=longest_window,
         last_sample_error_m=last_error,
         max_error_after_loss_m=max_after_loss,
+        ends_recovered=ends_recovered,
+        last_window_end_gap_sec=last_window_end_gap_sec,
         error_buckets=bucket_errors(errors),
     )
 
@@ -314,6 +334,8 @@ def summary_to_payload(summary: RecoveryPoseGtSummary) -> Dict[str, object]:
         "longest_recovered_window_sec": summary.longest_recovered_window_sec,
         "last_sample_error_m": summary.last_sample_error_m,
         "max_error_after_loss_m": summary.max_error_after_loss_m,
+        "ends_recovered": summary.ends_recovered,
+        "last_window_end_gap_sec": summary.last_window_end_gap_sec,
         "error_buckets": summary.error_buckets,
     }
 

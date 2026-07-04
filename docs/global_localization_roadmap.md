@@ -246,8 +246,10 @@ below — actually exercised recovery from natural tracking loss, and their
 fitness-confirmed recoveries were ground-truth-false (along-route aliases; see
 `check_recovery_pose_gt.py` and the superseded note in `g3_live_closed_loop.md`).
 The Koide 120 s scenario must be treated as **unvalidated** until the real-kidnap
-re-baseline passes the new pose-GT gate. HDL results are unaffected (that harness
-already used `trigger_after_first_clock_sec`).
+re-baseline passes the new pose-GT gate. HDL used `trigger_after_first_clock_sec`
+so its kidnap *fired* — but the 2026-07-04 initialpose-evaporation findings (a
+kidnap or reset can be raced away by an in-flight scan) mean the HDL passes also
+need re-validation under the fixed localizer; see the re-baseline entry below.
 
 **Koide 180 s boundary characterization (2026-07-03).** Two 180 s replays of
 `outdoor_hard_01a` (kidnap at bag 22 s, rate 0.4) with GT comparison against
@@ -271,6 +273,40 @@ Next steps: (1) sample seed velocity only while tracking is stable and bound its
 before declaring recovery, (4) optional GT-based confirm validation in the replay rubric,
 (5) reduce G2 query latency. Koide **180 s does not pass** the recovery health rubric at
 the default threshold and must not be described as passing.
+
+**Real-kidnap re-baseline (2026-07-04).** All five next steps above were implemented,
+plus a chain of localizer fixes they exposed (full write-up:
+[g3_live_closed_loop.md](g3_live_closed_loop.md), "Real-kidnap re-baseline"):
+`/initialpose` is now authoritative (scan-admission causality guard, seed-generation
+counter, anchor re-set — a kidnap or supervisor reset can no longer be silently raced
+away by an in-flight scan), the IMU correction guard stands down for
+`imu_prediction_correction_guard_warmup_accepts` accepted corrections after a reset,
+wall-clock seed compensation is off by default (`seed_motion_wall_fallback`, sim
+fix-to-fix only), confirms are verified by a post-confirm G2 cross-check
+(`confirm_cross_check` / `cross_check_mismatch_m`) that also covers localizer
+self-cleared recoveries and reseeds immediately from the verify fix on mismatch, the
+GT rubric requires the trace to end recovered (`ends_recovered`), and G2 query
+latency roughly halved by scoring 8 candidates in the Koide harness. (A
+`g2_ndt_num_threads` launch arg exists but must stay 1 until
+`setNeighborhoodSearchMethod(DIRECT7)` is wired: pclomp NDT_OMP scoring is not
+thread-safe with its default KDTREE search — 4 threads silently broke every HDL
+fix.) The HDL regression was re-validated under the full new localizer stack
+(pass, and now with a kidnap that genuinely sticks).
+
+Status: **the Koide kidnap recovery itself is now GT-validated** — canonical 120 s
+run: kidnap sticks at bag 22, one reseeded reset chain, `recovery_confirmed` verified
+by cross-check, 26.4 s ground-truth recovered window (161 samples < 1 m). Recovery
+is not yet deterministic: per-attempt alias capture is stochastic (a rerun exhausted
+the ceiling honestly — every alias confirm caught, zero false confirms), suspected
+root cause raw-BBS-cell seed quantization with refinement off. The
+run-level GT gate stays **red** for the full 120/150 s window because of two problems
+*outside* G3: the localizer loses tracking again at the corner near (−55, 66) (corner
+fragility under load, deskew disabled by the per-point time-field span mismatch), and
+BBS 2D matching is genuinely ambiguous on the north stretch (y≈73–75) — fixes land in
+the south corridor with scores decaying to 0.0. G3 contains both honestly (cross-check
+kills every alias confirm; score floor rejects the garbage): no false confirms in any
+2026-07-04 run. Next levers: localizer corner robustness, then BBS route-crop or
+3D-feature gating for the north stretch.
 
 ## Non-Goals For Now
 

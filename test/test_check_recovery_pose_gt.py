@@ -59,6 +59,7 @@ def test_loss_then_genuine_recovery_window():
         max_sample_gap_sec=5.0,
     )
     assert summary.verdict == "recovered_true"
+    assert summary.ends_recovered is True
     assert summary.qualifying_window_count >= 1
     assert summary.longest_recovered_window_sec >= 15.0
     assert summary.ok
@@ -72,6 +73,30 @@ def test_loss_then_error_stays_high():
     summary = pose_gt.summarize_recovery_pose_gt(poses, gt)
     assert summary.verdict == "recovered_false"
     assert summary.qualifying_window_count == 0
+    assert not summary.ok
+
+
+def test_early_window_then_terminal_loss():
+    poses = [
+        _pose(1000.0, 0.0, 0.0),
+        _pose(1001.0, 10.0, 0.0),
+    ]
+    poses.extend(_pose(1002.0 + i, 0.0, 0.0) for i in range(20))
+    poses.extend(_pose(1022.0 + i, 32.0, 0.0) for i in range(10))
+    gt = [_gt(1000.0 + i, 0.0, 0.0) for i in range(32)]
+    summary = pose_gt.summarize_recovery_pose_gt(
+        poses,
+        gt,
+        loss_threshold_m=5.0,
+        recovered_threshold_m=3.0,
+        min_recovered_window_sec=15.0,
+        max_sample_gap_sec=5.0,
+    )
+    assert summary.verdict == "recovered_false"
+    assert summary.ends_recovered is False
+    assert summary.qualifying_window_count >= 1
+    assert summary.last_window_end_gap_sec is not None
+    assert summary.last_window_end_gap_sec > 5.0
     assert not summary.ok
 
 
@@ -127,6 +152,7 @@ if __name__ == "__main__":
     test_never_lost()
     test_loss_then_genuine_recovery_window()
     test_loss_then_error_stays_high()
+    test_early_window_then_terminal_loss()
     test_gap_breaks_recovered_window()
     test_gt_nearest_stamp_rejection()
     test_cli_json_output()
