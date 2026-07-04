@@ -232,6 +232,35 @@ def _standdown_confirmed(state: SupervisorState) -> SupervisorState:
     )
 
 
+def _reset_to_idle(state: SupervisorState, **overrides) -> SupervisorState:
+    """Exit the episode back to IDLE with every per-episode field cleared.
+
+    Centralized so no exit branch can forget alias_confirmed=False -- a latched
+    flag would make future episodes permanently ignore request de-assertion.
+    """
+    fields = dict(
+        name=STATE_IDLE,
+        attempts=0,
+        recovery_evidence_count=0,
+        last_recovery_fitness_observed_sec=None,
+        alias_confirmed=False,
+    )
+    fields.update(overrides)
+    return replace(state, **fields)
+
+
+def _to_exhausted(state: SupervisorState, **overrides) -> SupervisorState:
+    """Terminal EXHAUSTED state; same clearing rules as the IDLE exit."""
+    fields = dict(
+        name=STATE_EXHAUSTED,
+        recovery_evidence_count=0,
+        last_recovery_fitness_observed_sec=None,
+        alias_confirmed=False,
+    )
+    fields.update(overrides)
+    return replace(state, **fields)
+
+
 def _cooldown(state: SupervisorState, now_sec: float, reason: str) -> SupervisorDecision:
     return SupervisorDecision(
         ACTION_NONE,
@@ -294,15 +323,10 @@ def decide(
         if not requested and not state.alias_confirmed:
             return SupervisorDecision(
                 ACTION_NONE, "request_cleared",
-                replace(
-                    state, name=STATE_IDLE, attempts=0, recovery_evidence_count=0,
-                    last_recovery_fitness_observed_sec=None, alias_confirmed=False))
+                _reset_to_idle(state))
         if state.attempts >= params.max_attempts:
             return SupervisorDecision(
-                ACTION_GIVE_UP, "attempts_exhausted",
-                replace(
-                    state, name=STATE_EXHAUSTED, recovery_evidence_count=0,
-                    last_recovery_fitness_observed_sec=None, alias_confirmed=False))
+                ACTION_GIVE_UP, "attempts_exhausted", _to_exhausted(state))
         # Respect spacing relative to the previous reset, if any.
         if (state.last_reset_sec is not None
                 and now - state.last_reset_sec < params.min_seconds_between_attempts):
@@ -401,10 +425,7 @@ def decide(
             if state.attempts >= params.max_attempts:
                 return SupervisorDecision(
                     ACTION_GIVE_UP, "recovery_failed_exhausted",
-                    replace(state_with_evidence, name=STATE_EXHAUSTED,
-                            recovery_evidence_count=0,
-                            last_recovery_fitness_observed_sec=None,
-                            alias_confirmed=False))
+                    _to_exhausted(state_with_evidence))
             return _cooldown(
                 replace(
                     state_with_evidence,
@@ -441,12 +462,7 @@ def decide(
             if state.attempts >= params.max_attempts:
                 return SupervisorDecision(
                     ACTION_GIVE_UP, "recovery_failed_exhausted",
-                    replace(
-                        cleared,
-                        name=STATE_EXHAUSTED,
-                        recovery_evidence_count=0,
-                        last_recovery_fitness_observed_sec=None,
-                        alias_confirmed=False))
+                    _to_exhausted(cleared))
             if reply_scores and reply_scores[0] >= params.min_candidate_score:
                 # The verify reply is itself the freshest trustworthy fix (and it
                 # just updated the fix-to-fix velocity pair), so reseed from it
@@ -477,10 +493,7 @@ def decide(
             return SupervisorDecision(ACTION_NONE, "cooldown", state)
         if state.attempts >= params.max_attempts:
             return SupervisorDecision(
-                ACTION_GIVE_UP, "attempts_exhausted",
-                replace(
-                    state, name=STATE_EXHAUSTED, recovery_evidence_count=0,
-                    last_recovery_fitness_observed_sec=None, alias_confirmed=False))
+                ACTION_GIVE_UP, "attempts_exhausted", _to_exhausted(state))
         if not requested and not state.alias_confirmed:
             if (params.enable_confirm_cross_check
                     and state.last_reset_sec is not None):
@@ -493,10 +506,7 @@ def decide(
                         candidate_scores=(),
                         candidate_index=0))
             return SupervisorDecision(
-                ACTION_NONE, "request_cleared",
-                replace(
-                    state, name=STATE_IDLE, attempts=0, recovery_evidence_count=0,
-                    last_recovery_fitness_observed_sec=None, alias_confirmed=False))
+                ACTION_NONE, "request_cleared", _reset_to_idle(state))
         return SupervisorDecision(
             ACTION_NONE, "cooldown_elapsed",
             replace(state, name=STATE_AWAIT_QUERY, cooldown_since_sec=None))
@@ -506,11 +516,7 @@ def decide(
         if not requested:
             return SupervisorDecision(
                 ACTION_NONE, "standdown_cleared",
-                replace(
-                    state, name=STATE_IDLE, attempts=0, request_since_sec=None,
-                    recovery_evidence_count=0,
-                    last_recovery_fitness_observed_sec=None,
-                    alias_confirmed=False))
+                _reset_to_idle(state, request_since_sec=None))
         return SupervisorDecision(ACTION_NONE, "standdown", state)
 
     if name == STATE_EXHAUSTED:
@@ -519,10 +525,7 @@ def decide(
         if not requested:
             return SupervisorDecision(
                 ACTION_NONE, "exhausted_cleared",
-                replace(state, name=STATE_IDLE, attempts=0, last_reset_sec=None,
-                        cooldown_since_sec=None, recovery_evidence_count=0,
-                        last_recovery_fitness_observed_sec=None,
-                        alias_confirmed=False))
+                _reset_to_idle(state, last_reset_sec=None, cooldown_since_sec=None))
         return SupervisorDecision(ACTION_NONE, "exhausted", state)
 
     raise ValueError(f"unknown supervisor state: {name!r}")
@@ -686,14 +689,13 @@ def estimate_sim_fix_velocity(
     time, or when the implied speed exceeds ``max_speed_mps`` (an inconsistent
     pair, e.g. one wrong-basin fix).
     """
-    dt = curr_scan_stamp_sec - prev_scan_stamp_sec
-    if dt < min_dt_sec or dt > max_dt_sec:
+    if curr_scan_stamp_sec - prev_scan_stamp_sec > max_dt_sec:
         return SeedVelocity()
-    vx = (curr_xy[0] - prev_xy[0]) / dt
-    vy = (curr_xy[1] - prev_xy[1]) / dt
-    if math.hypot(vx, vy) > max_speed_mps:
-        return SeedVelocity()
-    return SeedVelocity(vx=vx, vy=vy, valid=True)
+    # Same two-fix arithmetic (min-dt and max-speed guards included) as the
+    # wall-clock estimator; only the upper dt bound is specific to this path.
+    return estimate_seed_velocity(
+        prev_xy, prev_scan_stamp_sec, curr_xy, curr_scan_stamp_sec,
+        max_speed_mps=max_speed_mps, min_dt_sec=min_dt_sec)
 
 
 def estimate_pose_delta_from_sim_fix(

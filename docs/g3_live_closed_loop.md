@@ -523,7 +523,7 @@ that the fitness rubric had passed.
 | 6 | The localizer can settle onto an alias, report tracking, and de-assert the reinitialization request — the supervisor stood down and G3 never re-engaged (run ended 64 m off). | Self-clear cross-check: a request de-assert during an episode whose reset never confirmed triggers the same verify query; a detected mismatch sets `alias_confirmed` and the episode proceeds regardless of the request flag. A good fix with **no** pose near its stamp counts as mismatch (a dead track is not "cannot tell"). |
 | 7 | GT rubric blind spot: any qualifying recovered window passed the run, even when it ended lost (an instantly-escaped kidnap provided an early window; the run ended 32 m off and "passed"). | `check_recovery_pose_gt.py` now requires `ends_recovered` (last matched sample within the recovered threshold, or the last window reaching the end of the trace). |
 | 8 | Alias rounds burned the attempt ceiling twice over (reset + mismatch each charged one) and each round re-queried from scratch, adding a full query runtime of staleness. | Mismatch detection no longer charges an attempt; on mismatch the supervisor **reseeds immediately from the verify fix** (`cross_check_reseed`) — the freshest trustworthy fix, which also just refreshed the fix-to-fix velocity. |
-| 9 | Seed staleness dominated seed error: 16 candidates registration-scored single-threaded ran 17–21 wall-s (7–8 bag-s at rate 0.4), landing seeds 2.4–5.8 m off — inside alias capture range. | `g2_max_candidates:=8` in the Koide harness roughly halves the query. A `g2_ndt_num_threads` launch arg exists but **must stay 1**: pclomp NDT_OMP scoring with its default KDTREE neighborhood search is not thread-safe — 4 threads degraded HDL registration fitness from 0.03–0.9 to 5–12 (every fix rejected, robot never recovered) with **no** runtime gain. Revisit only with `setNeighborhoodSearchMethod(DIRECT7)` wired and re-validated. |
+| 9 | Seed staleness dominated seed error: 16 candidates registration-scored single-threaded ran 17–21 wall-s (7–8 bag-s at rate 0.4), landing seeds 2.4–5.8 m off — inside alias capture range. | `g2_max_candidates:=8` in the Koide harness roughly halves the query. G2's `ndt_num_threads` param is deliberately not exposed as a launch arg and stays 1: pclomp NDT_OMP scoring with its default KDTREE neighborhood search is not thread-safe — 4 threads degraded HDL registration fitness from 0.03–0.9 to 5–12 (every fix rejected, robot never recovered) with **no** runtime gain. Revisit only with `setNeighborhoodSearchMethod(DIRECT7)` wired and re-validated. |
 
 The kidnap injector also gained `repeat_count` / `repeat_period_sec` (the Koide
 harness publishes 5× at 1 s) — with fix #1 in place a single publish sticks, but
@@ -579,7 +579,7 @@ Remaining work, in order of leverage:
    `cross_check_reseed` improved the odds (sub-metre reseeds) but corner-window
    turns still degrade the fix-to-fix velocity direction.
 4. pclomp NDT_OMP thread safety: wire `setNeighborhoodSearchMethod(DIRECT7)`
-   into `g2_ndt_candidate_score.hpp` before enabling `g2_ndt_num_threads` > 1.
+   into `g2_ndt_candidate_score.hpp` before exposing `ndt_num_threads` > 1.
 
 #### HDL re-validation under the new stack (2026-07-04)
 

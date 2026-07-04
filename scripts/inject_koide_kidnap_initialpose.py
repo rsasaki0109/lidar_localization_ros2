@@ -36,8 +36,8 @@ class KidnapInitialPoseInjector(Node):
         self.repeat_count = max(1, int(self.get_parameter("repeat_count").value))
         self.repeat_period_sec = float(self.get_parameter("repeat_period_sec").value)
         self.first_clock_sec = None
-        self.triggered = False
         self.publish_count = 0
+        # None until the trigger fires; doubles as the armed/triggered flag.
         self.next_publish_sim_sec = None
         qos = QoSProfile(
             depth=1,
@@ -64,18 +64,17 @@ class KidnapInitialPoseInjector(Node):
         sim_sec = msg.clock.sec + msg.clock.nanosec * 1.0e-9
         if self.first_clock_sec is None:
             self.first_clock_sec = sim_sec
-        if not self.triggered:
+        if self.next_publish_sim_sec is None:
             if self.trigger_after_first_clock_sec >= 0.0:
                 elapsed = sim_sec - self.first_clock_sec
                 if elapsed < self.trigger_after_first_clock_sec:
                     return
             elif sim_sec < self.trigger_sim_sec:
                 return
-            self.triggered = True
             self.next_publish_sim_sec = sim_sec
         if self.publish_count >= self.repeat_count:
             return
-        if self.next_publish_sim_sec is None or sim_sec < self.next_publish_sim_sec:
+        if sim_sec < self.next_publish_sim_sec:
             return
         pose = self._build_pose(msg.clock)
         self.pub.publish(pose)

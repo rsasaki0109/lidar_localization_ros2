@@ -263,8 +263,8 @@ def summarize_recovery_pose_gt(
     errors = compute_pose_errors(pose_samples, ground_truth, max_gt_stamp_delta_sec)
     first_pose_stamp = pose_samples[0].stamp_sec
     first_loss = find_first_loss_sec(errors, loss_threshold_m)
-    matched_errors = [sample for sample in errors if sample.error_m is not None]
-    last_matched = matched_errors[-1] if matched_errors else None
+    last_matched = next(
+        (sample for sample in reversed(errors) if sample.error_m is not None), None)
     last_error = last_matched.error_m if last_matched is not None else None
 
     if first_loss is None:

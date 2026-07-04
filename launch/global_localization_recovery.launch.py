@@ -121,14 +121,6 @@ def generate_launch_description():
             'g2_registration_score_gate', default_value='6.0',
             description='NDT fitness gate used to map registration scores to [0, 1].'),
         DeclareLaunchArgument(
-            'g2_ndt_num_threads', default_value='1',
-            description='Threads for G2 NDT registration scoring. KEEP AT 1: pclomp '
-                        'NDT_OMP with the default KDTREE neighborhood search is not '
-                        'thread-safe -- 4 threads degraded HDL registration fitness '
-                        'from 0.03-0.9 to 5-12 (all fixes rejected) with no runtime '
-                        'gain. Cut query runtime with g2_max_candidates instead; '
-                        'revisit after wiring setNeighborhoodSearchMethod(DIRECT7).'),
-        DeclareLaunchArgument(
             'g2_registration_refine_candidates', default_value='false',
             description='Report the NDT-refined pose of converged candidates instead '
                         'of the raw BBS cell pose. Off by default: on high-aliasing '
@@ -315,8 +307,11 @@ def generate_launch_description():
                 LaunchConfiguration('g2_enable_registration_scoring'), value_type=bool),
             'registration_score_gate': ParameterValue(
                 LaunchConfiguration('g2_registration_score_gate'), value_type=float),
-            'ndt_num_threads': ParameterValue(
-                LaunchConfiguration('g2_ndt_num_threads'), value_type=int),
+            # ndt_num_threads deliberately not exposed: pclomp NDT_OMP scoring
+            # with its default KDTREE neighborhood search is not thread-safe
+            # (4 threads degraded HDL fixes from fitness 0.03-0.9 to 5-12 with
+            # no runtime gain). The node param stays at its safe default of 1;
+            # revisit after wiring setNeighborhoodSearchMethod(DIRECT7).
             'registration_refine_candidates': ParameterValue(
                 LaunchConfiguration('g2_registration_refine_candidates'),
                 value_type=bool),

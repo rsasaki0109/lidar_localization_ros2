@@ -286,11 +286,11 @@ fix-to-fix only), confirms are verified by a post-confirm G2 cross-check
 (`confirm_cross_check` / `cross_check_mismatch_m`) that also covers localizer
 self-cleared recoveries and reseeds immediately from the verify fix on mismatch, the
 GT rubric requires the trace to end recovered (`ends_recovered`), and G2 query
-latency roughly halved by scoring 8 candidates in the Koide harness. (A
-`g2_ndt_num_threads` launch arg exists but must stay 1 until
-`setNeighborhoodSearchMethod(DIRECT7)` is wired: pclomp NDT_OMP scoring is not
-thread-safe with its default KDTREE search — 4 threads silently broke every HDL
-fix.) The HDL regression was re-validated under the full new localizer stack
+latency roughly halved by scoring 8 candidates in the Koide harness. (G2's
+`ndt_num_threads` param is deliberately not exposed as a launch arg and stays 1
+until `setNeighborhoodSearchMethod(DIRECT7)` is wired: pclomp NDT_OMP scoring is
+not thread-safe with its default KDTREE search — 4 threads silently broke every
+HDL fix.) The HDL regression was re-validated under the full new localizer stack
 (pass, and now with a kidnap that genuinely sticks).
 
 Status: **the Koide kidnap recovery itself is now GT-validated** — canonical 120 s
@@ -306,7 +306,9 @@ BBS 2D matching is genuinely ambiguous on the north stretch (y≈73–75) — fi
 the south corridor with scores decaying to 0.0. G3 contains both honestly (cross-check
 kills every alias confirm; score floor rejects the garbage): no false confirms in any
 2026-07-04 run. Next levers: localizer corner robustness, then BBS route-crop or
-3D-feature gating for the north stretch.
+3D-feature gating for the north stretch, and a higher score bar for a verify fix
+to overrule the localizer (a mediocre wrong verify fix exhausted an episode whose
+localizer had genuinely recovered — the trace ended 0.06 m from ground truth).
 
 ## Non-Goals For Now
 

@@ -1164,8 +1164,8 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   {
     std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
     imu_preintegration_fallback_mode_ = false;
-    imu_guard_warmup_accepts_remaining_ =
-      imu_prediction_correction_guard_warmup_accepts_;
+    imu_guard_warmup_accepts_remaining_.store(
+      imu_prediction_correction_guard_warmup_accepts_, std::memory_order_release);
     resetImuPreintegrationSampleCounters();
   }
   reinitialization_request_latched_ = false;
@@ -2384,11 +2384,8 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
 {
   const lidar_localization::AlignmentAttempt primary_attempt =
     runAlignmentAttempt(init_guess, init_guess, scan_stamp_sec);
-  int imu_guard_warmup_accepts_remaining = 0;
-  {
-    std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
-    imu_guard_warmup_accepts_remaining = imu_guard_warmup_accepts_remaining_;
-  }
+  const int imu_guard_warmup_accepts_remaining =
+    imu_guard_warmup_accepts_remaining_.load(std::memory_order_acquire);
   const bool force_retry_from_last_pose =
     seed_source == lidar_localization::RegistrationSeedSource::kImuPreintegration &&
     lidar_localization::isImuPredictionCorrectionGuardTripped(
@@ -2929,7 +2926,7 @@ PCLLocalization::updateImuPreintegrationBackend(
       imu_prediction_ready,
       attempt.correction_translation_m,
       attempt.correction_yaw_deg,
-      imu_guard_warmup_accepts_remaining_});
+      imu_guard_warmup_accepts_remaining_.load(std::memory_order_acquire)});
 
   if (update.state.should_update_smoother) {
     update.updated = imu_smoother_.update(
@@ -2967,9 +2964,10 @@ PCLLocalization::updateImuPreintegrationBackend(
     update.updated = true;
   }
 
-  if (imu_guard_warmup_accepts_remaining_ > 0) {
-    --imu_guard_warmup_accepts_remaining_;
-    if (imu_guard_warmup_accepts_remaining_ == 0) {
+  if (imu_guard_warmup_accepts_remaining_.load(std::memory_order_acquire) > 0) {
+    if (imu_guard_warmup_accepts_remaining_.fetch_sub(
+        1, std::memory_order_acq_rel) == 1)
+    {
       RCLCPP_INFO(get_logger(), "post-reset IMU correction guard warmup complete");
     }
   }

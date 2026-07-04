@@ -210,7 +210,6 @@ class ReinitializationSupervisorNode(Node):
         self._last_sim_stamp_sec = None
         self._prev_sim_fix = None
         self._sim_fix_velocity = rsp.SeedVelocity()
-        self._sim_fix_scan_stamp = None
         self._current_query_velocity = rsp.SeedVelocity()
         self._current_query_pose_delta = None
         self._current_query_issue_time = None
@@ -219,7 +218,7 @@ class ReinitializationSupervisorNode(Node):
         self._last_seed_motion_status = "disabled"
         # Bag-clock pose history for post-confirm cross-check mismatch (pruned in
         # _on_pose). Sim fix-to-fix velocity history is separate and preserved
-        # across episode boundaries by _clear_seed_motion_history.
+        # across episode boundaries by _clear_wall_seed_motion_history.
         self._pose_history = deque()
         self._pending_cross_check_mismatch = None
 
@@ -269,8 +268,12 @@ class ReinitializationSupervisorNode(Node):
         """Wall clock for supervisor policy timing and G2 query latency."""
         return time.monotonic()
 
+    @staticmethod
+    def _stamp_to_sec(stamp) -> float:
+        return float(stamp.sec) + float(stamp.nanosec) * 1e-9
+
     def _update_last_sim_stamp(self, stamp) -> None:
-        sec = float(stamp.sec) + float(stamp.nanosec) * 1e-9
+        sec = self._stamp_to_sec(stamp)
         if self._last_sim_stamp_sec is None or sec > self._last_sim_stamp_sec:
             self._last_sim_stamp_sec = sec
 
@@ -305,7 +308,7 @@ class ReinitializationSupervisorNode(Node):
             rsp.STATE_IDLE, rsp.STATE_STANDDOWN)
 
     def _on_pose(self, msg: PoseWithCovarianceStamped) -> None:
-        sim_stamp_sec = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
+        sim_stamp_sec = self._stamp_to_sec(msg.header.stamp)
         self._update_last_sim_stamp(msg.header.stamp)
         p = msg.pose.pose
         observed_sec = self._wall_now_sec()
@@ -367,7 +370,7 @@ class ReinitializationSupervisorNode(Node):
             "standdown_cleared",
             "exhausted_cleared",
         ):
-            self._clear_seed_motion_history()
+            self._clear_wall_seed_motion_history()
 
         if decision.reason in ("recovery_confirmed", "cross_check_timeout"):
             self._awaiting_stable_window = True
@@ -425,7 +428,7 @@ class ReinitializationSupervisorNode(Node):
             self._stable_window_logged = True
             self._awaiting_stable_window = False
 
-    def _clear_seed_motion_history(self) -> None:
+    def _clear_wall_seed_motion_history(self) -> None:
         # The sim fix-to-fix history is grounded in bag-clock scan stamps from G2
         # fixes and is independent of localizer state, so it must survive
         # request_cleared/episode boundaries; estimate_sim_fix_velocity's max_dt
@@ -437,6 +440,19 @@ class ReinitializationSupervisorNode(Node):
         self._current_query_issue_time = None
         self._current_query_candidate_age_sec = None
         self._current_query_response_sec = None
+
+    def _reset_failed_query_state(self) -> None:
+        """Shared reset for an empty or unparseable query reply.
+
+        The empty tuple in _pending_reply still reaches the policy so the
+        failed attempt is counted. _prev_sim_fix is kept: the next good reply
+        can still pair with the fix from before the failure.
+        """
+        self._candidates = []
+        self._current_query_candidate_age_sec = None
+        self._current_query_response_sec = None
+        self._sim_fix_velocity = rsp.SeedVelocity()
+        self._pending_reply = ()
 
     def _issue_query(self) -> None:
         if not self.query_client.service_is_ready():
@@ -470,12 +486,7 @@ class ReinitializationSupervisorNode(Node):
         if not response.success:
             self.get_logger().info("query returned no candidate: %s" % response.message)
             # Empty reply -> the policy counts a failed attempt.
-            self._candidates = []
-            self._current_query_candidate_age_sec = None
-            self._current_query_response_sec = None
-            self._sim_fix_velocity = rsp.SeedVelocity()
-            self._sim_fix_scan_stamp = None
-            self._pending_reply = ()
+            self._reset_failed_query_state()
             return
         try:
             summary = json.loads(response.message)
@@ -488,12 +499,7 @@ class ReinitializationSupervisorNode(Node):
                 summary.get("candidate_age_sec"))
         except (ValueError, KeyError, TypeError) as exc:
             self.get_logger().warn("could not parse query reply: %s" % exc)
-            self._candidates = []
-            self._current_query_candidate_age_sec = None
-            self._current_query_response_sec = None
-            self._sim_fix_velocity = rsp.SeedVelocity()
-            self._sim_fix_scan_stamp = None
-            self._pending_reply = ()
+            self._reset_failed_query_state()
             return
         self._candidates = candidates
         self._pending_reply = scores
@@ -553,12 +559,10 @@ class ReinitializationSupervisorNode(Node):
     def _update_sim_fix_velocity_from_query(self, candidates, summary) -> None:
         if not candidates:
             self._sim_fix_velocity = rsp.SeedVelocity()
-            self._sim_fix_scan_stamp = None
             return
         scan_stamp_sec = self._parse_nonnegative_float(summary.get("scan_stamp_sec"))
         if scan_stamp_sec is None:
             self._sim_fix_velocity = rsp.SeedVelocity()
-            self._sim_fix_scan_stamp = None
             return
         top = candidates[0]
         raw_x, raw_y = float(top["x"]), float(top["y"])
@@ -570,7 +574,6 @@ class ReinitializationSupervisorNode(Node):
                 (raw_x, raw_y), scan_stamp_sec,
                 max_speed_mps=self.max_seed_speed)
         self._sim_fix_velocity = velocity
-        self._sim_fix_scan_stamp = scan_stamp_sec
         self._prev_sim_fix = (raw_x, raw_y, scan_stamp_sec)
 
     @staticmethod
@@ -665,7 +668,9 @@ class ReinitializationSupervisorNode(Node):
                 return raw_x, raw_y
         if not self.enable_seed_motion:
             return raw_x, raw_y
-        if sim_delta is None and not self.seed_motion_wall_fallback:
+        # sim_delta is always None here: the sim fix-to-fix branch above returns
+        # when it produced a delta.
+        if not self.seed_motion_wall_fallback:
             self._last_seed_motion_status = (
                 "sim velocity unavailable; wall fallback disabled")
             return raw_x, raw_y
@@ -768,11 +773,13 @@ class ReinitializationSupervisorNode(Node):
     def _estimate_pose_delta_sim_fix(self):
         if (not self._sim_fix_velocity.valid
                 or self._last_sim_stamp_sec is None
-                or self._sim_fix_scan_stamp is None):
+                or self._prev_sim_fix is None):
             return None
+        # A valid velocity is always set together with _prev_sim_fix, whose
+        # stamp is the fix the velocity ends at.
         return rsp.estimate_pose_delta_from_sim_fix(
             self._sim_fix_velocity,
-            self._sim_fix_scan_stamp,
+            self._prev_sim_fix[2],
             self._last_sim_stamp_sec,
             self.max_seed_latency)
 

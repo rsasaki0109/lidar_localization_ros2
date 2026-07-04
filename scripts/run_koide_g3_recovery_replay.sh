@@ -123,8 +123,8 @@ launch_cmd=(
   # Fix staleness at reset-publish time is the dominant seed error term: 16
   # candidates scored single-threaded ran 17-21 wall-s (~7-8 bag-s at rate 0.4),
   # putting seeds 2.4-5.8 m off and into along-corridor alias capture. Scoring 8
-  # candidates roughly halves that. (Do NOT add g2_ndt_num_threads: pclomp
-  # NDT_OMP scoring is not thread-safe with its default KDTREE search.)
+  # candidates roughly halves that. (G2's ndt_num_threads param stays 1:
+  # pclomp NDT_OMP scoring is not thread-safe with its default KDTREE search.)
   "g2_max_candidates:=8"
   "g2_nms_radius_m:=0.5"
   "g2_registration_seed_z_m:=-11.046818"

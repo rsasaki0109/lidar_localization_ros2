@@ -196,7 +196,9 @@ public:
   double imu_prediction_correction_guard_translation_m_{2.0};
   double imu_prediction_correction_guard_yaw_deg_{10.0};
   int imu_prediction_correction_guard_warmup_accepts_{5};
-  int imu_guard_warmup_accepts_remaining_{0};
+  // Atomic like initial_pose_generation_: read on the per-scan path without
+  // taking imu_preintegration_mutex_.
+  std::atomic<int> imu_guard_warmup_accepts_remaining_{0};
   ImuGtsamSmoother imu_smoother_;
   double last_imu_stamp_{0.0};
   double last_scan_stamp_for_imu_{0.0};
