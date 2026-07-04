@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <deque>
@@ -155,6 +156,13 @@ public:
 
   bool map_recieved_{false};
   bool initialpose_recieved_{false};
+  double last_initial_pose_stamp_sec_{-1.0};
+  // Incremented on every accepted /initialpose. Scan processing snapshots it at
+  // seed selection and discards its alignment result if it changed by apply
+  // time: /initialpose runs on a dedicated callback group (MultiThreadedExecutor),
+  // so an accepted measurement seeded from the pre-reset belief would otherwise
+  // land after the reset and silently undo it.
+  std::atomic<std::uint64_t> initial_pose_generation_{0};
   pcl::PointCloud<pcl::PointXYZI>::Ptr full_map_cloud_ptr_;
   pcl::PointXYZI map_min_pt_{};
   pcl::PointXYZI map_max_pt_{};
@@ -187,6 +195,8 @@ public:
   double continuous_time_deskew_reference_time_sec_{0.0};
   double imu_prediction_correction_guard_translation_m_{2.0};
   double imu_prediction_correction_guard_yaw_deg_{10.0};
+  int imu_prediction_correction_guard_warmup_accepts_{5};
+  int imu_guard_warmup_accepts_remaining_{0};
   ImuGtsamSmoother imu_smoother_;
   double last_imu_stamp_{0.0};
   double last_scan_stamp_for_imu_{0.0};

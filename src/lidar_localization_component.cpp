@@ -146,6 +146,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("imu_bias_prior_sigma_accel", 0.1);
   declare_parameter("imu_prediction_correction_guard_translation_m", 2.0);
   declare_parameter("imu_prediction_correction_guard_yaw_deg", 10.0);
+  declare_parameter("imu_prediction_correction_guard_warmup_accepts", 5);
   declare_parameter("enable_debug", false);
   declare_parameter("predict_pose_from_previous_delta", true);
   declare_parameter("enable_local_map_crop", false);
@@ -620,6 +621,9 @@ void PCLLocalization::initializeParameters()
     get_parameter(
       "imu_prediction_correction_guard_yaw_deg",
       imu_prediction_correction_guard_yaw_deg_);
+    get_parameter(
+      "imu_prediction_correction_guard_warmup_accepts",
+      imu_prediction_correction_guard_warmup_accepts_);
     imu_smoother_.params_ = imu_params;
     RCLCPP_INFO(get_logger(), "IMU preintegration smoother enabled");
   }
@@ -944,6 +948,9 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "imu_prediction_correction_guard_yaw_deg: %lf",
     imu_prediction_correction_guard_yaw_deg_);
+  RCLCPP_INFO(
+    get_logger(), "imu_prediction_correction_guard_warmup_accepts: %d",
+    imu_prediction_correction_guard_warmup_accepts_);
   RCLCPP_INFO(get_logger(),"enable_timer_publishing: %d", enable_timer_publishing_);
   RCLCPP_INFO(get_logger(),"pose_publish_frequency: %lf", pose_publish_frequency_);
 }
@@ -1151,10 +1158,14 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
       "initial pose accepted before map is ready; scans will wait until map load completes");
   }
   initialpose_recieved_ = true;
+  last_initial_pose_stamp_sec_ = stamp_to_sec(msg->header.stamp);
+  initial_pose_generation_.fetch_add(1, std::memory_order_release);
   corrent_pose_with_cov_stamped_ptr_ = msg;
   {
     std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
     imu_preintegration_fallback_mode_ = false;
+    imu_guard_warmup_accepts_remaining_ =
+      imu_prediction_correction_guard_warmup_accepts_;
     resetImuPreintegrationSampleCounters();
   }
   reinitialization_request_latched_ = false;
@@ -1168,6 +1179,14 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   crop_failure_guard_active_ = false;
   last_crop_out_of_bounds_log_time_ = std::chrono::steady_clock::time_point{};
   last_crop_failure_streak_log_time_ = std::chrono::steady_clock::time_point{};
+  // The initialpose is authoritative for every anchor: if the last-accepted
+  // pose stayed at the pre-reset track, the crop-failure guard and the
+  // retry-from-last-pose path would re-seed alignment there after a few
+  // rejections and silently undo the reset.
+  have_last_accepted_pose_ = true;
+  last_accepted_pose_matrix_ = currentPoseMatrix();
+  last_accepted_pose_time_sec_ = stamp_to_sec(msg->header.stamp);
+  consecutive_rejected_updates_ = 0;
   resetPredictionState(currentPoseMatrix(), stamp_to_sec(msg->header.stamp));
   publishReinitializationRequest(msg->header.stamp, ReinitializationRequestDecision{});
 
@@ -1548,6 +1567,8 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   const pcl::PointCloud<pcl::PointXYZI>::Ptr tmp_ptr = prepared_scan.cloud;
   setRegistrationSourceCloud(tmp_ptr);
 
+  const std::uint64_t seed_generation =
+    initial_pose_generation_.load(std::memory_order_acquire);
   const SelectedRegistrationSeed selected_seed = selectRegistrationSeed(scan_stamp_sec);
   const bool imu_prediction_ready = selected_seed.imu_prediction_ready;
   const std::string registration_seed_source =
@@ -1559,6 +1580,16 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     scan_stamp_sec,
     selected_seed.source,
     imu_prediction_ready);
+
+  if (initial_pose_generation_.load(std::memory_order_acquire) != seed_generation) {
+    // An /initialpose was accepted while this scan was being aligned; the seed
+    // (and therefore the result) belongs to the pre-reset belief, so applying
+    // it would silently undo the reset.
+    RCLCPP_INFO(
+      get_logger(),
+      "discarding alignment result seeded before the latest /initialpose");
+    return;
+  }
 
   logAlignmentPipelineRecovery(pipeline_result);
   if (handleTerminalAlignmentPipelineResult(
@@ -1589,6 +1620,11 @@ bool PCLLocalization::admitScanMessage(
   const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg,
   double * scan_stamp_sec)
 {
+  double current_scan_stamp_sec = 0.0;
+  if (msg) {
+    current_scan_stamp_sec = stamp_to_sec(msg->header.stamp);
+  }
+
   const bool timing_relevant =
     !shutting_down_ && static_cast<bool>(msg) && map_recieved_ && initialpose_recieved_;
   rclcpp::Time now;
@@ -1608,6 +1644,8 @@ bool PCLLocalization::admitScanMessage(
       static_cast<bool>(msg),
       map_recieved_,
       initialpose_recieved_,
+      current_scan_stamp_sec,
+      last_initial_pose_stamp_sec_,
       min_scan_interval_sec_,
       has_last_process_time,
       elapsed_since_last_process_sec,
@@ -1625,8 +1663,14 @@ bool PCLLocalization::admitScanMessage(
     last_cloud_process_time_ = now;
   }
 
+  if (admission.status == lidar_localization::ScanAdmissionStatus::kPredatesInitialPose) {
+    RCLCPP_INFO_THROTTLE(
+      get_logger(), *get_clock(), 2000,
+      "dropping scan stamped %.3f s before the latest initialpose",
+      last_initial_pose_stamp_sec_ - current_scan_stamp_sec);
+  }
+
   if (admission.status == lidar_localization::ScanAdmissionStatus::kCropFailureGuard) {
-    const double current_scan_stamp_sec = stamp_to_sec(msg->header.stamp);
     if (scan_stamp_sec) {
       *scan_stamp_sec = current_scan_stamp_sec;
     }
@@ -1651,7 +1695,7 @@ bool PCLLocalization::admitScanMessage(
   }
 
   if (scan_stamp_sec) {
-    *scan_stamp_sec = stamp_to_sec(msg->header.stamp);
+    *scan_stamp_sec = current_scan_stamp_sec;
   }
   RCLCPP_DEBUG(get_logger(), "cloudReceived");
   return true;
@@ -2340,6 +2384,11 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
 {
   const lidar_localization::AlignmentAttempt primary_attempt =
     runAlignmentAttempt(init_guess, init_guess, scan_stamp_sec);
+  int imu_guard_warmup_accepts_remaining = 0;
+  {
+    std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
+    imu_guard_warmup_accepts_remaining = imu_guard_warmup_accepts_remaining_;
+  }
   const bool force_retry_from_last_pose =
     seed_source == lidar_localization::RegistrationSeedSource::kImuPreintegration &&
     lidar_localization::isImuPredictionCorrectionGuardTripped(
@@ -2348,7 +2397,8 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
         false,
         imu_prediction_ready,
         primary_attempt.correction_translation_m,
-        primary_attempt.correction_yaw_deg});
+        primary_attempt.correction_yaw_deg,
+        imu_guard_warmup_accepts_remaining});
   return lidar_localization::runAlignmentPipeline(
     primary_attempt,
     lidar_localization::AlignmentPipelineInput{
@@ -2878,7 +2928,8 @@ PCLLocalization::updateImuPreintegrationBackend(
       imu_preintegration_fallback_mode_,
       imu_prediction_ready,
       attempt.correction_translation_m,
-      attempt.correction_yaw_deg});
+      attempt.correction_yaw_deg,
+      imu_guard_warmup_accepts_remaining_});
 
   if (update.state.should_update_smoother) {
     update.updated = imu_smoother_.update(
@@ -2914,6 +2965,13 @@ PCLLocalization::updateImuPreintegrationBackend(
   {
     update.pose = observation.pose_matrix;
     update.updated = true;
+  }
+
+  if (imu_guard_warmup_accepts_remaining_ > 0) {
+    --imu_guard_warmup_accepts_remaining_;
+    if (imu_guard_warmup_accepts_remaining_ == 0) {
+      RCLCPP_INFO(get_logger(), "post-reset IMU correction guard warmup complete");
+    }
   }
 
   last_scan_stamp_for_imu_ = stamp_sec;

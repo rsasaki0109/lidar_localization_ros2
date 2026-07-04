@@ -174,6 +174,51 @@ void test_backend_status_overload_uses_backend_state()
   assert(std::string(status.status_message) == "imu_smoother_diverged_imu_reset");
 }
 
+void test_prediction_correction_guard_suspended_during_post_reset_warmup()
+{
+  const auto params = default_params();
+  ll::ImuPredictionCorrectionGuardInput input;
+  input.fallback_mode = false;
+  input.imu_prediction_ready = true;
+  input.correction_translation_m = 12.0;
+  input.correction_yaw_deg = 45.0;
+  input.post_reset_warmup_accepts_remaining = 3;
+  assert(!ll::isImuPredictionCorrectionGuardTripped(params, input));
+
+  input.post_reset_warmup_accepts_remaining = 1;
+  assert(!ll::isImuPredictionCorrectionGuardTripped(params, input));
+}
+
+void test_prediction_correction_guard_resumes_after_warmup()
+{
+  const auto params = default_params();
+  ll::ImuPredictionCorrectionGuardInput input;
+  input.fallback_mode = false;
+  input.imu_prediction_ready = true;
+  input.correction_translation_m = 2.1;
+  input.correction_yaw_deg = 0.0;
+  input.post_reset_warmup_accepts_remaining = 0;
+  assert(ll::isImuPredictionCorrectionGuardTripped(params, input));
+}
+
+void test_backend_state_allows_smoother_during_post_reset_warmup()
+{
+  const auto params = default_params();
+  ll::ImuPredictionCorrectionGuardInput input;
+  input.fallback_mode = false;
+  input.imu_prediction_ready = true;
+  input.correction_translation_m = 12.0;
+  input.correction_yaw_deg = 45.0;
+  input.post_reset_warmup_accepts_remaining = 5;
+
+  const auto state = ll::beginImuPreintegrationBackendState(params, input);
+
+  assert(!state.fallback_mode);
+  assert(!state.state_reset);
+  assert(!state.correction_guard_tripped);
+  assert(state.should_update_smoother);
+}
+
 void test_status_decision_prioritizes_reset_reasons()
 {
   auto status = ll::decideImuPreintegrationStatus(true, true, true);
@@ -203,6 +248,9 @@ int main()
   test_backend_state_skips_smoother_until_prediction_is_ready();
   test_backend_state_resets_without_fallback_on_prediction_guard();
   test_backend_state_resets_without_fallback_on_smoother_divergence();
+  test_prediction_correction_guard_suspended_during_post_reset_warmup();
+  test_prediction_correction_guard_resumes_after_warmup();
+  test_backend_state_allows_smoother_during_post_reset_warmup();
   test_backend_status_overload_uses_backend_state();
   test_status_decision_prioritizes_reset_reasons();
   return 0;

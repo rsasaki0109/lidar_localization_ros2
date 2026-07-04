@@ -101,6 +101,42 @@ void test_ready_scan_is_accepted_and_updates_time()
   assert(decision.should_update_last_process_time);
 }
 
+void test_scan_predating_initial_pose_is_rejected_without_time_update()
+{
+  auto input = ready_input();
+  input.last_initial_pose_stamp_sec = 100.0;
+  input.scan_stamp_sec = 99.9;
+
+  const auto decision = ll::decideScanAdmission(input);
+  assert(!decision.accepted);
+  assert(decision.status == ll::ScanAdmissionStatus::kPredatesInitialPose);
+  assert(decision.should_store_last_scan);
+  assert(!decision.should_update_last_process_time);
+}
+
+void test_scan_at_or_after_initial_pose_stamp_is_accepted()
+{
+  auto input = ready_input();
+  input.last_initial_pose_stamp_sec = 100.0;
+
+  input.scan_stamp_sec = 100.0;
+  assert(ll::decideScanAdmission(input).accepted);
+
+  input.scan_stamp_sec = 100.1;
+  assert(ll::decideScanAdmission(input).accepted);
+}
+
+void test_scan_accepted_when_no_initial_pose_stamp_recorded()
+{
+  auto input = ready_input();
+  input.last_initial_pose_stamp_sec = -1.0;
+  input.scan_stamp_sec = 0.0;
+
+  const auto decision = ll::decideScanAdmission(input);
+  assert(decision.accepted);
+  assert(ll::isScanAdmissionAccepted(decision.status));
+}
+
 int main()
 {
   test_shutdown_and_null_scan_do_not_store_or_update_time();
@@ -108,5 +144,8 @@ int main()
   test_min_scan_interval_throttles_without_time_update();
   test_crop_failure_guard_updates_time_and_only_activates_once();
   test_ready_scan_is_accepted_and_updates_time();
+  test_scan_predating_initial_pose_is_rejected_without_time_update();
+  test_scan_at_or_after_initial_pose_stamp_is_accepted();
+  test_scan_accepted_when_no_initial_pose_stamp_recorded();
   return 0;
 }

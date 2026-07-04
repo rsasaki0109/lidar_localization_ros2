@@ -25,6 +25,7 @@ struct ImuPredictionCorrectionGuardInput
   bool imu_prediction_ready{false};
   double correction_translation_m{0.0};
   double correction_yaw_deg{0.0};
+  int post_reset_warmup_accepts_remaining{0};
 };
 
 struct ImuSmootherDivergenceInput
@@ -54,6 +55,12 @@ inline bool isImuPredictionCorrectionGuardTripped(
   const ImuPredictionCorrectionGuardInput & input)
 {
   if (input.fallback_mode || !input.imu_prediction_ready) {
+    return false;
+  }
+  // Right after an /initialpose reset the smoother velocity is re-initialized to
+  // zero, so the prediction is untrustworthy and the guard would reject correct
+  // large corrections; suspend it until a few corrections have been accepted.
+  if (input.post_reset_warmup_accepts_remaining > 0) {
     return false;
   }
   const bool translation_guard_tripped =

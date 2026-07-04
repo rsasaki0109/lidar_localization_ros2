@@ -10,6 +10,7 @@ enum class ScanAdmissionStatus
   kShuttingDown,
   kNullScan,
   kWaitingForMapOrInitialPose,
+  kPredatesInitialPose,
   kThrottledByMinScanInterval,
   kCropFailureGuard,
 };
@@ -20,6 +21,8 @@ struct ScanAdmissionInput
   bool has_scan_message{false};
   bool map_received{false};
   bool initial_pose_received{false};
+  double scan_stamp_sec{0.0};
+  double last_initial_pose_stamp_sec{-1.0};
   double min_scan_interval_sec{0.0};
   bool has_last_process_time{false};
   double elapsed_since_last_process_sec{0.0};
@@ -66,6 +69,14 @@ inline ScanAdmissionDecision decideScanAdmission(const ScanAdmissionInput & inpu
   }
   if (!input.map_received || !input.initial_pose_received) {
     return rejectScanAdmission(ScanAdmissionStatus::kWaitingForMapOrInitialPose, true);
+  }
+  // An accepted /initialpose is authoritative; a scan stamped before it would re-anchor the
+  // estimate to the pre-reset pose via the accepted-measurement path and undo the reset.
+  if (
+    input.last_initial_pose_stamp_sec >= 0.0 &&
+    input.scan_stamp_sec < input.last_initial_pose_stamp_sec)
+  {
+    return rejectScanAdmission(ScanAdmissionStatus::kPredatesInitialPose, true);
   }
   if (
     input.min_scan_interval_sec > 0.0 &&
