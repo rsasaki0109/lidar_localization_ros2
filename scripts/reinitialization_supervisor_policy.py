@@ -32,7 +32,9 @@ non-self-resetting bounds:
 * after a reset, require *post-reset recovery evidence* (fitness back under
   ``recovery_fitness_threshold`` for ``recovery_confirmation_samples`` consecutive
   observations, and stable-tracking diagnostics when the node provides them,
-  within ``settle_timeout_sec``) before standing down -- and if it never recovers,
+  within ``settle_timeout_sec``) before standing down -- optionally preceded by
+  a second G2 query in ``verifying`` that compares the fresh global fix to the
+  localizer pose and rejects along-corridor alias locks -- and if it never recovers,
   give up after ``max_attempts`` instead of looping (no *false-acceptance loop*);
 * the attempt counter only resets on a confirmed recovery or when the request
   clears, never as a side effect of attempting -- so it is a true ceiling.
@@ -81,10 +83,13 @@ from typing import Optional, Tuple
 
 # Supervisor states. The names mirror the C++ RecoverySupervisorState vocabulary
 # where they overlap so the two halves of the loop read consistently in logs.
+# Flow: idle -> await_query -> await_candidates -> settling -> verifying (optional
+# post-confirm cross-check) -> standdown, with cooldown/exhausted branches.
 STATE_IDLE = "idle"
 STATE_AWAIT_QUERY = "await_query"
 STATE_AWAIT_CANDIDATES = "await_candidates"
 STATE_SETTLING = "settling"
+STATE_VERIFYING = "verifying"
 STATE_COOLDOWN = "cooldown"
 # Terminal-but-recoverable: the loop reached an outcome (recovered, or gave up)
 # and now waits for the request to de-assert before it will act again. This makes
@@ -136,6 +141,12 @@ class SupervisorParams:
     # the walk and spend the time on a new scan instead. Set very high to restore
     # walking the entire list.
     max_walk_candidates: int = 4
+    # After post-reset recovery evidence is met, issue one more G2 query and compare
+    # the fresh global fix to the localizer pose (catches along-corridor alias locks
+    # that pass the fitness gate alone).
+    enable_confirm_cross_check: bool = True
+    # Euclidean xy distance (m) above which the verify query is treated as an alias.
+    cross_check_mismatch_m: float = 5.0
 
 
 @dataclass(frozen=True)
@@ -158,6 +169,9 @@ class SupervisorState:
     candidate_index: int = 0
     recovery_evidence_count: int = 0
     last_recovery_fitness_observed_sec: Optional[float] = None
+    # Set when a cross-check objectively detected the localizer is off; while True
+    # the episode proceeds even if reinitialization_requested is de-asserted.
+    alias_confirmed: bool = False
 
 
 @dataclass(frozen=True)
@@ -182,6 +196,9 @@ class SupervisorObservation:
     # recovery evidence must be both low-fitness and stable tracking, not just a
     # transient low score from a degraded/recovering state.
     stable_tracking: Optional[bool] = None
+    # Distance (m) between the verify query's top raw fix and the localizer pose at
+    # the fix scan stamp; None when the node could not evaluate it.
+    cross_check_mismatch_m: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -196,6 +213,23 @@ class SupervisorDecision:
 
 def initial_state() -> SupervisorState:
     return SupervisorState()
+
+
+def _standdown_confirmed(state: SupervisorState) -> SupervisorState:
+    """Next state after a confirmed recovery (direct or post verify cross-check)."""
+    return replace(
+        state,
+        name=STATE_STANDDOWN,
+        attempts=0,
+        last_reset_sec=None,
+        cooldown_since_sec=None,
+        query_issued_sec=None,
+        candidate_scores=(),
+        candidate_index=0,
+        recovery_evidence_count=0,
+        last_recovery_fitness_observed_sec=None,
+        alias_confirmed=False,
+    )
 
 
 def _cooldown(state: SupervisorState, now_sec: float, reason: str) -> SupervisorDecision:
@@ -257,18 +291,18 @@ def decide(
             ACTION_NONE, "request_armed", replace(state, name=STATE_AWAIT_QUERY))
 
     if name == STATE_AWAIT_QUERY:
-        if not requested:
+        if not requested and not state.alias_confirmed:
             return SupervisorDecision(
                 ACTION_NONE, "request_cleared",
                 replace(
                     state, name=STATE_IDLE, attempts=0, recovery_evidence_count=0,
-                    last_recovery_fitness_observed_sec=None))
+                    last_recovery_fitness_observed_sec=None, alias_confirmed=False))
         if state.attempts >= params.max_attempts:
             return SupervisorDecision(
                 ACTION_GIVE_UP, "attempts_exhausted",
                 replace(
                     state, name=STATE_EXHAUSTED, recovery_evidence_count=0,
-                    last_recovery_fitness_observed_sec=None))
+                    last_recovery_fitness_observed_sec=None, alias_confirmed=False))
         # Respect spacing relative to the previous reset, if any.
         if (state.last_reset_sec is not None
                 and now - state.last_reset_sec < params.min_seconds_between_attempts):
@@ -326,15 +360,24 @@ def decide(
             last_recovery_fitness_observed_sec=last_recovery_fitness_observed_sec)
         recovered = recovery_evidence_count >= recovery_confirmation_samples
         if recovered:
+            if params.enable_confirm_cross_check:
+                # One more G2 query: a fresh global fix that disagrees with the
+                # localizer exposes along-corridor alias locks that pass fitness alone.
+                return SupervisorDecision(
+                    ACTION_QUERY, "confirm_cross_check_query",
+                    replace(
+                        state_with_evidence,
+                        name=STATE_VERIFYING,
+                        query_issued_sec=now,
+                        recovery_evidence_count=0,
+                        last_recovery_fitness_observed_sec=None,
+                        candidate_scores=(),
+                        candidate_index=0))
             # Confirmed recovery: stand down and clear the ceiling, but wait for
             # the request to de-assert before re-arming (edge-triggered next time).
             return SupervisorDecision(
                 ACTION_NONE, "recovery_confirmed",
-                replace(state_with_evidence, name=STATE_STANDDOWN, attempts=0,
-                        last_reset_sec=None, cooldown_since_sec=None,
-                        candidate_scores=(), candidate_index=0,
-                        recovery_evidence_count=0,
-                        last_recovery_fitness_observed_sec=None))
+                _standdown_confirmed(state_with_evidence))
         if (state.last_reset_sec is not None
                 and now - state.last_reset_sec >= params.settle_timeout_sec):
             # This candidate did not take. Walk to the next-best candidate from the
@@ -360,7 +403,8 @@ def decide(
                     ACTION_GIVE_UP, "recovery_failed_exhausted",
                     replace(state_with_evidence, name=STATE_EXHAUSTED,
                             recovery_evidence_count=0,
-                            last_recovery_fitness_observed_sec=None))
+                            last_recovery_fitness_observed_sec=None,
+                            alias_confirmed=False))
             return _cooldown(
                 replace(
                     state_with_evidence,
@@ -371,6 +415,63 @@ def decide(
                 now, "recovery_unconfirmed")
         return SupervisorDecision(ACTION_NONE, "settling", state_with_evidence)
 
+    if name == STATE_VERIFYING:
+        # Complete the cross-check even if the localizer reports tracking again
+        # after a reset -- a false alias can look healthy until the verify reply.
+        reply_scores = _resolve_candidate_scores(obs)
+        if reply_scores is not None:
+            mismatch = obs.cross_check_mismatch_m
+            if (mismatch is None
+                    or mismatch <= params.cross_check_mismatch_m):
+                return SupervisorDecision(
+                    ACTION_NONE, "recovery_confirmed",
+                    _standdown_confirmed(state))
+            # The reset this verify query is checking already paid an attempt at
+            # publish time; the mismatch is only the honest detection of its
+            # failure. Charging it again would halve the effective ceiling
+            # (every alias round would cost 2 of max_attempts).
+            cleared = replace(
+                state,
+                query_issued_sec=None,
+                candidate_scores=(),
+                candidate_index=0,
+                recovery_evidence_count=0,
+                last_recovery_fitness_observed_sec=None,
+            )
+            if state.attempts >= params.max_attempts:
+                return SupervisorDecision(
+                    ACTION_GIVE_UP, "recovery_failed_exhausted",
+                    replace(
+                        cleared,
+                        name=STATE_EXHAUSTED,
+                        recovery_evidence_count=0,
+                        last_recovery_fitness_observed_sec=None,
+                        alias_confirmed=False))
+            if reply_scores and reply_scores[0] >= params.min_candidate_score:
+                # The verify reply is itself the freshest trustworthy fix (and it
+                # just updated the fix-to-fix velocity pair), so reseed from it
+                # immediately: a cooldown + re-query would add a full query
+                # runtime of staleness to the next seed for no information gain.
+                return SupervisorDecision(
+                    ACTION_PUBLISH_RESET, "cross_check_reseed",
+                    replace(
+                        cleared,
+                        name=STATE_SETTLING,
+                        last_reset_sec=now,
+                        attempts=state.attempts + 1,
+                        candidate_scores=tuple(reply_scores),
+                        candidate_index=0,
+                        alias_confirmed=True),
+                    candidate_index=0)
+            return _cooldown(
+                replace(cleared, alias_confirmed=True), now, "cross_check_mismatch")
+        if (state.query_issued_sec is not None
+                and now - state.query_issued_sec >= params.query_timeout_sec):
+            return SupervisorDecision(
+                ACTION_NONE, "cross_check_timeout",
+                _standdown_confirmed(state))
+        return SupervisorDecision(ACTION_NONE, "verifying", state)
+
     if name == STATE_COOLDOWN:
         if state.cooldown_since_sec is not None and now - state.cooldown_since_sec < params.min_seconds_between_attempts:
             return SupervisorDecision(ACTION_NONE, "cooldown", state)
@@ -379,13 +480,23 @@ def decide(
                 ACTION_GIVE_UP, "attempts_exhausted",
                 replace(
                     state, name=STATE_EXHAUSTED, recovery_evidence_count=0,
-                    last_recovery_fitness_observed_sec=None))
-        if not requested:
+                    last_recovery_fitness_observed_sec=None, alias_confirmed=False))
+        if not requested and not state.alias_confirmed:
+            if (params.enable_confirm_cross_check
+                    and state.last_reset_sec is not None):
+                return SupervisorDecision(
+                    ACTION_QUERY, "self_clear_cross_check_query",
+                    replace(
+                        state,
+                        name=STATE_VERIFYING,
+                        query_issued_sec=now,
+                        candidate_scores=(),
+                        candidate_index=0))
             return SupervisorDecision(
                 ACTION_NONE, "request_cleared",
                 replace(
                     state, name=STATE_IDLE, attempts=0, recovery_evidence_count=0,
-                    last_recovery_fitness_observed_sec=None))
+                    last_recovery_fitness_observed_sec=None, alias_confirmed=False))
         return SupervisorDecision(
             ACTION_NONE, "cooldown_elapsed",
             replace(state, name=STATE_AWAIT_QUERY, cooldown_since_sec=None))
@@ -398,7 +509,8 @@ def decide(
                 replace(
                     state, name=STATE_IDLE, attempts=0, request_since_sec=None,
                     recovery_evidence_count=0,
-                    last_recovery_fitness_observed_sec=None))
+                    last_recovery_fitness_observed_sec=None,
+                    alias_confirmed=False))
         return SupervisorDecision(ACTION_NONE, "standdown", state)
 
     if name == STATE_EXHAUSTED:
@@ -409,7 +521,8 @@ def decide(
                 ACTION_NONE, "exhausted_cleared",
                 replace(state, name=STATE_IDLE, attempts=0, last_reset_sec=None,
                         cooldown_since_sec=None, recovery_evidence_count=0,
-                        last_recovery_fitness_observed_sec=None))
+                        last_recovery_fitness_observed_sec=None,
+                        alias_confirmed=False))
         return SupervisorDecision(ACTION_NONE, "exhausted", state)
 
     raise ValueError(f"unknown supervisor state: {name!r}")
@@ -551,6 +664,65 @@ class TrustedSeedVelocityTracker:
         if age > max_age_sec:
             return "stale trusted velocity (age %.1fs > %.1fs)" % (age, max_age_sec)
         return None
+
+
+def estimate_sim_fix_velocity(
+    prev_xy: Tuple[float, float],
+    prev_scan_stamp_sec: float,
+    curr_xy: Tuple[float, float],
+    curr_scan_stamp_sec: float,
+    max_speed_mps: float,
+    min_dt_sec: float = 2.0,
+    max_dt_sec: float = 60.0,
+) -> SeedVelocity:
+    """Map-frame velocity from two consecutive query fixes on the bag clock.
+
+    Real-kidnap Koide replays showed G2 raw fixes are accurate at their scan
+    stamps, but seeds are published many bag-seconds later and land stale.
+    Wall-clock compensation cannot measure post-kidnap velocity (the trusted
+    pose tracker only has pre-kidnap motion), yet two consecutive query fixes on
+    ``scan_stamp_sec`` give the true map-frame velocity on the simulation clock.
+    Returns ``valid=False`` when the pair is too close or too far apart in bag
+    time, or when the implied speed exceeds ``max_speed_mps`` (an inconsistent
+    pair, e.g. one wrong-basin fix).
+    """
+    dt = curr_scan_stamp_sec - prev_scan_stamp_sec
+    if dt < min_dt_sec or dt > max_dt_sec:
+        return SeedVelocity()
+    vx = (curr_xy[0] - prev_xy[0]) / dt
+    vy = (curr_xy[1] - prev_xy[1]) / dt
+    if math.hypot(vx, vy) > max_speed_mps:
+        return SeedVelocity()
+    return SeedVelocity(vx=vx, vy=vy, valid=True)
+
+
+def estimate_pose_delta_from_sim_fix(
+    velocity: SeedVelocity,
+    fix_scan_stamp_sec: float,
+    last_sim_stamp_sec: Optional[float],
+    max_latency_sec: float,
+) -> Optional[Tuple[float, float, float, float]]:
+    """Forward-extrapolate a seed by bag-clock staleness since the latest fix.
+
+    ``last_sim_stamp_sec`` is the most recent bag-clock stamp seen on
+    ``/alignment_status`` or ``/pcl_pose``; ``fix_scan_stamp_sec`` is the scan
+    time of the velocity-bearing query fix. Staleness is clamped to
+    ``[0, max_latency_sec]`` so a pathologically delayed publish cannot
+    extrapolate arbitrarily far. Returns ``(dx, dy, speed, staleness)`` or
+    ``None`` when the velocity or timestamps are unusable.
+    """
+    if not velocity.valid or last_sim_stamp_sec is None:
+        return None
+    staleness = max(0.0, min(last_sim_stamp_sec - fix_scan_stamp_sec, max_latency_sec))
+    if staleness <= 0.0:
+        return None
+    speed = math.hypot(velocity.vx, velocity.vy)
+    return (
+        velocity.vx * staleness,
+        velocity.vy * staleness,
+        speed,
+        staleness,
+    )
 
 
 def forward_compensate_xy(

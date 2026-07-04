@@ -28,6 +28,7 @@ import json
 import math
 import time
 import csv
+from collections import deque
 from pathlib import Path
 
 import rclpy
@@ -103,6 +104,8 @@ class ReinitializationSupervisorNode(Node):
         self.declare_parameter("recovery_fitness_threshold", 1.5)
         self.declare_parameter("recovery_confirmation_samples", 3)
         self.declare_parameter("max_walk_candidates", 4)
+        self.declare_parameter("confirm_cross_check", True)
+        self.declare_parameter("cross_check_mismatch_m", 5.0)
         # Seed motion compensation: forward-extrapolate a candidate by the measured
         # query->publish latency so it lands where the moving vehicle is *now*, not
         # where it was when the (slow) BBS query was issued. Off by default; the
@@ -114,6 +117,7 @@ class ReinitializationSupervisorNode(Node):
         self.declare_parameter("max_seed_speed_mps", 30.0)
         self.declare_parameter("max_seed_latency_sec", 30.0)
         self.declare_parameter("seed_velocity_max_age_sec", 60.0)
+        self.declare_parameter("seed_motion_wall_fallback", False)
         self.declare_parameter("seed_motion_skip_registration_fitness_threshold", 1.0)
         self.declare_parameter("event_log_csv", "")
 
@@ -130,6 +134,10 @@ class ReinitializationSupervisorNode(Node):
             recovery_confirmation_samples=int(
                 self.get_parameter("recovery_confirmation_samples").value),
             max_walk_candidates=int(self.get_parameter("max_walk_candidates").value),
+            enable_confirm_cross_check=bool(
+                self.get_parameter("confirm_cross_check").value),
+            cross_check_mismatch_m=float(
+                self.get_parameter("cross_check_mismatch_m").value),
         )
         self.state = rsp.initial_state()
 
@@ -145,6 +153,8 @@ class ReinitializationSupervisorNode(Node):
         self.max_seed_latency = float(self.get_parameter("max_seed_latency_sec").value)
         self.seed_velocity_max_age = float(
             self.get_parameter("seed_velocity_max_age_sec").value)
+        self.seed_motion_wall_fallback = bool(
+            self.get_parameter("seed_motion_wall_fallback").value)
         self.seed_motion_skip_registration_fitness = float(
             self.get_parameter("seed_motion_skip_registration_fitness_threshold").value)
         event_log_csv = (
@@ -197,12 +207,21 @@ class ReinitializationSupervisorNode(Node):
         self._query_issue_pose_trusted = False
         self._query_issue_velocity = rsp.SeedVelocity()
         self._prev_fix = None
+        self._last_sim_stamp_sec = None
+        self._prev_sim_fix = None
+        self._sim_fix_velocity = rsp.SeedVelocity()
+        self._sim_fix_scan_stamp = None
         self._current_query_velocity = rsp.SeedVelocity()
         self._current_query_pose_delta = None
         self._current_query_issue_time = None
         self._current_query_candidate_age_sec = None
         self._current_query_response_sec = None
         self._last_seed_motion_status = "disabled"
+        # Bag-clock pose history for post-confirm cross-check mismatch (pruned in
+        # _on_pose). Sim fix-to-fix velocity history is separate and preserved
+        # across episode boundaries by _clear_seed_motion_history.
+        self._pose_history = deque()
+        self._pending_cross_check_mismatch = None
 
         reliable = QoSProfile(depth=1)
         reliable.reliability = ReliabilityPolicy.RELIABLE
@@ -231,9 +250,11 @@ class ReinitializationSupervisorNode(Node):
             "reinitialization supervisor ready (opt-in); guards=%s" % (self.params,))
         self.get_logger().info(
             "seed motion compensation: enabled=%s max_speed_mps=%.2f max_latency_sec=%.2f "
-            "velocity_max_age_sec=%.2f skip_registration_fitness<=%.2f"
+            "velocity_max_age_sec=%.2f wall_fallback=%s skip_registration_fitness<=%.2f "
+            "(sim fix-to-fix on bag clock preferred when available)"
             % (self.enable_seed_motion, self.max_seed_speed, self.max_seed_latency,
-               self.seed_velocity_max_age, self.seed_motion_skip_registration_fitness))
+               self.seed_velocity_max_age, self.seed_motion_wall_fallback,
+               self.seed_motion_skip_registration_fitness))
         if self.prefer_reset_default_z:
             self.get_logger().info(
                 "seed z: using reset_default_z_m=%.3f (prefer_reset_default_z_m=true)"
@@ -248,7 +269,13 @@ class ReinitializationSupervisorNode(Node):
         """Wall clock for supervisor policy timing and G2 query latency."""
         return time.monotonic()
 
+    def _update_last_sim_stamp(self, stamp) -> None:
+        sec = float(stamp.sec) + float(stamp.nanosec) * 1e-9
+        if self._last_sim_stamp_sec is None or sec > self._last_sim_stamp_sec:
+            self._last_sim_stamp_sec = sec
+
     def _on_alignment_status(self, msg: DiagnosticArray) -> None:
+        self._update_last_sim_stamp(msg.header.stamp)
         for status in msg.status:
             values = {kv.key: kv.value for kv in status.values}
             if "fitness_score" not in values:
@@ -278,6 +305,8 @@ class ReinitializationSupervisorNode(Node):
             rsp.STATE_IDLE, rsp.STATE_STANDDOWN)
 
     def _on_pose(self, msg: PoseWithCovarianceStamped) -> None:
+        sim_stamp_sec = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
+        self._update_last_sim_stamp(msg.header.stamp)
         p = msg.pose.pose
         observed_sec = self._wall_now_sec()
         self._seed_velocity_tracker.observe(
@@ -289,15 +318,23 @@ class ReinitializationSupervisorNode(Node):
         self._last_pose_observed_sec = observed_sec
         self._last_pose_roll, self._last_pose_pitch = _roll_pitch_from_quat(
             p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w)
+        self._pose_history.append(
+            (sim_stamp_sec, float(p.position.x), float(p.position.y)))
+        while (len(self._pose_history) > 1
+               and self._pose_history[-1][0] - self._pose_history[0][0] > 180.0):
+            self._pose_history.popleft()
 
     # --- main loop -----------------------------------------------------------
 
     def _tick(self) -> None:
         now = self._wall_now_sec()
         candidate_scores = None
+        cross_check_mismatch_m = None
         if self._pending_reply is not None:
             candidate_scores = self._pending_reply
+            cross_check_mismatch_m = self._pending_cross_check_mismatch
             self._pending_reply = None
+            self._pending_cross_check_mismatch = None
         best_fitness = self._fitness
         stable_tracking = self._stable_tracking
         if (self.state.name == rsp.STATE_SETTLING
@@ -318,23 +355,25 @@ class ReinitializationSupervisorNode(Node):
             best_fitness=best_fitness,
             fitness_observed_sec=self._fitness_observed_sec,
             stable_tracking=stable_tracking,
+            cross_check_mismatch_m=cross_check_mismatch_m,
         )
         decision = rsp.decide(self.params, self.state, obs)
         self.state = decision.state
 
         if decision.reason in (
             "recovery_confirmed",
+            "cross_check_timeout",
             "request_cleared",
             "standdown_cleared",
             "exhausted_cleared",
         ):
             self._clear_seed_motion_history()
 
-        if decision.reason == "recovery_confirmed":
+        if decision.reason in ("recovery_confirmed", "cross_check_timeout"):
             self._awaiting_stable_window = True
             self._stable_window_count = 0
             self._stable_window_logged = False
-            self._log_event("recovery_confirmed")
+            self._log_event(decision.reason)
         elif decision.reason in (
             "reset_published",
             "next_candidate",
@@ -344,6 +383,10 @@ class ReinitializationSupervisorNode(Node):
             "weak_candidate_rejected",
             "recovery_unconfirmed",
             "standdown_cleared",
+            "confirm_cross_check_query",
+            "self_clear_cross_check_query",
+            "cross_check_mismatch",
+            "cross_check_reseed",
         ):
             self._log_event(decision.reason)
 
@@ -383,6 +426,11 @@ class ReinitializationSupervisorNode(Node):
             self._awaiting_stable_window = False
 
     def _clear_seed_motion_history(self) -> None:
+        # The sim fix-to-fix history is grounded in bag-clock scan stamps from G2
+        # fixes and is independent of localizer state, so it must survive
+        # request_cleared/episode boundaries; estimate_sim_fix_velocity's max_dt
+        # bound and estimate_pose_delta_from_sim_fix's staleness clamp already
+        # guard against stale reuse.
         self._prev_fix = None
         self._current_query_velocity = rsp.SeedVelocity()
         self._current_query_pose_delta = None
@@ -425,6 +473,8 @@ class ReinitializationSupervisorNode(Node):
             self._candidates = []
             self._current_query_candidate_age_sec = None
             self._current_query_response_sec = None
+            self._sim_fix_velocity = rsp.SeedVelocity()
+            self._sim_fix_scan_stamp = None
             self._pending_reply = ()
             return
         try:
@@ -441,6 +491,8 @@ class ReinitializationSupervisorNode(Node):
             self._candidates = []
             self._current_query_candidate_age_sec = None
             self._current_query_response_sec = None
+            self._sim_fix_velocity = rsp.SeedVelocity()
+            self._sim_fix_scan_stamp = None
             self._pending_reply = ()
             return
         self._candidates = candidates
@@ -449,6 +501,77 @@ class ReinitializationSupervisorNode(Node):
         self._current_query_issue_time = self._query_issue_time
         self._current_query_candidate_age_sec = candidate_age_sec
         self._current_query_response_sec = self._wall_now_sec()
+        self._update_sim_fix_velocity_from_query(candidates, summary)
+        if self.state.name == rsp.STATE_VERIFYING:
+            # The verify fix above also becomes the second sim fix-to-fix sample,
+            # so a later reset after cross_check_mismatch gets motion compensation.
+            self._pending_cross_check_mismatch = self._cross_check_mismatch_m(
+                summary, candidates[0] if candidates else None)
+
+    def _cross_check_mismatch_m(self, summary, top_candidate):
+        if top_candidate is None:
+            return None
+        try:
+            score = float(top_candidate["score"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if score < self.params.min_candidate_score:
+            return None
+        scan_stamp_sec = self._parse_nonnegative_float(summary.get("scan_stamp_sec"))
+        if scan_stamp_sec is None:
+            return None
+        try:
+            fix_x = float(top_candidate["x"])
+            fix_y = float(top_candidate["y"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        nearest = self._nearest_pose_history_entry(scan_stamp_sec, max_delta_sec=2.0)
+        if nearest is None:
+            # A trustworthy fix with NO localizer pose near its scan stamp is not
+            # "cannot tell" -- it means the localizer was rejecting scans (not
+            # tracking) while G2 could still fix the scan. Treat it as an
+            # unbounded mismatch so the cross-check keeps the episode alive
+            # instead of fail-open confirming a dead track.
+            return math.inf
+        _stamp, pose_x, pose_y = nearest
+        return math.hypot(fix_x - pose_x, fix_y - pose_y)
+
+    def _nearest_pose_history_entry(self, stamp_sec, max_delta_sec):
+        if not self._pose_history:
+            return None
+        best = None
+        best_delta = None
+        for entry in self._pose_history:
+            delta = abs(entry[0] - stamp_sec)
+            if best_delta is None or delta < best_delta:
+                best = entry
+                best_delta = delta
+        if best is None or best_delta is None or best_delta > max_delta_sec:
+            return None
+        return best
+
+    def _update_sim_fix_velocity_from_query(self, candidates, summary) -> None:
+        if not candidates:
+            self._sim_fix_velocity = rsp.SeedVelocity()
+            self._sim_fix_scan_stamp = None
+            return
+        scan_stamp_sec = self._parse_nonnegative_float(summary.get("scan_stamp_sec"))
+        if scan_stamp_sec is None:
+            self._sim_fix_velocity = rsp.SeedVelocity()
+            self._sim_fix_scan_stamp = None
+            return
+        top = candidates[0]
+        raw_x, raw_y = float(top["x"]), float(top["y"])
+        velocity = rsp.SeedVelocity()
+        if self._prev_sim_fix is not None:
+            prev_x, prev_y, prev_scan_stamp_sec = self._prev_sim_fix
+            velocity = rsp.estimate_sim_fix_velocity(
+                (prev_x, prev_y), prev_scan_stamp_sec,
+                (raw_x, raw_y), scan_stamp_sec,
+                max_speed_mps=self.max_seed_speed)
+        self._sim_fix_velocity = velocity
+        self._sim_fix_scan_stamp = scan_stamp_sec
+        self._prev_sim_fix = (raw_x, raw_y, scan_stamp_sec)
 
     @staticmethod
     def _parse_nonnegative_float(value):
@@ -521,6 +644,17 @@ class ReinitializationSupervisorNode(Node):
         """
         issue = self._query_issue_time
         self._last_seed_motion_status = "disabled"
+        sim_delta = None
+        if self.enable_seed_motion:
+            sim_delta = self._estimate_pose_delta_sim_fix()
+            if sim_delta is not None:
+                dx, dy, speed, staleness = sim_delta
+                self._last_seed_motion_status = (
+                    "sim fix-to-fix %.2fm/s, staleness %.2fs" % (speed, staleness))
+                return raw_x + dx, raw_y + dy
+        # Staleness is real regardless of how well the candidate registered at its
+        # scan stamp; the skip gate below applies only to wall-clock paths whose
+        # velocity is less trustworthy.
         if candidate_index < len(self._candidates):
             reg_fit = self._candidates[candidate_index].get("registration_fitness")
             if (reg_fit is not None
@@ -530,6 +664,10 @@ class ReinitializationSupervisorNode(Node):
                     % (float(reg_fit), self.seed_motion_skip_registration_fitness))
                 return raw_x, raw_y
         if not self.enable_seed_motion:
+            return raw_x, raw_y
+        if sim_delta is None and not self.seed_motion_wall_fallback:
+            self._last_seed_motion_status = (
+                "sim velocity unavailable; wall fallback disabled")
             return raw_x, raw_y
         if issue is None:
             self._last_seed_motion_status = "no query issue time"
@@ -626,6 +764,17 @@ class ReinitializationSupervisorNode(Node):
                 "invalid pose-delta velocity %.2fm/s over %.2fs" % (speed, dt))
             return None
         return dx, dy, speed, dt
+
+    def _estimate_pose_delta_sim_fix(self):
+        if (not self._sim_fix_velocity.valid
+                or self._last_sim_stamp_sec is None
+                or self._sim_fix_scan_stamp is None):
+            return None
+        return rsp.estimate_pose_delta_from_sim_fix(
+            self._sim_fix_velocity,
+            self._sim_fix_scan_stamp,
+            self._last_sim_stamp_sec,
+            self.max_seed_latency)
 
     def _estimate_pose_delta_from_query_velocity(self):
         if self._query_issue_time is None:

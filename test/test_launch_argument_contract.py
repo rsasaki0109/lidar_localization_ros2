@@ -188,6 +188,8 @@ class TestLaunchArgumentContract(unittest.TestCase):
             "use_continuous_time_deskew",
             "continuous_time_deskew_reference_time_sec",
             "supervisor_recovery_confirmation_samples",
+            "supervisor_confirm_cross_check",
+            "supervisor_cross_check_mismatch_m",
             "supervisor_max_seed_speed_mps",
             "supervisor_max_seed_latency_sec",
             "g2_nms_radius_m",

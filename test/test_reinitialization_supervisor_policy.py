@@ -92,7 +92,8 @@ def test_no_request_is_pure_tracking():
 
 def test_sustained_request_strong_candidate_publishes_once_then_recovers():
     params = rsp.SupervisorParams(
-        request_debounce_sec=1.0, min_candidate_score=0.6, recovery_fitness_threshold=1.5)
+        request_debounce_sec=1.0, min_candidate_score=0.6,
+        recovery_fitness_threshold=1.5, enable_confirm_cross_check=False)
 
     # Fitness is bad until a reset lands, then recovers a couple ticks later.
     def fitness(now, last_reset_sec):
@@ -121,6 +122,7 @@ def test_recovery_confirmation_requires_consecutive_low_fitness():
         recovery_confirmation_samples=3,
         settle_timeout_sec=8.0,
         max_attempts=1,
+        enable_confirm_cross_check=False,
     )
 
     # One transient low-fitness sample is followed by a bad sample, then the pose
@@ -146,6 +148,7 @@ def test_recovery_confirmation_does_not_double_count_same_fitness_sample():
         recovery_fitness_threshold=1.5,
         recovery_confirmation_samples=2,
         settle_timeout_sec=10.0,
+        enable_confirm_cross_check=False,
     )
     state = rsp.SupervisorState(
         name=rsp.STATE_SETTLING,
@@ -187,6 +190,7 @@ def test_recovery_confirmation_requires_stable_tracking_when_available():
         recovery_fitness_threshold=1.5,
         recovery_confirmation_samples=2,
         settle_timeout_sec=10.0,
+        enable_confirm_cross_check=False,
     )
     state = rsp.SupervisorState(
         name=rsp.STATE_SETTLING,
@@ -271,7 +275,8 @@ def test_resets_respect_minimum_spacing():
 def test_recovery_resets_attempt_budget_for_a_later_problem():
     params = rsp.SupervisorParams(
         request_debounce_sec=1.0, max_attempts=3, min_seconds_between_attempts=3.0,
-        settle_timeout_sec=5.0, recovery_fitness_threshold=1.5)
+        settle_timeout_sec=5.0, recovery_fitness_threshold=1.5,
+        enable_confirm_cross_check=False)
 
     # Two separate problem episodes separated by a healthy stretch.
     def requested(now):
@@ -377,7 +382,8 @@ def test_walk_recovers_on_lower_ranked_candidate_within_one_query():
     # does not spend attempts, so the ceiling is never hit.
     params = rsp.SupervisorParams(
         request_debounce_sec=1.0, min_candidate_score=0.6, settle_timeout_sec=3.0,
-        max_attempts=1, recovery_fitness_threshold=1.5)
+        max_attempts=1, recovery_fitness_threshold=1.5,
+        enable_confirm_cross_check=False)
     events = run_ranked(
         params, 60, requested=True,
         candidate_scores=[0.99, 0.98, 0.97], recover_on_index=2)
@@ -444,7 +450,7 @@ def test_high_max_walk_candidates_restores_full_list_walk():
     # cap is lifted -- proving the cap is what gates the deeper walk.
     params = rsp.SupervisorParams(
         request_debounce_sec=1.0, min_candidate_score=0.6, settle_timeout_sec=3.0,
-        max_attempts=1, max_walk_candidates=999)
+        max_attempts=1, max_walk_candidates=999, enable_confirm_cross_check=False)
     events = run_ranked(
         params, 120, requested=True,
         candidate_scores=[0.99] * 6, recover_on_index=5)
@@ -563,9 +569,372 @@ def test_trusted_velocity_tracker_rejects_implausible_speed_update():
     assert abs(v_after.vy - v_good.vy) < 1e-9
 
 
+# --- Gate: post-confirm G2 cross-check (alias rejection) ---------------------
+
+
+def test_settling_confirm_with_cross_check_issues_verify_query():
+    params = rsp.SupervisorParams(
+        recovery_confirmation_samples=2,
+        enable_confirm_cross_check=True,
+    )
+    state = rsp.SupervisorState(
+        name=rsp.STATE_SETTLING,
+        attempts=1,
+        last_reset_sec=100.0,
+        recovery_evidence_count=1,
+        candidate_scores=(0.9,),
+    )
+    dec = rsp.decide(params, state, rsp.SupervisorObservation(
+        now_sec=101.0,
+        reinitialization_requested=True,
+        best_fitness=0.4,
+        fitness_observed_sec=101.0,
+    ))
+    assert dec.action == rsp.ACTION_QUERY
+    assert dec.reason == "confirm_cross_check_query"
+    assert dec.state.name == rsp.STATE_VERIFYING
+    assert dec.state.attempts == 1
+    assert dec.state.query_issued_sec == 101.0
+
+
+def test_settling_confirm_without_cross_check_stands_down():
+    params = rsp.SupervisorParams(
+        recovery_confirmation_samples=2,
+        enable_confirm_cross_check=False,
+    )
+    state = rsp.SupervisorState(
+        name=rsp.STATE_SETTLING,
+        attempts=1,
+        last_reset_sec=100.0,
+        recovery_evidence_count=1,
+        candidate_scores=(0.9,),
+    )
+    dec = rsp.decide(params, state, rsp.SupervisorObservation(
+        now_sec=101.0,
+        reinitialization_requested=True,
+        best_fitness=0.4,
+        fitness_observed_sec=101.0,
+    ))
+    assert dec.action == rsp.ACTION_NONE
+    assert dec.reason == "recovery_confirmed"
+    assert dec.state.name == rsp.STATE_STANDDOWN
+    assert dec.state.attempts == 0
+
+
+def _verifying_state(**kwargs):
+    defaults = dict(
+        name=rsp.STATE_VERIFYING,
+        attempts=1,
+        query_issued_sec=100.0,
+    )
+    defaults.update(kwargs)
+    return rsp.SupervisorState(**defaults)
+
+
+def test_verifying_mismatch_none_fail_open_confirms():
+    params = rsp.SupervisorParams(cross_check_mismatch_m=5.0)
+    dec = rsp.decide(
+        params,
+        _verifying_state(),
+        rsp.SupervisorObservation(
+            now_sec=101.0,
+            reinitialization_requested=True,
+            candidate_scores=(0.9,),
+            cross_check_mismatch_m=None,
+        ),
+    )
+    assert dec.reason == "recovery_confirmed"
+    assert dec.state.name == rsp.STATE_STANDDOWN
+    assert dec.state.attempts == 0
+
+
+def test_verifying_mismatch_within_threshold_confirms():
+    params = rsp.SupervisorParams(cross_check_mismatch_m=5.0)
+    dec = rsp.decide(
+        params,
+        _verifying_state(),
+        rsp.SupervisorObservation(
+            now_sec=101.0,
+            reinitialization_requested=True,
+            candidate_scores=(0.9,),
+            cross_check_mismatch_m=2.0,
+        ),
+    )
+    assert dec.reason == "recovery_confirmed"
+    assert dec.state.name == rsp.STATE_STANDDOWN
+
+
+def test_verifying_mismatch_reseeds_from_verify_fix():
+    params = rsp.SupervisorParams(cross_check_mismatch_m=5.0, max_attempts=3)
+    dec = rsp.decide(
+        params,
+        _verifying_state(attempts=1),
+        rsp.SupervisorObservation(
+            now_sec=101.0,
+            reinitialization_requested=True,
+            candidate_scores=(0.9,),
+            cross_check_mismatch_m=12.0,
+        ),
+    )
+    # The verify reply is the freshest trustworthy fix: publish it immediately
+    # instead of burning a cooldown + re-query on more staleness.
+    assert dec.action == rsp.ACTION_PUBLISH_RESET
+    assert dec.reason == "cross_check_reseed"
+    assert dec.state.name == rsp.STATE_SETTLING
+    assert dec.state.candidate_scores == (0.9,)
+    assert dec.state.attempts == 2  # the reseed publish pays a fresh attempt
+
+
+def test_verifying_mismatch_weak_verify_fix_cooldown():
+    params = rsp.SupervisorParams(
+        cross_check_mismatch_m=5.0, max_attempts=3, min_candidate_score=0.6)
+    dec = rsp.decide(
+        params,
+        _verifying_state(attempts=1),
+        rsp.SupervisorObservation(
+            now_sec=101.0,
+            reinitialization_requested=True,
+            candidate_scores=(0.3,),
+            cross_check_mismatch_m=12.0,
+        ),
+    )
+    assert dec.action == rsp.ACTION_NONE
+    assert dec.reason == "cross_check_mismatch"
+    assert dec.state.name == rsp.STATE_COOLDOWN
+    # The reset under verification already paid its attempt at publish time;
+    # the mismatch detection must not charge a second one.
+    assert dec.state.attempts == 1
+
+
+def test_verifying_mismatch_at_max_attempts_exhausted():
+    params = rsp.SupervisorParams(cross_check_mismatch_m=5.0, max_attempts=3)
+    dec = rsp.decide(
+        params,
+        _verifying_state(attempts=3),
+        rsp.SupervisorObservation(
+            now_sec=101.0,
+            reinitialization_requested=True,
+            candidate_scores=(0.9,),
+            cross_check_mismatch_m=12.0,
+        ),
+    )
+    assert dec.action == rsp.ACTION_GIVE_UP
+    assert dec.reason == "recovery_failed_exhausted"
+    assert dec.state.name == rsp.STATE_EXHAUSTED
+    assert dec.state.attempts == 3
+
+
+def test_verifying_timeout_fail_open_confirms():
+    params = rsp.SupervisorParams(query_timeout_sec=10.0)
+    dec = rsp.decide(
+        params,
+        _verifying_state(query_issued_sec=100.0, attempts=2),
+        rsp.SupervisorObservation(
+            now_sec=110.0,
+            reinitialization_requested=True,
+        ),
+    )
+    assert dec.reason == "cross_check_timeout"
+    assert dec.state.name == rsp.STATE_STANDDOWN
+    assert dec.state.attempts == 0
+
+
+def test_verifying_ignores_reinitialization_cleared():
+    params = rsp.SupervisorParams()
+    dec = rsp.decide(
+        params,
+        _verifying_state(query_issued_sec=100.0),
+        rsp.SupervisorObservation(
+            now_sec=101.0,
+            reinitialization_requested=False,
+        ),
+    )
+    assert dec.reason == "verifying"
+    assert dec.state.name == rsp.STATE_VERIFYING
+
+
+# --- Gate: self-clear cross-check (localizer de-assert without confirm) ------
+
+
+def test_cooldown_self_clear_cross_check_on_request_deassert():
+    params = rsp.SupervisorParams(
+        enable_confirm_cross_check=True,
+        min_seconds_between_attempts=5.0,
+    )
+    state = rsp.SupervisorState(
+        name=rsp.STATE_COOLDOWN,
+        attempts=1,
+        last_reset_sec=90.0,
+        cooldown_since_sec=100.0,
+    )
+    dec = rsp.decide(params, state, rsp.SupervisorObservation(
+        now_sec=106.0,
+        reinitialization_requested=False,
+    ))
+    assert dec.action == rsp.ACTION_QUERY
+    assert dec.reason == "self_clear_cross_check_query"
+    assert dec.state.name == rsp.STATE_VERIFYING
+    assert dec.state.query_issued_sec == 106.0
+    assert dec.state.alias_confirmed is False
+
+
+def test_cooldown_request_deassert_without_reset_goes_idle():
+    params = rsp.SupervisorParams(enable_confirm_cross_check=True)
+    state = rsp.SupervisorState(
+        name=rsp.STATE_COOLDOWN,
+        attempts=1,
+        last_reset_sec=None,
+        cooldown_since_sec=100.0,
+    )
+    dec = rsp.decide(params, state, rsp.SupervisorObservation(
+        now_sec=106.0,
+        reinitialization_requested=False,
+    ))
+    assert dec.action == rsp.ACTION_NONE
+    assert dec.reason == "request_cleared"
+    assert dec.state.name == rsp.STATE_IDLE
+    assert dec.state.attempts == 0
+    assert dec.state.alias_confirmed is False
+
+
+def test_cooldown_request_deassert_alias_confirmed_stays_in_episode():
+    params = rsp.SupervisorParams(
+        enable_confirm_cross_check=True,
+        min_seconds_between_attempts=5.0,
+    )
+    state = rsp.SupervisorState(
+        name=rsp.STATE_COOLDOWN,
+        attempts=2,
+        last_reset_sec=90.0,
+        cooldown_since_sec=100.0,
+        alias_confirmed=True,
+    )
+    dec = rsp.decide(params, state, rsp.SupervisorObservation(
+        now_sec=106.0,
+        reinitialization_requested=False,
+    ))
+    assert dec.action == rsp.ACTION_NONE
+    assert dec.reason == "cooldown_elapsed"
+    assert dec.state.name == rsp.STATE_AWAIT_QUERY
+    assert dec.state.alias_confirmed is True
+
+
+def test_await_query_alias_confirmed_still_issues_query():
+    params = rsp.SupervisorParams()
+    state = rsp.SupervisorState(
+        name=rsp.STATE_AWAIT_QUERY,
+        attempts=1,
+        alias_confirmed=True,
+    )
+    dec = rsp.decide(params, state, rsp.SupervisorObservation(
+        now_sec=10.0,
+        reinitialization_requested=False,
+    ))
+    assert dec.action == rsp.ACTION_QUERY
+    assert dec.reason == "query_issued"
+    assert dec.state.name == rsp.STATE_AWAIT_CANDIDATES
+
+
+def test_verifying_mismatch_above_threshold_sets_alias_confirmed():
+    params = rsp.SupervisorParams(cross_check_mismatch_m=5.0, max_attempts=3)
+    dec = rsp.decide(
+        params,
+        _verifying_state(attempts=1),
+        rsp.SupervisorObservation(
+            now_sec=101.0,
+            reinitialization_requested=True,
+            candidate_scores=(0.9,),
+            cross_check_mismatch_m=12.0,
+        ),
+    )
+    assert dec.reason == "cross_check_reseed"
+    assert dec.state.name == rsp.STATE_SETTLING
+    assert dec.state.alias_confirmed is True
+
+
+def test_verifying_mismatch_within_threshold_clears_alias_confirmed():
+    params = rsp.SupervisorParams(cross_check_mismatch_m=5.0)
+    dec = rsp.decide(
+        params,
+        _verifying_state(alias_confirmed=True),
+        rsp.SupervisorObservation(
+            now_sec=101.0,
+            reinitialization_requested=True,
+            candidate_scores=(0.9,),
+            cross_check_mismatch_m=2.0,
+        ),
+    )
+    assert dec.reason == "recovery_confirmed"
+    assert dec.state.name == rsp.STATE_STANDDOWN
+    assert dec.state.alias_confirmed is False
+
+
+def test_cooldown_request_deassert_cross_check_disabled_goes_idle():
+    params = rsp.SupervisorParams(enable_confirm_cross_check=False)
+    state = rsp.SupervisorState(
+        name=rsp.STATE_COOLDOWN,
+        attempts=1,
+        last_reset_sec=90.0,
+        cooldown_since_sec=100.0,
+    )
+    dec = rsp.decide(params, state, rsp.SupervisorObservation(
+        now_sec=106.0,
+        reinitialization_requested=False,
+    ))
+    assert dec.action == rsp.ACTION_NONE
+    assert dec.reason == "request_cleared"
+    assert dec.state.name == rsp.STATE_IDLE
+
+
 if __name__ == "__main__":
     import pytest
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+def test_sim_fix_velocity_from_consecutive_fixes():
+    # Two fixes 10 m apart in x over 5 s on the bag clock -> 2 m/s east.
+    v = rsp.estimate_sim_fix_velocity(
+        (0.0, 0.0), 100.0, (10.0, 0.0), 105.0, max_speed_mps=30.0)
+    assert v.valid
+    assert abs(v.vx - 2.0) < 1e-9
+    assert abs(v.vy - 0.0) < 1e-9
+
+
+def test_sim_fix_velocity_rejects_short_or_long_dt():
+    short = rsp.estimate_sim_fix_velocity(
+        (0.0, 0.0), 100.0, (10.0, 0.0), 101.0, max_speed_mps=30.0)
+    assert not short.valid
+    long = rsp.estimate_sim_fix_velocity(
+        (0.0, 0.0), 100.0, (10.0, 0.0), 161.0, max_speed_mps=30.0)
+    assert not long.valid
+
+
+def test_sim_fix_velocity_rejects_implausible_speed():
+    v = rsp.estimate_sim_fix_velocity(
+        (0.0, 0.0), 100.0, (200.0, 0.0), 105.0, max_speed_mps=30.0)
+    assert not v.valid
+
+
+def test_sim_fix_pose_delta_clamps_staleness():
+    v = rsp.SeedVelocity(vx=2.0, vy=1.0, valid=True)
+    delta = rsp.estimate_pose_delta_from_sim_fix(
+        v, fix_scan_stamp_sec=100.0, last_sim_stamp_sec=138.0, max_latency_sec=30.0)
+    assert delta is not None
+    dx, dy, speed, staleness = delta
+    assert abs(staleness - 30.0) < 1e-9
+    assert abs(speed - 2.236067977) < 1e-6
+    assert abs(dx - 60.0) < 1e-9
+    assert abs(dy - 30.0) < 1e-9
+
+
+def test_sim_fix_pose_delta_none_when_staleness_nonpositive():
+    v = rsp.SeedVelocity(vx=2.0, vy=0.0, valid=True)
+    assert rsp.estimate_pose_delta_from_sim_fix(
+        v, fix_scan_stamp_sec=100.0, last_sim_stamp_sec=100.0,
+        max_latency_sec=30.0) is None
+    assert rsp.estimate_pose_delta_from_sim_fix(
+        v, fix_scan_stamp_sec=100.0, last_sim_stamp_sec=None,
+        max_latency_sec=30.0) is None
+
 
 def test_trusted_velocity_tracker_high_rate_stream_still_estimates():
     # Poses arrive faster than the 0.5 s pair floor (e.g. 4 Hz wall in a replay).

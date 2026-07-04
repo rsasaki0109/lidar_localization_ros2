@@ -84,11 +84,16 @@ def generate_launch_description():
     supervisor_recovery_confirmation_samples = LaunchConfiguration(
         'supervisor_recovery_confirmation_samples')
     supervisor_max_walk_candidates = LaunchConfiguration('supervisor_max_walk_candidates')
+    supervisor_confirm_cross_check = LaunchConfiguration('supervisor_confirm_cross_check')
+    supervisor_cross_check_mismatch_m = LaunchConfiguration(
+        'supervisor_cross_check_mismatch_m')
     supervisor_enable_seed_motion = LaunchConfiguration('supervisor_enable_seed_motion_compensation')
     supervisor_max_seed_speed_mps = LaunchConfiguration('supervisor_max_seed_speed_mps')
     supervisor_max_seed_latency_sec = LaunchConfiguration('supervisor_max_seed_latency_sec')
     supervisor_seed_velocity_max_age_sec = LaunchConfiguration(
         'supervisor_seed_velocity_max_age_sec')
+    supervisor_seed_motion_wall_fallback = LaunchConfiguration(
+        'supervisor_seed_motion_wall_fallback')
     supervisor_event_log_csv = LaunchConfiguration('supervisor_event_log_csv')
     supervisor_reset_default_z_m = LaunchConfiguration('supervisor_reset_default_z_m')
     supervisor_prefer_reset_default_z_m = LaunchConfiguration(
@@ -115,6 +120,14 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'g2_registration_score_gate', default_value='6.0',
             description='NDT fitness gate used to map registration scores to [0, 1].'),
+        DeclareLaunchArgument(
+            'g2_ndt_num_threads', default_value='1',
+            description='Threads for G2 NDT registration scoring. KEEP AT 1: pclomp '
+                        'NDT_OMP with the default KDTREE neighborhood search is not '
+                        'thread-safe -- 4 threads degraded HDL registration fitness '
+                        'from 0.03-0.9 to 5-12 (all fixes rejected) with no runtime '
+                        'gain. Cut query runtime with g2_max_candidates instead; '
+                        'revisit after wiring setNeighborhoodSearchMethod(DIRECT7).'),
         DeclareLaunchArgument(
             'g2_registration_refine_candidates', default_value='false',
             description='Report the NDT-refined pose of converged candidates instead '
@@ -180,6 +193,15 @@ def generate_launch_description():
                         'can return a full list none of whose poses lock '
                         '(g3_live_closed_loop.md). Set high to walk the whole list.'),
         DeclareLaunchArgument(
+            'supervisor_confirm_cross_check', default_value='true',
+            description='After post-reset recovery evidence, issue one more G2 query '
+                        'and compare the fresh fix to the localizer pose to reject '
+                        'along-corridor alias locks that pass fitness alone.'),
+        DeclareLaunchArgument(
+            'supervisor_cross_check_mismatch_m', default_value='5.0',
+            description='Euclidean xy distance (m) above which the verify query is '
+                        'treated as an alias and recovery is rejected.'),
+        DeclareLaunchArgument(
             'supervisor_enable_seed_motion_compensation', default_value='false',
             description='Forward-extrapolate a candidate by the measured query->publish '
                         'latency so it lands where the moving vehicle is now, not where '
@@ -198,6 +220,11 @@ def generate_launch_description():
             'supervisor_seed_velocity_max_age_sec', default_value='60.0',
             description='Reject pose-derived seed velocity older than this many seconds; '
                         'constant-velocity extrapolation decays under cornering.'),
+        DeclareLaunchArgument(
+            'supervisor_seed_motion_wall_fallback', default_value='false',
+            description='When true, fall back to wall-clock seed motion compensation '
+                        'if bag-clock sim fix-to-fix velocity is unavailable. Off by '
+                        'default; wall-clock paths have produced garbage seeds.'),
         DeclareLaunchArgument(
             'supervisor_event_log_csv', default_value='',
             description='Optional CSV path for supervisor recovery events.'),
@@ -288,6 +315,8 @@ def generate_launch_description():
                 LaunchConfiguration('g2_enable_registration_scoring'), value_type=bool),
             'registration_score_gate': ParameterValue(
                 LaunchConfiguration('g2_registration_score_gate'), value_type=float),
+            'ndt_num_threads': ParameterValue(
+                LaunchConfiguration('g2_ndt_num_threads'), value_type=int),
             'registration_refine_candidates': ParameterValue(
                 LaunchConfiguration('g2_registration_refine_candidates'),
                 value_type=bool),
@@ -337,6 +366,10 @@ def generate_launch_description():
                 value_type=float),
             'max_walk_candidates': ParameterValue(
                 supervisor_max_walk_candidates, value_type=int),
+            'confirm_cross_check': ParameterValue(
+                supervisor_confirm_cross_check, value_type=bool),
+            'cross_check_mismatch_m': ParameterValue(
+                supervisor_cross_check_mismatch_m, value_type=float),
             'enable_seed_motion_compensation': ParameterValue(
                 supervisor_enable_seed_motion, value_type=bool),
             'max_seed_speed_mps': ParameterValue(
@@ -345,6 +378,8 @@ def generate_launch_description():
                 supervisor_max_seed_latency_sec, value_type=float),
             'seed_velocity_max_age_sec': ParameterValue(
                 supervisor_seed_velocity_max_age_sec, value_type=float),
+            'seed_motion_wall_fallback': ParameterValue(
+                supervisor_seed_motion_wall_fallback, value_type=bool),
             'reset_default_z_m': ParameterValue(
                 supervisor_reset_default_z_m, value_type=float),
             'prefer_reset_default_z_m': ParameterValue(
