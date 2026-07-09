@@ -242,6 +242,7 @@ public:
   double scan_max_range_;
   double scan_min_range_;
   double scan_period_;
+  double scan_time_range_max_duration_ratio_{2.0};
   int cloud_queue_depth_{1};
   int imu_queue_depth_{2000};
   double min_scan_interval_sec_{0.0};

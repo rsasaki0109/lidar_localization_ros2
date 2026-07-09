@@ -90,6 +90,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("scan_max_range", 100.0);
   declare_parameter("scan_min_range", 1.0);
   declare_parameter("scan_period", 0.1);
+  declare_parameter("scan_time_range_max_duration_ratio", 2.0);
   declare_parameter("cloud_queue_depth", 1);
   declare_parameter("imu_queue_depth", 2000);
   declare_parameter("min_scan_interval_sec", 0.0);
@@ -522,6 +523,8 @@ void PCLLocalization::initializeParameters()
   get_parameter("scan_max_range", scan_max_range_);
   get_parameter("scan_min_range", scan_min_range_);
   get_parameter("scan_period", scan_period_);
+  get_parameter(
+    "scan_time_range_max_duration_ratio", scan_time_range_max_duration_ratio_);
   int requested_cloud_queue_depth = cloud_queue_depth_;
   get_parameter("cloud_queue_depth", requested_cloud_queue_depth);
   const auto cloud_queue_depth =
@@ -819,6 +822,9 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(),"scan_max_range: %lf", scan_max_range_);
   RCLCPP_INFO(get_logger(),"scan_min_range: %lf", scan_min_range_);
   RCLCPP_INFO(get_logger(),"scan_period: %lf", scan_period_);
+  RCLCPP_INFO(
+    get_logger(), "scan_time_range_max_duration_ratio: %lf",
+    scan_time_range_max_duration_ratio_);
   RCLCPP_INFO(get_logger(),"cloud_queue_depth: %d", cloud_queue_depth_);
   RCLCPP_INFO(get_logger(),"imu_queue_depth: %d", imu_queue_depth_);
   RCLCPP_INFO(get_logger(),"min_scan_interval_sec: %lf", min_scan_interval_sec_);
@@ -1731,7 +1737,7 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
       point_relative_times.valid_point_count,
       point_relative_times.invalid_point_count,
       scan_period_,
-      2.0});
+      scan_time_range_max_duration_ratio_});
   latest_scan_time_status_ = point_time_status;
   latest_scan_time_field_ = point_relative_times.has_time_field ?
     point_relative_times.field_name :

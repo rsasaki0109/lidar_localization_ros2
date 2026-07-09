@@ -99,6 +99,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scan-max-range", type=float)
     parser.add_argument("--scan-min-range", type=float)
     parser.add_argument("--scan-period", type=float, default=0.1)
+    parser.add_argument(
+        "--scan-time-range-max-duration-ratio", type=float, default=2.0)
     parser.add_argument("--ndt-resolution", type=float, default=1.0)
     parser.add_argument("--ndt-threads", type=int, default=4)
     parser.add_argument("--ndt-max-iterations", type=int, default=35)
@@ -334,6 +336,7 @@ def config_args_for_mode(
         scan_max_range=args.scan_max_range,
         scan_min_range=args.scan_min_range,
         scan_period=args.scan_period,
+        scan_time_range_max_duration_ratio=args.scan_time_range_max_duration_ratio,
         ndt_resolution=args.ndt_resolution,
         ndt_threads=args.ndt_threads,
         ndt_max_iterations=args.ndt_max_iterations,

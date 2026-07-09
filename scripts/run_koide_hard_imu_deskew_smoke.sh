@@ -214,6 +214,7 @@ fi
   --min-imu-active-ratio 0.1 \
   --min-imu-seed-source-ratio 0.1 \
   --min-deskew-applied-ratio 0.1 \
+  --scan-time-range-max-duration-ratio 4.0 \
   --enable-open-loop-strict-score-threshold \
   --open-loop-strict-min-accepted-gap-sec 1.0 \
   --open-loop-strict-min-seed-translation-m 0.5 \

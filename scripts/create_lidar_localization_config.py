@@ -156,6 +156,8 @@ def make_params(args: argparse.Namespace) -> Dict[str, object]:
         "scan_max_range": _arg_or_profile(args, "scan_max_range"),
         "scan_min_range": _arg_or_profile(args, "scan_min_range"),
         "scan_period": args.scan_period,
+        "scan_time_range_max_duration_ratio": getattr(
+            args, "scan_time_range_max_duration_ratio", 2.0),
         "use_pcd_map": True,
         "map_path": normalized_map_path(args.map_path),
         "set_initial_pose": args.initial_pose is not None,
@@ -495,6 +497,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scan-max-range", type=float)
     parser.add_argument("--scan-min-range", type=float)
     parser.add_argument("--scan-period", type=float, default=0.1)
+    parser.add_argument(
+        "--scan-time-range-max-duration-ratio", type=float, default=2.0)
     parser.add_argument("--ndt-resolution", type=float, default=1.0)
     parser.add_argument("--ndt-threads", type=int, default=4)
     parser.add_argument("--ndt-max-iterations", type=int, default=35)
