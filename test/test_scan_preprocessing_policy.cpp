@@ -45,6 +45,30 @@ void test_scan_time_range_statuses_are_explicit()
       ll::ScanTimeRangeStatus::kDurationTooLarge)) == "scan_time_range_too_large");
 }
 
+void test_scan_time_range_ratio_is_configurable()
+{
+  // Real Livox multi-frame spans measured on Koide outdoor_hard_01a: the driver
+  // occasionally fuses two or three 0.1s integration windows into one message
+  // (~0.2005s double, up to ~0.3003s triple). With scan_period 0.1 these trip
+  // the default 2.0 ratio and must pass the widened preset ratio (4.0) so
+  // continuous-time deskew is not dropped for these frames.
+  const double kLivoxDoubleFrameSpanSec = 0.2005;
+  const double kLivoxTripleFrameSpanSec = 0.3003;
+  for (double span : {kLivoxDoubleFrameSpanSec, kLivoxTripleFrameSpanSec}) {
+    assert(
+      ll::classifyScanTimeRange({true, true, span, 40000, 0, 0.1, 2.0}) ==
+      ll::ScanTimeRangeStatus::kDurationTooLarge);
+    assert(
+      ll::classifyScanTimeRange({true, true, span, 40000, 0, 0.1, 4.0}) ==
+      ll::ScanTimeRangeStatus::kReady);
+  }
+  // A genuine unit-misparse (e.g. nanoseconds read as seconds) is still rejected
+  // even at the widened ratio.
+  assert(
+    ll::classifyScanTimeRange({true, true, 2.0e5, 40000, 0, 0.1, 4.0}) ==
+    ll::ScanTimeRangeStatus::kDurationTooLarge);
+}
+
 void test_scan_preparation_status_priority_and_actions()
 {
   assert(
@@ -94,6 +118,7 @@ int main()
   test_direct_range_filter_path_requires_no_voxel_no_imu_and_same_frame();
   test_scan_xyz_field_availability();
   test_scan_time_range_statuses_are_explicit();
+  test_scan_time_range_ratio_is_configurable();
   test_scan_preparation_status_priority_and_actions();
   test_range_is_horizontal_and_exclusive();
   test_non_finite_points_are_rejected();
