@@ -377,6 +377,8 @@ if(BUILD_TESTING)
     test/test_alignment_diagnostic_ros_adapter.cpp)
   target_include_directories(test_alignment_diagnostic_ros_adapter PRIVATE
     include)
+  target_link_libraries(test_alignment_diagnostic_ros_adapter
+    Eigen3::Eigen)
   ament_target_dependencies(test_alignment_diagnostic_ros_adapter
     diagnostic_msgs)
   add_test(
