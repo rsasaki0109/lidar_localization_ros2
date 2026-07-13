@@ -132,8 +132,16 @@ def use_continuous_time_deskew(args: argparse.Namespace) -> bool:
     return bool(getattr(args, "enable_continuous_time_deskew", False))
 
 
+def continuous_time_deskew_requires_imu(args: argparse.Namespace) -> bool:
+    return (
+        use_continuous_time_deskew(args)
+        and getattr(args, "continuous_time_deskew_mode", "relative_motion")
+        != "lidar_constant_velocity"
+    )
+
+
 def validate_args(args: argparse.Namespace) -> Optional[str]:
-    if use_continuous_time_deskew(args) and effective_imu_mode(args) == "off":
+    if continuous_time_deskew_requires_imu(args) and effective_imu_mode(args) == "off":
         return (
             "--enable-continuous-time-deskew requires IMU preintegration. "
             "Pass --imu-mode preintegration or use a profile that enables it."
@@ -176,7 +184,19 @@ def make_params(args: argparse.Namespace) -> Dict[str, object]:
         "use_imu_preintegration": imu_mode in {"preintegration", "both"},
         "imu_preintegration_use_base_frame_transform": use_imu_preintegration_base_frame_transform(args),
         "use_continuous_time_deskew": use_continuous_time_deskew(args),
+        "continuous_time_deskew_mode": getattr(
+            args, "continuous_time_deskew_mode", "relative_motion"),
+        "continuous_time_cloud_stamp_reference": getattr(
+            args, "continuous_time_cloud_stamp_reference", "start"),
         "continuous_time_deskew_reference_time_sec": args.deskew_reference_time_sec,
+        "continuous_time_pose_history_duration_sec": getattr(
+            args, "continuous_time_pose_history_duration_sec", 2.0),
+        "enable_localizability_guard": getattr(
+            args, "enable_localizability_guard", False),
+        "localizability_min_xy_eigen_ratio": getattr(
+            args, "localizability_min_xy_eigen_ratio", 0.05),
+        "enable_registration_localizability_diagnostics": getattr(
+            args, "enable_registration_localizability_diagnostics", False),
         "enable_debug": False,
         "predict_pose_from_previous_delta": True,
         "enable_local_map_crop": True,
@@ -358,7 +378,7 @@ def doctor_command(args: argparse.Namespace) -> str:
         parts.append("--require-odom-base-tf")
     if args.profile == "nav2":
         parts.append("--require-map-odom-tf")
-    if effective_imu_mode(args) != "off" or use_continuous_time_deskew(args):
+    if effective_imu_mode(args) != "off" or continuous_time_deskew_requires_imu(args):
         parts.append("--require-imu")
     if args.require_cloud_time_field or use_continuous_time_deskew(args):
         parts.append("--require-cloud-time-field")

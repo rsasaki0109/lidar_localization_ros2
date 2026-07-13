@@ -115,6 +115,8 @@ def main() -> int:
     reference_index = 0
     translational_squared_errors: List[float] = []
     rotational_squared_errors: List[float] = []
+    translational_errors: List[float] = []
+    rotational_errors: List[float] = []
     time_diffs: List[float] = []
 
     for sample in estimated:
@@ -137,6 +139,8 @@ def main() -> int:
 
         translational_squared_errors.append(translation_error * translation_error)
         rotational_squared_errors.append(rotation_error * rotation_error)
+        translational_errors.append(translation_error)
+        rotational_errors.append(rotation_error)
         time_diffs.append(time_diff)
         reference_index = nearest_index
         match_count += 1
@@ -156,6 +160,14 @@ def main() -> int:
         else None,
         "rotation_rmse_deg": math.degrees(math.sqrt(sum(rotational_squared_errors) / match_count))
         if match_count
+        else None,
+        "translation_error_last_m": translational_errors[-1] if translational_errors else None,
+        "translation_error_max_m": max(translational_errors) if translational_errors else None,
+        "rotation_error_last_deg": math.degrees(rotational_errors[-1])
+        if rotational_errors
+        else None,
+        "rotation_error_max_deg": math.degrees(max(rotational_errors))
+        if rotational_errors
         else None,
         "mean_time_diff_sec": sum(time_diffs) / match_count if match_count else None,
     }

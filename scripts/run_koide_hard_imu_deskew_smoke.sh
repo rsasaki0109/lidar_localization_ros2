@@ -16,9 +16,14 @@ Options:
   --data-dir DIR         Dataset root. Default: source-tree data/public/... when available,
                          otherwise ./data/public/koide_hard_localization.
   --output-dir DIR       Output directory. Default: /tmp/lidarloc_koide_outdoor_hard_01a_imu_deskew_smoke<duration>
+  --start-offset SEC     Start bag playback at this offset. Default: 0.
+                         With GT available, the initial pose is moved to the same offset.
   --duration SEC         Bag playback duration. Default: 20.
   --ros-domain-id ID     ROS_DOMAIN_ID for replay. Default: ROS_DOMAIN_ID env, or 195.
-  --mode NAME            Repeat to run a subset: lidar_only, imu_preintegration, deskew.
+  --mode NAME            Repeat to run a subset: lidar_only, imu_preintegration,
+                         deskew, imu_pose_history, lidar_constant_velocity,
+                         localizability_guard.
+                         registration_localizability.
   --print-only           Write configs/run_plan and print commands without running ROS.
   --stop-on-failure      Stop at the first failed mode instead of collecting all reports.
   -h, --help             Show this help.
@@ -41,6 +46,7 @@ fi
 data_dir="${repo_root}/data/public/koide_hard_localization"
 output_dir=""
 duration="20"
+start_offset="0"
 ros_domain_id="${ROS_DOMAIN_ID:-195}"
 download=0
 force_download=0
@@ -68,6 +74,10 @@ while [[ $# -gt 0 ]]; do
     --duration)
       shift
       duration="$1"
+      ;;
+    --start-offset)
+      shift
+      start_offset="$1"
       ;;
     --ros-domain-id)
       shift
@@ -104,7 +114,9 @@ fi
 sequence="outdoor_hard_01a"
 bag_path="${data_dir}/sequences/${sequence}"
 map_path="${data_dir}/map_outdoor_hard.ply"
-gt_path="${data_dir}/gt/traj_lidar_${sequence}.txt"
+# The public archive names the trajectory outdoor_hard_01.txt while the
+# converted rosbag window is named outdoor_hard_01a.
+gt_path="${data_dir}/gt/traj_lidar_outdoor_hard_01.txt"
 benchmark_dir="${data_dir}/benchmark/${sequence}"
 reference_csv="${benchmark_dir}/reference.csv"
 initial_pose_yaml="${benchmark_dir}/initial_pose.yaml"
@@ -147,6 +159,21 @@ if [[ (! -f "${reference_csv}" || ! -f "${initial_pose_yaml}") && -f "${gt_path}
     --output-csv "${reference_csv}" \
     --output-initial-pose-yaml "${initial_pose_yaml}" \
     --initial-pose-skip-sec 0.05
+fi
+
+# A windowed replay must not start from the sequence's t=0 pose. Generate a
+# run-local reference/initial-pose pair and select the first GT pose at the
+# requested offset. GT is used only to seed and evaluate this controlled A/B
+# fixture; it is never used by runtime registration or acceptance logic.
+if [[ "${start_offset}" != "0" && "${start_offset}" != "0.0" && -f "${gt_path}" ]]; then
+  mkdir -p "${output_dir}"
+  reference_csv="${output_dir}/reference.csv"
+  initial_pose_yaml="${output_dir}/initial_pose.yaml"
+  "${converter_script}" \
+    --input "${gt_path}" \
+    --output-csv "${reference_csv}" \
+    --output-initial-pose-yaml "${initial_pose_yaml}" \
+    --initial-pose-skip-sec "${start_offset}"
 fi
 
 yaml_value() {
@@ -208,6 +235,7 @@ fi
   --output-dir "${output_dir}" \
   --initial-pose "${initial_pose[@]}" \
   --bag-duration "${duration}" \
+  --bag-start-offset "${start_offset}" \
   --settle-seconds 2 \
   --post-roll-seconds 1 \
   --ros-domain-id "${ros_domain_id}" \

@@ -7,10 +7,12 @@
 #include "lidar_localization/alignment_diagnostics_policy.hpp"
 #include "lidar_localization/alignment_status_policy.hpp"
 #include "lidar_localization/continuous_time_deskew_policy.hpp"
+#include "lidar_localization/imu_pose_history_deskew.hpp"
 #include "lidar_localization/deskew_readiness_policy.hpp"
 #include "lidar_localization/imu_preintegration_diagnostics_policy.hpp"
 #include "lidar_localization/imu_preintegration_guard_policy.hpp"
 #include "lidar_localization/local_map_target_policy.hpp"
+#include "lidar_localization/localizability_policy.hpp"
 #include "lidar_localization/localization_update_policy.hpp"
 #include "lidar_localization/map_initialization_policy.hpp"
 #include "lidar_localization/measurement_gate_policy.hpp"
@@ -135,7 +137,13 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("use_imu_preintegration", true);
   declare_parameter("imu_preintegration_use_base_frame_transform", false);
   declare_parameter("use_continuous_time_deskew", false);
+  declare_parameter("continuous_time_deskew_mode", "relative_motion");
+  declare_parameter("continuous_time_cloud_stamp_reference", "start");
   declare_parameter("continuous_time_deskew_reference_time_sec", 0.0);
+  declare_parameter("continuous_time_pose_history_duration_sec", 2.0);
+  declare_parameter("enable_localizability_guard", false);
+  declare_parameter("localizability_min_xy_eigen_ratio", 0.05);
+  declare_parameter("enable_registration_localizability_diagnostics", false);
   declare_parameter("imu_gyro_noise_density", 0.01);
   declare_parameter("imu_accel_noise_density", 0.1);
   declare_parameter("imu_gyro_random_walk", 0.0001);
@@ -596,9 +604,48 @@ void PCLLocalization::initializeParameters()
     "imu_preintegration_use_base_frame_transform",
     imu_preintegration_use_base_frame_transform_);
   get_parameter("use_continuous_time_deskew", use_continuous_time_deskew_);
+  get_parameter("continuous_time_deskew_mode", continuous_time_deskew_mode_);
+  get_parameter(
+    "continuous_time_cloud_stamp_reference", continuous_time_cloud_stamp_reference_);
   get_parameter(
     "continuous_time_deskew_reference_time_sec",
     continuous_time_deskew_reference_time_sec_);
+  get_parameter(
+    "continuous_time_pose_history_duration_sec",
+    continuous_time_pose_history_duration_sec_);
+  get_parameter("enable_localizability_guard", enable_localizability_guard_);
+  get_parameter(
+    "enable_registration_localizability_diagnostics",
+    enable_registration_localizability_diagnostics_);
+  get_parameter(
+    "localizability_min_xy_eigen_ratio", localizability_min_xy_eigen_ratio_);
+  if (
+    continuous_time_deskew_mode_ != "relative_motion" &&
+    continuous_time_deskew_mode_ != "imu_pose_history" &&
+    continuous_time_deskew_mode_ != "lidar_constant_velocity")
+  {
+    RCLCPP_WARN(
+      get_logger(), "Unsupported continuous_time_deskew_mode '%s'; using relative_motion",
+      continuous_time_deskew_mode_.c_str());
+    continuous_time_deskew_mode_ = "relative_motion";
+  }
+  if (
+    continuous_time_cloud_stamp_reference_ != "start" &&
+    continuous_time_cloud_stamp_reference_ != "end")
+  {
+    RCLCPP_WARN(
+      get_logger(), "Unsupported continuous_time_cloud_stamp_reference '%s'; using start",
+      continuous_time_cloud_stamp_reference_.c_str());
+    continuous_time_cloud_stamp_reference_ = "start";
+  }
+  if (
+    !std::isfinite(continuous_time_pose_history_duration_sec_) ||
+    continuous_time_pose_history_duration_sec_ <= 0.0)
+  {
+    RCLCPP_WARN(
+      get_logger(), "continuous_time_pose_history_duration_sec must be positive; using 2.0");
+    continuous_time_pose_history_duration_sec_ = 2.0;
+  }
   if (use_imu_preintegration_) {
     ImuGtsamSmoother::Params imu_params;
     // Reuse GTSAM NDT sigmas for x, y, yaw
@@ -844,8 +891,21 @@ void PCLLocalization::initializeParameters()
     imu_preintegration_use_base_frame_transform_);
   RCLCPP_INFO(get_logger(), "use_continuous_time_deskew: %d", use_continuous_time_deskew_);
   RCLCPP_INFO(
+    get_logger(), "continuous_time_deskew_mode: %s", continuous_time_deskew_mode_.c_str());
+  RCLCPP_INFO(
+    get_logger(), "continuous_time_cloud_stamp_reference: %s",
+    continuous_time_cloud_stamp_reference_.c_str());
+  RCLCPP_INFO(
     get_logger(), "continuous_time_deskew_reference_time_sec: %lf",
     continuous_time_deskew_reference_time_sec_);
+  RCLCPP_INFO(
+    get_logger(), "continuous_time_pose_history_duration_sec: %lf",
+    continuous_time_pose_history_duration_sec_);
+  RCLCPP_INFO(
+    get_logger(), "enable_localizability_guard: %d", enable_localizability_guard_);
+  RCLCPP_INFO(
+    get_logger(), "localizability_min_xy_eigen_ratio: %lf",
+    localizability_min_xy_eigen_ratio_);
   RCLCPP_INFO(get_logger(),"use_twist_ekf: %d", use_twist_ekf_);
   RCLCPP_INFO(get_logger(),"use_gtsam_smoother: %d", use_gtsam_smoother_);
   RCLCPP_INFO(get_logger(),"enable_debug: %d", enable_debug_);
@@ -1070,8 +1130,8 @@ void PCLLocalization::initializeRegistration()
     registration_ = pcl_registration_.get();
   }
   else if (registration_backend == lidar_localization::RegistrationBackend::kNdtOmp) {
-    pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp(
-      new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
+    boost::shared_ptr<lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>>
+      ndt_omp(new lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>());
     ndt_omp->setStepSize(ndt_step_size_);
     ndt_omp->setResolution(ndt_resolution_);
     ndt_omp->setTransformationEpsilon(transform_epsilon_);
@@ -1483,10 +1543,10 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
 
     if (collect_preintegration_sample && preintegration_sample_ready) {
       double stamp_sec = stamp_to_sec(msg->header.stamp);
+      const double dt = last_imu_stamp_ > 0.0 ? stamp_sec - last_imu_stamp_ : 0.0;
 
       // Feed to smoother for dead-reckoning
       if (imu_smoother_.isInitialized() && last_imu_stamp_ > 0.0) {
-        double dt = stamp_sec - last_imu_stamp_;
         imu_preintegration_last_dt_sec_ = dt;
         if (lidar_localization::isValidImuPreintegrationDt(dt)) {
           imu_smoother_.integrateImu(preintegration_gyro, preintegration_accel, dt);
@@ -1496,9 +1556,44 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
           ++imu_preintegration_skipped_sample_count_since_scan_;
           RCLCPP_WARN_THROTTLE(
             get_logger(), *get_clock(), 5000,
-            "Skipping IMU preintegration sample with invalid dt %.6f sec",
-            dt);
+          "Skipping IMU preintegration sample with invalid dt %.6f sec",
+          dt);
         }
+      }
+
+      // Keep an optimization-correction-independent, rotation-only pose history.
+      // It is used by the experimental piecewise deskew mode. Translation remains
+      // zero here intentionally: integrating accelerometer translation without a
+      // timestamped bias, gravity, and velocity state is less safe than omitting it.
+      if (continuous_time_imu_pose_history_.empty() || last_imu_stamp_ <= 0.0) {
+        continuous_time_imu_orientation_ = Eigen::Quaternionf::Identity();
+        continuous_time_imu_pose_history_.clear();
+      } else if (lidar_localization::isValidImuPreintegrationDt(dt)) {
+        const Eigen::Vector3f rotation_vector =
+          preintegration_gyro.cast<float>() * static_cast<float>(dt);
+        const float angle = rotation_vector.norm();
+        if (std::isfinite(angle) && angle > 1e-9f) {
+          const Eigen::Quaternionf delta(
+            Eigen::AngleAxisf(angle, rotation_vector / angle));
+          continuous_time_imu_orientation_ =
+            (continuous_time_imu_orientation_ * delta).normalized();
+        }
+      } else {
+        continuous_time_imu_orientation_ = Eigen::Quaternionf::Identity();
+        continuous_time_imu_pose_history_.clear();
+      }
+      lidar_localization::TimestampedPose history_sample;
+      history_sample.stamp_sec = stamp_sec;
+      history_sample.pose.block<3, 3>(0, 0) =
+        continuous_time_imu_orientation_.toRotationMatrix();
+      continuous_time_imu_pose_history_.push_back(history_sample);
+      const double oldest_stamp_to_keep =
+        stamp_sec - continuous_time_pose_history_duration_sec_;
+      while (
+        continuous_time_imu_pose_history_.size() > 2 &&
+        continuous_time_imu_pose_history_[1].stamp_sec < oldest_stamp_to_keep)
+      {
+        continuous_time_imu_pose_history_.pop_front();
       }
       last_imu_stamp_ = stamp_sec;
     }
@@ -1719,6 +1814,7 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
   latest_continuous_time_deskew_point_count_ = 0;
   latest_continuous_time_deskew_skipped_invalid_time_count_ = 0;
   latest_continuous_time_deskew_clamped_time_count_ = 0;
+  latest_continuous_time_deskew_pose_history_coverage_ratio_ = 0.0;
 
   const bool cloud_has_intensity = lidar_localization::hasPointField(msg->fields, "intensity");
   if (!cloud_has_intensity) {
@@ -1728,6 +1824,7 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
   }
   const lidar_localization::PointRelativeTimes point_relative_times =
     lidar_localization::extractPointRelativeTimesSeconds(*msg);
+  prepared_scan.point_time_reference_sec = point_relative_times.reference_time_sec;
   const lidar_localization::ScanTimeRangeStatus point_time_status =
     lidar_localization::classifyScanTimeRange(
     lidar_localization::ScanTimeRangeEvaluationInput{
@@ -1914,6 +2011,13 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
     true,
     true,
     !prepared_scan.cloud || prepared_scan.cloud->empty());
+  latest_horizontal_localizability_ = prepared_scan.cloud ?
+    lidar_localization::evaluateHorizontalLocalizability(*prepared_scan.cloud) :
+    lidar_localization::HorizontalLocalizability{};
+  latest_localizability_guard_active_ =
+    lidar_localization::shouldSuppressPreviousDeltaSeed(
+    enable_localizability_guard_, latest_horizontal_localizability_,
+    localizability_min_xy_eigen_ratio_);
   return prepared_scan;
 }
 
@@ -1921,11 +2025,11 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
   PreparedScanCloud & prepared_scan,
   double scan_stamp_sec)
 {
-  (void)scan_stamp_sec;
   latest_continuous_time_deskew_applied_ = false;
   latest_continuous_time_deskew_point_count_ = 0;
   latest_continuous_time_deskew_skipped_invalid_time_count_ = 0;
   latest_continuous_time_deskew_clamped_time_count_ = 0;
+  latest_continuous_time_deskew_pose_history_coverage_ratio_ = 0.0;
 
   if (!use_continuous_time_deskew_) {
     latest_continuous_time_deskew_status_ =
@@ -1940,6 +2044,10 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
   bool imu_samples_ready_for_deskew = false;
   bool imu_smoother_initialized = false;
   bool imu_preintegration_fallback_mode = false;
+  const bool use_pose_history = continuous_time_deskew_mode_ == "imu_pose_history";
+  const bool use_lidar_motion =
+    continuous_time_deskew_mode_ == "lidar_constant_velocity";
+  std::vector<lidar_localization::TimestampedPose> pose_history;
   {
     std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
     imu_smoother_initialized = imu_smoother_.isInitialized();
@@ -1952,8 +2060,24 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
       lidar_localization::isImuIntegrationWindowTooLarge(
         imu_integration_window_sec,
         lidar_localization::imuMaximumIntegrationWindowSec(scan_period_));
-    imu_samples_ready_for_deskew = has_new_imu_samples && !imu_window_too_large;
-    if (
+    imu_samples_ready_for_deskew = use_pose_history ?
+      !continuous_time_imu_pose_history_.empty() :
+      (use_lidar_motion ?
+      last_relative_motion_duration_sec_ > 0.0 :
+      has_new_imu_samples && !imu_window_too_large);
+    if (use_pose_history) {
+      pose_history.assign(
+        continuous_time_imu_pose_history_.begin(), continuous_time_imu_pose_history_.end());
+      prediction_finite = std::all_of(
+        pose_history.begin(), pose_history.end(),
+        [](const lidar_localization::TimestampedPose & sample) {
+          return std::isfinite(sample.stamp_sec) && sample.pose.allFinite();
+        });
+    } else if (use_lidar_motion) {
+      prediction_finite = last_relative_motion_matrix_.allFinite() &&
+        std::isfinite(last_relative_motion_duration_sec_) &&
+        last_relative_motion_duration_sec_ > 0.0;
+    } else if (
       use_imu_preintegration_ &&
       !imu_preintegration_fallback_mode &&
       imu_smoother_initialized &&
@@ -1978,11 +2102,78 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
       imu_preintegration_fallback_mode,
       imu_smoother_initialized,
       imu_samples_ready_for_deskew,
-      prediction_finite});
+      prediction_finite,
+      !use_pose_history && !use_lidar_motion,
+      !use_lidar_motion});
   if (!decision.should_apply) {
     latest_continuous_time_deskew_status_ =
       lidar_localization::continuousTimeDeskewStatusMessage(decision.status);
     return false;
+  }
+
+  if (use_lidar_motion) {
+    const double motion_scale =
+      latest_scan_time_duration_sec_ / last_relative_motion_duration_sec_;
+    if (!std::isfinite(motion_scale) || motion_scale <= 0.0 || motion_scale > 1.5) {
+      latest_continuous_time_deskew_status_ =
+        "continuous_time_deskew_lidar_motion_interval_mismatch";
+      return false;
+    }
+    const Eigen::Matrix4f scan_motion = lidar_localization::scaleRelativeMotion(
+      last_relative_motion_matrix_, motion_scale);
+    const auto deskew_result = lidar_localization::deskewPointCloudWithRelativeMotion(
+      *prepared_scan.cloud,
+      prepared_scan.relative_times_sec,
+      latest_scan_time_duration_sec_,
+      scan_motion,
+      continuous_time_deskew_reference_time_sec_);
+    if (!deskew_result.applied) {
+      latest_continuous_time_deskew_status_ =
+        "continuous_time_deskew_lidar_motion_not_applied";
+      return false;
+    }
+    prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(deskew_result.cloud));
+    latest_continuous_time_deskew_applied_ = true;
+    latest_continuous_time_deskew_status_ =
+      "continuous_time_deskew_lidar_motion_applied";
+    latest_continuous_time_deskew_point_count_ = deskew_result.deskewed_point_count;
+    latest_continuous_time_deskew_skipped_invalid_time_count_ =
+      deskew_result.skipped_invalid_time_count;
+    latest_continuous_time_deskew_clamped_time_count_ = deskew_result.clamped_time_count;
+    return true;
+  }
+
+  if (use_pose_history) {
+    const double scan_start_sec = continuous_time_cloud_stamp_reference_ == "end" ?
+      scan_stamp_sec - latest_scan_time_duration_sec_ :
+      scan_stamp_sec + prepared_scan.point_time_reference_sec;
+    const auto deskew_result = lidar_localization::deskewPointCloudWithPoseHistory(
+      *prepared_scan.cloud,
+      prepared_scan.relative_times_sec,
+      scan_start_sec,
+      latest_scan_time_duration_sec_,
+      pose_history,
+      continuous_time_deskew_reference_time_sec_);
+    latest_continuous_time_deskew_pose_history_coverage_ratio_ =
+      deskew_result.coverage_ratio;
+    latest_continuous_time_deskew_status_ =
+      lidar_localization::poseHistoryDeskewStatusMessage(deskew_result.status);
+    if (!deskew_result.applied) {
+      return false;
+    }
+    prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(deskew_result.cloud));
+    prepared_scan.relative_times_aligned_with_cloud =
+      prepared_scan.relative_times_sec.size() == prepared_scan.cloud->size();
+    latest_continuous_time_deskew_applied_ = true;
+    latest_continuous_time_deskew_point_count_ = deskew_result.deskewed_point_count;
+    latest_continuous_time_deskew_skipped_invalid_time_count_ =
+      deskew_result.skipped_invalid_time_count;
+    RCLCPP_DEBUG_THROTTLE(
+      get_logger(), *get_clock(), 10000,
+      "Piecewise IMU pose-history deskew applied to %zu points (coverage=%.3f).",
+      latest_continuous_time_deskew_point_count_,
+      latest_continuous_time_deskew_pose_history_coverage_ratio_);
+    return true;
   }
 
   const Eigen::Matrix4f start_to_end_motion = scan_start_pose.inverse() * scan_end_pose;
@@ -2170,7 +2361,19 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       break;
     }
     case lidar_localization::RegistrationSeedSource::kPreviousDelta:
-      selected_seed.init_guess = predicted_pose_matrix_;
+      if (latest_localizability_guard_active_) {
+        selected_seed.source =
+          lidar_localization::RegistrationSeedSource::kLocalizabilityGuard;
+        RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 5000,
+          "Suppressing previous-delta seed: horizontal localizability ratio %.4f < %.4f.",
+          latest_horizontal_localizability_.eigenvalue_ratio,
+          localizability_min_xy_eigen_ratio_);
+      } else {
+        selected_seed.init_guess = predicted_pose_matrix_;
+      }
+      break;
+    case lidar_localization::RegistrationSeedSource::kLocalizabilityGuard:
       break;
     case lidar_localization::RegistrationSeedSource::kCurrentPose:
       break;
@@ -2358,6 +2561,15 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   attempt.alignment_time_sec = time_align_end.seconds() - time_align_start.seconds();
   attempt.has_converged = registration_->hasConverged();
   attempt.fitness_score = registration_->getFitnessScore();
+
+  if (enable_registration_localizability_diagnostics_ && ndt_omp_registration_) {
+    Eigen::Matrix<double, 6, 6> hessian;
+    std::size_t correspondence_count = 0;
+    ndt_omp_registration_->evaluateFinalScoreHessian(
+      hessian, correspondence_count);
+    attempt.registration_localizability =
+      lidar_localization::analyzeRegistrationHessian(hessian, correspondence_count);
+  }
 
   const auto seed_metrics = lidar_localization::computeAlignmentSeedMetrics(
     have_last_accepted_pose_,
@@ -2619,12 +2831,15 @@ void PCLLocalization::resetPredictionState(const Eigen::Matrix4f & pose_matrix, 
   consecutive_rejected_updates_ = state.consecutive_rejected_updates;
   last_accepted_pose_time_sec_ = state.last_accepted_pose_time_sec;
   predicted_pose_time_sec_ = state.predicted_pose_time_sec;
+  last_relative_motion_duration_sec_ = 0.0;
 }
 
 void PCLLocalization::updatePredictionState(
   const Eigen::Matrix4f & accepted_pose_matrix,
   double stamp_sec)
 {
+  const double accepted_interval_sec = have_last_accepted_pose_ ?
+    stamp_sec - last_accepted_pose_time_sec_ : 0.0;
   const auto state = lidar_localization::updatePredictionStateFromAcceptedMeasurement(
     make_prediction_state_snapshot(
       have_last_accepted_pose_,
@@ -2643,6 +2858,9 @@ void PCLLocalization::updatePredictionState(
   consecutive_rejected_updates_ = state.consecutive_rejected_updates;
   last_accepted_pose_time_sec_ = state.last_accepted_pose_time_sec;
   predicted_pose_time_sec_ = state.predicted_pose_time_sec;
+  if (std::isfinite(accepted_interval_sec) && accepted_interval_sec > 0.0) {
+    last_relative_motion_duration_sec_ = accepted_interval_sec;
+  }
 }
 
 void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
@@ -3324,7 +3542,8 @@ void PCLLocalization::publishAlignmentStatusForAttempt(
     attempt.seed_yaw_since_accept_deg,
     attempt.accepted_gap_sec,
     imu_prediction_active,
-    registration_seed_source);
+    registration_seed_source,
+    attempt.registration_localizability);
 }
 
 void PCLLocalization::publishAlignmentStatus(
@@ -3341,7 +3560,8 @@ void PCLLocalization::publishAlignmentStatus(
   double seed_yaw_since_accept_deg,
   double accepted_gap_sec,
   bool imu_prediction_active,
-  const std::string & registration_seed_source)
+  const std::string & registration_seed_source,
+  const lidar_localization::RegistrationLocalizabilityMetrics & registration_localizability)
 {
   if (!status_pub_) {return;}
 
@@ -3359,7 +3579,8 @@ void PCLLocalization::publishAlignmentStatus(
     seed_yaw_since_accept_deg,
     accepted_gap_sec,
     imu_prediction_active,
-    registration_seed_source};
+    registration_seed_source,
+    registration_localizability};
 
   const auto evaluation = evaluateAlignmentStatus(stamp, publish_input);
   auto status = makeAlignmentDiagnosticStatus(evaluation.status_input);
@@ -3392,7 +3613,8 @@ lidar_localization::AlignmentStatusInput PCLLocalization::makeAlignmentStatusInp
       input.seed_yaw_since_accept_deg,
       input.accepted_gap_sec,
       input.imu_prediction_active,
-      input.registration_seed_source},
+      input.registration_seed_source,
+      input.registration_localizability},
     makeAlignmentStatusRuntimeContext(stamp_sec));
 }
 
@@ -3512,6 +3734,14 @@ PCLLocalization::prepareAlignmentDiagnosticValuesInput(
     latest_continuous_time_deskew_skipped_invalid_time_count_;
   diagnostic_input.continuous_time_deskew_clamped_time_count =
     latest_continuous_time_deskew_clamped_time_count_;
+  diagnostic_input.continuous_time_deskew_mode = continuous_time_deskew_mode_;
+  diagnostic_input.continuous_time_deskew_pose_history_coverage_ratio =
+    latest_continuous_time_deskew_pose_history_coverage_ratio_;
+  diagnostic_input.localizability_guard_enabled = enable_localizability_guard_;
+  diagnostic_input.localizability_valid = latest_horizontal_localizability_.valid;
+  diagnostic_input.horizontal_localizability_eigenvalue_ratio =
+    latest_horizontal_localizability_.eigenvalue_ratio;
+  diagnostic_input.localizability_guard_active = latest_localizability_guard_active_;
   return diagnostic_input;
 }
 

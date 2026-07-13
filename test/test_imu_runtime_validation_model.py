@@ -136,13 +136,18 @@ class TestImuRuntimeValidationModel(unittest.TestCase):
                 continuous_time_deskew_status="continuous_time_deskew_applied",
                 continuous_time_deskew_applied="true",
                 continuous_time_deskew_point_count="100",
+                scan_time_duration_sec="0.2",
             ),
             sample(
                 continuous_time_deskew_status="continuous_time_deskew_applied",
                 continuous_time_deskew_applied="true",
                 continuous_time_deskew_point_count="120",
+                scan_time_duration_sec="0.3",
             ),
-            sample(continuous_time_deskew_status="continuous_time_deskew_waiting_for_new_imu"),
+            sample(
+                continuous_time_deskew_status="continuous_time_deskew_waiting_for_new_imu",
+                scan_time_duration_sec="0.1",
+            ),
         ])
         checks = evaluate_runtime_summary(
             summary,
@@ -152,6 +157,10 @@ class TestImuRuntimeValidationModel(unittest.TestCase):
         self.assertEqual(validation_exit_code(checks), 0)
         self.assertEqual(summary["continuous_time_deskew_applied_count"], 2)
         self.assertEqual(summary["continuous_time_deskew_point_count_max"], 120)
+        self.assertEqual(summary["scan_time_duration_sample_count"], 3)
+        self.assertAlmostEqual(summary["scan_time_duration_median_sec"], 0.2)
+        self.assertAlmostEqual(summary["scan_time_duration_p95_sec"], 0.29)
+        self.assertAlmostEqual(summary["scan_time_duration_max_sec"], 0.3)
 
     def test_deskew_required_fails_when_never_applied(self):
         summary = summarize_runtime([

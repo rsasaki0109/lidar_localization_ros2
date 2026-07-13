@@ -1,6 +1,6 @@
 # Development Plan
 
-Last updated: 2026-07-03
+Last updated: 2026-07-13
 
 This document is the working development plan for `lidar_localization_ros2`. It is more
 detailed and more dated than [competitive_roadmap.md](competitive_roadmap.md): the roadmap
@@ -10,16 +10,28 @@ claim rules and decision gates win.
 
 Related documents:
 
+- [research_driven_development_plan.md](research_driven_development_plan.md): post-2026-07-09
+  literature-driven priorities, hypotheses, and experiment gates
 - [competitive_roadmap.md](competitive_roadmap.md): mission, competitors, decision gates, claim rules
 - [reliability_roadmap.md](reliability_roadmap.md): issue triage matrix and sprint notes
 - [global_localization_roadmap.md](global_localization_roadmap.md): G1/G2/G3 global localization phases
 - [v1_status.md](v1_status.md): what v1.0.0 means and its validated boundary
 - [public_validation_log.md](public_validation_log.md): recorded validation snapshots
 
-## Current State (2026-07-03)
+## Current State (2026-07-13)
+
+For work after the 2026-07-09 configurable Livox scan-time guard, use
+[research_driven_development_plan.md](research_driven_development_plan.md) as the execution order.
+The competitive roadmap's decision gates and claim rules still take precedence.
 
 What is true right now:
 
+- The first controlled Koide corner deskew A/B is complete (2026-07-13). Three repeats of
+  bag offset `85 s`, duration `27 s` rejected the current start-to-end deskew as a default
+  candidate: both LiDAR-only and deskew succeeded only `1/3`, and deskew had a catastrophic
+  worst run (`30.458 m` RMSE, `40.754 m` end error). The next step is timestamp-aligned,
+  piecewise IMU pose history with an explicit no-extrapolation coverage guard; see
+  [research_driven_development_plan.md](research_driven_development_plan.md).
 - **G3 guarded automatic reinitialization is validated on Koide outdoor_hard_01a (120 s).**
   Sprint A landed G2 per-candidate NDT registration scoring (`g2_ndt_score`), the
   `check_koide_recovery_health.py` stable-recovery rubric, and the fast-G2 recovery
@@ -624,6 +636,40 @@ or runtime-bound, not logic): a live/replay smoke on the Koide kidnapped-start w
 and capture of the post-reset recovery evidence for the roadmap's evidence gate.
 
 ## Suggested Order Of Work
+
+### 2026-07-13: Koide corner multi-method motion-compensation matrix
+
+Koide `outdoor_hard_01a`の85--112 sを、LiDAR-only、現行deskew、point-time対応の区分的
+IMU pose-history deskew、LiDAR constant-velocity deskew、XY固有値比localizability guardの
+5 modeで各3回評価した。artifactは
+`/tmp/lidarloc_koide_multimethod_valid_20260713`。共通accuracy/coverage/reject/reinit/latency
+gateは全candidateがFAILし、defaultは変更しない。
+
+- IMU pose-historyはcoverage median 1.0でもRMSE median 18.137 m、最悪end 40.259 m。
+- LiDAR constant-velocityはRMSE median 0.583 mだがrotation RMSE median 9.552 deg、
+  最悪最大誤差3.553 m。
+- localizability proxyは固有値比最小0.477で一度も発火せず、改善claimはできない。
+- 全modeでcrash/NaN/reinitializationは0。実行間ばらつきと高負荷のため単発値は採用根拠にしない。
+
+次のdeskew作業はparameter sweepではなく、IMU extrinsic/biasとreference-frameの検証、または
+registration内部で軌跡を同時最適化する方式に限定する。localizabilityはscan共分散proxyを
+昇格させず、correspondence/Hessianの6-DoF方向寄与をdiagnostic-onlyで実装する。
+
+### 2026-07-13: IMU contract audit and NDT Hessian localizability verdict
+
+公開Koide bagのgyro積分とGT姿勢差分をscan区間で対応付けるoffline診断を追加した。
+identity、Wahba extrinsic、24個の右手系signed-axis mapping、定常bias、cloud stamp start/endを
+同時比較する。2000 scanを3回実行したJSONはbyte-identicalで、IMU/cloudはいずれも
+`livox_frame`、最良axis mappingはidentity、Wahba extrinsicはidentityから`0.433 deg`、biasは
+`[0.00919, -0.00511, 0.01113] rad/s`だった。start stamp仮説はRMSE `0.0577 rad/s`、endは
+`0.0826 rad/s`でstartが整合した。大きな軸反転やextrinsic誤設定は支持されず、biasと
+reference精度を含む残差が次のIMU候補になる。
+
+同時にdefault-offのNDT_OMP 6-DoF Hessian診断を実装し、Koide cornerを3回評価した。
+38/38行が有効だったが、weak ratio/conditionのcausal alarmがGT errorまたはrejectより先行した
+runは0/3。診断自体もalignment median `0.959--1.290 s`、coverage `0.415--0.604`でlatency gateを
+満たさなかった。この指標はnegative resultとして記録し、TSVD freeze/soft regularizationへは
+進まない。詳細と再開条件は`research_driven_development_plan.md`のR2 resultに固定した。
 
 Phase 0, Phase 3 (all three steps), G1, the BBS speedup, G2, **G3 Koide 120 s
 recovery**, and **Phase 1 Koide backend comparison (smoke harness + full 380 s

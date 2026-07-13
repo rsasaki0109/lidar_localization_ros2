@@ -46,6 +46,8 @@ struct ContinuousTimeDeskewDecisionInput
   bool smoother_initialized{false};
   bool has_new_imu_samples{false};
   bool prediction_finite{false};
+  bool requires_smoother{true};
+  bool requires_imu_preintegration{true};
 };
 
 struct ContinuousTimeDeskewDecision
@@ -114,13 +116,13 @@ inline ContinuousTimeDeskewDecision decideContinuousTimeDeskew(
   {
     return {ContinuousTimeDeskewStatus::kTimesNotAligned, false};
   }
-  if (!input.use_imu_preintegration) {
+  if (input.requires_imu_preintegration && !input.use_imu_preintegration) {
     return {ContinuousTimeDeskewStatus::kImuPreintegrationDisabled, false};
   }
-  if (input.imu_preintegration_fallback_mode) {
+  if (input.requires_imu_preintegration && input.imu_preintegration_fallback_mode) {
     return {ContinuousTimeDeskewStatus::kImuFallbackMode, false};
   }
-  if (!input.smoother_initialized) {
+  if (input.requires_smoother && !input.smoother_initialized) {
     return {ContinuousTimeDeskewStatus::kWaitingForSmoother, false};
   }
   if (!input.has_new_imu_samples) {
@@ -173,6 +175,24 @@ inline Eigen::Matrix4f interpolateRelativeMotion(
     q_start.slerp(static_cast<float>(clamped_alpha), q_end).normalized();
   interpolated.block<3, 3>(0, 0) = q_interp.toRotationMatrix();
   return interpolated;
+}
+
+inline Eigen::Matrix4f scaleRelativeMotion(
+  const Eigen::Matrix4f & motion,
+  double scale)
+{
+  Eigen::Matrix4f scaled = Eigen::Matrix4f::Identity();
+  if (!motion.allFinite() || !std::isfinite(scale)) {
+    scaled.setConstant(std::numeric_limits<float>::quiet_NaN());
+    return scaled;
+  }
+  scaled.block<3, 1>(0, 3) =
+    motion.block<3, 1>(0, 3) * static_cast<float>(scale);
+  Eigen::Quaternionf end(motion.block<3, 3>(0, 0));
+  end.normalize();
+  scaled.block<3, 3>(0, 0) = Eigen::Quaternionf::Identity().slerp(
+    static_cast<float>(scale), end).normalized().toRotationMatrix();
+  return scaled;
 }
 
 inline pcl::PointXYZI transformPointXyzi(

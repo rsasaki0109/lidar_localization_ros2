@@ -18,6 +18,27 @@ loader.exec_module(compare_runs)
 
 
 class TestBenchmarkCompareRuns(unittest.TestCase):
+    def test_alignment_summary_reports_interpolated_p95(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "alignment_status.csv"
+            with path.open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.DictWriter(
+                    stream,
+                    fieldnames=["stamp_sec", "level", "values_json"],
+                )
+                writer.writeheader()
+                for index, duration in enumerate([0.01, 0.02, 0.03]):
+                    writer.writerow({
+                        "stamp_sec": str(index),
+                        "level": "0",
+                        "values_json": '{"alignment_time_sec": "' + str(duration) + '"}',
+                    })
+
+            summary = compare_runs.summarize_alignment(path)
+
+        self.assertAlmostEqual(summary["alignment_time_median_sec"], 0.02)
+        self.assertAlmostEqual(summary["alignment_time_p95_sec"], 0.029)
+
     def test_pose_trace_summary_reports_last_elapsed_and_ratio(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             pose_path = Path(tmp_dir) / "pose_trace.csv"

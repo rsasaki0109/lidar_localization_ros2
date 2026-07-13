@@ -12,10 +12,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 ROS_RUN_SCRIPTS = {
     "scripts/check_lidar_localization_bringup.py",
+    "scripts/analyze_koide_imu_consistency.py",
     "scripts/create_lidar_localization_config.py",
     "scripts/prepare_koide_hard_relocalization_assets.sh",
     "scripts/run_koide_hard_imu_deskew_smoke.sh",
+    "scripts/run_koide_corner_deskew_ab.sh",
     "scripts/run_lidar_localization_imu_comparison.py",
+    "scripts/summarize_koide_deskew_ab.py",
+    "scripts/summarize_registration_localizability.py",
     "scripts/validate_lidar_localization_imu.py",
 }
 BOOTSTRAP_SCRIPT = "scripts/bootstrap_colcon_workspace.sh"

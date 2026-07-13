@@ -148,6 +148,7 @@ install(PROGRAMS
   scripts/benchmark_eval_trajectory
   scripts/benchmark_eval_evo_ape
   scripts/augment_pointcloud_intensity.py
+  scripts/analyze_koide_imu_consistency.py
   scripts/make_disabled_relocalization_attempts.py
   scripts/observe_relocalization_reset_execution.py
   scripts/make_route_grid_relocalization_attempts.py
@@ -190,7 +191,10 @@ install(PROGRAMS
   scripts/run_experiment_suite.py
   scripts/run_imu_guard_experiments.py
   scripts/run_koide_hard_imu_deskew_smoke.sh
+  scripts/run_koide_corner_deskew_ab.sh
   scripts/run_lidar_localization_imu_comparison.py
+  scripts/summarize_koide_deskew_ab.py
+  scripts/summarize_registration_localizability.py
   scripts/run_measurement_acceptance_experiments.py
   scripts/run_nav2_reinit_supervisor_sweep.sh
   scripts/run_nav2_reinit_supervisor_regression.sh
@@ -336,6 +340,16 @@ if(BUILD_TESTING)
     COMMAND test_registration_backend_policy
   )
 
+  add_executable(test_registration_localizability_policy
+    test/test_registration_localizability_policy.cpp)
+  target_include_directories(test_registration_localizability_policy PRIVATE
+    include
+    ${EIGEN3_INCLUDE_DIRS})
+  add_test(
+    NAME registration_localizability_policy
+    COMMAND test_registration_localizability_policy
+  )
+
   add_executable(test_alignment_diagnostics_policy
     test/test_alignment_diagnostics_policy.cpp)
   target_include_directories(test_alignment_diagnostics_policy PRIVATE
@@ -472,6 +486,28 @@ if(BUILD_TESTING)
   add_test(
     NAME continuous_time_deskew_policy
     COMMAND test_continuous_time_deskew_policy
+  )
+
+  add_executable(test_imu_pose_history_deskew
+    test/test_imu_pose_history_deskew.cpp)
+  target_include_directories(test_imu_pose_history_deskew PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(test_imu_pose_history_deskew
+    ${PCL_LIBRARIES})
+  add_test(
+    NAME imu_pose_history_deskew
+    COMMAND test_imu_pose_history_deskew
+  )
+
+  add_executable(test_localizability_policy
+    test/test_localizability_policy.cpp)
+  target_include_directories(test_localizability_policy PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(test_localizability_policy
+    ${PCL_LIBRARIES})
+  add_test(
+    NAME localizability_policy
+    COMMAND test_localizability_policy
   )
 
   add_executable(test_imu_preintegration
@@ -664,12 +700,24 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_run_lidar_localization_imu_comparison.py
   )
   add_test(
+    NAME analyze_koide_imu_consistency
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_analyze_koide_imu_consistency.py
+  )
+  add_test(
     NAME benchmark_compare_runs
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_benchmark_compare_runs.py
   )
   add_test(
+    NAME benchmark_eval_trajectory
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_benchmark_eval_trajectory.py
+  )
+  add_test(
     NAME koide_hard_imu_deskew_smoke_script
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_koide_hard_imu_deskew_smoke_script.py
+  )
+  add_test(
+    NAME summarize_koide_deskew_ab
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_summarize_koide_deskew_ab.py
   )
   add_test(
     NAME koide_hard_relocalization_assets_script
@@ -694,6 +742,10 @@ if(BUILD_TESTING)
   add_test(
     NAME koide_hard_imu_deskew_smoke_shell
     COMMAND bash -n ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_koide_hard_imu_deskew_smoke.sh
+  )
+  add_test(
+    NAME koide_corner_deskew_ab_shell
+    COMMAND bash -n ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_koide_corner_deskew_ab.sh
   )
   add_test(
     NAME koide_hard_relocalization_assets_shell

@@ -15,6 +15,7 @@ enum class RegistrationSeedSource
   kTwistEkf,
   kTwistPrediction,
   kPreviousDelta,
+  kLocalizabilityGuard,
 };
 
 struct RegistrationSeedPolicyInput
@@ -135,6 +136,8 @@ inline const char * registrationSeedSourceName(RegistrationSeedSource source)
       return "twist_prediction";
     case RegistrationSeedSource::kPreviousDelta:
       return "previous_delta";
+    case RegistrationSeedSource::kLocalizabilityGuard:
+      return "localizability_guard_current_pose";
   }
   return "unknown";
 }
