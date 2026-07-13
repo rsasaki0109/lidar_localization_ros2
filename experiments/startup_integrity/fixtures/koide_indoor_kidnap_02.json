@@ -1,0 +1,16 @@
+{
+  "name": "koide_indoor_kidnap_02",
+  "description": "Koide indoor_kidnap_02 diverges through moderate repeated corrections; trigger by update four.",
+  "source": "Koide indoor_kidnap_02 30 s replay, alignment_status.csv, first eight updates; 9.81 m translation RMSE",
+  "expectation": {"should_trigger_by_index": 4},
+  "samples": [
+    {"index": 0, "fitness_score": 0.297552, "correction_translation_m": 0.436340, "correction_yaw_deg": 3.819970},
+    {"index": 1, "fitness_score": 0.230090, "correction_translation_m": 0.078306, "correction_yaw_deg": 2.406117},
+    {"index": 2, "fitness_score": 0.203794, "correction_translation_m": 0.185685, "correction_yaw_deg": 1.567979},
+    {"index": 3, "fitness_score": 0.206986, "correction_translation_m": 0.364062, "correction_yaw_deg": 1.475832},
+    {"index": 4, "fitness_score": 0.194832, "correction_translation_m": 0.278289, "correction_yaw_deg": 2.884912},
+    {"index": 5, "fitness_score": 0.186300, "correction_translation_m": 0.125627, "correction_yaw_deg": 1.179311},
+    {"index": 6, "fitness_score": 0.174125, "correction_translation_m": 0.514947, "correction_yaw_deg": 0.404047},
+    {"index": 7, "fitness_score": 0.170978, "correction_translation_m": 0.015394, "correction_yaw_deg": 0.220586}
+  ]
+}

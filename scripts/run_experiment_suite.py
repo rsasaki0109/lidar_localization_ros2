@@ -29,6 +29,7 @@ def main() -> int:
         repo_root / "scripts" / "run_measurement_acceptance_experiments.py",
         repo_root / "scripts" / "run_recovery_action_experiments.py",
         repo_root / "scripts" / "run_reinit_trigger_experiments.py",
+        repo_root / "scripts" / "run_startup_integrity_experiments.py",
     ]
     for script in scripts:
         subprocess.run([sys.executable, str(script)], check=True, cwd=repo_root)

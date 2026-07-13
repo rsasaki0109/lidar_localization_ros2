@@ -1,0 +1,16 @@
+{
+  "name": "koide_indoor_kidnap_01_live_r02",
+  "description": "A second aliased indoor_kidnap_01 replay with bounded first-five corrections; it exposes missed detections.",
+  "source": "Koide indoor_kidnap_01 closed-loop replay 2026-07-14, alignment_status.csv, first eight updates; 7.99 m translation RMSE",
+  "expectation": {"should_trigger_by_index": 4},
+  "samples": [
+    {"index": 0, "fitness_score": 0.355233, "correction_translation_m": 0.323035, "correction_yaw_deg": 3.082170},
+    {"index": 1, "fitness_score": 0.282798, "correction_translation_m": 0.275087, "correction_yaw_deg": 2.314930},
+    {"index": 2, "fitness_score": 0.270136, "correction_translation_m": 0.167076, "correction_yaw_deg": 0.391755},
+    {"index": 3, "fitness_score": 0.286703, "correction_translation_m": 0.113692, "correction_yaw_deg": 0.838790},
+    {"index": 4, "fitness_score": 0.307123, "correction_translation_m": 0.127422, "correction_yaw_deg": 1.441421},
+    {"index": 5, "fitness_score": 2.731270, "correction_translation_m": 0.139371, "correction_yaw_deg": 11.291606},
+    {"index": 6, "fitness_score": 3.033228, "correction_translation_m": 0.447004, "correction_yaw_deg": 1.958738},
+    {"index": 7, "fitness_score": 0.335211, "correction_translation_m": 0.378505, "correction_yaw_deg": 10.096553}
+  ]
+}

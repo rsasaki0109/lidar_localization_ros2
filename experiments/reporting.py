@@ -174,6 +174,14 @@ def write_experiments_doc(repo_root: Path, results: list[dict[str, Any]]) -> Non
                 f"{variant['benchmark_score']:.1f} | {variant['readability_score']:.1f} | "
                 f"{variant['extensibility_score']:.1f} | {variant['overall_score']:.2f} |"
             )
+        research_context = result.get("research_context", [])
+        if research_context:
+            lines += ["", "### Research Context", ""]
+            for reference in research_context:
+                lines.append(
+                    f"- [{reference['title']}]({reference['url']}): "
+                    f"{reference['relevance']}"
+                )
         lines += [
             "",
             "### Fixture Outcomes",
@@ -212,6 +220,17 @@ def write_decisions_doc(repo_root: Path, results: list[dict[str, Any]]) -> None:
     for result in results:
         best = result["variants"][0]
         runner_up = result["variants"][1] if len(result["variants"]) > 1 else None
+        if result.get("promotion_decision") == "no_promotion":
+            lines += [
+                f"## {result['title']}",
+                "",
+                "- runtime promotion: `none`",
+                f"- leading comparator: `{best['name']}` at `{best['overall_score']}`",
+                f"- reason: {result['promotion_reason']}",
+                f"- generated_from: `{result['generated_from']}`",
+                "",
+            ]
+            continue
         lines += [
             f"## {result['title']}",
             "",

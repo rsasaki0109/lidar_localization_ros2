@@ -201,6 +201,7 @@ install(PROGRAMS
   scripts/run_nav2_reinit_supervisor_regression.sh
   scripts/run_recovery_action_experiments.py
   scripts/run_reinit_trigger_experiments.py
+  scripts/run_startup_integrity_experiments.py
   scripts/run_public_demo.sh
   scripts/run_public_validation_dashboard.sh
   scripts/run_v1_1_relocalization_smoke.sh
@@ -547,6 +548,14 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/test/test_correspondence_localizability_experiment.py
   )
   set_tests_properties(correspondence_localizability_experiment PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
+
+  add_test(
+    NAME startup_integrity_experiment
+    COMMAND ${Python3_EXECUTABLE}
+      -m pytest -q ${CMAKE_CURRENT_SOURCE_DIR}/test/test_startup_integrity_experiment.py
+  )
+  set_tests_properties(startup_integrity_experiment PROPERTIES
     ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
 
   add_executable(test_bbs_branch_and_bound

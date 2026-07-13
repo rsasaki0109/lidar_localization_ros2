@@ -60,3 +60,10 @@
 - extensibility score: `94.0`
 - nearest alternative: `failure_kind_eager_reinit` at `78.08`
 - generated_from: `scripts/run_reinit_trigger_experiments.py`
+
+## Startup False-Convergence Integrity Monitor
+
+- runtime promotion: `none`
+- leading comparator: `peak_innovation` at `74.82`
+- reason: No candidate passes every repeated closed-loop fixture: correction-budget variants false-trigger on indoor_easy_02_live_r02 and miss indoor_kidnap_01_live_r02, while peak and fitness variants miss kidnaps.
+- generated_from: `scripts/run_startup_integrity_experiments.py`

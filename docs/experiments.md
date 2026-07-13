@@ -174,3 +174,57 @@ Decide when bounded local recovery should stop and the system should escalate to
 - `seed_reuse_candidate_should_not_reinit`: pass=`True` decision=`stay_in_local_recovery` reason=`stay_in_local_recovery`
 - `short_gap_rejected_measurement_should_not_reinit`: pass=`True` decision=`stay_in_local_recovery` reason=`stay_in_local_recovery`
 - `short_gap_target_unavailable_should_not_reinit`: pass=`True` decision=`stay_in_local_recovery` reason=`stay_in_local_recovery`
+
+## Startup False-Convergence Integrity Monitor
+
+Detect a self-consistent but wrong NDT basin during the first five accepted updates, where scalar fitness remains healthy, without rejecting bounded Koide indoor startups.
+
+| Variant | Design | Benchmark | Readability | Extensibility | Overall |
+|---|---|---:|---:|---:|---:|
+| `peak_innovation` | single-update translation or yaw correction threshold | 71.4 | 65.8 | 94.0 | 74.82 |
+| `cumulative_translation` | startup cumulative translation-correction budget | 71.4 | 66.8 | 89.0 | 74.02 |
+| `normalized_innovation_energy` | startup normalized translation/yaw correction energy | 71.4 | 64.4 | 89.0 | 73.54 |
+| `fitness_only` | scalar NDT fitness threshold | 57.1 | 80.6 | 94.0 | 69.21 |
+
+### Research Context
+
+- [Scan Context: Egocentric Spatial Descriptor for Place Recognition Within 3D Point Cloud Map](https://gisbi-kim.github.io/publications/gkim-2018-iros.pdf): an independent global place descriptor can challenge a locally self-consistent NDT basin
+- [NDT-Transformer: Large-Scale 3D Point Cloud Localisation using the Normal Distribution Transform Representation](https://arxiv.org/abs/2103.12292): global retrieval over NDT-cell descriptors is a second candidate verifier family, separate from local registration fitness
+
+### Fixture Outcomes
+
+#### `peak_innovation`
+- `koide_indoor_easy_01`: pass=`True` decision=`no_trigger` reason=`must_not_trigger`
+- `koide_indoor_easy_02`: pass=`True` decision=`no_trigger` reason=`must_not_trigger`
+- `koide_indoor_easy_02_live_r02`: pass=`True` decision=`no_trigger` reason=`must_not_trigger`
+- `koide_indoor_hard_01`: pass=`True` decision=`no_trigger` reason=`must_not_trigger`
+- `koide_indoor_kidnap_01`: pass=`True` decision=`trigger_at_4` reason=`startup_peak_innovation`
+- `koide_indoor_kidnap_01_live_r02`: pass=`False` decision=`no_trigger` reason=`missing_trigger`
+- `koide_indoor_kidnap_02`: pass=`False` decision=`no_trigger` reason=`missing_trigger`
+
+#### `cumulative_translation`
+- `koide_indoor_easy_01`: pass=`True` decision=`no_trigger` reason=`must_not_trigger`
+- `koide_indoor_easy_02`: pass=`True` decision=`no_trigger` reason=`must_not_trigger`
+- `koide_indoor_easy_02_live_r02`: pass=`False` decision=`trigger_at_2` reason=`startup_translation_budget_exceeded`
+- `koide_indoor_hard_01`: pass=`True` decision=`no_trigger` reason=`must_not_trigger`
+- `koide_indoor_kidnap_01`: pass=`True` decision=`trigger_at_3` reason=`startup_translation_budget_exceeded`
+- `koide_indoor_kidnap_01_live_r02`: pass=`False` decision=`no_trigger` reason=`missing_trigger`
+- `koide_indoor_kidnap_02`: pass=`True` decision=`trigger_at_4` reason=`startup_translation_budget_exceeded`
+
+#### `normalized_innovation_energy`
+- `koide_indoor_easy_01`: pass=`True` decision=`no_trigger` reason=`must_not_trigger`
+- `koide_indoor_easy_02`: pass=`True` decision=`no_trigger` reason=`must_not_trigger`
+- `koide_indoor_easy_02_live_r02`: pass=`False` decision=`trigger_at_2` reason=`startup_innovation_energy_exceeded`
+- `koide_indoor_hard_01`: pass=`True` decision=`no_trigger` reason=`must_not_trigger`
+- `koide_indoor_kidnap_01`: pass=`True` decision=`trigger_at_1` reason=`startup_innovation_energy_exceeded`
+- `koide_indoor_kidnap_01_live_r02`: pass=`False` decision=`no_trigger` reason=`missing_trigger`
+- `koide_indoor_kidnap_02`: pass=`True` decision=`trigger_at_4` reason=`startup_innovation_energy_exceeded`
+
+#### `fitness_only`
+- `koide_indoor_easy_01`: pass=`True` decision=`no_trigger` reason=`must_not_trigger`
+- `koide_indoor_easy_02`: pass=`True` decision=`no_trigger` reason=`must_not_trigger`
+- `koide_indoor_easy_02_live_r02`: pass=`True` decision=`no_trigger` reason=`must_not_trigger`
+- `koide_indoor_hard_01`: pass=`True` decision=`no_trigger` reason=`must_not_trigger`
+- `koide_indoor_kidnap_01`: pass=`False` decision=`no_trigger` reason=`missing_trigger`
+- `koide_indoor_kidnap_01_live_r02`: pass=`False` decision=`no_trigger` reason=`missing_trigger`
+- `koide_indoor_kidnap_02`: pass=`False` decision=`no_trigger` reason=`missing_trigger`
