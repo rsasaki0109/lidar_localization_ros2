@@ -1,0 +1,16 @@
+{
+  "name": "koide_indoor_kidnap_01",
+  "description": "Koide indoor_kidnap_01 aliases to a wrong pose despite low NDT fitness; trigger by update four.",
+  "source": "Koide indoor_kidnap_01 30 s replay, alignment_status.csv, first eight updates; 11.10 m translation RMSE",
+  "expectation": {"should_trigger_by_index": 4},
+  "samples": [
+    {"index": 0, "fitness_score": 0.255351, "correction_translation_m": 0.359377, "correction_yaw_deg": 3.632233},
+    {"index": 1, "fitness_score": 0.250973, "correction_translation_m": 0.402504, "correction_yaw_deg": 5.128694},
+    {"index": 2, "fitness_score": 0.257884, "correction_translation_m": 0.298730, "correction_yaw_deg": 2.836114},
+    {"index": 3, "fitness_score": 0.256195, "correction_translation_m": 0.390997, "correction_yaw_deg": 5.184278},
+    {"index": 4, "fitness_score": 0.174225, "correction_translation_m": 1.226247, "correction_yaw_deg": 8.938875},
+    {"index": 5, "fitness_score": 0.179532, "correction_translation_m": 0.153959, "correction_yaw_deg": 5.307234},
+    {"index": 6, "fitness_score": 0.108636, "correction_translation_m": 0.289807, "correction_yaw_deg": 3.528120},
+    {"index": 7, "fitness_score": 0.099561, "correction_translation_m": 0.512177, "correction_yaw_deg": 8.249064}
+  ]
+}

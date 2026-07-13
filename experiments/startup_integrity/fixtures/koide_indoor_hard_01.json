@@ -1,0 +1,16 @@
+{
+  "name": "koide_indoor_hard_01",
+  "description": "Initially bounded Koide indoor_hard_01 startup; a detector must not pre-emptively trigger.",
+  "source": "Koide indoor_hard_01 30 s replay, alignment_status.csv, first eight updates",
+  "expectation": {"must_not_trigger": true},
+  "samples": [
+    {"index": 0, "fitness_score": 0.020081, "correction_translation_m": 0.028799, "correction_yaw_deg": 0.718098},
+    {"index": 1, "fitness_score": 0.003029, "correction_translation_m": 0.028119, "correction_yaw_deg": 0.904169},
+    {"index": 2, "fitness_score": 0.009491, "correction_translation_m": 0.007976, "correction_yaw_deg": 0.104873},
+    {"index": 3, "fitness_score": 0.012832, "correction_translation_m": 0.038506, "correction_yaw_deg": 0.336622},
+    {"index": 4, "fitness_score": 0.008401, "correction_translation_m": 0.040364, "correction_yaw_deg": 0.321375},
+    {"index": 5, "fitness_score": 0.004529, "correction_translation_m": 0.029175, "correction_yaw_deg": 0.416777},
+    {"index": 6, "fitness_score": 0.006790, "correction_translation_m": 0.016891, "correction_yaw_deg": 0.187251},
+    {"index": 7, "fitness_score": 0.007315, "correction_translation_m": 0.052491, "correction_yaw_deg": 0.151392}
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "koide_indoor_easy_02",
+  "description": "Bounded Koide indoor_easy_02 startup with a 0.39 m first correction; it must not trigger.",
+  "source": "Koide indoor_easy_02 30 s replay, alignment_status.csv, first eight updates",
+  "expectation": {"must_not_trigger": true},
+  "samples": [
+    {"index": 0, "fitness_score": 0.233906, "correction_translation_m": 0.385473, "correction_yaw_deg": 1.478184},
+    {"index": 1, "fitness_score": 0.034110, "correction_translation_m": 0.326145, "correction_yaw_deg": 1.773128},
+    {"index": 2, "fitness_score": 0.492046, "correction_translation_m": 0.106934, "correction_yaw_deg": 0.109045},
+    {"index": 3, "fitness_score": 0.159069, "correction_translation_m": 0.070144, "correction_yaw_deg": 0.266367},
+    {"index": 4, "fitness_score": 0.207277, "correction_translation_m": 0.009597, "correction_yaw_deg": 0.708560},
+    {"index": 5, "fitness_score": 0.613096, "correction_translation_m": 0.101608, "correction_yaw_deg": 0.319710},
+    {"index": 6, "fitness_score": 0.036913, "correction_translation_m": 0.164676, "correction_yaw_deg": 1.925337},
+    {"index": 7, "fitness_score": 0.039935, "correction_translation_m": 0.095763, "correction_yaw_deg": 1.600432}
+  ]
+}

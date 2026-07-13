@@ -1,0 +1,391 @@
+{
+  "problem": "startup_integrity",
+  "title": "Startup False-Convergence Integrity Monitor",
+  "problem_statement": "Detect a self-consistent but wrong NDT basin during the first five accepted updates, where scalar fitness remains healthy, without rejecting bounded Koide indoor startups.",
+  "generated_from": "scripts/run_startup_integrity_experiments.py",
+  "promotion_decision": "no_promotion",
+  "promotion_reason": "No candidate passes every repeated closed-loop fixture: correction-budget variants false-trigger on indoor_easy_02_live_r02 and miss indoor_kidnap_01_live_r02, while peak and fitness variants miss kidnaps.",
+  "research_context": [
+    {
+      "title": "Scan Context: Egocentric Spatial Descriptor for Place Recognition Within 3D Point Cloud Map",
+      "url": "https://gisbi-kim.github.io/publications/gkim-2018-iros.pdf",
+      "relevance": "an independent global place descriptor can challenge a locally self-consistent NDT basin"
+    },
+    {
+      "title": "NDT-Transformer: Large-Scale 3D Point Cloud Localisation using the Normal Distribution Transform Representation",
+      "url": "https://arxiv.org/abs/2103.12292",
+      "relevance": "global retrieval over NDT-cell descriptors is a second candidate verifier family, separate from local registration fitness"
+    }
+  ],
+  "interface": {
+    "methods": [
+      "reset() -> None",
+      "step(sample: StartupIntegritySample) -> StartupIntegrityDecision"
+    ],
+    "sample_type": "StartupIntegritySample",
+    "sample_fields": [
+      "index",
+      "fitness_score",
+      "correction_translation_m",
+      "correction_yaw_deg"
+    ],
+    "decision_type": "StartupIntegrityDecision",
+    "decision_fields": [
+      "request_reinitialization",
+      "reason",
+      "score"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "koide_indoor_easy_01",
+      "description": "Bounded Koide indoor_easy_01 startup; any trigger is a false positive.",
+      "source": "Koide indoor_easy_01 30 s replay, alignment_status.csv, first eight updates"
+    },
+    {
+      "name": "koide_indoor_easy_02",
+      "description": "Bounded Koide indoor_easy_02 startup with a 0.39 m first correction; it must not trigger.",
+      "source": "Koide indoor_easy_02 30 s replay, alignment_status.csv, first eight updates"
+    },
+    {
+      "name": "koide_indoor_easy_02_live_r02",
+      "description": "A second bounded indoor_easy_02 replay with larger startup corrections; it exposes false-trigger overfitting.",
+      "source": "Koide indoor_easy_02 closed-loop replay 2026-07-14, alignment_status.csv, first eight updates"
+    },
+    {
+      "name": "koide_indoor_hard_01",
+      "description": "Initially bounded Koide indoor_hard_01 startup; a detector must not pre-emptively trigger.",
+      "source": "Koide indoor_hard_01 30 s replay, alignment_status.csv, first eight updates"
+    },
+    {
+      "name": "koide_indoor_kidnap_01",
+      "description": "Koide indoor_kidnap_01 aliases to a wrong pose despite low NDT fitness; trigger by update four.",
+      "source": "Koide indoor_kidnap_01 30 s replay, alignment_status.csv, first eight updates; 11.10 m translation RMSE"
+    },
+    {
+      "name": "koide_indoor_kidnap_01_live_r02",
+      "description": "A second aliased indoor_kidnap_01 replay with bounded first-five corrections; it exposes missed detections.",
+      "source": "Koide indoor_kidnap_01 closed-loop replay 2026-07-14, alignment_status.csv, first eight updates; 7.99 m translation RMSE"
+    },
+    {
+      "name": "koide_indoor_kidnap_02",
+      "description": "Koide indoor_kidnap_02 diverges through moderate repeated corrections; trigger by update four.",
+      "source": "Koide indoor_kidnap_02 30 s replay, alignment_status.csv, first eight updates; 9.81 m translation RMSE"
+    }
+  ],
+  "variants": [
+    {
+      "name": "peak_innovation",
+      "design": "single-update translation or yaw correction threshold",
+      "fixture_results": [
+        {
+          "fixture": "koide_indoor_easy_01",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_easy_02",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_easy_02_live_r02",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_hard_01",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_kidnap_01",
+          "passed": true,
+          "outcome": "within_expected_window",
+          "trigger_index": 4,
+          "trigger_reason": "startup_peak_innovation",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_kidnap_01_live_r02",
+          "passed": false,
+          "outcome": "missing_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_kidnap_02",
+          "passed": false,
+          "outcome": "missing_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        }
+      ],
+      "benchmark_score": 71.42857142857143,
+      "readability_score": 65.8,
+      "extensibility_score": 94.0,
+      "static_metrics": {
+        "implementation_file": "experiments/startup_integrity/variants/peak_innovation.py",
+        "loc": 16,
+        "branch_count": 3,
+        "max_nesting_depth": 0,
+        "state_field_count": 1,
+        "public_method_count": 2,
+        "import_count": 4,
+        "has_config_dataclass": true,
+        "readability_score": 65.8,
+        "extensibility_score": 94.0
+      },
+      "overall_score": 74.82
+    },
+    {
+      "name": "cumulative_translation",
+      "design": "startup cumulative translation-correction budget",
+      "fixture_results": [
+        {
+          "fixture": "koide_indoor_easy_01",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_easy_02",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_easy_02_live_r02",
+          "passed": false,
+          "outcome": "must_not_trigger",
+          "trigger_index": 2,
+          "trigger_reason": "startup_translation_budget_exceeded",
+          "trigger_score": 1.121542
+        },
+        {
+          "fixture": "koide_indoor_hard_01",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_kidnap_01",
+          "passed": true,
+          "outcome": "within_expected_window",
+          "trigger_index": 3,
+          "trigger_reason": "startup_translation_budget_exceeded",
+          "trigger_score": 1.451608
+        },
+        {
+          "fixture": "koide_indoor_kidnap_01_live_r02",
+          "passed": false,
+          "outcome": "missing_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_kidnap_02",
+          "passed": true,
+          "outcome": "within_expected_window",
+          "trigger_index": 4,
+          "trigger_reason": "startup_translation_budget_exceeded",
+          "trigger_score": 1.342682
+        }
+      ],
+      "benchmark_score": 71.42857142857143,
+      "readability_score": 66.8,
+      "extensibility_score": 89.0,
+      "static_metrics": {
+        "implementation_file": "experiments/startup_integrity/variants/cumulative_translation.py",
+        "loc": 16,
+        "branch_count": 2,
+        "max_nesting_depth": 1,
+        "state_field_count": 2,
+        "public_method_count": 2,
+        "import_count": 4,
+        "has_config_dataclass": true,
+        "readability_score": 66.8,
+        "extensibility_score": 89.0
+      },
+      "overall_score": 74.02
+    },
+    {
+      "name": "normalized_innovation_energy",
+      "design": "startup normalized translation/yaw correction energy",
+      "fixture_results": [
+        {
+          "fixture": "koide_indoor_easy_01",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_easy_02",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_easy_02_live_r02",
+          "passed": false,
+          "outcome": "must_not_trigger",
+          "trigger_index": 2,
+          "trigger_reason": "startup_innovation_energy_exceeded",
+          "trigger_score": 4.095188039391999
+        },
+        {
+          "fixture": "koide_indoor_hard_01",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_kidnap_01",
+          "passed": true,
+          "outcome": "within_expected_window",
+          "trigger_index": 1,
+          "trigger_reason": "startup_innovation_energy_exceeded",
+          "trigger_score": 4.288296782901563
+        },
+        {
+          "fixture": "koide_indoor_kidnap_01_live_r02",
+          "passed": false,
+          "outcome": "missing_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_kidnap_02",
+          "passed": true,
+          "outcome": "within_expected_window",
+          "trigger_index": 4,
+          "trigger_reason": "startup_innovation_energy_exceeded",
+          "trigger_score": 4.839990655349875
+        }
+      ],
+      "benchmark_score": 71.42857142857143,
+      "readability_score": 64.4,
+      "extensibility_score": 89.0,
+      "static_metrics": {
+        "implementation_file": "experiments/startup_integrity/variants/normalized_innovation_energy.py",
+        "loc": 18,
+        "branch_count": 2,
+        "max_nesting_depth": 1,
+        "state_field_count": 2,
+        "public_method_count": 2,
+        "import_count": 4,
+        "has_config_dataclass": true,
+        "readability_score": 64.4,
+        "extensibility_score": 89.0
+      },
+      "overall_score": 73.54
+    },
+    {
+      "name": "fitness_only",
+      "design": "scalar NDT fitness threshold",
+      "fixture_results": [
+        {
+          "fixture": "koide_indoor_easy_01",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_easy_02",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_easy_02_live_r02",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_hard_01",
+          "passed": true,
+          "outcome": "must_not_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_kidnap_01",
+          "passed": false,
+          "outcome": "missing_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_kidnap_01_live_r02",
+          "passed": false,
+          "outcome": "missing_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        },
+        {
+          "fixture": "koide_indoor_kidnap_02",
+          "passed": false,
+          "outcome": "missing_trigger",
+          "trigger_index": null,
+          "trigger_reason": "",
+          "trigger_score": null
+        }
+      ],
+      "benchmark_score": 57.142857142857146,
+      "readability_score": 80.6,
+      "extensibility_score": 94.0,
+      "static_metrics": {
+        "implementation_file": "experiments/startup_integrity/variants/fitness_only.py",
+        "loc": 12,
+        "branch_count": 1,
+        "max_nesting_depth": 0,
+        "state_field_count": 1,
+        "public_method_count": 2,
+        "import_count": 4,
+        "has_config_dataclass": true,
+        "readability_score": 80.6,
+        "extensibility_score": 94.0
+      },
+      "overall_score": 69.21
+    }
+  ],
+  "benchmark_score_mean": 67.85714285714286
+}

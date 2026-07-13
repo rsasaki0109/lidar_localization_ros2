@@ -205,3 +205,43 @@ Decide when bounded local recovery should stop and the system should escalate to
 - `gap_streak_score_reinit`: scorecard threshold
 - `failure_kind_eager_reinit`: event-driven rule table
 - `never_reinit`: minimal baseline
+
+
+## Startup False-Convergence Integrity Monitor
+
+Detect a self-consistent but wrong NDT basin during the first five accepted updates, where scalar fitness remains healthy, without rejecting bounded Koide indoor startups.
+
+### Minimal Interface
+
+- `reset() -> None`
+- `step(sample: StartupIntegritySample) -> StartupIntegrityDecision`
+
+### `StartupIntegritySample` fields
+
+- `index`
+- `fitness_score`
+- `correction_translation_m`
+- `correction_yaw_deg`
+
+### `StartupIntegrityDecision` fields
+
+- `request_reinitialization`
+- `reason`
+- `score`
+
+### Shared Fixtures
+
+- `koide_indoor_easy_01`: Bounded Koide indoor_easy_01 startup; any trigger is a false positive.
+- `koide_indoor_easy_02`: Bounded Koide indoor_easy_02 startup with a 0.39 m first correction; it must not trigger.
+- `koide_indoor_easy_02_live_r02`: A second bounded indoor_easy_02 replay with larger startup corrections; it exposes false-trigger overfitting.
+- `koide_indoor_hard_01`: Initially bounded Koide indoor_hard_01 startup; a detector must not pre-emptively trigger.
+- `koide_indoor_kidnap_01`: Koide indoor_kidnap_01 aliases to a wrong pose despite low NDT fitness; trigger by update four.
+- `koide_indoor_kidnap_01_live_r02`: A second aliased indoor_kidnap_01 replay with bounded first-five corrections; it exposes missed detections.
+- `koide_indoor_kidnap_02`: Koide indoor_kidnap_02 diverges through moderate repeated corrections; trigger by update four.
+
+### Candidate Families
+
+- `peak_innovation`: single-update translation or yaw correction threshold
+- `cumulative_translation`: startup cumulative translation-correction budget
+- `normalized_innovation_energy`: startup normalized translation/yaw correction energy
+- `fitness_only`: scalar NDT fitness threshold

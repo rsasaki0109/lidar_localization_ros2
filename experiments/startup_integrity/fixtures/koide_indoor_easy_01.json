@@ -1,0 +1,16 @@
+{
+  "name": "koide_indoor_easy_01",
+  "description": "Bounded Koide indoor_easy_01 startup; any trigger is a false positive.",
+  "source": "Koide indoor_easy_01 30 s replay, alignment_status.csv, first eight updates",
+  "expectation": {"must_not_trigger": true},
+  "samples": [
+    {"index": 0, "fitness_score": 0.037697, "correction_translation_m": 0.013118, "correction_yaw_deg": 0.357454},
+    {"index": 1, "fitness_score": 0.039447, "correction_translation_m": 0.014137, "correction_yaw_deg": 0.375205},
+    {"index": 2, "fitness_score": 0.044007, "correction_translation_m": 0.021153, "correction_yaw_deg": 0.119428},
+    {"index": 3, "fitness_score": 0.030847, "correction_translation_m": 0.015485, "correction_yaw_deg": 0.585723},
+    {"index": 4, "fitness_score": 0.032225, "correction_translation_m": 0.023302, "correction_yaw_deg": 0.030502},
+    {"index": 5, "fitness_score": 0.038326, "correction_translation_m": 0.037642, "correction_yaw_deg": 1.202182},
+    {"index": 6, "fitness_score": 0.034090, "correction_translation_m": 0.059343, "correction_yaw_deg": 1.120683},
+    {"index": 7, "fitness_score": 0.037813, "correction_translation_m": 0.045171, "correction_yaw_deg": 0.409448}
+  ]
+}
