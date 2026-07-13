@@ -73,44 +73,44 @@ Accept degraded-but-consistent registration results that the scalar fitness gate
 
 | Variant | Design | Benchmark | Readability | Extensibility | Overall |
 |---|---|---:|---:|---:|---:|
-| `correction_conditioned` | fitness threshold + correction/staleness cross-check | 85.7 | 25.2 | 94.0 | 75.27 |
-| `bounded_degraded` | correction cross-check with non-resetting degraded-accept budget | 85.7 | 34.0 | 84.0 | 75.03 |
-| `score_ratio_budget` | relative score cap with gap/streak budget | 71.4 | 49.6 | 94.0 | 71.58 |
-| `fixed_threshold` | scalar fitness threshold (runtime baseline) | 42.9 | 79.0 | 85.0 | 58.51 |
+| `fixed_threshold` | scalar fitness threshold (runtime baseline) | 87.5 | 79.0 | 85.0 | 85.30 |
+| `bounded_degraded` | correction cross-check with non-resetting degraded-accept budget | 87.5 | 22.6 | 84.0 | 73.82 |
+| `correction_conditioned` | fitness threshold + correction/staleness cross-check | 50.0 | 25.2 | 94.0 | 53.84 |
+| `score_ratio_budget` | relative score cap with gap/streak budget | 37.5 | 49.6 | 94.0 | 51.22 |
 
 ### Fixture Outcomes
 
-#### `correction_conditioned`
-- `degraded_onset_small_correction_should_accept`: pass=`True` decision=`accept` reason=`degraded_score_consistent_pose`
-- `degraded_streak_small_correction_should_accept`: pass=`True` decision=`accept` reason=`degraded_score_consistent_pose`
-- `fresh_jump_good_score_should_reject`: pass=`True` decision=`reject` reason=`fresh_prediction_contradicted`
+#### `fixed_threshold`
+- `degraded_onset_small_correction_should_reject`: pass=`True` decision=`reject` reason=`score_over_threshold`
+- `degraded_streak_small_correction_should_reject`: pass=`True` decision=`reject` reason=`score_over_threshold`
+- `fresh_jump_good_score_should_reject`: pass=`False` decision=`accept` reason=`score_within_threshold`
 - `healthy_tracking_should_accept`: pass=`True` decision=`accept` reason=`score_within_threshold`
-- `lost_huge_score_should_reject`: pass=`True` decision=`reject` reason=`score_over_threshold_unsupported`
-- `stale_prediction_should_reject`: pass=`True` decision=`reject` reason=`score_over_threshold_unsupported`
+- `lost_huge_score_should_reject`: pass=`True` decision=`reject` reason=`score_over_threshold`
+- `stale_prediction_should_reject`: pass=`True` decision=`reject` reason=`score_over_threshold`
 
 #### `bounded_degraded`
-- `degraded_onset_small_correction_should_accept`: pass=`True` decision=`accept` reason=`degraded_accept_within_budget`
-- `degraded_streak_small_correction_should_accept`: pass=`True` decision=`accept` reason=`degraded_accept_within_budget`
+- `degraded_onset_small_correction_should_reject`: pass=`True` decision=`reject` reason=`degraded_budget_exhausted_or_unsupported`
+- `degraded_streak_small_correction_should_reject`: pass=`True` decision=`reject` reason=`degraded_budget_exhausted_or_unsupported`
 - `fresh_jump_good_score_should_reject`: pass=`False` decision=`accept` reason=`score_within_threshold`
 - `healthy_tracking_should_accept`: pass=`True` decision=`accept` reason=`score_within_threshold`
 - `lost_huge_score_should_reject`: pass=`True` decision=`reject` reason=`degraded_budget_exhausted_or_unsupported`
 - `stale_prediction_should_reject`: pass=`True` decision=`reject` reason=`degraded_budget_exhausted_or_unsupported`
 
+#### `correction_conditioned`
+- `degraded_onset_small_correction_should_reject`: pass=`False` decision=`accept` reason=`degraded_score_consistent_pose`
+- `degraded_streak_small_correction_should_reject`: pass=`False` decision=`accept` reason=`degraded_score_consistent_pose`
+- `fresh_jump_good_score_should_reject`: pass=`True` decision=`reject` reason=`fresh_prediction_contradicted`
+- `healthy_tracking_should_accept`: pass=`True` decision=`accept` reason=`score_within_threshold`
+- `lost_huge_score_should_reject`: pass=`True` decision=`reject` reason=`score_over_threshold_unsupported`
+- `stale_prediction_should_reject`: pass=`True` decision=`reject` reason=`score_over_threshold_unsupported`
+
 #### `score_ratio_budget`
-- `degraded_onset_small_correction_should_accept`: pass=`True` decision=`accept` reason=`score_within_ratio_budget`
-- `degraded_streak_small_correction_should_accept`: pass=`True` decision=`accept` reason=`score_within_ratio_budget`
+- `degraded_onset_small_correction_should_reject`: pass=`False` decision=`accept` reason=`score_within_ratio_budget`
+- `degraded_streak_small_correction_should_reject`: pass=`False` decision=`accept` reason=`score_within_ratio_budget`
 - `fresh_jump_good_score_should_reject`: pass=`False` decision=`accept` reason=`score_within_threshold`
 - `healthy_tracking_should_accept`: pass=`True` decision=`accept` reason=`score_within_threshold`
 - `lost_huge_score_should_reject`: pass=`True` decision=`reject` reason=`score_over_ratio_budget`
 - `stale_prediction_should_reject`: pass=`True` decision=`reject` reason=`score_over_ratio_budget`
-
-#### `fixed_threshold`
-- `degraded_onset_small_correction_should_accept`: pass=`False` decision=`reject` reason=`score_over_threshold`
-- `degraded_streak_small_correction_should_accept`: pass=`False` decision=`reject` reason=`score_over_threshold`
-- `fresh_jump_good_score_should_reject`: pass=`False` decision=`accept` reason=`score_within_threshold`
-- `healthy_tracking_should_accept`: pass=`True` decision=`accept` reason=`score_within_threshold`
-- `lost_huge_score_should_reject`: pass=`True` decision=`reject` reason=`score_over_threshold`
-- `stale_prediction_should_reject`: pass=`True` decision=`reject` reason=`score_over_threshold`
 
 ## Recovery Action Selection
 

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "dataset": "Koide outdoor_hard_01a, start_offset=85 s, duration=27 s",
+  "repeats": 3,
+  "synthetic_result": "per_factor_bias_snapshot exactly removes the scalar constant-rate bias error",
+  "runtime_change": "retain per-factor integration-bias snapshots and apply first-order correction at the current bias",
+  "koide_modes": {
+    "lidar_only": {"translation_rmse_median_m": 0.4695, "rotation_rmse_median_deg": 3.1022, "success_repeats": 0},
+    "deskew": {"translation_rmse_median_m": 1.3287, "rotation_rmse_median_deg": 8.2814, "success_repeats": 1, "latency_ratio": 1.3063},
+    "imu_pose_history": {"translation_rmse_median_m": 0.7427, "rotation_rmse_median_deg": 8.4262, "success_repeats": 1, "latency_ratio": 1.1156}
+  },
+  "decision": "retain_correctness_fix_but_do_not_enable_imu_or_deskew_by_default",
+  "reason": "all IMU-enabled candidates failed the all-repeat accuracy and safety gates"
+}

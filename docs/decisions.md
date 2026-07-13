@@ -30,13 +30,13 @@
 
 ## Multi-Criteria Measurement Acceptance
 
-- adopted variant for this problem: `correction_conditioned`
-- design family: fitness threshold + correction/staleness cross-check
-- rationale: highest combined score (`75.27`) under the shared fixture/evaluation contract
-- benchmark score: `85.7`
-- readability score: `25.2`
-- extensibility score: `94.0`
-- nearest alternative: `bounded_degraded` at `75.03`
+- adopted variant for this problem: `fixed_threshold`
+- design family: scalar fitness threshold (runtime baseline)
+- rationale: highest combined score (`85.3`) under the shared fixture/evaluation contract
+- benchmark score: `87.5`
+- readability score: `79.0`
+- extensibility score: `85.0`
+- nearest alternative: `bounded_degraded` at `73.82`
 - generated_from: `scripts/run_measurement_acceptance_experiments.py`
 
 ## Recovery Action Selection

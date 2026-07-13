@@ -21,6 +21,7 @@
   <build_depend>tf2_geometry_msgs</build_depend>
   <build_depend>tf2_eigen</build_depend>
   <build_depend>pcl_conversions</build_depend>
+  <depend>eigen</depend>
   <!-- Optional: builds the bbs_cpp backend for the global localization node.
        The build degrades gracefully (Python fallback) if it is unavailable. -->
   <build_depend>pybind11_vendor</build_depend>
@@ -38,6 +39,7 @@
   <exec_depend>tf2_geometry_msgs</exec_depend>
   <exec_depend>tf2_eigen</exec_depend>
   <exec_depend>pcl_conversions</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
