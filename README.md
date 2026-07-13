@@ -13,7 +13,7 @@
   <img alt="License BSD 2 Clause" src="https://img.shields.io/badge/license-BSD--2--Clause-6b46c1">
 </p>
 
-<img src="./images/path.png" alt="LiDAR localization path over pointcloud map" width="720">
+<p><a href="./docs/koide_gif_gallery.md">Koide indoor/outdoor dataset GIF gallery</a></p>
 
 </div>
 

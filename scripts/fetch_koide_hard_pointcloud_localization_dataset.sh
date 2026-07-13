@@ -56,12 +56,16 @@ require_cmd() {
 download_file() {
   local url="$1"
   local dst="$2"
+  local partial="${dst}.part"
   if [[ -f "${dst}" ]]; then
     echo "Using existing file: ${dst}"
     return 0
   fi
   echo "Downloading ${url}"
-  curl -L --fail --continue-at - --output "${dst}" "${url}"
+  curl -L --fail --continue-at - \
+    --retry 12 --retry-all-errors --retry-delay 10 \
+    --output "${partial}" "${url}"
+  mv "${partial}" "${dst}"
 }
 
 flatten_sequence_dir() {
@@ -168,7 +172,8 @@ for seq in "${sequences[@]}"; do
   zip_path="${output_dir}/${zip_name}"
   dest="${output_dir}/sequences/${seq}"
   download_file "${ZENODO_BASE}/${zip_name}?download=1" "${zip_path}"
-  if [[ -d "${dest}" ]] && [[ "${force_sequences}" -eq 0 ]]; then
+  if [[ "${force_sequences}" -eq 0 ]] && \
+      { [[ -f "${dest}/metadata.yaml" ]] || [[ -f "${dest}/${seq}/metadata.yaml" ]]; }; then
     echo "Using existing directory: ${dest}"
     flatten_sequence_dir "${dest}" "${seq}"
     continue
