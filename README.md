@@ -13,9 +13,7 @@
   <img alt="License BSD 2 Clause" src="https://img.shields.io/badge/license-BSD--2--Clause-6b46c1">
 </p>
 
-<img src="./images/koide_localization.gif" alt="Koide outdoor_hard_01a LiDAR localization replay" width="720">
-
-<sub>Koide outdoor_hard_01a, NDT_OMP LiDAR-only replay (85–112 s).</sub>
+<p><a href="./docs/koide_gif_gallery.md">Koide indoor/outdoor dataset GIF gallery</a></p>
 
 </div>
 

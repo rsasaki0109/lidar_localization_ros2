@@ -74,22 +74,73 @@ def reference_window(reference, start, end):
     return window
 
 
+def motion_headings(poses):
+    """Estimate direction of travel from the trajectory, not sensor orientation."""
+    headings = np.empty(len(poses), dtype=np.float64)
+    last_heading = float(poses[0, 3])
+    minimum_baseline = 0.3
+    for index in range(len(poses)):
+        before = index
+        while before > 0:
+            before -= 1
+            if math.hypot(
+                float(poses[index, 1] - poses[before, 1]),
+                float(poses[index, 2] - poses[before, 2]),
+            ) >= minimum_baseline:
+                break
+
+        after = index
+        while after < len(poses) - 1:
+            after += 1
+            if math.hypot(
+                float(poses[after, 1] - poses[index, 1]),
+                float(poses[after, 2] - poses[index, 2]),
+            ) >= minimum_baseline:
+                break
+
+        dx = float(poses[after, 1] - poses[before, 1])
+        dy = float(poses[after, 2] - poses[before, 2])
+        if before != after and math.hypot(dx, dy) >= minimum_baseline:
+            last_heading = math.atan2(dy, dx)
+        headings[index] = last_heading
+    return headings
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--occupancy-yaml", type=Path, required=True)
-    parser.add_argument("--estimated-csv", type=Path, required=True)
+    parser.add_argument("--estimated-csv", type=Path)
     parser.add_argument("--reference-csv", type=Path, required=True)
+    parser.add_argument(
+        "--reference-only",
+        action="store_true",
+        help="Animate the reference route when no localization estimate is available",
+    )
     parser.add_argument("--output-gif", type=Path, required=True)
     parser.add_argument("--frames", type=int, default=64)
     parser.add_argument("--fps", type=int, default=10)
+    parser.add_argument("--sequence-label", default="Koide outdoor_hard_01a")
+    parser.add_argument("--estimate-label", default="NDT_OMP estimate")
+    parser.add_argument("--title", default="ROS 2 LiDAR localization replay (LiDAR-only)")
     args = parser.parse_args()
 
+    if args.reference_only and args.estimated_csv is not None:
+        parser.error("--reference-only cannot be combined with --estimated-csv")
+    if not args.reference_only and args.estimated_csv is None:
+        parser.error("--estimated-csv is required unless --reference-only is used")
+
     pixels, extent = load_occupancy(args.occupancy_yaml)
-    estimated_raw = load_poses(args.estimated_csv)
-    reference = reference_window(
-        load_poses(args.reference_csv), estimated_raw[0, 0], estimated_raw[-1, 0]
-    )
+    reference_raw = load_poses(args.reference_csv)
+    if args.reference_only:
+        estimated_raw = reference_raw
+        reference = reference_raw
+    else:
+        estimated_raw = load_poses(args.estimated_csv)
+        reference = reference_window(
+            reference_raw, estimated_raw[0, 0], estimated_raw[-1, 0]
+        )
     estimated = interpolate_poses(estimated_raw, max(2, args.frames))
+    travel_yaws = motion_headings(estimated)
 
     all_x = np.concatenate((estimated[:, 1], reference[:, 1]))
     all_y = np.concatenate((estimated[:, 2], reference[:, 2]))
@@ -101,7 +152,8 @@ def main() -> int:
     frames = []
     frame_duration = int(round(1000 / max(1, args.fps)))
 
-    for index, (stamp, x, y, yaw) in enumerate(estimated):
+    for index, (stamp, x, y, _) in enumerate(estimated):
+        yaw = travel_yaws[index]
         ax.clear()
         ax.set_facecolor("#e5e7eb")
         ax.imshow(
@@ -116,7 +168,7 @@ def main() -> int:
         ax.plot(reference[:, 1], reference[:, 2], "--", color="#2563eb", linewidth=1.5,
                 alpha=0.8, label="Ground truth")
         ax.plot(estimated[: index + 1, 1], estimated[: index + 1, 2], color="#16a34a",
-                linewidth=2.8, label="NDT_OMP estimate")
+                linewidth=2.8, label=args.estimate_label)
         ax.arrow(
             x,
             y,
@@ -130,13 +182,16 @@ def main() -> int:
             zorder=5,
         )
 
-        nearest = reference[np.argmin(np.abs(reference[:, 0] - stamp))]
-        error = math.hypot(x - nearest[1], y - nearest[2])
         elapsed = stamp - estimated[0, 0]
+        status = f"t = {elapsed:5.1f} s"
+        if not args.reference_only:
+            nearest = reference[np.argmin(np.abs(reference[:, 0] - stamp))]
+            error = math.hypot(x - nearest[1], y - nearest[2])
+            status += f"  |  error = {error:.2f} m"
         ax.text(
             0.02,
             0.97,
-            f"Koide outdoor_hard_01a  |  t = {elapsed:4.1f} s  |  error = {error:.2f} m",
+            f"{args.sequence_label}  |  {status}",
             transform=ax.transAxes,
             va="top",
             color="white",
@@ -150,7 +205,7 @@ def main() -> int:
         ax.set_aspect("equal")
         ax.set_xticks([])
         ax.set_yticks([])
-        ax.set_title("ROS 2 LiDAR localization replay (LiDAR-only)", color="white", pad=8)
+        ax.set_title(args.title, color="white", pad=8)
         fig.tight_layout(pad=0.8)
         fig.canvas.draw()
         rgb = np.asarray(fig.canvas.buffer_rgba())[:, :, :3]

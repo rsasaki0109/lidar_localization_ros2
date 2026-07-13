@@ -1,0 +1,41 @@
+# Koide outdoor_kidnap_a 30 s smoke with guarded IMU preintegration enabled.
+mode: run
+
+dataset:
+  bag_path: repo://data/public/koide_hard_localization/sequences/outdoor_kidnap_a
+  map_path: repo://data/public/koide_hard_localization/map_outdoor_kidnap.ply
+  reference_csv: repo://data/public/koide_hard_localization/benchmark/outdoor_kidnap_a/reference.csv
+  initial_pose_yaml: repo://data/public/koide_hard_localization/benchmark/outdoor_kidnap_a/initial_pose.yaml
+  cloud_topic: /livox/points
+  imu_topic: /livox/imu
+
+localizer:
+  base_param_yaml: repo://param/nav2_ndt_urban.yaml
+  param_overrides:
+    use_imu: false
+    use_imu_preintegration: true
+    enable_scan_voxel_filter: true
+    voxel_leaf_size: 0.5
+    base_frame_id: livox_frame
+    scan_min_range: 1.0
+    scan_max_range: 100.0
+    score_threshold: 6.0
+    enable_recovery_retry_from_last_pose: true
+    recovery_retry_from_last_pose_min_rejections: 3
+    recovery_retry_from_last_pose_max_accepted_gap_sec: 1.0
+    recovery_retry_from_last_pose_max_seed_translation_m: 15.0
+  launch_args:
+    - use_sim_time:=true
+    - lidar_frame_id:=livox_frame
+
+benchmark:
+  output_dir: /tmp/lidarloc_koide_outdoor_kidnap_a_imu_smoke30
+  ros_domain_id: 181
+  bag_duration: 30
+  bag_start_offset: 0
+  settle_seconds: 5
+  post_roll_seconds: 1
+  max_time_diff: 0.05
+  record_qos_reliability: reliable
+  record_qos_durability: volatile
+  record_use_sim_time: true
