@@ -13,7 +13,9 @@
   <img alt="License BSD 2 Clause" src="https://img.shields.io/badge/license-BSD--2--Clause-6b46c1">
 </p>
 
-<img src="./images/path.png" alt="LiDAR localization path over pointcloud map" width="720">
+<img src="./images/koide_localization.gif" alt="Koide outdoor_hard_01a LiDAR localization replay" width="720">
+
+<sub>Koide outdoor_hard_01a, NDT_OMP LiDAR-only replay (85–112 s).</sub>
 
 </div>
 
