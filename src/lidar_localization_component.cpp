@@ -227,8 +227,9 @@ using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface
 CallbackReturn PCLLocalization::on_configure(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(get_logger(), "Configuring");
+  auto state_lock = callback_state_coordinator_.lockState();
 
-  shutting_down_ = false;
+  shutting_down_.store(false, std::memory_order_release);
   initializeParameters();
   initializePubSub();
   initializeRegistration();
@@ -243,6 +244,7 @@ CallbackReturn PCLLocalization::on_configure(const rclcpp_lifecycle::State &)
 CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(get_logger(), "Activating");
+  auto state_lock = callback_state_coordinator_.lockState();
 
   pose_pub_->on_activate();
   path_pub_->on_activate();
@@ -371,6 +373,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
 CallbackReturn PCLLocalization::on_deactivate(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(get_logger(), "Deactivating");
+  auto state_lock = callback_state_coordinator_.lockState();
 
 #ifdef LIDAR_LOCALIZATION_HAVE_NAV2_BOND
   if (bond_) {
@@ -415,7 +418,8 @@ CallbackReturn PCLLocalization::on_error(const rclcpp_lifecycle::State & state)
 
 void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdown)
 {
-  shutting_down_ = true;
+  shutting_down_.store(true, std::memory_order_release);
+  auto state_lock = callback_state_coordinator_.lockState();
 
 #ifdef LIDAR_LOCALIZATION_HAVE_NAV2_BOND
   bond_.reset();
@@ -443,6 +447,8 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   reinitialization_request_pub_.reset();
   pose_pub_.reset();
 
+  auto registration_execution_lock =
+    callback_state_coordinator_.lockRegistrationExecution();
   ndt_initializer_.reset();
   use_ndt_initializer_ = false;
   registration_ = nullptr;
@@ -452,6 +458,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
 #ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
   small_gicp_registration_.reset();
 #endif
+  registration_execution_lock.unlock();
 
   {
     std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
@@ -1191,7 +1198,8 @@ void PCLLocalization::initializeRegistration()
 
 void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg)
 {
-  if (shutting_down_) {return;}
+  auto state_lock = callback_state_coordinator_.lockState();
+  if (shutting_down_.load(std::memory_order_acquire)) {return;}
   RCLCPP_INFO(get_logger(), "initialPoseReceived");
   const auto admission = lidar_localization::decideInitialPoseAdmission(
     lidar_localization::InitialPoseAdmissionInput{
@@ -1225,7 +1233,7 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   }
   initialpose_recieved_ = true;
   last_initial_pose_stamp_sec_ = stamp_to_sec(msg->header.stamp);
-  initial_pose_generation_.fetch_add(1, std::memory_order_release);
+  callback_state_coordinator_.advanceInitialPoseGeneration();
   corrent_pose_with_cov_stamped_ptr_ = msg;
   {
     std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
@@ -1336,7 +1344,8 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
 
 void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
-  if (shutting_down_) {return;}
+  auto state_lock = callback_state_coordinator_.lockState();
+  if (shutting_down_.load(std::memory_order_acquire)) {return;}
   RCLCPP_INFO(get_logger(), "mapReceived");
   pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
 
@@ -1370,7 +1379,8 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
 
 void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr msg)
 {
-  if (shutting_down_) {return;}
+  auto state_lock = callback_state_coordinator_.lockState();
+  if (shutting_down_.load(std::memory_order_acquire)) {return;}
 
   double current_odom_received_time = msg->header.stamp.sec +
     msg->header.stamp.nanosec * 1e-9;
@@ -1456,7 +1466,8 @@ void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr
 void PCLLocalization::twistReceived(
   const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg)
 {
-  if (shutting_down_) {return;}
+  auto state_lock = callback_state_coordinator_.lockState();
+  if (shutting_down_.load(std::memory_order_acquire)) {return;}
   latest_twist_msg_ = msg;
 
   double stamp_sec = stamp_to_sec(msg->header.stamp);
@@ -1474,7 +1485,7 @@ void PCLLocalization::twistReceived(
 
 void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr msg)
 {
-  if (shutting_down_) {return;}
+  if (shutting_down_.load(std::memory_order_acquire)) {return;}
   // IMU preintegration buffering (always runs if enabled, independent of use_imu_)
   Eigen::Vector3d preintegration_gyro(
     msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
@@ -1569,8 +1580,10 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
         continuous_time_imu_orientation_ = Eigen::Quaternionf::Identity();
         continuous_time_imu_pose_history_.clear();
       } else if (lidar_localization::isValidImuPreintegrationDt(dt)) {
+        const Eigen::Vector3d deskew_gyro =
+          preintegration_gyro - imu_smoother_.gyro_bias_;
         const Eigen::Vector3f rotation_vector =
-          preintegration_gyro.cast<float>() * static_cast<float>(dt);
+          deskew_gyro.cast<float>() * static_cast<float>(dt);
         const float angle = rotation_vector.norm();
         if (std::isfinite(angle) && angle > 1e-9f) {
           const Eigen::Quaternionf delta(
@@ -1655,6 +1668,8 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
 
 void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
 {
+  auto state_lock = callback_state_coordinator_.lockState();
+  if (shutting_down_.load(std::memory_order_acquire)) {return;}
   double scan_stamp_sec = 0.0;
   if (!admitScanMessage(msg, &scan_stamp_sec)) {
     return;
@@ -1669,7 +1684,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   setRegistrationSourceCloud(tmp_ptr);
 
   const std::uint64_t seed_generation =
-    initial_pose_generation_.load(std::memory_order_acquire);
+    callback_state_coordinator_.initialPoseGeneration();
   const SelectedRegistrationSeed selected_seed = selectRegistrationSeed(scan_stamp_sec);
   const bool imu_prediction_ready = selected_seed.imu_prediction_ready;
   const std::string registration_seed_source =
@@ -1680,9 +1695,14 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     init_guess,
     scan_stamp_sec,
     selected_seed.source,
-    imu_prediction_ready);
+    imu_prediction_ready,
+    state_lock,
+    seed_generation);
 
-  if (initial_pose_generation_.load(std::memory_order_acquire) != seed_generation) {
+  if (
+    shutting_down_.load(std::memory_order_acquire) ||
+    !callback_state_coordinator_.initialPoseGenerationMatches(seed_generation))
+  {
     // An /initialpose was accepted while this scan was being aligned; the seed
     // (and therefore the result) belongs to the pre-reset belief, so applying
     // it would silently undo the reset.
@@ -1726,8 +1746,9 @@ bool PCLLocalization::admitScanMessage(
     current_scan_stamp_sec = stamp_to_sec(msg->header.stamp);
   }
 
+  const bool is_shutting_down = shutting_down_.load(std::memory_order_acquire);
   const bool timing_relevant =
-    !shutting_down_ && static_cast<bool>(msg) && map_recieved_ && initialpose_recieved_;
+    !is_shutting_down && static_cast<bool>(msg) && map_recieved_ && initialpose_recieved_;
   rclcpp::Time now;
   bool has_last_process_time = false;
   double elapsed_since_last_process_sec = 0.0;
@@ -1741,7 +1762,7 @@ bool PCLLocalization::admitScanMessage(
 
   const auto admission = lidar_localization::decideScanAdmission(
     lidar_localization::ScanAdmissionInput{
-      shutting_down_,
+      is_shutting_down,
       static_cast<bool>(msg),
       map_recieved_,
       initialpose_recieved_,
@@ -2544,7 +2565,9 @@ bool PCLLocalization::setInputTargetForPose(const Eigen::Matrix4f & center_pose_
 lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   const Eigen::Matrix4f & attempt_init_guess,
   const Eigen::Matrix4f & crop_center_pose_matrix,
-  double scan_stamp_sec)
+  double scan_stamp_sec,
+  lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
+  std::uint64_t seed_generation)
 {
   lidar_localization::AlignmentAttempt attempt;
   attempt.init_guess = attempt_init_guess;
@@ -2556,9 +2579,28 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   pcl::PointCloud<pcl::PointXYZI> output_cloud;
   rclcpp::Clock system_clock;
   const rclcpp::Time time_align_start = system_clock.now();
-  registration_->align(output_cloud, attempt_init_guess);
+  // Only the backend call runs outside the shared-state lock. All seed, crop,
+  // recovery, and pose fields remain protected, while /initialpose can acquire
+  // the lock and reset state during this expensive operation.
+  state_lock.unlock();
+  try {
+    auto registration_execution_lock =
+      callback_state_coordinator_.lockRegistrationExecution();
+    registration_->align(output_cloud, attempt_init_guess);
+  } catch (...) {
+    state_lock.lock();
+    throw;
+  }
+  state_lock.lock();
   const rclcpp::Time time_align_end = system_clock.now();
   attempt.alignment_time_sec = time_align_end.seconds() - time_align_start.seconds();
+  if (
+    shutting_down_.load(std::memory_order_acquire) ||
+    !callback_state_coordinator_.initialPoseGenerationMatches(seed_generation))
+  {
+    attempt.target_ready = false;
+    return attempt;
+  }
   attempt.has_converged = registration_->hasConverged();
   attempt.fitness_score = registration_->getFitnessScore();
 
@@ -2598,10 +2640,17 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
   const Eigen::Matrix4f & init_guess,
   double scan_stamp_sec,
   lidar_localization::RegistrationSeedSource seed_source,
-  bool imu_prediction_ready)
+  bool imu_prediction_ready,
+  lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
+  std::uint64_t seed_generation)
 {
   const lidar_localization::AlignmentAttempt primary_attempt =
-    runAlignmentAttempt(init_guess, init_guess, scan_stamp_sec);
+    runAlignmentAttempt(init_guess, init_guess, scan_stamp_sec, state_lock, seed_generation);
+  if (!callback_state_coordinator_.initialPoseGenerationMatches(seed_generation)) {
+    lidar_localization::AlignmentPipelineResult interrupted_result;
+    interrupted_result.selected_attempt = primary_attempt;
+    return interrupted_result;
+  }
   const int imu_guard_warmup_accepts_remaining =
     imu_guard_warmup_accepts_remaining_.load(std::memory_order_acquire);
   const bool force_retry_from_last_pose =
@@ -2626,7 +2675,8 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
       "imu_prediction_correction_guard_rejected"},
     [&]() {
       return runAlignmentAttempt(
-        last_accepted_pose_matrix_, last_accepted_pose_matrix_, scan_stamp_sec);
+        last_accepted_pose_matrix_, last_accepted_pose_matrix_, scan_stamp_sec,
+        state_lock, seed_generation);
     },
     [this](const lidar_localization::AlignmentAttempt & attempt) {
       return evaluateMeasurementGateForAttempt(attempt);
@@ -3331,7 +3381,12 @@ void PCLLocalization::setCurrentPoseFromMatrix(
 
 void PCLLocalization::publishCurrentPose(const builtin_interfaces::msg::Time & stamp)
 {
-  if (shutting_down_ || !pose_pub_ || !corrent_pose_with_cov_stamped_ptr_) {return;}
+  if (
+    shutting_down_.load(std::memory_order_acquire) ||
+    !pose_pub_ || !corrent_pose_with_cov_stamped_ptr_)
+  {
+    return;
+  }
   publishPoseMessage(*corrent_pose_with_cov_stamped_ptr_);
   if (!publishPoseTransform(stamp, corrent_pose_with_cov_stamped_ptr_->pose.pose)) {
     return;
@@ -3802,7 +3857,13 @@ void PCLLocalization::publishAlignmentDiagnosticStatus(
 
 void PCLLocalization::timerPublishPose()
 {
-  if (shutting_down_ || !pose_pub_ || !path_pub_ || !path_ptr_) {return;}
+  auto state_lock = callback_state_coordinator_.lockState();
+  if (
+    shutting_down_.load(std::memory_order_acquire) ||
+    !pose_pub_ || !path_pub_ || !path_ptr_)
+  {
+    return;
+  }
   if (!corrent_pose_with_cov_stamped_ptr_) {return;}
   geometry_msgs::msg::PoseWithCovarianceStamped pose_copy =
     lidar_localization::stampPoseWithCovariance(*corrent_pose_with_cov_stamped_ptr_, now());

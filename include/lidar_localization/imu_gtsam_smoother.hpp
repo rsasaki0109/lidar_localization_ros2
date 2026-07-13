@@ -76,6 +76,8 @@ public:
     // Reset IMU accumulation
     current_preint_.reset();
     current_preint_.params = params_.imu_params;
+    current_preint_gyro_bias_ = gyro_bias_;
+    current_preint_accel_bias_ = accel_bias_;
   }
 
   /// Accumulate one IMU sample (called at IMU rate ~200Hz)
@@ -112,6 +114,8 @@ public:
 
     // Store IMU preintegration as between-factor
     entry.preint = current_preint_;
+    entry.preint_gyro_bias = current_preint_gyro_bias_;
+    entry.preint_accel_bias = current_preint_accel_bias_;
     entry.has_imu_factor = (current_preint_.dt_sum >= params_.min_imu_factor_dt);
 
     // Store NDT measurement
@@ -139,6 +143,8 @@ public:
     // Reset preintegration for next interval
     current_preint_.reset();
     current_preint_.params = params_.imu_params;
+    current_preint_gyro_bias_ = gyro_bias_;
+    current_preint_accel_bias_ = accel_bias_;
 
     last_stamp_ = stamp_sec;
     return true;
@@ -177,6 +183,8 @@ private:
 
     // IMU between-factor to this pose from previous
     ImuPreintegration preint;
+    Eigen::Vector3d preint_gyro_bias = Eigen::Vector3d::Zero();
+    Eigen::Vector3d preint_accel_bias = Eigen::Vector3d::Zero();
     bool has_imu_factor = false;
 
     // NDT measurement
@@ -192,6 +200,8 @@ private:
 
   // Current preintegration being accumulated
   ImuPreintegration current_preint_;
+  Eigen::Vector3d current_preint_gyro_bias_ = Eigen::Vector3d::Zero();
+  Eigen::Vector3d current_preint_accel_bias_ = Eigen::Vector3d::Zero();
 
   // Dead-reckoning state for init_guess prediction
   Eigen::Vector3d dr_p_ = Eigen::Vector3d::Zero();
@@ -232,15 +242,19 @@ private:
 
         const auto & pi = poses_[i - 1];
         const auto & pj = poses_[i];
-        const auto & preint = pj.preint;
+        const auto & stored_preint = pj.preint;
+        ImuPreintegration corrected_preint = stored_preint;
+        corrected_preint.correctByBias(
+          gyro_bias_ - pj.preint_gyro_bias,
+          accel_bias_ - pj.preint_accel_bias);
 
         // Compute residual
-        Eigen::Matrix<double, 9, 1> r = preint.computeResidual(
+        Eigen::Matrix<double, 9, 1> r = corrected_preint.computeResidual(
           pi.position, pi.velocity, pi.R,
           pj.position, pj.velocity, pj.R);
 
         // Information from preintegration covariance
-        Eigen::Matrix<double, 9, 9> covariance = preint.covariance;
+        Eigen::Matrix<double, 9, 9> covariance = stored_preint.covariance;
         covariance.diagonal().array() += params_.imu_factor_covariance_regularization;
         if (!covariance.allFinite()) continue;
         Eigen::Matrix<double, 9, 9> info =
@@ -250,7 +264,7 @@ private:
         info = 0.5 * (info + info.transpose());
 
         // Jacobians w.r.t. pose_i [p, v, theta] and pose_j [p, v, theta]
-        double dt = preint.dt_sum;
+        double dt = stored_preint.dt_sum;
         const Eigen::Vector3d & g = params_.imu_params.gravity;
         Eigen::Matrix3d Ri_T = pi.R.transpose();
 
@@ -279,16 +293,12 @@ private:
         // dr/d(biases) [9x3 for bg, 9x3 for ba]
         Eigen::Matrix<double, 9, 3> Jbg = Eigen::Matrix<double, 9, 3>::Zero();
         Eigen::Matrix<double, 9, 3> Jba = Eigen::Matrix<double, 9, 3>::Zero();
-        Jbg.block<3, 3>(0, 0) = -preint.d_dp_d_bg;
-        Jbg.block<3, 3>(3, 0) = -preint.d_dv_d_bg;
-        Jbg.block<3, 3>(6, 0) = -Jr_inv_r * so3::Exp(r_theta).transpose() *
-                                  so3::Jr(preint.d_dR_d_bg * (gyro_bias_ - gyro_bias_)) *
-                                  preint.d_dR_d_bg;
-        // Simplified: for small bias changes, this ≈ -Jr_inv_r * preint.d_dR_d_bg
-        Jbg.block<3, 3>(6, 0) = -Jr_inv_r * preint.d_dR_d_bg;
+        Jbg.block<3, 3>(0, 0) = -stored_preint.d_dp_d_bg;
+        Jbg.block<3, 3>(3, 0) = -stored_preint.d_dv_d_bg;
+        Jbg.block<3, 3>(6, 0) = -Jr_inv_r * stored_preint.d_dR_d_bg;
 
-        Jba.block<3, 3>(0, 0) = -preint.d_dp_d_ba;
-        Jba.block<3, 3>(3, 0) = -preint.d_dv_d_ba;
+        Jba.block<3, 3>(0, 0) = -stored_preint.d_dp_d_ba;
+        Jba.block<3, 3>(3, 0) = -stored_preint.d_dv_d_ba;
 
         int idx_i = (i - 1) * POSE_DIM;
         int idx_j = i * POSE_DIM;

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "datasets": ["synthetic plane/corner/line scenes", "Koide outdoor_hard_01a at three bag offsets"],
+  "synthetic": {
+    "single_plane_nullity": 3,
+    "orthogonal_planes_nullity": 1,
+    "line_only_point_to_plane_nullity": 6,
+    "line_only_lp_icp_like_nullity": 0,
+    "planes_plus_lines_point_to_plane_nullity": 1,
+    "planes_plus_lines_lp_icp_like_nullity": 0
+  },
+  "koide": {
+    "matched_points": [3697, 2151, 626],
+    "point_to_plane_nullity": [2, 3, 2],
+    "plane_line_nullity": [2, 3, 2],
+    "point_to_plane_weak_ratio": [1.36e-6, 9.35e-7, 3.51e-6],
+    "plane_line_weak_ratio": [1.85e-6, 1.61e-6, 3.71e-6]
+  },
+  "existing_ndt_hessian_precursor_repeats": "0/3",
+  "decision": "negative_result_no_runtime_promotion",
+  "reason": "line features recover controlled synthetic observability, but did not change Koide nullity and no causal failure precursor was demonstrated"
+}

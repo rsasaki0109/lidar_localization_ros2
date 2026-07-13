@@ -113,8 +113,8 @@ Accept degraded-but-consistent registration results that the scalar fitness gate
 
 ### Shared Fixtures
 
-- `degraded_onset_small_correction_should_accept`: Failure-window onset: score 13.6 is over the 6.0 gate, but the correction is 1.0 m / 1.8 deg against a 0.5 s old prediction. Ground-truth analysis of this window shows even the true pose scores ~9.6 here; rejecting this row starts a 300-row reject streak.
-- `degraded_streak_small_correction_should_accept`: Three rejects into the window: score 26.6 but correction 0.75 m / 2.4 deg, gap 1.8 s. Pose still agrees with prediction.
+- `degraded_onset_small_correction_should_reject`: Failure-window onset: score 13.6 over the 6.0 gate with a small correction. The 2026-06-11 hypothesis was to accept this; the 2026-06-12 bounded replay falsified it: degraded accepts above fitness ~12 dragged the anchor (rotation RMSE 1.8->6.1 deg, ok rows 329->193). GT scores ~9.6 in this window, so anything above ~12 is a false maximum even when the correction is small.
+- `degraded_streak_small_correction_should_reject`: Three rejects into the window: score 26.6 with correction 0.75 m. Falsified accept-hypothesis: the 2026-06-12 bounded replay showed fit 18.7/31.9 rows with small corrections are self-confirming false maxima once a degraded accept re-anchors the prediction.
 - `fresh_jump_good_score_should_reject`: Synthetic, derived from the healthy row: a good score (1.5) whose pose jumps 25 m against a 0.4 s old prediction. An aliased match should not be accepted on score alone.
 - `healthy_tracking_should_accept`: Real healthy tracking row; every strategy must accept.
 - `lost_huge_score_should_reject`: Deep in the failure window: score 4354 with a 128 s gap. Unambiguous loss.
@@ -122,10 +122,10 @@ Accept degraded-but-consistent registration results that the scalar fitness gate
 
 ### Candidate Families
 
-- `correction_conditioned`: fitness threshold + correction/staleness cross-check
-- `bounded_degraded`: correction cross-check with non-resetting degraded-accept budget
-- `score_ratio_budget`: relative score cap with gap/streak budget
 - `fixed_threshold`: scalar fitness threshold (runtime baseline)
+- `bounded_degraded`: correction cross-check with non-resetting degraded-accept budget
+- `correction_conditioned`: fitness threshold + correction/staleness cross-check
+- `score_ratio_budget`: relative score cap with gap/streak budget
 
 
 ## Recovery Action Selection

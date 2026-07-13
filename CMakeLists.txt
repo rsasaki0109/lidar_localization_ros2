@@ -55,6 +55,7 @@ endif()
 add_library(lidar_localization_component SHARED
 src/lidar_localization_component.cpp
 )
+target_link_libraries(lidar_localization_component Eigen3::Eigen)
 
 ament_target_dependencies(lidar_localization_component
   rclcpp
@@ -273,6 +274,7 @@ install(DIRECTORY
 )
 
 if(BUILD_TESTING)
+  find_package(Threads REQUIRED)
   add_executable(test_registration_seed_policy
     test/test_registration_seed_policy.cpp)
   target_include_directories(test_registration_seed_policy PRIVATE
@@ -343,8 +345,9 @@ if(BUILD_TESTING)
   add_executable(test_registration_localizability_policy
     test/test_registration_localizability_policy.cpp)
   target_include_directories(test_registration_localizability_policy PRIVATE
-    include
-    ${EIGEN3_INCLUDE_DIRS})
+    include)
+  target_link_libraries(test_registration_localizability_policy
+    Eigen3::Eigen)
   add_test(
     NAME registration_localizability_policy
     COMMAND test_registration_localizability_policy
@@ -354,6 +357,8 @@ if(BUILD_TESTING)
     test/test_alignment_diagnostics_policy.cpp)
   target_include_directories(test_alignment_diagnostics_policy PRIVATE
     include)
+  target_link_libraries(test_alignment_diagnostics_policy
+    Eigen3::Eigen)
   add_test(
     NAME alignment_diagnostics_policy
     COMMAND test_alignment_diagnostics_policy
@@ -523,6 +528,30 @@ if(BUILD_TESTING)
     COMMAND test_imu_preintegration
   )
 
+  add_test(
+    NAME imu_bias_correction_experiment
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/test/test_imu_bias_correction_experiment.py
+  )
+  set_tests_properties(imu_bias_correction_experiment PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
+
+  add_test(
+    NAME kiss_matcher_verifier_experiment
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/test/test_kiss_matcher_verifier_experiment.py
+  )
+  set_tests_properties(kiss_matcher_verifier_experiment PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
+
+  add_test(
+    NAME correspondence_localizability_experiment
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/test/test_correspondence_localizability_experiment.py
+  )
+  set_tests_properties(correspondence_localizability_experiment PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
+
   add_executable(test_bbs_branch_and_bound
     test/test_bbs_branch_and_bound.cpp)
   # The test includes bbs_golden_fixtures.inc from the test/ directory.
@@ -542,6 +571,17 @@ if(BUILD_TESTING)
   add_test(
     NAME prediction_state_policy
     COMMAND test_prediction_state_policy
+  )
+
+  add_executable(test_callback_state_coordinator
+    test/test_callback_state_coordinator.cpp)
+  target_include_directories(test_callback_state_coordinator PRIVATE
+    include)
+  target_link_libraries(test_callback_state_coordinator
+    Threads::Threads)
+  add_test(
+    NAME callback_state_coordinator
+    COMMAND test_callback_state_coordinator
   )
 
   add_executable(test_pose_publish_policy

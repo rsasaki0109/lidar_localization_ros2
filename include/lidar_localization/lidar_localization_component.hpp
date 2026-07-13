@@ -63,6 +63,7 @@
 #include "lidar_localization/alignment_retry_policy.hpp"
 #include "lidar_localization/alignment_pipeline_policy.hpp"
 #include "lidar_localization/alignment_status_policy.hpp"
+#include "lidar_localization/callback_state_coordinator.hpp"
 #include "lidar_localization/imu_preintegration_diagnostics_policy.hpp"
 #include "lidar_localization/imu_preintegration_guard_policy.hpp"
 #include "lidar_localization/measurement_gate_policy.hpp"
@@ -151,9 +152,11 @@ public:
   small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>::Ptr small_gicp_registration_;
 #endif
   pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter_;
-  // Mutated and read from pose, scan, odom, and service callbacks. IMU
-  // preintegration and /initialpose use dedicated callback groups so high-rate
-  // replay and long scan registration do not starve reset handling.
+  // Mutated and read from pose, scan, odom, and lifecycle callbacks. The
+  // default callback group is mutually exclusive, while /initialpose has a
+  // dedicated group so a reset can interrupt long registration. Every access
+  // shared with that group is protected by callback_state_coordinator_.
+  lidar_localization::CallbackStateCoordinator callback_state_coordinator_;
   geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr corrent_pose_with_cov_stamped_ptr_;
   nav_msgs::msg::Path::SharedPtr path_ptr_;
   sensor_msgs::msg::PointCloud2::ConstSharedPtr last_scan_ptr_;
@@ -161,12 +164,6 @@ public:
   bool map_recieved_{false};
   bool initialpose_recieved_{false};
   double last_initial_pose_stamp_sec_{-1.0};
-  // Incremented on every accepted /initialpose. Scan processing snapshots it at
-  // seed selection and discards its alignment result if it changed by apply
-  // time: /initialpose runs on a dedicated callback group (MultiThreadedExecutor),
-  // so an accepted measurement seeded from the pre-reset belief would otherwise
-  // land after the reset and silently undo it.
-  std::atomic<std::uint64_t> initial_pose_generation_{0};
   pcl::PointCloud<pcl::PointXYZI>::Ptr full_map_cloud_ptr_;
   pcl::PointXYZI map_min_pt_{};
   pcl::PointXYZI map_max_pt_{};
@@ -203,8 +200,7 @@ public:
   double imu_prediction_correction_guard_translation_m_{2.0};
   double imu_prediction_correction_guard_yaw_deg_{10.0};
   int imu_prediction_correction_guard_warmup_accepts_{5};
-  // Atomic like initial_pose_generation_: read on the per-scan path without
-  // taking imu_preintegration_mutex_.
+  // Read on the per-scan path without taking imu_preintegration_mutex_.
   std::atomic<int> imu_guard_warmup_accepts_remaining_{0};
   ImuGtsamSmoother imu_smoother_;
   double last_imu_stamp_{0.0};
@@ -333,7 +329,8 @@ public:
   double last_accepted_pose_time_sec_{0.0};
   double predicted_pose_time_sec_{0.0};
   geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr latest_twist_msg_;
-  bool shutting_down_{false};
+  // Read by the dedicated IMU callback without taking the callback-state lock.
+  std::atomic<bool> shutting_down_{false};
   bool reinitialization_requested_{false};
   std::string reinitialization_request_reason_{"not_requested"};
   double reinitialization_request_score_{0.0};
@@ -440,12 +437,16 @@ public:
   lidar_localization::AlignmentAttempt runAlignmentAttempt(
     const Eigen::Matrix4f & attempt_init_guess,
     const Eigen::Matrix4f & crop_center_pose_matrix,
-    double scan_stamp_sec);
+    double scan_stamp_sec,
+    lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
+    std::uint64_t seed_generation);
   lidar_localization::AlignmentPipelineResult runAlignmentPipelineForScan(
     const Eigen::Matrix4f & init_guess,
     double scan_stamp_sec,
     lidar_localization::RegistrationSeedSource seed_source,
-    bool imu_prediction_ready);
+    bool imu_prediction_ready,
+    lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
+    std::uint64_t seed_generation);
   lidar_localization::MeasurementGateDecision evaluateMeasurementGateForAttempt(
     const lidar_localization::AlignmentAttempt & attempt);
   void logAlignmentPipelineRecovery(

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "dataset": "Koide outdoor_hard_01a at bag offsets 30 s, 85 s, and 145 s",
+  "bbs_top_k": 5,
+  "candidate_set_oracle_coverage": "2/3",
+  "repeats_per_kiss_setting": 3,
+  "variants": {
+    "bbs_first": {"correct_accepts": 1, "false_accepts": 2, "recovery_rate": 0.3333},
+    "ndt_bounded": {"correct_accepts": 2, "false_accepts": 0, "recovery_rate": 0.6667, "median_attempt_runtime_sec": 0.7717},
+    "kiss_voxel_1_0_m": {"correct_accepts": 0, "false_accepts": 0, "recovery_rate": 0.0, "median_attempt_runtime_sec": 9.0600},
+    "kiss_voxel_2_0_m": {"correct_accepts": 0, "false_accepts": 0, "recovery_rate": 0.0, "median_attempt_runtime_sec": 2.5761},
+    "kiss_voxel_0_5_m": {"status": "stopped_after_180_sec", "peak_rss_gib_approx": 2.52}
+  },
+  "decision": "keep_existing_bounded_ndt_verifier",
+  "reason": "NDT reached the candidate-set coverage ceiling without false accepts; KISS always abstained and was slower or exceeded the resource gate"
+}
