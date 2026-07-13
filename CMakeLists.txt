@@ -275,6 +275,7 @@ install(DIRECTORY
 
 if(BUILD_TESTING)
   find_package(Threads REQUIRED)
+  link_libraries(Eigen3::Eigen)
   add_executable(test_registration_seed_policy
     test/test_registration_seed_policy.cpp)
   target_include_directories(test_registration_seed_policy PRIVATE
@@ -346,8 +347,6 @@ if(BUILD_TESTING)
     test/test_registration_localizability_policy.cpp)
   target_include_directories(test_registration_localizability_policy PRIVATE
     include)
-  target_link_libraries(test_registration_localizability_policy
-    Eigen3::Eigen)
   add_test(
     NAME registration_localizability_policy
     COMMAND test_registration_localizability_policy
@@ -357,8 +356,6 @@ if(BUILD_TESTING)
     test/test_alignment_diagnostics_policy.cpp)
   target_include_directories(test_alignment_diagnostics_policy PRIVATE
     include)
-  target_link_libraries(test_alignment_diagnostics_policy
-    Eigen3::Eigen)
   add_test(
     NAME alignment_diagnostics_policy
     COMMAND test_alignment_diagnostics_policy
@@ -377,8 +374,6 @@ if(BUILD_TESTING)
     test/test_alignment_diagnostic_ros_adapter.cpp)
   target_include_directories(test_alignment_diagnostic_ros_adapter PRIVATE
     include)
-  target_link_libraries(test_alignment_diagnostic_ros_adapter
-    Eigen3::Eigen)
   ament_target_dependencies(test_alignment_diagnostic_ros_adapter
     diagnostic_msgs)
   add_test(
