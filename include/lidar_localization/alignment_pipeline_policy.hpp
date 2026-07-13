@@ -10,6 +10,7 @@
 
 #include "lidar_localization/alignment_retry_policy.hpp"
 #include "lidar_localization/measurement_gate_policy.hpp"
+#include "lidar_localization/registration_localizability_policy.hpp"
 
 namespace lidar_localization
 {
@@ -29,6 +30,7 @@ struct AlignmentAttempt
   double seed_translation_since_accept_m{std::numeric_limits<double>::quiet_NaN()};
   double seed_yaw_since_accept_deg{std::numeric_limits<double>::quiet_NaN()};
   double accepted_gap_sec{std::numeric_limits<double>::quiet_NaN()};
+  RegistrationLocalizabilityMetrics registration_localizability;
 };
 
 struct AlignmentPipelineInput

@@ -8,6 +8,8 @@
 #include <utility>
 #include <vector>
 
+#include "lidar_localization/registration_localizability_policy.hpp"
+
 namespace lidar_localization
 {
 
@@ -80,6 +82,13 @@ struct AlignmentDiagnosticValuesInput
   std::size_t continuous_time_deskew_point_count{0};
   std::size_t continuous_time_deskew_skipped_invalid_time_count{0};
   std::size_t continuous_time_deskew_clamped_time_count{0};
+  std::string continuous_time_deskew_mode{"relative_motion"};
+  double continuous_time_deskew_pose_history_coverage_ratio{0.0};
+  bool localizability_guard_enabled{false};
+  bool localizability_valid{false};
+  double horizontal_localizability_eigenvalue_ratio{NAN};
+  bool localizability_guard_active{false};
+  RegistrationLocalizabilityMetrics registration_localizability;
   bool reinitialization_requested{false};
   std::string reinitialization_request_reason;
   double reinitialization_request_score{0.0};
@@ -129,7 +138,7 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
   const AlignmentDiagnosticValuesInput & input)
 {
   std::vector<DiagnosticKeyValue> values;
-  values.reserve(61);
+  values.reserve(91);
   auto append = [&values](const std::string & key, const std::string & value) {
       values.emplace_back(key, value);
     };
@@ -206,6 +215,35 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
   append(
     "continuous_time_deskew_clamped_time_count",
     std::to_string(input.continuous_time_deskew_clamped_time_count));
+  const auto & spectrum = input.registration_localizability;
+  append("registration_localizability_enabled", boolString(spectrum.enabled));
+  append("registration_localizability_valid", boolString(spectrum.valid));
+  append("registration_localizability_status", spectrum.status);
+  append(
+    "registration_localizability_correspondence_count",
+    std::to_string(spectrum.correspondence_count));
+  append(
+    "registration_localizability_nonpositive_eigenvalue_count",
+    std::to_string(spectrum.nonpositive_eigenvalue_count));
+  append(
+    "registration_localizability_weakest_absolute_eigenvalue",
+    std::to_string(spectrum.weakest_absolute_eigenvalue));
+  append(
+    "registration_localizability_strongest_absolute_eigenvalue",
+    std::to_string(spectrum.strongest_absolute_eigenvalue));
+  append("registration_localizability_weak_ratio", std::to_string(spectrum.weak_ratio));
+  append(
+    "registration_localizability_absolute_condition_number",
+    std::to_string(spectrum.absolute_condition_number));
+  static constexpr const char * kAxes[6] = {"x", "y", "z", "roll", "pitch", "yaw"};
+  for (std::size_t i = 0; i < 6; ++i) {
+    append(
+      std::string("registration_localizability_eigenvalue_") + std::to_string(i),
+      std::to_string(spectrum.eigenvalues[i]));
+    append(
+      std::string("registration_localizability_weakest_vector_") + kAxes[i],
+      std::to_string(spectrum.weakest_eigenvector[i]));
+  }
   append("reinitialization_requested", boolString(input.reinitialization_requested));
   append("reinitialization_request_reason", input.reinitialization_request_reason);
   append(
@@ -225,6 +263,16 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
   append("stale_prediction_active", boolString(input.stale_prediction_active));
   append("overload_active", boolString(input.overload_active));
   append("registration_seed_source", input.registration_seed_source);
+  append("continuous_time_deskew_mode", input.continuous_time_deskew_mode);
+  append(
+    "continuous_time_deskew_pose_history_coverage_ratio",
+    std::to_string(input.continuous_time_deskew_pose_history_coverage_ratio));
+  append("localizability_guard_enabled", boolString(input.localizability_guard_enabled));
+  append("localizability_valid", boolString(input.localizability_valid));
+  append(
+    "horizontal_localizability_eigenvalue_ratio",
+    std::to_string(input.horizontal_localizability_eigenvalue_ratio));
+  append("localizability_guard_active", boolString(input.localizability_guard_active));
   return values;
 }
 

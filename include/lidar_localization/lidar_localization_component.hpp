@@ -57,6 +57,9 @@
 #include "lidar_localization/twist_ekf.hpp"
 #include "lidar_localization/twist_gtsam_smoother.hpp"
 #include "lidar_localization/imu_gtsam_smoother.hpp"
+#include "lidar_localization/imu_pose_history_deskew.hpp"
+#include "lidar_localization/localizability_policy.hpp"
+#include "lidar_localization/diagnostic_ndt_omp.hpp"
 #include "lidar_localization/alignment_retry_policy.hpp"
 #include "lidar_localization/alignment_pipeline_policy.hpp"
 #include "lidar_localization/alignment_status_policy.hpp"
@@ -141,7 +144,8 @@ public:
 
   pcl::Registration<pcl::PointXYZI, pcl::PointXYZI> * registration_{nullptr};
   pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr pcl_registration_;
-  pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp_registration_;
+  boost::shared_ptr<lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>>
+    ndt_omp_registration_;
   pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp_omp_registration_;
 #ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
   small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>::Ptr small_gicp_registration_;
@@ -192,7 +196,10 @@ public:
   bool use_imu_preintegration_{false};
   bool imu_preintegration_use_base_frame_transform_{false};
   bool use_continuous_time_deskew_{false};
+  std::string continuous_time_deskew_mode_{"relative_motion"};
+  std::string continuous_time_cloud_stamp_reference_{"start"};
   double continuous_time_deskew_reference_time_sec_{0.0};
+  double continuous_time_pose_history_duration_sec_{2.0};
   double imu_prediction_correction_guard_translation_m_{2.0};
   double imu_prediction_correction_guard_yaw_deg_{10.0};
   int imu_prediction_correction_guard_warmup_accepts_{5};
@@ -201,6 +208,8 @@ public:
   std::atomic<int> imu_guard_warmup_accepts_remaining_{0};
   ImuGtsamSmoother imu_smoother_;
   double last_imu_stamp_{0.0};
+  Eigen::Quaternionf continuous_time_imu_orientation_{Eigen::Quaternionf::Identity()};
+  std::deque<lidar_localization::TimestampedPose> continuous_time_imu_pose_history_;
   double last_scan_stamp_for_imu_{0.0};
   bool imu_preintegration_fallback_mode_{false};
   mutable std::mutex imu_preintegration_mutex_;
@@ -220,6 +229,7 @@ public:
   std::size_t latest_continuous_time_deskew_point_count_{0};
   std::size_t latest_continuous_time_deskew_skipped_invalid_time_count_{0};
   std::size_t latest_continuous_time_deskew_clamped_time_count_{0};
+  double latest_continuous_time_deskew_pose_history_coverage_ratio_{0.0};
   std::size_t imu_preintegration_received_sample_count_since_scan_{0};
   std::size_t imu_preintegration_integrated_sample_count_since_scan_{0};
   std::size_t imu_preintegration_skipped_sample_count_since_scan_{0};
@@ -279,6 +289,11 @@ public:
   bool viz_downsample_{false};
   double viz_voxel_leaf_size_{0.5};
   bool predict_pose_from_previous_delta_{true};
+  bool enable_localizability_guard_{false};
+  bool enable_registration_localizability_diagnostics_{false};
+  double localizability_min_xy_eigen_ratio_{0.05};
+  lidar_localization::HorizontalLocalizability latest_horizontal_localizability_;
+  bool latest_localizability_guard_active_{false};
   lidar_localization::MeasurementGateParamConfig measurement_gate_config_;
   lidar_localization::RecoveryRetryFromLastPoseParams recovery_retry_from_last_pose_config_;
   bool enable_reinitialization_request_output_{true};
@@ -313,6 +328,7 @@ public:
   Eigen::Matrix4f last_accepted_pose_matrix_{Eigen::Matrix4f::Identity()};
   Eigen::Matrix4f predicted_pose_matrix_{Eigen::Matrix4f::Identity()};
   Eigen::Matrix4f last_relative_motion_matrix_{Eigen::Matrix4f::Identity()};
+  double last_relative_motion_duration_sec_{0.0};
   std::size_t consecutive_rejected_updates_{0};
   double last_accepted_pose_time_sec_{0.0};
   double predicted_pose_time_sec_{0.0};
@@ -340,6 +356,7 @@ public:
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud;
     std::size_t filtered_point_count{0};
     std::vector<double> relative_times_sec;
+    double point_time_reference_sec{0.0};
     bool relative_times_aligned_with_cloud{false};
     std::vector<double> pre_voxel_relative_times_sec;
   };
@@ -391,6 +408,7 @@ public:
     double accepted_gap_sec;
     bool imu_prediction_active;
     std::string registration_seed_source;
+    lidar_localization::RegistrationLocalizabilityMetrics registration_localizability;
   };
   struct AlignmentStatusEvaluation
   {
@@ -597,5 +615,7 @@ public:
     double seed_yaw_since_accept_deg = std::numeric_limits<double>::quiet_NaN(),
     double accepted_gap_sec = std::numeric_limits<double>::quiet_NaN(),
     bool imu_prediction_active = false,
-    const std::string & registration_seed_source = "not_selected");
+    const std::string & registration_seed_source = "not_selected",
+    const lidar_localization::RegistrationLocalizabilityMetrics &
+    registration_localizability = lidar_localization::RegistrationLocalizabilityMetrics{});
 };

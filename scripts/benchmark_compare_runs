@@ -32,6 +32,19 @@ def median(values: List[float]) -> Optional[float]:
     return statistics.median(values) if values else None
 
 
+def percentile(values: List[float], quantile: float) -> Optional[float]:
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    index = max(0.0, min(1.0, quantile)) * (len(ordered) - 1)
+    lower = int(index)
+    upper = min(lower + 1, len(ordered) - 1)
+    fraction = index - lower
+    return ordered[lower] * (1.0 - fraction) + ordered[upper] * fraction
+
+
 def safe_float(value: str) -> Optional[float]:
     try:
         return float(value)
@@ -87,6 +100,7 @@ def summarize_alignment(diag_path: Path) -> Dict[str, Optional[float]]:
             "duration_sec": None,
             "non_ok_row_count": 0,
             "alignment_time_median_sec": None,
+            "alignment_time_p95_sec": None,
             "alignment_time_max_sec": None,
             "fitness_median": None,
             "fitness_max": None,
@@ -101,7 +115,8 @@ def summarize_alignment(diag_path: Path) -> Dict[str, Optional[float]]:
             "reinitialization_request_first_trigger_reason": None,
         }
 
-    rows = list(csv.DictReader(diag_path.open("r", encoding="utf-8", newline="")))
+    with diag_path.open("r", encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream))
     alignment_times: List[float] = []
     fitness_scores: List[float] = []
     rejected_streaks: List[float] = []
@@ -164,6 +179,7 @@ def summarize_alignment(diag_path: Path) -> Dict[str, Optional[float]]:
         ),
         "non_ok_row_count": non_ok,
         "alignment_time_median_sec": median(alignment_times),
+        "alignment_time_p95_sec": percentile(alignment_times, 0.95),
         "alignment_time_max_sec": max(alignment_times) if alignment_times else None,
         "fitness_median": median(fitness_scores),
         "fitness_max": max(fitness_scores) if fitness_scores else None,
@@ -282,6 +298,7 @@ def print_human_summary(results: List[Dict[str, object]]) -> None:
         print(f"  alignment_row_count: {alignment.get('row_count')}")
         print(f"  non_ok_alignment_row_count: {alignment.get('non_ok_row_count')}")
         print(f"  alignment_time_median_sec: {alignment.get('alignment_time_median_sec')}")
+        print(f"  alignment_time_p95_sec: {alignment.get('alignment_time_p95_sec')}")
         print(f"  alignment_time_max_sec: {alignment.get('alignment_time_max_sec')}")
         print(f"  fitness_median: {alignment.get('fitness_median')}")
         print(f"  rejected_streak_max: {alignment.get('rejected_streak_max')}")

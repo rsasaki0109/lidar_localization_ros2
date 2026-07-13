@@ -7,6 +7,7 @@ from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Sequence
+import statistics
 
 
 IMU_ACTIVE_STATUS = "imu_preintegration_prediction_active"
@@ -54,6 +55,35 @@ def _as_int(value: Any) -> Optional[int]:
     except (TypeError, ValueError):
         return None
     return number
+
+
+def _as_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _percentile(values: Sequence[float], quantile: float) -> Optional[float]:
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    index = max(0.0, min(1.0, quantile)) * (len(ordered) - 1)
+    lower = int(index)
+    upper = min(lower + 1, len(ordered) - 1)
+    fraction = index - lower
+    return ordered[lower] * (1.0 - fraction) + ordered[upper] * fraction
+
+
+def _float_values(samples: Sequence[AlignmentDiagnosticSample], key: str) -> List[float]:
+    return [
+        value for value in (_as_float(sample.values.get(key)) for sample in samples)
+        if value is not None
+    ]
 
 
 def _ratio(count: int, total: int) -> float:
@@ -126,6 +156,10 @@ def summarize_runtime(samples: Sequence[AlignmentDiagnosticSample]) -> Dict[str,
         or _as_bool(sample.values.get("continuous_time_deskew_applied"))
     )
     total = len(samples)
+    scan_time_durations = _float_values(samples, "scan_time_duration_sec")
+    pose_history_coverage = _float_values(
+        samples, "continuous_time_deskew_pose_history_coverage_ratio"
+    )
     return {
         "sample_count": total,
         "error_level_count": sum(1 for sample in samples if sample.level >= 2),
@@ -143,6 +177,12 @@ def summarize_runtime(samples: Sequence[AlignmentDiagnosticSample]) -> Dict[str,
         "imu_invalid_dt_count_max": _max_int(samples, "imu_invalid_dt_count"),
         "imu_non_finite_sample_count_max": _max_int(samples, "imu_non_finite_sample_count"),
         "scan_time_status_counts": dict(scan_time_status_counts),
+        "scan_time_duration_sample_count": len(scan_time_durations),
+        "scan_time_duration_median_sec": (
+            statistics.median(scan_time_durations) if scan_time_durations else None
+        ),
+        "scan_time_duration_p95_sec": _percentile(scan_time_durations, 0.95),
+        "scan_time_duration_max_sec": max(scan_time_durations) if scan_time_durations else None,
         "deskew_readiness_counts": dict(deskew_readiness_counts),
         "registration_seed_source_counts": dict(registration_seed_source_counts),
         "registration_seed_source_present_count": registration_seed_source_present_count,
@@ -159,6 +199,15 @@ def summarize_runtime(samples: Sequence[AlignmentDiagnosticSample]) -> Dict[str,
         ),
         "continuous_time_deskew_clamped_time_count_max": _max_int(
             samples, "continuous_time_deskew_clamped_time_count"
+        ),
+        "continuous_time_deskew_pose_history_coverage_sample_count": len(
+            pose_history_coverage
+        ),
+        "continuous_time_deskew_pose_history_coverage_median": (
+            statistics.median(pose_history_coverage) if pose_history_coverage else None
+        ),
+        "continuous_time_deskew_pose_history_coverage_min": (
+            min(pose_history_coverage) if pose_history_coverage else None
         ),
     }
 
@@ -322,6 +371,13 @@ def render_runtime_report(summary: Dict[str, Any], checks: Sequence[ValidationCh
             f"non_finite={summary['imu_non_finite_sample_count_max']}"
         ),
         f"scan time counts: {json.dumps(summary['scan_time_status_counts'], sort_keys=True)}",
+        (
+            "scan time duration sec: "
+            f"samples={summary['scan_time_duration_sample_count']} "
+            f"median={summary['scan_time_duration_median_sec']} "
+            f"p95={summary['scan_time_duration_p95_sec']} "
+            f"max={summary['scan_time_duration_max_sec']}"
+        ),
         f"deskew readiness counts: {json.dumps(summary['deskew_readiness_counts'], sort_keys=True)}",
         (
             "registration seed sources: "
@@ -347,6 +403,12 @@ def render_runtime_report(summary: Dict[str, Any], checks: Sequence[ValidationCh
             f"skipped_invalid_time={summary['continuous_time_deskew_skipped_invalid_time_count_max']} "
             f"clamped_time={summary['continuous_time_deskew_clamped_time_count_max']}"
         ),
+        (
+            "pose-history coverage: "
+            f"samples={summary['continuous_time_deskew_pose_history_coverage_sample_count']} "
+            f"median={summary['continuous_time_deskew_pose_history_coverage_median']} "
+            f"min={summary['continuous_time_deskew_pose_history_coverage_min']}"
+        ),
         "",
     ]
     for check in checks:
@@ -371,9 +433,16 @@ def markdown_report(summary: Dict[str, Any], checks: Sequence[ValidationCheck]) 
         ),
         f"| Max integrated IMU samples | {summary['imu_integrated_sample_count_max']} |",
         f"| IMU fallback count | {summary['imu_fallback_count']} |",
+        f"| Scan time duration median sec | {summary['scan_time_duration_median_sec']} |",
+        f"| Scan time duration p95 sec | {summary['scan_time_duration_p95_sec']} |",
+        f"| Scan time duration max sec | {summary['scan_time_duration_max_sec']} |",
         (
             "| Continuous-time deskew applied ratio | "
             f"{_percent(float(summary['continuous_time_deskew_applied_ratio']))} |"
+        ),
+        (
+            "| Pose-history coverage median | "
+            f"{summary['continuous_time_deskew_pose_history_coverage_median']} |"
         ),
         "",
         "## Checks",

@@ -92,7 +92,12 @@ component that feeds itself must not be able to diverge unbounded.
 | `use_imu_preintegration` | `true` | Use the guarded preintegration smoother from `/imu`, independent of `use_imu` |
 | `imu_preintegration_use_base_frame_transform` | `false` | Transform IMU samples into the base frame before integrating |
 | `use_continuous_time_deskew` | `false` | Experimental default-off hook that deskews the pre-voxel scan using per-point timing and IMU-predicted relative motion |
+| `continuous_time_deskew_mode` | `relative_motion` | Experimental motion source: `relative_motion`, `imu_pose_history`, or `lidar_constant_velocity` |
+| `continuous_time_cloud_stamp_reference` | `start` | Whether the cloud header is the scan `start` or `end`; Koide Livox uses `start` |
 | `continuous_time_deskew_reference_time_sec` | `0.0` | Scan-relative reference time for the deskewed cloud; `0.0` means earliest point |
+| `continuous_time_pose_history_duration_sec` | `2.0` | Bounded rotation-only IMU pose-history horizon used by `imu_pose_history` |
+| `enable_localizability_guard` | `false` | Experimental XY scan-covariance proxy; suppress the previous-delta seed only below its threshold |
+| `localizability_min_xy_eigen_ratio` | `0.05` | Minimum XY covariance eigenvalue ratio for the proxy guard |
 | `imu_gyro_noise_density` | `0.01` | rad/s/√Hz |
 | `imu_accel_noise_density` | `0.1` | m/s²/√Hz |
 | `imu_gyro_random_walk` | `0.0001` | rad/s²/√Hz |
@@ -192,12 +197,20 @@ ros2 launch lidar_localization_ros2 lidar_localization.launch.py \
   use_imu_preintegration:=true
 ```
 
-When enabled, the localizer only applies deskew if per-point scan timing is
-ready, IMU preintegration is initialized, and the pre-voxel scan still has a
-time vector aligned with the cloud. The relative motion currently comes from
-the IMU smoother's latest optimized pose to its current prediction, so treat it
-as an experimental scan-interval approximation until validated on bags with
-ground truth.
+When enabled, the localizer requires ready per-point timing and a time vector
+aligned with the pre-voxel cloud. `relative_motion` additionally requires the
+IMU smoother. `imu_pose_history` maps `header stamp + point time` into a bounded
+rotation-only IMU history and applies only with full scan-interval coverage.
+`lidar_constant_velocity` scales the last accepted LiDAR relative motion to the
+current scan span and rejects interval ratios above 1.5.
+
+These modes are comparison variants, not recommended defaults. On 2026-07-13,
+all were run three times on the public Koide `outdoor_hard_01a` 85--112 s corner
+window. None passed the shared accuracy, coverage, reject-streak, and latency
+gate; `imu_pose_history` failed even with median history coverage 1.0. Keep
+`use_continuous_time_deskew: false` outside controlled experiments. The full
+negative result is in
+[`research_driven_development_plan.md`](research_driven_development_plan.md).
 
 ## Runtime diagnostics
 
@@ -213,6 +226,10 @@ result:
 | `imu_received_sample_count` / `imu_integrated_sample_count` | samples seen vs samples accepted into preintegration for the current scan interval |
 | `imu_transform_failure_count` | samples skipped because `base_frame <- imu_frame` TF was unavailable |
 | `imu_invalid_dt_count` / `imu_last_dt_sec` | timestamp health for preintegration samples |
+| `continuous_time_deskew_mode` | selected experimental motion source |
+| `continuous_time_deskew_pose_history_coverage_ratio` | overlap between the required scan interval and available pose history |
+| `horizontal_localizability_eigenvalue_ratio` | lightweight XY scan-shape proxy; not a registration Hessian metric |
+| `localizability_guard_active` | whether the proxy suppressed the previous-delta seed |
 | `imu_last_sample_age_sec` | scan-to-IMU timestamp lag |
 | `imu_integration_window_sec` | IMU time available for the current scan interval |
 | `scan_time_status` | continuous-time / deskew data readiness for per-point timing |

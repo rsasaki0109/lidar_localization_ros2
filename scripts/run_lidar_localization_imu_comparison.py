@@ -23,6 +23,9 @@ class ComparisonMode:
     enable_continuous_time_deskew: bool = False
     validate_imu: bool = False
     require_deskew_applied: bool = False
+    continuous_time_deskew_mode: str = "relative_motion"
+    enable_localizability_guard: bool = False
+    enable_registration_localizability_diagnostics: bool = False
 
 
 MODES: Dict[str, ComparisonMode] = {
@@ -38,6 +41,31 @@ MODES: Dict[str, ComparisonMode] = {
         enable_continuous_time_deskew=True,
         validate_imu=True,
         require_deskew_applied=True,
+    ),
+    "imu_pose_history": ComparisonMode(
+        "imu_pose_history",
+        "preintegration",
+        enable_continuous_time_deskew=True,
+        validate_imu=True,
+        require_deskew_applied=True,
+        continuous_time_deskew_mode="imu_pose_history",
+    ),
+    "lidar_constant_velocity": ComparisonMode(
+        "lidar_constant_velocity",
+        "off",
+        enable_continuous_time_deskew=True,
+        require_deskew_applied=True,
+        continuous_time_deskew_mode="lidar_constant_velocity",
+    ),
+    "localizability_guard": ComparisonMode(
+        "localizability_guard",
+        "off",
+        enable_localizability_guard=True,
+    ),
+    "registration_localizability": ComparisonMode(
+        "registration_localizability",
+        "off",
+        enable_registration_localizability_diagnostics=True,
     ),
 }
 BAG_FILE_SUFFIXES = {".db3", ".mcap"}
@@ -326,6 +354,13 @@ def config_args_for_mode(
         imu_mode=mode.imu_mode,
         enable_imu=False,
         enable_continuous_time_deskew=mode.enable_continuous_time_deskew,
+        continuous_time_deskew_mode=mode.continuous_time_deskew_mode,
+        continuous_time_cloud_stamp_reference="start",
+        continuous_time_pose_history_duration_sec=2.0,
+        enable_localizability_guard=mode.enable_localizability_guard,
+        localizability_min_xy_eigen_ratio=0.05,
+        enable_registration_localizability_diagnostics=(
+            mode.enable_registration_localizability_diagnostics),
         deskew_reference_time_sec=args.deskew_reference_time_sec,
         score_threshold=args.score_threshold,
         enable_open_loop_strict_score_threshold=args.enable_open_loop_strict_score_threshold,
@@ -399,7 +434,7 @@ def benchmark_command(
 
 
 def imu_validation_command(args: argparse.Namespace, mode: ComparisonMode, run_dir: Path) -> Optional[str]:
-    if not mode.validate_imu:
+    if not mode.validate_imu and not mode.require_deskew_applied:
         return None
     parts: List[object] = [
         "ros2",
@@ -412,16 +447,25 @@ def imu_validation_command(args: argparse.Namespace, mode: ComparisonMode, run_d
         run_dir / "imu_validation.json",
         "--output-md",
         run_dir / "imu_validation.md",
-        "--min-imu-active-ratio",
-        args.min_imu_active_ratio,
-        "--min-imu-integrated-samples",
-        args.min_imu_integrated_samples,
-        "--max-imu-fallback-count",
-        args.max_imu_fallback_count,
-        "--require-imu-seed-source",
-        "--min-imu-seed-source-ratio",
-        args.min_imu_seed_source_ratio,
     ]
+    if mode.validate_imu:
+        parts.extend([
+            "--min-imu-active-ratio",
+            args.min_imu_active_ratio,
+            "--min-imu-integrated-samples",
+            args.min_imu_integrated_samples,
+            "--max-imu-fallback-count",
+            args.max_imu_fallback_count,
+            "--require-imu-seed-source",
+            "--min-imu-seed-source-ratio",
+            args.min_imu_seed_source_ratio,
+        ])
+    else:
+        parts.extend([
+            "--min-imu-active-ratio", 0.0,
+            "--min-imu-integrated-samples", 0,
+            "--max-imu-fallback-count", 0,
+        ])
     if mode.require_deskew_applied:
         parts.append("--require-deskew-applied")
         parts.extend(["--min-deskew-applied-ratio", args.min_deskew_applied_ratio])
