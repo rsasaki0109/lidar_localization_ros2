@@ -1,3 +1,6 @@
+# Preset: Nav2 urban borderline-seed gate isolation.
+# Status: experiment-only derivative of nav2_ndt_urban.yaml.
+
 /**:
   ros__parameters:
     registration_method: NDT_OMP

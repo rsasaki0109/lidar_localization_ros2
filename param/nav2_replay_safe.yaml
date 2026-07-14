@@ -1,3 +1,6 @@
+# Preset: conservative single-thread NDT replay baseline for Nav2.
+# Status: replay/debug fallback; prefer nav2_ndt_urban.yaml for normal use.
+
 /**:
   ros__parameters:
     registration_method: NDT

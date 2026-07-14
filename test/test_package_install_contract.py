@@ -25,8 +25,20 @@ ROS_RUN_SCRIPTS = {
 BOOTSTRAP_SCRIPT = "scripts/bootstrap_colcon_workspace.sh"
 
 
+def cmake_script_groups(text: str) -> dict[str, list[str]]:
+    groups = {}
+    pattern = re.compile(
+        r"set\((?P<name>LIDAR_LOCALIZATION_[A-Z_]+_SCRIPTS)\s+(?P<body>.*?)\)",
+        re.DOTALL,
+    )
+    for match in pattern.finditer(text):
+        groups[match.group("name")] = re.findall(r"scripts/[^\s)]+", match.group("body"))
+    return groups
+
+
 def cmake_install_programs() -> set[str]:
     text = (REPO_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    groups = cmake_script_groups(text)
     match = re.search(
         r"install\(PROGRAMS(?P<body>.*?)DESTINATION\s+lib/\$\{PROJECT_NAME\}\)",
         text,
@@ -34,11 +46,12 @@ def cmake_install_programs() -> set[str]:
     )
     if match is None:
         raise AssertionError("install(PROGRAMS ... DESTINATION lib/${PROJECT_NAME}) not found")
-    programs = set()
-    for line in match.group("body").splitlines():
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
-            programs.add(stripped)
+    body = match.group("body")
+    programs = set(re.findall(r"scripts/[^\s)]+", body))
+    for variable in re.findall(r"\$\{([A-Z_]+)\}", body):
+        if variable not in groups:
+            raise AssertionError(f"unknown install(PROGRAMS) variable: {variable}")
+        programs.update(groups[variable])
     return programs
 
 
@@ -58,6 +71,18 @@ class TestPackageInstallContract(unittest.TestCase):
 
                 self.assertTrue(path.exists())
                 self.assertTrue(os.access(path, os.X_OK), f"{relative_path} is not executable")
+
+    def test_grouped_install_scripts_exist_and_are_unique(self):
+        cmake_text = (REPO_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+        groups = cmake_script_groups(cmake_text)
+        grouped_scripts = [script for values in groups.values() for script in values]
+
+        self.assertTrue(groups, "no grouped script lists found")
+        self.assertEqual(len(grouped_scripts), len(set(grouped_scripts)))
+        self.assertEqual(cmake_install_programs(), set(grouped_scripts))
+        for relative_path in sorted(grouped_scripts):
+            with self.subTest(relative_path=relative_path):
+                self.assertTrue((REPO_ROOT / relative_path).is_file())
 
     def test_lidar_localization_mid360_helper_package_is_installed_as_directory(self):
         cmake_text = (REPO_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")

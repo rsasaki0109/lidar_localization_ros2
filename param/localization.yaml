@@ -1,3 +1,6 @@
+# Preset: generic lidar_localization launch default.
+# Status: general starting point; override map path, initial pose, and sensor topics.
+
 /**:
     ros__parameters:
       registration_method: "NDT_OMP"

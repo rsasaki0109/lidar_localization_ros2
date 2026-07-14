@@ -1,3 +1,6 @@
+# Preset: official hdl_localization sample with IMU preintegration.
+# Status: public-validation preset; replace map_path before use.
+
 /**:
   ros__parameters:
     registration_method: NDT_OMP

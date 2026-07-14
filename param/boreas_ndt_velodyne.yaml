@@ -1,4 +1,5 @@
-# Boreas Velodyne 128 localizer preset.
+# Preset: Boreas Velodyne 128 localizer.
+# Status: dataset-specific validated preset; not a general default.
 # Tuned for map-split GT-aligned maps and high-rate dense scans.
 # Keep twist prediction enabled; improve throughput and post-reject recovery.
 

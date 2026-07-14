@@ -1,3 +1,6 @@
+# Preset: Nav2 companion configuration using PointCloud2 obstacles.
+# Status: Humble/Jazzy-compatible navigation preset; not a localizer parameter file.
+
 bt_navigator:
   ros__parameters:
     use_sim_time: false
