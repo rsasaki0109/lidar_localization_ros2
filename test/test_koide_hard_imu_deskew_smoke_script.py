@@ -53,6 +53,7 @@ class TestKoideHardImuDeskewSmokeScript(unittest.TestCase):
             self.assertIn("use_imu_preintegration: true", config)
             self.assertIn("use_continuous_time_deskew: true", config)
             self.assertIn("initial_pose_x: -86.03759", config)
+            self.assertIn("imu_accel_scale: 9.80665", config)
 
     def test_windowed_print_only_uses_gt_pose_at_start_offset(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

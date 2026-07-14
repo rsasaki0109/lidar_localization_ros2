@@ -100,6 +100,47 @@ class TestRunLidarLocalizationImuComparison(unittest.TestCase):
         self.assertIn("benchmark_eval_trajectory", command)
         self.assertIn("--reference-csv /ref.csv", command)
 
+    def test_dual_queue_mode_and_acceleration_scale_are_written_to_config(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            code = comparison_tool.main([
+                "--bag-path", "/bags/site",
+                "--map-path", "/maps/site.pcd",
+                "--output-dir", tmp_dir,
+                "--mode", "imu_preintegration",
+                "--mode", "imu_dual_queue",
+                "--imu-accel-scale", "9.80665",
+                "--print-only",
+            ])
+
+            self.assertEqual(code, 0)
+            plan = json.loads((Path(tmp_dir) / "run_plan.json").read_text())
+            current_config = Path(plan["runs"][0]["config_path"]).read_text()
+            candidate_config = Path(plan["runs"][1]["config_path"]).read_text()
+            self.assertIn("imu_dual_queue_enabled: false", current_config)
+            self.assertIn("imu_dual_queue_enabled: true", candidate_config)
+            self.assertIn("imu_accel_scale: 9.80665", current_config)
+            self.assertIn("imu_accel_scale: 9.80665", candidate_config)
+
+    def test_dual_queue_deskew_mode_combines_candidate_and_runtime_gate(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            code = comparison_tool.main([
+                "--bag-path", "/bags/site",
+                "--map-path", "/maps/site.pcd",
+                "--output-dir", tmp_dir,
+                "--mode", "imu_dual_queue_deskew",
+                "--print-only",
+            ])
+
+            self.assertEqual(code, 0)
+            plan = json.loads((Path(tmp_dir) / "run_plan.json").read_text())
+            self.assertEqual(plan["runs"][0]["mode"], "imu_dual_queue_deskew")
+            config = Path(plan["runs"][0]["config_path"]).read_text()
+            self.assertIn("imu_dual_queue_enabled: true", config)
+            self.assertIn("use_continuous_time_deskew: true", config)
+            validation = plan["runs"][0]["imu_validation_command"]
+            self.assertIn("--require-imu-seed-source", validation)
+            self.assertIn("--require-deskew-applied", validation)
+
     def test_input_check_reports_missing_files_before_running(self):
         args = comparison_tool.build_arg_parser().parse_args([
             "--bag-path",

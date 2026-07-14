@@ -205,6 +205,84 @@ void test_covariance_symmetric_and_grows()
   assert(es.eigenvalues().minCoeff() > -1e-12);
 }
 
+void test_one_step_covariance_matches_continuous_noise_density_units()
+{
+  ImuPreintegration pre;
+  pre.params.accel_noise_density = 0.2;
+  pre.params.gyro_noise_density = 0.03;
+  const double dt = 0.01;
+  pre.integrate(
+    Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
+    Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), dt);
+
+  const double accel_variance_density = 0.2 * 0.2;
+  const double gyro_variance_density = 0.03 * 0.03;
+  const double expected_dp_variance =
+    0.25 * accel_variance_density * dt * dt * dt;
+  const double expected_dv_variance = accel_variance_density * dt;
+  const double expected_dtheta_variance = gyro_variance_density * dt;
+  for (int axis = 0; axis < 3; ++axis) {
+    assert(close(pre.covariance(axis, axis), expected_dp_variance, 1e-15));
+    assert(close(pre.covariance(3 + axis, 3 + axis), expected_dv_variance, 1e-15));
+    assert(close(pre.covariance(6 + axis, 6 + axis), expected_dtheta_variance, 1e-15));
+  }
+}
+
+void test_bias_random_walk_increases_prior_variance_analytically()
+{
+  const double initial_sigma = 0.02;
+  const double random_walk = 0.003;
+  const double duration = 4.0;
+  const double expected =
+    initial_sigma * initial_sigma + random_walk * random_walk * duration;
+
+  assert(close(
+    imuBiasPriorVariance(initial_sigma, random_walk, duration), expected, 1e-15));
+  assert(close(
+    imuBiasPriorVariance(initial_sigma, 0.0, duration),
+    initial_sigma * initial_sigma, 1e-15));
+  assert(close(
+    imuBiasPriorVariance(initial_sigma, random_walk, 0.0),
+    initial_sigma * initial_sigma, 1e-15));
+}
+
+ImuGtsamSmoother estimate_constant_gyro_bias(double gyro_random_walk)
+{
+  ImuGtsamSmoother smoother;
+  smoother.params_.imu_params.gravity.setZero();
+  smoother.params_.imu_params.gyro_noise_density = 0.01;
+  smoother.params_.bias_prior_sigma_gyro = 0.001;
+  smoother.params_.imu_params.gyro_random_walk = gyro_random_walk;
+  smoother.initialize(
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0);
+
+  for (int interval = 1; interval <= 5; ++interval) {
+    for (int tick = 0; tick < 20; ++tick) {
+      smoother.integrateImu(
+        Eigen::Vector3d(0.0, 0.0, 0.1), Eigen::Vector3d::Zero(), 0.005);
+    }
+    assert(smoother.update(
+      0.0, 0.0, 0.0,
+      0.0, 0.0, 0.0, 0.01, 0.1 * interval));
+  }
+  return smoother;
+}
+
+void test_bias_random_walk_changes_bias_estimate_in_smoother()
+{
+  const auto tightly_anchored = estimate_constant_gyro_bias(0.0);
+  const auto random_walk_aware = estimate_constant_gyro_bias(0.5);
+  const double true_bias = 0.1;
+
+  const double anchored_error =
+    std::abs(tightly_anchored.gyroBias().z() - true_bias);
+  const double random_walk_error =
+    std::abs(random_walk_aware.gyroBias().z() - true_bias);
+  assert(random_walk_error < anchored_error);
+  assert(random_walk_aware.gyroBias().z() > tightly_anchored.gyroBias().z());
+}
+
 void test_smoother_handles_short_and_regular_imu_windows()
 {
   ImuGtsamSmoother smoother;
@@ -222,6 +300,144 @@ void test_smoother_handles_short_and_regular_imu_windows()
   assert(smoother.poseMatrix().allFinite());
 }
 
+void test_dead_reckoning_position_uses_velocity_before_acceleration_update()
+{
+  ImuGtsamSmoother smoother;
+  smoother.params_.imu_params.gravity.setZero();
+  const Eigen::Vector3d initial_position(1.0, -2.0, 0.5);
+  const Eigen::Vector3d initial_velocity(2.0, -1.0, 0.25);
+  const Eigen::Vector3d acceleration(0.5, 1.0, -0.25);
+  const double dt = 0.2;
+  smoother.initialize(
+    initial_position.x(), initial_position.y(), initial_position.z(),
+    0.0, 0.0, 0.0,
+    initial_velocity.x(), initial_velocity.y(), initial_velocity.z(), 0.0);
+
+  smoother.integrateImu(Eigen::Vector3d::Zero(), acceleration, dt);
+
+  const Eigen::Vector3d expected =
+    initial_position + initial_velocity * dt + 0.5 * acceleration * dt * dt;
+  const Eigen::Vector3d predicted =
+    smoother.predictedPoseMatrix().block<3, 1>(0, 3).cast<double>();
+  assert(vclose(predicted, expected, 1e-6));
+}
+
+void test_smoother_keeps_window_and_velocity_across_updates()
+{
+  ImuGtsamSmoother smoother;
+  smoother.params_.imu_params.gravity.setZero();
+  smoother.initialize(
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    1.0, 0.0, 0.0, 0.0);
+
+  for (int interval = 1; interval <= 2; ++interval) {
+    for (int tick = 0; tick < 20; ++tick) {
+      smoother.integrateImu(
+        Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), 0.005);
+    }
+    assert(smoother.update(
+      0.1 * interval, 0.0, 0.0,
+      0.0, 0.0, 0.0, 0.1, 0.1 * interval));
+  }
+
+  assert(smoother.poseCount() == 3);
+  assert(std::abs(smoother.velocity().x() - 1.0) < 1e-3);
+  assert(std::abs(smoother.velocity().y()) < 1e-6);
+  assert(std::abs(smoother.velocity().z()) < 1e-6);
+}
+
+void test_pose_only_gap_update_preserves_velocity_and_bias()
+{
+  ImuGtsamSmoother smoother;
+  smoother.params_.imu_params.gravity.setZero();
+  const Eigen::Vector3d velocity(1.5, -0.25, 0.1);
+  const Eigen::Vector3d gyro_bias(0.01, -0.02, 0.03);
+  const Eigen::Vector3d accel_bias(0.1, -0.2, 0.05);
+  smoother.initializeState(
+    Eigen::Vector3d::Zero(), Eigen::Matrix3d::Identity(), velocity,
+    gyro_bias, accel_bias, 0.0);
+
+  // An uncovered scan gap contributes no IMU factor, but its accepted LiDAR
+  // pose must not force a zero-velocity/zero-bias reinitialization.
+  smoother.resetPendingIntegration();
+  assert(smoother.updatePoseOnly(
+    1.5, -0.25, 0.1,
+    0.0, 0.0, 0.0, 0.1, 1.0));
+
+  assert(smoother.poseCount() == 2);
+  assert(vclose(smoother.velocity(), velocity, 1e-9));
+  assert(vclose(smoother.gyroBias(), gyro_bias, 1e-9));
+  assert(vclose(smoother.accelBias(), accel_bias, 1e-9));
+}
+
+void test_smoother_estimates_nonzero_initial_velocity_from_pose_updates()
+{
+  ImuGtsamSmoother smoother;
+  smoother.params_.imu_params.gravity.setZero();
+  smoother.initialize(
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0);
+
+  for (int interval = 1; interval <= 3; ++interval) {
+    for (int tick = 0; tick < 20; ++tick) {
+      smoother.integrateImu(
+        Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), 0.005);
+    }
+    assert(smoother.update(
+      0.1 * interval, 0.0, 0.0,
+      0.0, 0.0, 0.0, 0.1, 0.1 * interval));
+  }
+
+  assert(smoother.poseCount() == 4);
+  assert(std::abs(smoother.velocity().x() - 1.0) < 1e-2);
+  assert(std::abs(smoother.velocity().y()) < 1e-6);
+  assert(std::abs(smoother.velocity().z()) < 1e-6);
+}
+
+void test_smoother_state_transfer_preserves_velocity_and_bias_for_repropagation()
+{
+  ImuGtsamSmoother predictor;
+  predictor.params_.imu_params.gravity.setZero();
+  const Eigen::Vector3d position(1.0, 2.0, 3.0);
+  const Eigen::Vector3d velocity(2.0, -1.0, 0.5);
+  const Eigen::Vector3d gyro_bias(0.0, 0.0, 0.1);
+  const Eigen::Vector3d accel_bias(0.2, 0.0, 0.0);
+  predictor.initializeState(
+    position, Eigen::Matrix3d::Identity(), velocity,
+    gyro_bias, accel_bias, 10.0);
+
+  predictor.integrateImu(gyro_bias, accel_bias, 0.1);
+
+  const Eigen::Vector3d predicted_position =
+    predictor.predictedPoseMatrix().block<3, 1>(0, 3).cast<double>();
+  assert(vclose(predicted_position, position + velocity * 0.1, 1e-6));
+  assert(rot_diff(
+    predictor.predictedPoseMatrix().block<3, 3>(0, 0).cast<double>(),
+    Eigen::Matrix3d::Identity()) < 1e-6);
+  assert(vclose(predictor.gyroBias(), gyro_bias, 1e-12));
+  assert(vclose(predictor.accelBias(), accel_bias, 1e-12));
+}
+
+void test_reset_pending_integration_prevents_duplicate_repropagation()
+{
+  ImuGtsamSmoother predictor;
+  predictor.params_.imu_params.gravity.setZero();
+  predictor.initialize(
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    1.0, 0.0, 0.0, 0.0);
+
+  predictor.integrateImu(
+    Eigen::Vector3d::Zero(), Eigen::Vector3d(1.0, 0.0, 0.0), 0.1);
+  predictor.resetPendingIntegration();
+  predictor.integrateImu(
+    Eigen::Vector3d::Zero(), Eigen::Vector3d(1.0, 0.0, 0.0), 0.1);
+
+  const Eigen::Vector3d predicted_position =
+    predictor.predictedPoseMatrix().block<3, 1>(0, 3).cast<double>();
+  assert(vclose(predicted_position, Eigen::Vector3d(0.105, 0.0, 0.0), 1e-6));
+}
+
+
 }  // namespace
 
 int main()
@@ -233,6 +449,15 @@ int main()
   test_residual_zero_for_consistent_trajectory();
   test_bias_jacobian_matches_finite_difference();
   test_covariance_symmetric_and_grows();
+  test_one_step_covariance_matches_continuous_noise_density_units();
+  test_bias_random_walk_increases_prior_variance_analytically();
+  test_bias_random_walk_changes_bias_estimate_in_smoother();
   test_smoother_handles_short_and_regular_imu_windows();
+  test_dead_reckoning_position_uses_velocity_before_acceleration_update();
+  test_smoother_keeps_window_and_velocity_across_updates();
+  test_pose_only_gap_update_preserves_velocity_and_bias();
+  test_smoother_estimates_nonzero_initial_velocity_from_pose_updates();
+  test_smoother_state_transfer_preserves_velocity_and_bias_for_repropagation();
+  test_reset_pending_integration_prevents_duplicate_repropagation();
   return 0;
 }

@@ -471,6 +471,37 @@ if(BUILD_TESTING)
     COMMAND test_imu_preintegration_diagnostics_policy
   )
 
+  add_executable(test_imu_seed_consistency_policy
+    test/test_imu_seed_consistency_policy.cpp)
+  target_include_directories(test_imu_seed_consistency_policy PRIVATE
+    include)
+  add_test(
+    NAME imu_seed_consistency_policy
+    COMMAND test_imu_seed_consistency_policy
+  )
+
+  add_executable(test_imu_queue_policy
+    test/test_imu_queue_policy.cpp)
+  target_include_directories(test_imu_queue_policy PRIVATE
+    include ${EIGEN3_INCLUDE_DIRS})
+  target_link_libraries(test_imu_queue_policy
+    Eigen3::Eigen)
+  add_test(
+    NAME imu_queue_policy
+    COMMAND test_imu_queue_policy
+  )
+
+  add_executable(test_imu_initialization_policy
+    test/test_imu_initialization_policy.cpp)
+  target_include_directories(test_imu_initialization_policy PRIVATE
+    include ${EIGEN3_INCLUDE_DIRS})
+  target_link_libraries(test_imu_initialization_policy
+    Eigen3::Eigen)
+  add_test(
+    NAME imu_initialization_policy
+    COMMAND test_imu_initialization_policy
+  )
+
   add_executable(test_deskew_readiness_policy
     test/test_deskew_readiness_policy.cpp)
   target_include_directories(test_deskew_readiness_policy PRIVATE

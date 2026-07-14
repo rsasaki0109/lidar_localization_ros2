@@ -26,6 +26,7 @@ class ComparisonMode:
     continuous_time_deskew_mode: str = "relative_motion"
     enable_localizability_guard: bool = False
     enable_registration_localizability_diagnostics: bool = False
+    enable_imu_dual_queue: bool = False
 
 
 MODES: Dict[str, ComparisonMode] = {
@@ -34,6 +35,20 @@ MODES: Dict[str, ComparisonMode] = {
         "imu_preintegration",
         "preintegration",
         validate_imu=True,
+    ),
+    "imu_dual_queue": ComparisonMode(
+        "imu_dual_queue",
+        "preintegration",
+        validate_imu=True,
+        enable_imu_dual_queue=True,
+    ),
+    "imu_dual_queue_deskew": ComparisonMode(
+        "imu_dual_queue_deskew",
+        "preintegration",
+        enable_continuous_time_deskew=True,
+        validate_imu=True,
+        require_deskew_applied=True,
+        enable_imu_dual_queue=True,
     ),
     "deskew": ComparisonMode(
         "deskew",
@@ -151,6 +166,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-imu-fallback-count", type=int, default=0)
     parser.add_argument("--min-imu-seed-source-ratio", type=float, default=0.5)
     parser.add_argument("--min-deskew-applied-ratio", type=float, default=0.1)
+    parser.add_argument(
+        "--imu-accel-scale",
+        type=float,
+        default=1.0,
+        help="Multiply incoming acceleration before IMU integration (for example 9.80665 for g units).",
+    )
     parser.add_argument(
         "--launch-arg",
         action="append",
@@ -361,6 +382,8 @@ def config_args_for_mode(
         localizability_min_xy_eigen_ratio=0.05,
         enable_registration_localizability_diagnostics=(
             mode.enable_registration_localizability_diagnostics),
+        enable_imu_dual_queue=mode.enable_imu_dual_queue,
+        imu_accel_scale=args.imu_accel_scale,
         deskew_reference_time_sec=args.deskew_reference_time_sec,
         score_threshold=args.score_threshold,
         enable_open_loop_strict_score_threshold=args.enable_open_loop_strict_score_threshold,
@@ -384,10 +407,10 @@ def write_config(tool_args: argparse.Namespace, output_path: Path) -> None:
     if validation_error is not None:
         raise ValueError(validation_error)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        config_tool.render_ros_params(config_tool.make_params(tool_args)),
-        encoding="utf-8",
-    )
+    params = config_tool.make_params(tool_args)
+    params["imu_dual_queue_enabled"] = tool_args.enable_imu_dual_queue
+    params["imu_accel_scale"] = tool_args.imu_accel_scale
+    output_path.write_text(config_tool.render_ros_params(params), encoding="utf-8")
 
 
 def system_command(tool_args: argparse.Namespace, config_path: Path, extra_launch_args: Sequence[str]) -> str:

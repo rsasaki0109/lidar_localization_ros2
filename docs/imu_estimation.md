@@ -70,8 +70,12 @@ It is registered in `CMakeLists.txt` and runs under `colcon test` as
 A LiDAR localizer must not let a bad IMU integration drag the pose. The guard
 policy (`imu_preintegration_guard_policy.hpp`) enforces that:
 
-- IMU preintegration is used as the registration seed/prediction path; the
-  accepted LiDAR registration measurement remains the published pose anchor;
+- the default-on consistency gate first compares IMU predictions with accepted
+  LiDAR poses without applying them to registration; only the configured number
+  of consecutive translation-and-rotation passes permits the next IMU seed;
+- after permission, IMU preintegration can be used as the registration
+  seed/prediction path while the accepted LiDAR measurement remains the
+  published pose anchor;
 - if the IMU prediction and the NDT correction disagree by more than
   `imu_prediction_correction_guard_translation_m` (2.0 m) or
   `imu_prediction_correction_guard_yaw_deg` (10.0°), or the smoother update is
@@ -79,6 +83,10 @@ policy (`imu_preintegration_guard_policy.hpp`) enforces that:
   and resets the IMU smoother to that measurement before continuing;
 - fallback mode is reserved for an already-disabled IMU preintegration state;
 - the guard is itself unit-tested (`test_imu_preintegration_guard_policy.cpp`).
+- finite threshold violations or non-finite predictions immediately revoke
+  seed permission; a temporarily unavailable prediction cannot be used for
+  that scan but does not erase an already established gate
+  (`test_imu_seed_consistency_policy.cpp`).
 
 This is the same design principle as the rest of the stack (see
 [pose_covariance.md](pose_covariance.md), the G3 reinitialization guard): a
@@ -86,11 +94,32 @@ component that feeds itself must not be able to diverge unbounded.
 
 ## Parameters
 
+### Backend and input units
+
 | Parameter | Default | Meaning |
 | --- | --- | --- |
 | `use_imu` | `false` | Enable the legacy IMU correction path |
 | `use_imu_preintegration` | `true` | Use the guarded preintegration smoother from `/imu`, independent of `use_imu` |
 | `imu_preintegration_use_base_frame_transform` | `false` | Transform IMU samples into the base frame before integrating |
+| `imu_accel_scale` | `1.0` | Multiply incoming acceleration before integration; use `9.80665` only for drivers/bags that publish acceleration in `g` rather than m/s² |
+| `imu_dual_queue_enabled` | `true` | LIO-SAM-style optimization/prediction queues with correction-time repropagation and velocity/bias retention; set `false` only for the legacy single-stream A/B baseline |
+
+### Seed safety and correction guards
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `imu_seed_consistency_gate_enabled` | `true` | Keep IMU prediction diagnostic-only until consecutive LiDAR comparisons pass |
+| `imu_seed_consistency_max_translation_error_m` | `0.5` | Maximum open-loop IMU-vs-LiDAR translation error for one pass |
+| `imu_seed_consistency_max_rotation_error_deg` | `5.0` | Maximum open-loop IMU-vs-LiDAR rotation error for one pass |
+| `imu_seed_consistency_required_consecutive_passes` | `5` | Consecutive passes required before an IMU prediction may seed registration |
+| `imu_prediction_correction_guard_translation_m` | `2.0` | Reset the IMU smoother if IMU-vs-NDT translation disagrees beyond this |
+| `imu_prediction_correction_guard_yaw_deg` | `10.0` | Reset the IMU smoother if IMU-vs-NDT yaw disagrees beyond this |
+| `imu_prediction_correction_guard_warmup_accepts` | `5` | Accepted NDT corrections required before enforcing the correction guard |
+
+### Continuous-time deskew and diagnostics (experimental)
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
 | `use_continuous_time_deskew` | `false` | Experimental default-off hook that deskews the pre-voxel scan using per-point timing and IMU-predicted relative motion |
 | `continuous_time_deskew_mode` | `relative_motion` | Experimental motion source: `relative_motion`, `imu_pose_history`, or `lidar_constant_velocity` |
 | `continuous_time_cloud_stamp_reference` | `start` | Whether the cloud header is the scan `start` or `end`; Koide Livox uses `start` |
@@ -98,6 +127,11 @@ component that feeds itself must not be able to diverge unbounded.
 | `continuous_time_pose_history_duration_sec` | `2.0` | Bounded rotation-only IMU pose-history horizon used by `imu_pose_history` |
 | `enable_localizability_guard` | `false` | Experimental XY scan-covariance proxy; suppress the previous-delta seed only below its threshold |
 | `localizability_min_xy_eigen_ratio` | `0.05` | Minimum XY covariance eigenvalue ratio for the proxy guard |
+
+### Preintegration noise and factor model
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
 | `imu_gyro_noise_density` | `0.01` | rad/s/√Hz |
 | `imu_accel_noise_density` | `0.1` | m/s²/√Hz |
 | `imu_gyro_random_walk` | `0.0001` | rad/s²/√Hz |
@@ -105,8 +139,6 @@ component that feeds itself must not be able to diverge unbounded.
 | `imu_bias_prior_sigma_gyro` | `0.01` | gyro bias prior σ |
 | `imu_bias_prior_sigma_accel` | `0.1` | accel bias prior σ |
 | `imu_ndt_sigma_z` / `_roll` / `_pitch` | `0.1` / `0.05` / `0.05` | NDT prior σ on the axes IMU constrains most |
-| `imu_prediction_correction_guard_translation_m` | `2.0` | reset IMU smoother if IMU-vs-NDT disagree beyond this |
-| `imu_prediction_correction_guard_yaw_deg` | `10.0` | reset IMU smoother if IMU-vs-NDT yaw disagree beyond this |
 
 Set the noise densities from your IMU datasheet (or an Allan-variance run) for
 best results; the defaults are MEMS-grade ballpark values.

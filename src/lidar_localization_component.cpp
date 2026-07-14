@@ -133,29 +133,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("gtsam_fitness_scale_factor", 2.0);
   declare_parameter("gtsam_fitness_reject", 50.0);
   declare_parameter("gtsam_huber_k", 1.345);
-  // IMU preintegration parameters
-  declare_parameter("use_imu_preintegration", true);
-  declare_parameter("imu_preintegration_use_base_frame_transform", false);
-  declare_parameter("use_continuous_time_deskew", false);
-  declare_parameter("continuous_time_deskew_mode", "relative_motion");
-  declare_parameter("continuous_time_cloud_stamp_reference", "start");
-  declare_parameter("continuous_time_deskew_reference_time_sec", 0.0);
-  declare_parameter("continuous_time_pose_history_duration_sec", 2.0);
-  declare_parameter("enable_localizability_guard", false);
-  declare_parameter("localizability_min_xy_eigen_ratio", 0.05);
-  declare_parameter("enable_registration_localizability_diagnostics", false);
-  declare_parameter("imu_gyro_noise_density", 0.01);
-  declare_parameter("imu_accel_noise_density", 0.1);
-  declare_parameter("imu_gyro_random_walk", 0.0001);
-  declare_parameter("imu_accel_random_walk", 0.001);
-  declare_parameter("imu_ndt_sigma_z", 0.1);
-  declare_parameter("imu_ndt_sigma_roll", 0.05);
-  declare_parameter("imu_ndt_sigma_pitch", 0.05);
-  declare_parameter("imu_bias_prior_sigma_gyro", 0.01);
-  declare_parameter("imu_bias_prior_sigma_accel", 0.1);
-  declare_parameter("imu_prediction_correction_guard_translation_m", 2.0);
-  declare_parameter("imu_prediction_correction_guard_yaw_deg", 10.0);
-  declare_parameter("imu_prediction_correction_guard_warmup_accepts", 5);
+  declareImuPreintegrationParameters();
   declare_parameter("enable_debug", false);
   declare_parameter("predict_pose_from_previous_delta", true);
   declare_parameter("enable_local_map_crop", false);
@@ -476,6 +454,18 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
     latest_imu_seed_last_dt_sec_ = std::numeric_limits<double>::quiet_NaN();
     latest_imu_seed_last_sample_age_sec_ = std::numeric_limits<double>::quiet_NaN();
     latest_imu_seed_integration_window_sec_ = 0.0;
+    latest_imu_open_loop_prediction_ = Eigen::Matrix4f::Identity();
+    latest_imu_open_loop_prediction_available_ = false;
+    latest_imu_seed_consistency_translation_error_m_ =
+      std::numeric_limits<double>::quiet_NaN();
+    latest_imu_seed_consistency_rotation_error_deg_ =
+      std::numeric_limits<double>::quiet_NaN();
+    latest_imu_seed_consistency_sample_passed_ = false;
+    imu_seed_consistency_state_ = {};
+    imu_dual_queue_.clear();
+    imu_optimization_anchor_sample_.reset();
+    imu_prediction_anchor_sample_.reset();
+    latest_dual_queue_integrated_stamp_ = 0.0;
     resetImuPreintegrationSampleCounters();
   }
   reinitialization_requested_ = false;
@@ -514,6 +504,155 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   last_crop_failure_streak_log_time_ = std::chrono::steady_clock::time_point{};
   map_recieved_ = false;
   initialpose_recieved_ = false;
+}
+
+void PCLLocalization::declareImuPreintegrationParameters()
+{
+  // Backend and input units.
+  declare_parameter("use_imu_preintegration", true);
+  declare_parameter("imu_preintegration_use_base_frame_transform", false);
+  declare_parameter("imu_accel_scale", 1.0);
+  declare_parameter("imu_dual_queue_enabled", true);
+
+  // Seed safety and correction guards.
+  declare_parameter("imu_seed_consistency_gate_enabled", true);
+  declare_parameter("imu_seed_consistency_max_translation_error_m", 0.5);
+  declare_parameter("imu_seed_consistency_max_rotation_error_deg", 5.0);
+  declare_parameter("imu_seed_consistency_required_consecutive_passes", 5);
+  declare_parameter("imu_prediction_correction_guard_translation_m", 2.0);
+  declare_parameter("imu_prediction_correction_guard_yaw_deg", 10.0);
+  declare_parameter("imu_prediction_correction_guard_warmup_accepts", 5);
+
+  // Preintegration noise and factor model.
+  declare_parameter("imu_gyro_noise_density", 0.01);
+  declare_parameter("imu_accel_noise_density", 0.1);
+  declare_parameter("imu_gyro_random_walk", 0.0001);
+  declare_parameter("imu_accel_random_walk", 0.001);
+  declare_parameter("imu_ndt_sigma_z", 0.1);
+  declare_parameter("imu_ndt_sigma_roll", 0.05);
+  declare_parameter("imu_ndt_sigma_pitch", 0.05);
+  declare_parameter("imu_bias_prior_sigma_gyro", 0.01);
+  declare_parameter("imu_bias_prior_sigma_accel", 0.1);
+
+  // Experimental deskew and localizability diagnostics.
+  declare_parameter("use_continuous_time_deskew", false);
+  declare_parameter("continuous_time_deskew_mode", "relative_motion");
+  declare_parameter("continuous_time_cloud_stamp_reference", "start");
+  declare_parameter("continuous_time_deskew_reference_time_sec", 0.0);
+  declare_parameter("continuous_time_pose_history_duration_sec", 2.0);
+  declare_parameter("enable_localizability_guard", false);
+  declare_parameter("localizability_min_xy_eigen_ratio", 0.05);
+  declare_parameter("enable_registration_localizability_diagnostics", false);
+}
+
+void PCLLocalization::loadImuPreintegrationParameters()
+{
+  // Backend and input units.
+  get_parameter("use_imu_preintegration", use_imu_preintegration_);
+  get_parameter(
+    "imu_preintegration_use_base_frame_transform",
+    imu_preintegration_use_base_frame_transform_);
+  get_parameter("imu_accel_scale", imu_accel_scale_);
+  get_parameter("imu_dual_queue_enabled", imu_dual_queue_enabled_);
+  if (!std::isfinite(imu_accel_scale_) || imu_accel_scale_ <= 0.0) {
+    RCLCPP_WARN(
+      get_logger(), "Invalid imu_accel_scale %.6f; using 1.0", imu_accel_scale_);
+    imu_accel_scale_ = 1.0;
+  }
+
+  // Seed safety and correction guards.
+  get_parameter("imu_seed_consistency_gate_enabled", imu_seed_consistency_gate_enabled_);
+  get_parameter(
+    "imu_seed_consistency_max_translation_error_m",
+    imu_seed_consistency_params_.max_translation_error_m);
+  get_parameter(
+    "imu_seed_consistency_max_rotation_error_deg",
+    imu_seed_consistency_params_.max_rotation_error_deg);
+  int required_consecutive_passes = 5;
+  get_parameter(
+    "imu_seed_consistency_required_consecutive_passes", required_consecutive_passes);
+  imu_seed_consistency_params_.required_consecutive_passes = static_cast<std::size_t>(
+    std::max(1, required_consecutive_passes));
+  // Experimental deskew and localizability diagnostics.
+  get_parameter("use_continuous_time_deskew", use_continuous_time_deskew_);
+  get_parameter("continuous_time_deskew_mode", continuous_time_deskew_mode_);
+  get_parameter(
+    "continuous_time_cloud_stamp_reference", continuous_time_cloud_stamp_reference_);
+  get_parameter(
+    "continuous_time_deskew_reference_time_sec",
+    continuous_time_deskew_reference_time_sec_);
+  get_parameter(
+    "continuous_time_pose_history_duration_sec",
+    continuous_time_pose_history_duration_sec_);
+  get_parameter("enable_localizability_guard", enable_localizability_guard_);
+  get_parameter(
+    "enable_registration_localizability_diagnostics",
+    enable_registration_localizability_diagnostics_);
+  get_parameter(
+    "localizability_min_xy_eigen_ratio", localizability_min_xy_eigen_ratio_);
+  if (
+    continuous_time_deskew_mode_ != "relative_motion" &&
+    continuous_time_deskew_mode_ != "imu_pose_history" &&
+    continuous_time_deskew_mode_ != "lidar_constant_velocity")
+  {
+    RCLCPP_WARN(
+      get_logger(), "Unsupported continuous_time_deskew_mode '%s'; using relative_motion",
+      continuous_time_deskew_mode_.c_str());
+    continuous_time_deskew_mode_ = "relative_motion";
+  }
+  if (
+    continuous_time_cloud_stamp_reference_ != "start" &&
+    continuous_time_cloud_stamp_reference_ != "end")
+  {
+    RCLCPP_WARN(
+      get_logger(), "Unsupported continuous_time_cloud_stamp_reference '%s'; using start",
+      continuous_time_cloud_stamp_reference_.c_str());
+    continuous_time_cloud_stamp_reference_ = "start";
+  }
+  if (
+    !std::isfinite(continuous_time_pose_history_duration_sec_) ||
+    continuous_time_pose_history_duration_sec_ <= 0.0)
+  {
+    RCLCPP_WARN(
+      get_logger(), "continuous_time_pose_history_duration_sec must be positive; using 2.0");
+    continuous_time_pose_history_duration_sec_ = 2.0;
+  }
+
+  if (!use_imu_preintegration_) {
+    return;
+  }
+
+  get_parameter(
+    "imu_prediction_correction_guard_translation_m",
+    imu_prediction_correction_guard_translation_m_);
+  get_parameter(
+    "imu_prediction_correction_guard_yaw_deg",
+    imu_prediction_correction_guard_yaw_deg_);
+  get_parameter(
+    "imu_prediction_correction_guard_warmup_accepts",
+    imu_prediction_correction_guard_warmup_accepts_);
+
+  // Preintegration noise and factor model.
+  ImuGtsamSmoother::Params imu_params;
+  get_parameter("gtsam_ndt_sigma_x", imu_params.ndt_sigma_x);
+  get_parameter("gtsam_ndt_sigma_y", imu_params.ndt_sigma_y);
+  get_parameter("gtsam_ndt_sigma_yaw", imu_params.ndt_sigma_yaw);
+  get_parameter("imu_ndt_sigma_z", imu_params.ndt_sigma_z);
+  get_parameter("imu_ndt_sigma_roll", imu_params.ndt_sigma_roll);
+  get_parameter("imu_ndt_sigma_pitch", imu_params.ndt_sigma_pitch);
+  get_parameter("gtsam_fitness_nominal", imu_params.fitness_nominal);
+  get_parameter("gtsam_fitness_scale_factor", imu_params.fitness_scale_factor);
+  get_parameter("gtsam_fitness_reject", imu_params.fitness_reject);
+  get_parameter("gtsam_huber_k", imu_params.huber_k);
+  get_parameter("imu_gyro_noise_density", imu_params.imu_params.gyro_noise_density);
+  get_parameter("imu_accel_noise_density", imu_params.imu_params.accel_noise_density);
+  get_parameter("imu_gyro_random_walk", imu_params.imu_params.gyro_random_walk);
+  get_parameter("imu_accel_random_walk", imu_params.imu_params.accel_random_walk);
+  get_parameter("imu_bias_prior_sigma_gyro", imu_params.bias_prior_sigma_gyro);
+  get_parameter("imu_bias_prior_sigma_accel", imu_params.bias_prior_sigma_accel);
+  imu_smoother_.params_ = imu_params;
+  imu_prediction_smoother_.params_ = imu_params;
+  RCLCPP_INFO(get_logger(), "IMU preintegration smoother enabled");
 }
 
 void PCLLocalization::initializeParameters()
@@ -606,84 +745,7 @@ void PCLLocalization::initializeParameters()
     gtsam_smoother_.setParams(gtsam_params);
     gtsam_smoother_.reset();
   }
-  get_parameter("use_imu_preintegration", use_imu_preintegration_);
-  get_parameter(
-    "imu_preintegration_use_base_frame_transform",
-    imu_preintegration_use_base_frame_transform_);
-  get_parameter("use_continuous_time_deskew", use_continuous_time_deskew_);
-  get_parameter("continuous_time_deskew_mode", continuous_time_deskew_mode_);
-  get_parameter(
-    "continuous_time_cloud_stamp_reference", continuous_time_cloud_stamp_reference_);
-  get_parameter(
-    "continuous_time_deskew_reference_time_sec",
-    continuous_time_deskew_reference_time_sec_);
-  get_parameter(
-    "continuous_time_pose_history_duration_sec",
-    continuous_time_pose_history_duration_sec_);
-  get_parameter("enable_localizability_guard", enable_localizability_guard_);
-  get_parameter(
-    "enable_registration_localizability_diagnostics",
-    enable_registration_localizability_diagnostics_);
-  get_parameter(
-    "localizability_min_xy_eigen_ratio", localizability_min_xy_eigen_ratio_);
-  if (
-    continuous_time_deskew_mode_ != "relative_motion" &&
-    continuous_time_deskew_mode_ != "imu_pose_history" &&
-    continuous_time_deskew_mode_ != "lidar_constant_velocity")
-  {
-    RCLCPP_WARN(
-      get_logger(), "Unsupported continuous_time_deskew_mode '%s'; using relative_motion",
-      continuous_time_deskew_mode_.c_str());
-    continuous_time_deskew_mode_ = "relative_motion";
-  }
-  if (
-    continuous_time_cloud_stamp_reference_ != "start" &&
-    continuous_time_cloud_stamp_reference_ != "end")
-  {
-    RCLCPP_WARN(
-      get_logger(), "Unsupported continuous_time_cloud_stamp_reference '%s'; using start",
-      continuous_time_cloud_stamp_reference_.c_str());
-    continuous_time_cloud_stamp_reference_ = "start";
-  }
-  if (
-    !std::isfinite(continuous_time_pose_history_duration_sec_) ||
-    continuous_time_pose_history_duration_sec_ <= 0.0)
-  {
-    RCLCPP_WARN(
-      get_logger(), "continuous_time_pose_history_duration_sec must be positive; using 2.0");
-    continuous_time_pose_history_duration_sec_ = 2.0;
-  }
-  if (use_imu_preintegration_) {
-    ImuGtsamSmoother::Params imu_params;
-    // Reuse GTSAM NDT sigmas for x, y, yaw
-    get_parameter("gtsam_ndt_sigma_x", imu_params.ndt_sigma_x);
-    get_parameter("gtsam_ndt_sigma_y", imu_params.ndt_sigma_y);
-    get_parameter("gtsam_ndt_sigma_yaw", imu_params.ndt_sigma_yaw);
-    get_parameter("imu_ndt_sigma_z", imu_params.ndt_sigma_z);
-    get_parameter("imu_ndt_sigma_roll", imu_params.ndt_sigma_roll);
-    get_parameter("imu_ndt_sigma_pitch", imu_params.ndt_sigma_pitch);
-    get_parameter("gtsam_fitness_nominal", imu_params.fitness_nominal);
-    get_parameter("gtsam_fitness_scale_factor", imu_params.fitness_scale_factor);
-    get_parameter("gtsam_fitness_reject", imu_params.fitness_reject);
-    get_parameter("gtsam_huber_k", imu_params.huber_k);
-    get_parameter("imu_gyro_noise_density", imu_params.imu_params.gyro_noise_density);
-    get_parameter("imu_accel_noise_density", imu_params.imu_params.accel_noise_density);
-    get_parameter("imu_gyro_random_walk", imu_params.imu_params.gyro_random_walk);
-    get_parameter("imu_accel_random_walk", imu_params.imu_params.accel_random_walk);
-    get_parameter("imu_bias_prior_sigma_gyro", imu_params.bias_prior_sigma_gyro);
-    get_parameter("imu_bias_prior_sigma_accel", imu_params.bias_prior_sigma_accel);
-    get_parameter(
-      "imu_prediction_correction_guard_translation_m",
-      imu_prediction_correction_guard_translation_m_);
-    get_parameter(
-      "imu_prediction_correction_guard_yaw_deg",
-      imu_prediction_correction_guard_yaw_deg_);
-    get_parameter(
-      "imu_prediction_correction_guard_warmup_accepts",
-      imu_prediction_correction_guard_warmup_accepts_);
-    imu_smoother_.params_ = imu_params;
-    RCLCPP_INFO(get_logger(), "IMU preintegration smoother enabled");
-  }
+  loadImuPreintegrationParameters();
   get_parameter("enable_debug", enable_debug_);
   get_parameter("viz_downsample", viz_downsample_);
   get_parameter("viz_voxel_leaf_size", viz_voxel_leaf_size_);
@@ -894,8 +956,17 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(),"use_imu: %d", use_imu_);
   RCLCPP_INFO(get_logger(),"use_imu_preintegration: %d", use_imu_preintegration_);
   RCLCPP_INFO(
+    get_logger(),
+    "imu_seed_consistency_gate: enabled=%d translation=%.3f m rotation=%.3f deg passes=%zu",
+    imu_seed_consistency_gate_enabled_,
+    imu_seed_consistency_params_.max_translation_error_m,
+    imu_seed_consistency_params_.max_rotation_error_deg,
+    imu_seed_consistency_params_.required_consecutive_passes);
+  RCLCPP_INFO(get_logger(), "imu_dual_queue_enabled: %d", imu_dual_queue_enabled_);
+  RCLCPP_INFO(
     get_logger(), "imu_preintegration_use_base_frame_transform: %d",
     imu_preintegration_use_base_frame_transform_);
+  RCLCPP_INFO(get_logger(), "imu_accel_scale: %.8f", imu_accel_scale_);
   RCLCPP_INFO(get_logger(), "use_continuous_time_deskew: %d", use_continuous_time_deskew_);
   RCLCPP_INFO(
     get_logger(), "continuous_time_deskew_mode: %s", continuous_time_deskew_mode_.c_str());
@@ -1311,6 +1382,16 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
         0.0, 0.0, 0.0,  // initial velocity = 0
         stamp_to_sec(msg->header.stamp));
       last_scan_stamp_for_imu_ = stamp_to_sec(msg->header.stamp);
+      imu_seed_consistency_state_ = {};
+      latest_imu_open_loop_prediction_available_ = false;
+      imu_prediction_smoother_.initializeState(
+        imu_smoother_.position(), imu_smoother_.rotation(), imu_smoother_.velocity(),
+        imu_smoother_.gyroBias(), imu_smoother_.accelBias(),
+        last_scan_stamp_for_imu_);
+      imu_dual_queue_.clear();
+      imu_optimization_anchor_sample_.reset();
+      imu_prediction_anchor_sample_.reset();
+      latest_dual_queue_integrated_stamp_ = last_scan_stamp_for_imu_;
       RCLCPP_INFO(get_logger(), "IMU preintegration smoother initialized from initial pose");
     }
   }
@@ -1553,11 +1634,27 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
     }
 
     if (collect_preintegration_sample && preintegration_sample_ready) {
+      preintegration_accel = lidar_localization::scaleImuAcceleration(
+        preintegration_accel, imu_accel_scale_);
+    }
+
+    if (collect_preintegration_sample && preintegration_sample_ready) {
       double stamp_sec = stamp_to_sec(msg->header.stamp);
       const double dt = last_imu_stamp_ > 0.0 ? stamp_sec - last_imu_stamp_ : 0.0;
 
-      // Feed to smoother for dead-reckoning
-      if (imu_smoother_.isInitialized() && last_imu_stamp_ > 0.0) {
+      if (imu_dual_queue_enabled_) {
+        if (!imu_dual_queue_.push(
+            lidar_localization::TimestampedImuSample{
+              stamp_sec, preintegration_gyro, preintegration_accel}))
+        {
+          ++imu_preintegration_invalid_dt_count_since_scan_;
+          ++imu_preintegration_skipped_sample_count_since_scan_;
+        } else {
+          imu_preintegration_skipped_sample_count_since_scan_ +=
+            imu_dual_queue_.trimTo(static_cast<std::size_t>(imu_queue_depth_));
+        }
+        // Legacy single-stream integration is retained as the A/B baseline.
+      } else if (imu_smoother_.isInitialized() && last_imu_stamp_ > 0.0) {
         imu_preintegration_last_dt_sec_ = dt;
         if (lidar_localization::isValidImuPreintegrationDt(dt)) {
           imu_smoother_.integrateImu(preintegration_gyro, preintegration_accel, dt);
@@ -2309,14 +2406,72 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
   bool imu_prediction_finite = false;
   {
     std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
+    bool dual_queue_prediction_ready = false;
+    Eigen::Matrix4f dual_queue_prediction = Eigen::Matrix4f::Identity();
+    if (imu_dual_queue_enabled_ && imu_smoother_.isInitialized()) {
+      std::vector<lidar_localization::TimestampedImuSample> optimization_samples;
+      if (imu_optimization_anchor_sample_.has_value()) {
+        optimization_samples.push_back(*imu_optimization_anchor_sample_);
+      }
+      const auto queued_optimization_samples =
+        imu_dual_queue_.optimizationSamplesThrough(scan_stamp_sec);
+      optimization_samples.insert(
+        optimization_samples.end(),
+        queued_optimization_samples.begin(), queued_optimization_samples.end());
+      const auto optimization_plan = lidar_localization::planCausalImuIntervals(
+        last_scan_stamp_for_imu_, scan_stamp_sec, optimization_samples,
+        lidar_localization::kMaximumImuPreintegrationSampleDtSec);
+      imu_smoother_.resetPendingIntegration();
+      if (optimization_plan.complete_coverage) {
+        for (const auto & interval : optimization_plan.intervals) {
+          imu_smoother_.integrateImu(interval.gyro, interval.accel, interval.dt());
+          ++imu_preintegration_integrated_sample_count_since_scan_;
+          imu_preintegration_last_dt_sec_ = interval.dt();
+        }
+      } else {
+        imu_smoother_.resetPendingIntegration();
+        imu_preintegration_skipped_sample_count_since_scan_ +=
+          optimization_plan.skipped_gap_count;
+      }
+
+      std::vector<lidar_localization::TimestampedImuSample> prediction_samples;
+      if (imu_prediction_anchor_sample_.has_value()) {
+        prediction_samples.push_back(*imu_prediction_anchor_sample_);
+      }
+      const auto queued_prediction_samples = imu_dual_queue_.predictionSamples();
+      prediction_samples.insert(
+        prediction_samples.end(),
+        queued_prediction_samples.begin(), queued_prediction_samples.end());
+      const auto prediction_plan = lidar_localization::planCausalImuIntervals(
+        last_scan_stamp_for_imu_, scan_stamp_sec, prediction_samples,
+        lidar_localization::kMaximumImuPreintegrationSampleDtSec);
+      imu_prediction_smoother_.initializeState(
+        imu_smoother_.position(), imu_smoother_.rotation(), imu_smoother_.velocity(),
+        imu_smoother_.gyroBias(), imu_smoother_.accelBias(),
+        last_scan_stamp_for_imu_);
+      if (prediction_plan.complete_coverage && !prediction_plan.intervals.empty()) {
+        for (const auto & interval : prediction_plan.intervals) {
+          imu_prediction_smoother_.integrateImu(
+            interval.gyro, interval.accel, interval.dt());
+        }
+        dual_queue_prediction = imu_prediction_smoother_.predictedPoseMatrix();
+        dual_queue_prediction_ready = dual_queue_prediction.allFinite();
+        latest_dual_queue_integrated_stamp_ = scan_stamp_sec;
+      }
+    }
     snapshotImuPreintegrationSampleCountersForScan();
 
-    const bool imu_has_new_samples =
+    const bool imu_has_new_samples = imu_dual_queue_enabled_ ?
+      dual_queue_prediction_ready :
       lidar_localization::hasNewImuSamples(last_imu_stamp_, last_scan_stamp_for_imu_);
     latest_imu_seed_has_new_samples_ = imu_has_new_samples;
     latest_imu_seed_last_sample_age_sec_ =
-      lidar_localization::imuLastSampleAgeSec(scan_stamp_sec, last_imu_stamp_);
+      lidar_localization::imuLastSampleAgeSec(
+      scan_stamp_sec,
+      imu_dual_queue_enabled_ ? latest_dual_queue_integrated_stamp_ : last_imu_stamp_);
     latest_imu_seed_integration_window_sec_ =
+      imu_dual_queue_enabled_ ?
+      std::max(0.0, scan_stamp_sec - last_scan_stamp_for_imu_) :
       lidar_localization::imuIntegrationWindowSec(last_imu_stamp_, last_scan_stamp_for_imu_);
     const double max_imu_integration_window_sec =
       lidar_localization::imuMaximumIntegrationWindowSec(scan_period_);
@@ -2339,10 +2494,17 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       imu_smoother_initialized &&
       imu_has_usable_new_samples;
     if (imu_candidate_ready) {
-      imu_init_guess = imu_smoother_.predictedPoseMatrix();
+      imu_init_guess = imu_dual_queue_enabled_ ?
+        dual_queue_prediction : imu_smoother_.predictedPoseMatrix();
       imu_prediction_finite = imu_init_guess.allFinite();
     }
+    latest_imu_open_loop_prediction_ = imu_init_guess;
+    latest_imu_open_loop_prediction_available_ =
+      imu_candidate_ready && imu_prediction_finite;
     latest_imu_seed_prediction_finite_ = !imu_candidate_ready || imu_prediction_finite;
+    imu_has_usable_new_samples =
+      imu_has_usable_new_samples &&
+      (!imu_seed_consistency_gate_enabled_ || imu_seed_consistency_state_.seed_allowed);
   }
 
   const lidar_localization::RegistrationSeedPolicyDecision seed_decision =
@@ -3173,10 +3335,19 @@ void PCLLocalization::resetImuPreintegrationSmootherToObservation(
   const lidar_localization::RegistrationObservation & observation,
   double stamp_sec)
 {
+  Eigen::Vector3d initial_velocity = Eigen::Vector3d::Zero();
+  if (imu_dual_queue_enabled_ && have_last_accepted_pose_) {
+    const auto estimate = lidar_localization::estimateImuInitialVelocity(
+      last_accepted_pose_matrix_, last_accepted_pose_time_sec_,
+      observation.pose_matrix, stamp_sec);
+    if (estimate.usable) {
+      initial_velocity = estimate.velocity;
+    }
+  }
   imu_smoother_.initialize(
     observation.x, observation.y, observation.z,
     observation.roll, observation.pitch, observation.yaw,
-    0.0, 0.0, 0.0, stamp_sec);
+    initial_velocity.x(), initial_velocity.y(), initial_velocity.z(), stamp_sec);
 }
 
 PCLLocalization::ImuPreintegrationBackendUpdate
@@ -3188,6 +3359,39 @@ PCLLocalization::updateImuPreintegrationBackend(
 {
   std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
   initializeImuPreintegrationSmootherIfNeeded(observation, stamp_sec);
+
+  if (imu_seed_consistency_gate_enabled_) {
+    const bool prediction_available = latest_imu_open_loop_prediction_available_;
+    const double translation_error_m = prediction_available ?
+      static_cast<double>(
+      (latest_imu_open_loop_prediction_.block<3, 1>(0, 3) -
+      observation.pose_matrix.block<3, 1>(0, 3)).norm()) :
+      std::numeric_limits<double>::quiet_NaN();
+    const double rotation_error_deg = prediction_available ?
+      lidar_localization::rotationDeltaDeg(
+      latest_imu_open_loop_prediction_, observation.pose_matrix) :
+      std::numeric_limits<double>::quiet_NaN();
+    const bool was_allowed = imu_seed_consistency_state_.seed_allowed;
+    const auto consistency_update = lidar_localization::updateImuSeedConsistency(
+      imu_seed_consistency_state_,
+      imu_seed_consistency_params_,
+      lidar_localization::ImuSeedConsistencyInput{
+        true, prediction_available, translation_error_m, rotation_error_deg});
+    imu_seed_consistency_state_ = consistency_update.state;
+    latest_imu_seed_consistency_translation_error_m_ = translation_error_m;
+    latest_imu_seed_consistency_rotation_error_deg_ = rotation_error_deg;
+    latest_imu_seed_consistency_sample_passed_ = consistency_update.sample_passed;
+    if (was_allowed != imu_seed_consistency_state_.seed_allowed) {
+      RCLCPP_WARN(
+        get_logger(),
+        "IMU seed consistency gate %s after %zu consecutive passes "
+        "(translation error %.3f m, rotation error %.3f deg)",
+        imu_seed_consistency_state_.seed_allowed ? "enabled" : "disabled",
+        imu_seed_consistency_state_.consecutive_pass_count,
+        translation_error_m,
+        rotation_error_deg);
+    }
+  }
 
   ImuPreintegrationBackendUpdate update;
   update.pose = observation.pose_matrix;
@@ -3201,12 +3405,32 @@ PCLLocalization::updateImuPreintegrationBackend(
       attempt.correction_translation_m,
       attempt.correction_yaw_deg,
       imu_guard_warmup_accepts_remaining_.load(std::memory_order_acquire)});
+  if (
+    imu_dual_queue_enabled_ &&
+    !update.state.fallback_mode &&
+    !update.state.correction_guard_tripped)
+  {
+    // The consistency gate controls whether prediction may seed NDT, not
+    // whether accepted LiDAR poses may teach the optimization-only smoother.
+    // If causal IMU coverage is incomplete, resetPendingIntegration() has
+    // already removed that factor. A pose-only update then preserves the
+    // optimized velocity and biases instead of resetting them from a noisy
+    // finite difference across the scheduling gap.
+    update.state.should_update_smoother = true;
+  }
 
   if (update.state.should_update_smoother) {
-    update.updated = imu_smoother_.update(
-      observation.x, observation.y, observation.z,
-      observation.roll, observation.pitch, observation.yaw,
-      attempt.fitness_score, stamp_sec);
+    if (imu_dual_queue_enabled_ && !latest_imu_open_loop_prediction_available_) {
+      update.updated = imu_smoother_.updatePoseOnly(
+        observation.x, observation.y, observation.z,
+        observation.roll, observation.pitch, observation.yaw,
+        attempt.fitness_score, stamp_sec);
+    } else {
+      update.updated = imu_smoother_.update(
+        observation.x, observation.y, observation.z,
+        observation.roll, observation.pitch, observation.yaw,
+        attempt.fitness_score, stamp_sec);
+    }
 
     update.pose = imu_smoother_.poseMatrix();
     if (update.pose.allFinite()) {
@@ -3226,7 +3450,12 @@ PCLLocalization::updateImuPreintegrationBackend(
         update.smoother_measurement_rotation_delta_deg});
   }
 
-  if (!update.state.fallback_mode) {
+  if (
+    imu_dual_queue_enabled_ &&
+    (update.state.state_reset || !update.updated))
+  {
+    resetImuPreintegrationSmootherToObservation(observation, stamp_sec);
+  } else if (!imu_dual_queue_enabled_ && !update.state.fallback_mode) {
     resetImuPreintegrationSmootherToObservation(observation, stamp_sec);
   }
   imu_preintegration_fallback_mode_ = update.state.fallback_mode;
@@ -3246,6 +3475,22 @@ PCLLocalization::updateImuPreintegrationBackend(
     }
   }
 
+  if (imu_dual_queue_enabled_) {
+    const auto consumed_optimization =
+      imu_dual_queue_.consumeOptimizationThrough(stamp_sec);
+    if (!consumed_optimization.empty()) {
+      imu_optimization_anchor_sample_ = consumed_optimization.back();
+    }
+    const auto repropagation_window =
+      imu_dual_queue_.preparePredictionRepropagation(stamp_sec);
+    if (repropagation_window.anchor_sample.has_value()) {
+      imu_prediction_anchor_sample_ = repropagation_window.anchor_sample;
+    }
+    imu_prediction_smoother_.initializeState(
+      imu_smoother_.position(), imu_smoother_.rotation(), imu_smoother_.velocity(),
+      imu_smoother_.gyroBias(), imu_smoother_.accelBias(), stamp_sec);
+    latest_dual_queue_integrated_stamp_ = stamp_sec;
+  }
   last_scan_stamp_for_imu_ = stamp_sec;
   return update;
 }
@@ -3767,6 +4012,20 @@ PCLLocalization::prepareAlignmentDiagnosticValuesInput(
   diagnostic_input.imu_last_dt_sec = imu_diagnostics.last_dt_sec;
   diagnostic_input.imu_last_sample_age_sec = imu_diagnostics.last_sample_age_sec;
   diagnostic_input.imu_integration_window_sec = imu_diagnostics.integration_window_sec;
+  diagnostic_input.imu_seed_consistency_gate_enabled =
+    imu_diagnostics.seed_consistency_gate_enabled;
+  diagnostic_input.imu_seed_consistency_seed_allowed =
+    imu_diagnostics.seed_consistency_seed_allowed;
+  diagnostic_input.imu_seed_consistency_valid_comparison_count =
+    imu_diagnostics.seed_consistency_valid_comparison_count;
+  diagnostic_input.imu_seed_consistency_consecutive_pass_count =
+    imu_diagnostics.seed_consistency_consecutive_pass_count;
+  diagnostic_input.imu_seed_consistency_translation_error_m =
+    imu_diagnostics.seed_consistency_translation_error_m;
+  diagnostic_input.imu_seed_consistency_rotation_error_deg =
+    imu_diagnostics.seed_consistency_rotation_error_deg;
+  diagnostic_input.imu_seed_consistency_sample_passed =
+    imu_diagnostics.seed_consistency_sample_passed;
   diagnostic_input.scan_time_status =
     lidar_localization::scanTimeRangeStatusMessage(latest_scan_time_status_);
   diagnostic_input.scan_time_field = latest_scan_time_field_;
@@ -3823,7 +4082,14 @@ PCLLocalization::makeImuPreintegrationDiagnosticsInput(
     latest_imu_seed_last_sample_age_sec_,
     latest_imu_seed_integration_window_sec_,
     lidar_localization::imuStaleSampleAgeThresholdSec(scan_period_),
-    lidar_localization::imuMaximumIntegrationWindowSec(scan_period_)};
+    lidar_localization::imuMaximumIntegrationWindowSec(scan_period_),
+    imu_seed_consistency_gate_enabled_,
+    imu_seed_consistency_state_.seed_allowed,
+    imu_seed_consistency_state_.valid_comparison_count,
+    imu_seed_consistency_state_.consecutive_pass_count,
+    latest_imu_seed_consistency_translation_error_m_,
+    latest_imu_seed_consistency_rotation_error_deg_,
+    latest_imu_seed_consistency_sample_passed_};
 }
 
 void PCLLocalization::appendAlignmentDiagnosticValues(

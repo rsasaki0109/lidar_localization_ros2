@@ -1,0 +1,30 @@
+{
+  "date": "2026-07-14",
+  "dataset": "koide_outdoor_hard_01a",
+  "start_offset_sec": 0.0,
+  "duration_sec": 30.0,
+  "gate": {
+    "max_translation_error_m": 0.5,
+    "max_rotation_error_deg": 5.0,
+    "required_consecutive_passes": 5
+  },
+  "diagnostics": {
+    "alignment_rows": 44,
+    "valid_comparison_count": 32,
+    "finite_diagnostic_rows": 37,
+    "max_consecutive_pass_count": 4,
+    "imu_seed_rows": 0,
+    "fallback_count": 0,
+    "translation_error_m": {
+      "min": 0.005651,
+      "median": 0.995211,
+      "max": 1.361984
+    },
+    "rotation_error_deg": {
+      "min": 0.0238,
+      "median": 5.248615,
+      "max": 23.538059
+    }
+  },
+  "decision": "keep_gate_seed_disabled_for_this_window"
+}

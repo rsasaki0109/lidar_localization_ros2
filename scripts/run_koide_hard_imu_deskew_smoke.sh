@@ -20,8 +20,10 @@ Options:
                          With GT available, the initial pose is moved to the same offset.
   --duration SEC         Bag playback duration. Default: 20.
   --ros-domain-id ID     ROS_DOMAIN_ID for replay. Default: ROS_DOMAIN_ID env, or 195.
+  --imu-accel-scale X    Acceleration unit scale. Default: 9.80665 (Koide Livox publishes g).
   --mode NAME            Repeat to run a subset: lidar_only, imu_preintegration,
-                         deskew, imu_pose_history, lidar_constant_velocity,
+                         imu_dual_queue, imu_dual_queue_deskew, deskew,
+                         imu_pose_history, lidar_constant_velocity,
                          localizability_guard.
                          registration_localizability.
   --print-only           Write configs/run_plan and print commands without running ROS.
@@ -48,6 +50,7 @@ output_dir=""
 duration="20"
 start_offset="0"
 ros_domain_id="${ROS_DOMAIN_ID:-195}"
+imu_accel_scale="9.80665"
 download=0
 force_download=0
 print_only=0
@@ -82,6 +85,10 @@ while [[ $# -gt 0 ]]; do
     --ros-domain-id)
       shift
       ros_domain_id="$1"
+      ;;
+    --imu-accel-scale)
+      shift
+      imu_accel_scale="$1"
       ;;
     --mode)
       shift
@@ -242,6 +249,7 @@ fi
   --min-imu-active-ratio 0.1 \
   --min-imu-seed-source-ratio 0.1 \
   --min-deskew-applied-ratio 0.1 \
+  --imu-accel-scale "${imu_accel_scale}" \
   --scan-time-range-max-duration-ratio 4.0 \
   --enable-open-loop-strict-score-threshold \
   --open-loop-strict-min-accepted-gap-sec 1.0 \

@@ -46,6 +46,13 @@ struct ImuPreintegrationDiagnosticsInput
   double integration_window_sec{0.0};
   double stale_sample_age_threshold_sec{0.2};
   double max_integration_window_sec{1.0};
+  bool seed_consistency_gate_enabled{false};
+  bool seed_consistency_seed_allowed{false};
+  std::size_t seed_consistency_valid_comparison_count{0};
+  std::size_t seed_consistency_consecutive_pass_count{0};
+  double seed_consistency_translation_error_m{std::numeric_limits<double>::quiet_NaN()};
+  double seed_consistency_rotation_error_deg{std::numeric_limits<double>::quiet_NaN()};
+  bool seed_consistency_sample_passed{false};
 };
 
 struct ImuPreintegrationDiagnostics
@@ -65,9 +72,21 @@ struct ImuPreintegrationDiagnostics
   double last_dt_sec{std::numeric_limits<double>::quiet_NaN()};
   double last_sample_age_sec{std::numeric_limits<double>::quiet_NaN()};
   double integration_window_sec{0.0};
+  bool seed_consistency_gate_enabled{false};
+  bool seed_consistency_seed_allowed{false};
+  std::size_t seed_consistency_valid_comparison_count{0};
+  std::size_t seed_consistency_consecutive_pass_count{0};
+  double seed_consistency_translation_error_m{std::numeric_limits<double>::quiet_NaN()};
+  double seed_consistency_rotation_error_deg{std::numeric_limits<double>::quiet_NaN()};
+  bool seed_consistency_sample_passed{false};
 };
 
 constexpr double kMaximumImuPreintegrationSampleDtSec = 0.5;
+// ROS timestamps and callback scheduling can put an otherwise complete scan
+// interval a fraction of an IMU tick beyond the nominal one-second guard.
+// This tolerance is tiny relative to the guard and does not permit a genuine
+// missing scan interval (for example 1.1 s) to seed registration.
+constexpr double kImuIntegrationWindowJitterToleranceSec = 0.01;
 
 inline double finiteNonnegativeOrNaN(double value)
 {
@@ -139,7 +158,8 @@ inline bool isImuIntegrationWindowTooLarge(double integration_window_sec, double
   return std::isfinite(integration_window_sec) &&
          std::isfinite(max_window_sec) &&
          max_window_sec > 0.0 &&
-         integration_window_sec > max_window_sec;
+         integration_window_sec >
+         max_window_sec + kImuIntegrationWindowJitterToleranceSec;
 }
 
 inline bool isImuIntegrationWindowTooLarge(
@@ -248,7 +268,14 @@ inline ImuPreintegrationDiagnostics makeImuPreintegrationDiagnostics(
     input.invalid_dt_count,
     input.last_dt_sec,
     input.last_sample_age_sec,
-    input.integration_window_sec};
+    input.integration_window_sec,
+    input.seed_consistency_gate_enabled,
+    input.seed_consistency_seed_allowed,
+    input.seed_consistency_valid_comparison_count,
+    input.seed_consistency_consecutive_pass_count,
+    input.seed_consistency_translation_error_m,
+    input.seed_consistency_rotation_error_deg,
+    input.seed_consistency_sample_passed};
 }
 
 }  // namespace lidar_localization
