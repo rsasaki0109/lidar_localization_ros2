@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "date": "2026-07-14",
+  "dataset_sequence_count": 11,
+  "offline_analysis": {
+    "full_results": "/media/sasaki/aiueo/datasets/koide_hard_localization/generated/imu_yaw_validation_20260714/summary.json",
+    "indoor_rate_rmse_rad_s": {
+      "identity_median": 1.0536,
+      "identity_worst": 2.49,
+      "signed_axis_median": 0.0775,
+      "signed_axis_worst": 0.356,
+      "wahba_median": 0.0361,
+      "wahba_worst": 0.35
+    },
+    "outdoor_rate_rmse_rad_s": {
+      "identity_median": 0.0651,
+      "identity_worst": 0.0813,
+      "wahba_median": 0.0628,
+      "wahba_worst": 0.0799
+    },
+    "maximum_absolute_time_offset_sec": {
+      "indoor": 0.005,
+      "outdoor_hard": 0.005,
+      "outdoor_kidnap": 0.045
+    }
+  },
+  "runtime_ab": [
+    {
+      "sequence": "indoor_easy_01",
+      "duration_sec": 8.0,
+      "lidar_only": {"translation_rmse_m": 0.05284, "rotation_rmse_deg": 1.67677},
+      "imu_rotation": {"translation_rmse_m": 1.31443, "rotation_rmse_deg": 2.41686},
+      "decision": "reject"
+    },
+    {
+      "sequence": "outdoor_hard_01a",
+      "duration_sec": 8.0,
+      "lidar_only": {"translation_rmse_m": 0.17624, "rotation_rmse_deg": 0.60179},
+      "imu_rotation": {"translation_rmse_m": 0.17416, "rotation_rmse_deg": 0.53217},
+      "decision": "insufficient_for_promotion"
+    },
+    {
+      "sequence": "outdoor_kidnap_a",
+      "duration_sec": 30.0,
+      "lidar_only": {"translation_rmse_m": 0.22, "rotation_rmse_deg": 0.60276, "rotation_error_last_deg": 3.87328},
+      "imu_rotation": {"translation_rmse_m": 0.20934, "rotation_rmse_deg": 0.58145, "rotation_error_last_deg": 3.98249},
+      "decision": "reject_last_rotation_regression"
+    }
+  ],
+  "promotion_decision": "rejected",
+  "reason": "The candidate regressed indoor translation and rotation, and slightly regressed final rotation on the outdoor kidnap run. It remains experiment-only and is not connected to runtime parameters."
+}
