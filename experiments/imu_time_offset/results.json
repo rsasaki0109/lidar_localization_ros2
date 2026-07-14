@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "date": "2026-07-14",
+  "dataset_sequence_count": 11,
+  "offline_analysis": {
+    "full_results": "/media/sasaki/aiueo/datasets/koide_hard_localization/generated/imu_time_offset_20260714/summary.json",
+    "normal_sequence_offset_range_ms": [1.1, 3.6],
+    "outdoor_kidnap_a_offset_ms": 46.0,
+    "outdoor_kidnap_b_offset_ms": 35.4,
+    "outdoor_kidnap_b_window_mad_ms": 19.9
+  },
+  "runtime_ab": {
+    "sequence": "outdoor_kidnap_a",
+    "duration_sec": 30.0,
+    "baseline_offset_ms": 0.0,
+    "candidate_offset_ms": 45.9895,
+    "baseline": {
+      "translation_rmse_m": 0.11468331420202565,
+      "translation_error_last_m": 0.2836281166450853,
+      "rotation_rmse_deg": 0.37751401062455,
+      "rotation_error_last_deg": 0.365461493708264,
+      "matched_sample_count": 38,
+      "deskew_applied_ratio": 0.526
+    },
+    "candidate": {
+      "translation_rmse_m": 0.2012479323409892,
+      "translation_error_last_m": 1.09686234117455,
+      "rotation_rmse_deg": 1.2035264410757562,
+      "rotation_error_last_deg": 7.058011831891512,
+      "matched_sample_count": 36,
+      "deskew_applied_ratio": 0.684
+    },
+    "artifacts": "/media/sasaki/aiueo/datasets/koide_hard_localization/generated/imu_time_offset_20260714/runtime_ab_verified"
+  },
+  "promotion_decision": "rejected",
+  "reason": "The largest stable offline offset regressed every runtime trajectory metric, so the timestamp correction candidate was removed from production code.",
+  "production_runtime_changed": false
+}
