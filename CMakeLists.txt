@@ -754,6 +754,10 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_koide_imu_yaw_prediction_analysis.py
   )
   add_test(
+    NAME imu_time_offset_analysis
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_imu_time_offset_analysis.py
+  )
+  add_test(
     NAME benchmark_compare_runs
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_benchmark_compare_runs.py
   )

@@ -423,7 +423,8 @@ def evaluate_hypothesis(name, scans, imu_times, gyro, ref_times, ref_quats):
 
 def evaluate_between_cloud_stamps(
         scans, imu_times, gyro, ref_times, ref_quats,
-        offset_min_sec=-0.25, offset_max_sec=0.25, offset_step_sec=0.005):
+        offset_min_sec=-0.25, offset_max_sec=0.25, offset_step_sec=0.005,
+        include_offset_profile=True):
     """Fit gyro axes/bias and IMU-reference time offset between cloud stamps.
 
     Unlike the per-point scan-time hypotheses, this works for clouds without a
@@ -476,6 +477,33 @@ def evaluate_between_cloud_stamps(
 
     _, offset, source, target, durations, rotation, bias, fitted = min(
         candidates, key=lambda item: item[0])
+    ordered_candidates = sorted(candidates, key=lambda item: item[1])
+    best_index = min(
+        range(len(ordered_candidates)), key=lambda index: ordered_candidates[index][0])
+    best_rmse = ordered_candidates[best_index][0]
+    zero_candidate = min(ordered_candidates, key=lambda item: abs(item[1]))
+    refined_offset = offset
+    if 0 < best_index < len(ordered_candidates) - 1:
+        left = ordered_candidates[best_index - 1]
+        center = ordered_candidates[best_index]
+        right = ordered_candidates[best_index + 1]
+        denominator = left[0] - 2.0 * center[0] + right[0]
+        if denominator > 0.0:
+            refinement = 0.5 * (left[0] - right[0]) / denominator
+            refined_offset = (
+                center[1] + float(np.clip(refinement, -1.0, 1.0)) * offset_step_sec)
+    near_best = [item[1] for item in ordered_candidates if item[0] <= best_rmse * 1.01]
+    identifiability = {
+        "zero_offset_rmse_rad_s": zero_candidate[0],
+        "best_offset_rmse_rad_s": best_rmse,
+        "relative_rmse_improvement_over_zero": (
+            (zero_candidate[0] - best_rmse) / zero_candidate[0]
+            if zero_candidate[0] > 0.0 else 0.0),
+        "one_percent_best_width_sec": (
+            max(near_best) - min(near_best) if near_best else None),
+        "quadratic_refined_offset_sec": refined_offset,
+        "best_at_search_boundary": best_index in (0, len(ordered_candidates) - 1),
+    }
     identity = residual_summary(np.eye(3), np.zeros(3), source, target, durations)
     permutations = []
     for matrix in right_handed_axis_permutations():
@@ -484,7 +512,7 @@ def evaluate_between_cloud_stamps(
         summary = residual_summary(matrix, permutation_bias, source, target, durations)
         permutations.append((summary["rate_rmse_rad_s"], matrix, permutation_bias, summary))
     _, axis_matrix, axis_bias, axis_summary = min(permutations, key=lambda item: item[0])
-    return {
+    result = {
         "usable_interval_count": int(len(source)),
         "imu_minus_reference_time_offset_sec": offset,
         "offset_search": {
@@ -493,6 +521,7 @@ def evaluate_between_cloud_stamps(
             "step_sec": offset_step_sec,
             "candidate_count": len(candidates),
         },
+        "offset_identifiability": identifiability,
         "identity": identity,
         "wahba": {
             **fitted,
@@ -506,6 +535,65 @@ def evaluate_between_cloud_stamps(
             "gyro_bias_sensor_rad_s": axis_bias.tolist(),
         },
     }
+    if include_offset_profile:
+        result["offset_profile"] = [
+            {"offset_sec": item[1], "rate_rmse_rad_s": item[0]}
+            for item in ordered_candidates
+        ]
+    return result
+
+
+def evaluate_time_offset_windows(
+        scans, imu_times, gyro, ref_times, ref_quats,
+        window_sec=30.0, offset_min_sec=-0.25, offset_max_sec=0.25,
+        offset_step_sec=0.005):
+    """Measure whether an offset estimate remains stable across time windows."""
+    if window_sec <= 0.0 or not scans:
+        return {"window_sec": window_sec, "window_count": 0, "windows": []}
+    first_stamp = scans[0][0]
+    grouped = {}
+    for scan in scans:
+        index = int(math.floor((scan[0] - first_stamp) / window_sec))
+        grouped.setdefault(index, []).append(scan)
+    windows = []
+    for index, selected in sorted(grouped.items()):
+        if len(selected) < 11:
+            continue
+        try:
+            result = evaluate_between_cloud_stamps(
+                selected, imu_times, gyro, ref_times, ref_quats,
+                offset_min_sec, offset_max_sec, offset_step_sec,
+                include_offset_profile=False)
+        except RuntimeError:
+            continue
+        identifiability = result["offset_identifiability"]
+        windows.append({
+            "start_sec": selected[0][0],
+            "end_sec": selected[-1][0],
+            "scan_count": len(selected),
+            "offset_sec": result["imu_minus_reference_time_offset_sec"],
+            "quadratic_refined_offset_sec": identifiability[
+                "quadratic_refined_offset_sec"],
+            "relative_rmse_improvement_over_zero": identifiability[
+                "relative_rmse_improvement_over_zero"],
+            "one_percent_best_width_sec": identifiability[
+                "one_percent_best_width_sec"],
+            "best_at_search_boundary": identifiability[
+                "best_at_search_boundary"],
+        })
+    offsets = np.asarray([item["quadratic_refined_offset_sec"] for item in windows])
+    summary = {"window_sec": window_sec, "window_count": len(windows), "windows": windows}
+    if offsets.size:
+        median = float(np.median(offsets))
+        summary.update({
+            "offset_median_sec": median,
+            "offset_mad_sec": float(np.median(np.abs(offsets - median))),
+            "offset_min_sec": float(np.min(offsets)),
+            "offset_max_sec": float(np.max(offsets)),
+            "search_boundary_window_count": sum(
+                item["best_at_search_boundary"] for item in windows),
+        })
+    return summary
 
 
 def main():
@@ -519,6 +607,8 @@ def main():
     parser.add_argument("--time-offset-min-sec", type=float, default=-0.25)
     parser.add_argument("--time-offset-max-sec", type=float, default=0.25)
     parser.add_argument("--time-offset-step-sec", type=float, default=0.005)
+    parser.add_argument("--time-offset-window-sec", type=float, default=30.0)
+    parser.add_argument("--time-offset-window-step-sec", type=float, default=0.005)
     args = parser.parse_args()
     ref_times, ref_quats = load_reference(args.reference)
     bag = read_bag(
@@ -526,6 +616,10 @@ def main():
     interval_alignment = evaluate_between_cloud_stamps(
         bag["scans"], bag["imu_times"], bag["gyro"], ref_times, ref_quats,
         args.time_offset_min_sec, args.time_offset_max_sec, args.time_offset_step_sec)
+    offset_windows = evaluate_time_offset_windows(
+        bag["scans"], bag["imu_times"], bag["gyro"], ref_times, ref_quats,
+        args.time_offset_window_sec, args.time_offset_min_sec,
+        args.time_offset_max_sec, args.time_offset_window_step_sec)
     point_time_hypotheses = {}
     if sum(scan[1] is not None and scan[1] > 0.0 for scan in bag["scans"]) >= 10:
         point_time_hypotheses = {
@@ -548,7 +642,7 @@ def main():
             static_rotation.T @ fitted_rotation)
     cloud_times = np.asarray([scan[0] for scan in bag["scans"]])
     report = {
-        "schema_version": 2,
+        "schema_version": 3,
         "bag": str(args.bag.resolve()),
         "reference": str(args.reference.resolve()),
         "imu_topic": args.imu_topic,
@@ -564,6 +658,7 @@ def main():
         "cloud_timing": timing_summary(
             cloud_times, bag["cloud_header_minus_record"]),
         "between_cloud_alignment": interval_alignment,
+        "time_offset_windows": offset_windows,
         "accelerometer": accel,
         "point_time_hypotheses": point_time_hypotheses,
     }

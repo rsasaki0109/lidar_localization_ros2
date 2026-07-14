@@ -72,6 +72,33 @@ class ImuConsistencyMathTest(unittest.TestCase):
         self.assertAlmostEqual(
             result["imu_minus_reference_time_offset_sec"], true_offset, delta=0.011)
         self.assertLess(result["wahba"]["rate_rmse_rad_s"], 1e-3)
+        identifiability = result["offset_identifiability"]
+        self.assertAlmostEqual(
+            identifiability["quadratic_refined_offset_sec"], true_offset, delta=0.011)
+        self.assertGreater(
+            identifiability["relative_rmse_improvement_over_zero"], 0.9)
+        self.assertFalse(identifiability["best_at_search_boundary"])
+        self.assertEqual(len(result["offset_profile"]), 31)
+
+    def test_time_offset_windows_report_stability(self):
+        imu_times = np.linspace(0.0, 16.0, 16001)
+        true_offset = -0.04
+        angular_rate = 0.3 + 0.12 * np.sin(2.1 * (imu_times - true_offset))
+        gyro = np.column_stack((
+            np.zeros_like(imu_times), np.zeros_like(imu_times), angular_rate))
+        cloud_times = np.arange(1.0, 15.0, 0.1)
+        yaw = 0.3 * cloud_times - (0.12 / 2.1) * np.cos(2.1 * cloud_times)
+        quaternions = np.column_stack((
+            np.zeros_like(yaw), np.zeros_like(yaw),
+            np.sin(0.5 * yaw), np.cos(0.5 * yaw)))
+        scans = [(stamp, None, "lidar") for stamp in cloud_times]
+        result = MODULE.evaluate_time_offset_windows(
+            scans, imu_times, gyro, cloud_times, quaternions,
+            window_sec=3.0, offset_min_sec=-0.1, offset_max_sec=0.1,
+            offset_step_sec=0.01)
+        self.assertEqual(result["window_count"], 5)
+        self.assertAlmostEqual(result["offset_median_sec"], true_offset, delta=0.012)
+        self.assertLess(result["offset_mad_sec"], 0.012)
 
     def test_accelerometer_unit_scale_distinguishes_g_and_si(self):
         g_samples = np.tile([0.0, 0.0, 1.0], (20, 1))
