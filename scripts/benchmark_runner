@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import atexit
 import csv
 import json
 import math
@@ -147,6 +148,46 @@ class ResourceMonitor(threading.Thread):
                 last_wall = current_wall
 
 
+class ManagedProcessCleanup:
+    """Best-effort process-group cleanup for normal and exceptional exits."""
+
+    def __init__(self, timeout_sec: float) -> None:
+        self._timeout_sec = timeout_sec
+        self._processes: List[ManagedProcess] = []
+        self._monitor: Optional[ResourceMonitor] = None
+        self._lock = threading.Lock()
+        self._cleaned = False
+
+    def add(self, managed: ManagedProcess) -> ManagedProcess:
+        with self._lock:
+            self._processes.append(managed)
+        return managed
+
+    def set_monitor(self, monitor: ResourceMonitor) -> None:
+        with self._lock:
+            self._monitor = monitor
+
+    def stop_all(self) -> None:
+        with self._lock:
+            if self._cleaned:
+                return
+            self._cleaned = True
+            processes = list(reversed(self._processes))
+            monitor = self._monitor
+        if monitor is not None:
+            monitor.stop()
+            monitor.join(timeout=2.0)
+        for managed in processes:
+            try:
+                stop_process(managed, self._timeout_sec)
+            except (OSError, subprocess.SubprocessError):
+                try:
+                    managed.stdout_stream.close()
+                    managed.stderr_stream.close()
+                except OSError:
+                    pass
+
+
 def build_stats(samples: List[Dict[str, float]]) -> Dict[str, Optional[float]]:
     cpu_values = [sample["cpu_percent"] for sample in samples]
     rss_values = [sample["rss_mb"] for sample in samples]
@@ -177,11 +218,17 @@ def launch_process(
     env = os.environ.copy()
     if extra_env:
         env.update(extra_env)
+
+    def prepare_child_process() -> None:
+        os.setsid()
+        signal.pthread_sigmask(
+            signal.SIG_UNBLOCK, {signal.SIGINT, signal.SIGTERM})
+
     process = subprocess.Popen(
         ["bash", "-lc", command],
         stdout=stdout_stream,
         stderr=stderr_stream,
-        preexec_fn=os.setsid,
+        preexec_fn=prepare_child_process,
         env=env,
     )
     return ManagedProcess(
@@ -195,22 +242,66 @@ def launch_process(
     )
 
 
+def launch_registered_process(
+    cleanup: ManagedProcessCleanup,
+    name: str,
+    command: str,
+    output_dir: str,
+    extra_env: Optional[Dict[str, str]] = None,
+) -> ManagedProcess:
+    """Launch a process group and immediately register it for cleanup."""
+    termination_signals = {signal.SIGINT, signal.SIGTERM}
+    previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, termination_signals)
+    try:
+        managed = launch_process(name, command, output_dir, extra_env)
+        return cleanup.add(managed)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+
+
+def process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def wait_for_process_group_exit(
+    managed: ManagedProcess, process_group_id: int, timeout_sec: float
+) -> bool:
+    deadline = time.monotonic() + timeout_sec
+    while process_group_exists(process_group_id) and time.monotonic() < deadline:
+        managed.process.poll()
+        time.sleep(0.02)
+    managed.process.poll()
+    return not process_group_exists(process_group_id)
+
+
 def stop_process(managed: ManagedProcess, timeout_sec: float) -> int:
+    process_group_id = managed.process.pid
+    for shutdown_signal in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL):
+        if not process_group_exists(process_group_id):
+            break
+        try:
+            os.killpg(process_group_id, shutdown_signal)
+        except ProcessLookupError:
+            break
+        if wait_for_process_group_exit(managed, process_group_id, timeout_sec):
+            break
+
     if managed.process.poll() is None:
-        os.killpg(os.getpgid(managed.process.pid), signal.SIGINT)
         try:
             managed.process.wait(timeout=timeout_sec)
         except subprocess.TimeoutExpired:
-            os.killpg(os.getpgid(managed.process.pid), signal.SIGTERM)
-            try:
-                managed.process.wait(timeout=timeout_sec)
-            except subprocess.TimeoutExpired:
-                os.killpg(os.getpgid(managed.process.pid), signal.SIGKILL)
-                managed.process.wait(timeout=timeout_sec)
+            managed.process.kill()
+            managed.process.wait(timeout=timeout_sec)
 
     managed.stdout_stream.close()
     managed.stderr_stream.close()
-    return int(managed.process.returncode)
+    return int(managed.process.returncode if managed.process.returncode is not None else -1)
 
 
 def detect_process_died_positions(log_path: str, target_process_pattern: str) -> Dict[str, int]:
@@ -369,9 +460,17 @@ def wait_for_pid(pattern: str, timeout_sec: float) -> Optional[int]:
     return None
 
 
+def exit_on_termination_signal(signum: int, _frame: object) -> None:
+    """Convert SIGTERM into normal interpreter unwinding so atexit cleanup runs."""
+    raise SystemExit(128 + signum)
+
+
 def main() -> int:
     args = parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
+    cleanup = ManagedProcessCleanup(args.shutdown_timeout)
+    atexit.register(cleanup.stop_all)
+    signal.signal(signal.SIGTERM, exit_on_termination_signal)
 
     pose_csv_path = os.path.join(args.output_dir, "pose_trace.csv")
     diagnostic_csv_path = os.path.join(args.output_dir, "alignment_status.csv")
@@ -400,10 +499,14 @@ def main() -> int:
 
     started_at = now_iso()
     settle_start_monotonic = time.monotonic()
-    system = launch_process("system", system_command, args.output_dir, launch_env)
-    recorder = launch_process("pose_recorder", recorder_command, args.output_dir, launch_env)
+    system = launch_registered_process(
+        cleanup, "system", system_command, args.output_dir, launch_env)
+    recorder = launch_registered_process(
+        cleanup, "pose_recorder", recorder_command, args.output_dir, launch_env)
     diagnostic_recorder = (
-        launch_process("diagnostic_recorder", diagnostic_recorder_command, args.output_dir, launch_env)
+        launch_registered_process(
+            cleanup, "diagnostic_recorder", diagnostic_recorder_command,
+            args.output_dir, launch_env)
         if args.diagnostic_topic
         else None
     )
@@ -412,13 +515,15 @@ def main() -> int:
     monitored_pid = wait_for_pid(args.target_process_pattern, args.settle_seconds)
     if monitored_pid is not None:
         monitor = ResourceMonitor(monitored_pid, resource_csv_path, args.monitor_interval)
+        cleanup.set_monitor(monitor)
         monitor.start()
 
     settle_elapsed = time.monotonic() - settle_start_monotonic
     time.sleep(max(0.0, args.settle_seconds - settle_elapsed))
 
     bag_started_monotonic = time.monotonic()
-    bag = launch_process("bag_play", bag_command, args.output_dir, launch_env)
+    bag = launch_registered_process(
+        cleanup, "bag_play", bag_command, args.output_dir, launch_env)
     bag_stopped_by_runner = False
     if args.bag_duration > 0.0:
         deadline = bag_started_monotonic + args.bag_duration
@@ -524,4 +629,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        exit_code = main()
+    except KeyboardInterrupt:
+        exit_code = 130
+    sys.exit(exit_code)

@@ -15,7 +15,14 @@ else
 fi
 unset _lidarloc_ws_root_default
 _lidarloc_prefix="${LIDAR_LOCALIZATION_LOCAL_PREFIX:-${_lidarloc_ws_root}/local_prefix}"
-_lidarloc_overlay="${LIDAR_LOCALIZATION_OVERLAY:-${_lidarloc_ws_root}/build_ws/install/setup.bash}"
+if [[ -n "${LIDAR_LOCALIZATION_OVERLAY:-}" ]]; then
+  _lidarloc_overlay="${LIDAR_LOCALIZATION_OVERLAY}"
+elif [[ -f "${_lidarloc_ws_root}/install/setup.bash" ]]; then
+  _lidarloc_overlay="${_lidarloc_ws_root}/install/setup.bash"
+else
+  # Keep compatibility with the older nested workspace layout.
+  _lidarloc_overlay="${_lidarloc_ws_root}/build_ws/install/setup.bash"
+fi
 
 _lidarloc_ros_distro=""
 for _lidarloc_candidate in "${LIDAR_LOCALIZATION_ROS_DISTRO:-}" "${ROS_DISTRO:-}" humble jazzy; do

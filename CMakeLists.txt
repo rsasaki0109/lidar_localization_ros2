@@ -790,6 +790,14 @@ if(BUILD_TESTING)
     COMMAND bash -n ${CMAKE_CURRENT_SOURCE_DIR}/scripts/bootstrap_colcon_workspace.sh
   )
   add_test(
+    NAME setup_local_env
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_setup_local_env.py
+  )
+  add_test(
+    NAME benchmark_runner_cleanup
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_benchmark_runner_cleanup.py
+  )
+  add_test(
     NAME koide_hard_imu_deskew_smoke_shell
     COMMAND bash -n ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_koide_hard_imu_deskew_smoke.sh
   )
