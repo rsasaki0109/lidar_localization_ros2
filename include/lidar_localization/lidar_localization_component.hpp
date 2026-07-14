@@ -105,6 +105,8 @@ public:
   CallbackReturn on_shutdown(const rclcpp_lifecycle::State & state);
   CallbackReturn on_error(const rclcpp_lifecycle::State & state);
 
+  void declareImuPreintegrationParameters();
+  void loadImuPreintegrationParameters();
   void initializeParameters();
   void initializePubSub();
   void initializeRegistration();
