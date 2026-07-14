@@ -1,3 +1,6 @@
+# Preset: Autoware Istanbul 60 s public benchmark template.
+# Status: reproducible validation input; not a general runtime default.
+
 /**:
   ros__parameters:
     registration_method: NDT_OMP

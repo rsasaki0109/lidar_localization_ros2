@@ -128,103 +128,123 @@ install(TARGETS
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
 
-install(PROGRAMS
-  scripts/benchmark_analyze_drift_window
-  scripts/benchmark_compare_runs
+# Keep the installed CLI surface grouped by purpose. The flat scripts directory
+# and command names remain stable for ros2 run and downstream documentation.
+set(LIDAR_LOCALIZATION_CONFIG_SCRIPTS
   scripts/check_lidar_localization_bringup.py
   scripts/check_mid360_legged_bringup.py
-  scripts/compare_nav2_reinit_supervisor_runs.py
-  scripts/convert_boreas_sequence_to_rosbag2.py
   scripts/create_lidar_localization_config.py
+  scripts/run_nav2_demo_smoke
+  scripts/run_nav2_replay_smoke
+  scripts/send_nav2_goal.py)
+
+set(LIDAR_LOCALIZATION_BENCHMARK_SCRIPTS
+  scripts/benchmark_analyze_drift_window
+  scripts/benchmark_bbs_backends.py
+  scripts/benchmark_compare_runs
+  scripts/benchmark_diagnostic_recorder
+  scripts/benchmark_eval_evo_ape
+  scripts/benchmark_eval_trajectory
   scripts/benchmark_extract_pose_reference_from_rosbag2
   scripts/benchmark_from_manifest
   scripts/benchmark_make_graph_dataset
   scripts/benchmark_pose_recorder
-  scripts/benchmark_diagnostic_recorder
+  scripts/benchmark_runner
+  scripts/benchmark_sweep_localizer
   scripts/build_public_demo_report.py
   scripts/build_public_validation_dashboard.py
   scripts/build_relocalization_demo_report.py
-  scripts/benchmark_runner
-  scripts/benchmark_sweep_localizer
-  scripts/benchmark_eval_trajectory
-  scripts/benchmark_eval_evo_ape
+  scripts/compare_nav2_reinit_supervisor_runs.py
+  scripts/compare_registration_relocalization_score_summaries.py
+  scripts/make_localization_comparison_report.py)
+
+set(LIDAR_LOCALIZATION_DATA_SCRIPTS
   scripts/augment_pointcloud_intensity.py
-  scripts/analyze_koide_imu_consistency.py
-  scripts/make_disabled_relocalization_attempts.py
-  scripts/observe_relocalization_reset_execution.py
-  scripts/make_route_grid_relocalization_attempts.py
-  scripts/make_map_grid_relocalization_attempts.py
-  scripts/make_bbs_relocalization_attempts.py
-  scripts/generate_bbs_golden_fixtures.py
-  scripts/benchmark_bbs_backends.py
-  scripts/global_localization_query.py
-  scripts/g2_candidate_registration_rank_policy.py
-  scripts/check_koide_recovery_health.py
-  scripts/check_recovery_pose_gt.py
-  scripts/inject_koide_kidnap_initialpose.py
-  scripts/run_koide_g3_recovery_replay.sh
-  scripts/prepare_hdl_recovery_assets.sh
-  scripts/run_hdl_g3_recovery_replay.sh
-  scripts/global_localization_node.py
-  scripts/reinitialization_supervisor_policy.py
-  scripts/reinitialization_supervisor_node.py
-  scripts/make_registration_relocalization_jobs.py
-  scripts/scaffold_mapless_public_dataset_bundle.py
-  scripts/fetch_official_autoware_istanbul_dataset.sh
-  scripts/fetch_koide_hard_pointcloud_localization_dataset.sh
-  scripts/fetch_official_hdl_localization_sample.sh
   scripts/build_gt_aligned_map_from_reference_csv.py
-  scripts/tum_trajectory_to_pose_reference_csv.py
-  scripts/tum_trajectory_to_pose_reference_csv_for_rosbag2.py
+  scripts/convert_boreas_sequence_to_rosbag2.py
+  scripts/fetch_koide_hard_pointcloud_localization_dataset.sh
+  scripts/fetch_official_autoware_istanbul_dataset.sh
+  scripts/fetch_official_hdl_localization_sample.sh
   scripts/generate_occupancy_map_from_pcd.py
-  scripts/make_localization_comparison_report.py
+  scripts/prepare_hdl_recovery_assets.sh
+  scripts/prepare_koide_hard_relocalization_assets.sh
+  scripts/scaffold_mapless_public_dataset_bundle.py
+  scripts/tum_trajectory_to_pose_reference_csv.py
+  scripts/tum_trajectory_to_pose_reference_csv_for_rosbag2.py)
+
+set(LIDAR_LOCALIZATION_ROS_ADAPTER_SCRIPTS
   scripts/publish_cmd_vel_odom.py
   scripts/publish_identity_odom.py
   scripts/publish_odom_from_localization.py
   scripts/publish_odom_from_twist.py
   scripts/publish_pose_from_odom.py
-  scripts/publish_relocalization_reset_commands.py
-  scripts/prepare_koide_hard_relocalization_assets.sh
-  scripts/republish_initialpose_on_reinit.py
   scripts/relay_localization_inputs_with_current_stamp.py
-  scripts/record_hdl_localization_outputs.py
+  scripts/record_hdl_localization_outputs.py)
+
+set(LIDAR_LOCALIZATION_RECOVERY_SCRIPTS
+  scripts/check_koide_recovery_health.py
+  scripts/check_recovery_pose_gt.py
+  scripts/g2_candidate_registration_rank_policy.py
+  scripts/global_localization_node.py
+  scripts/global_localization_query.py
+  scripts/inject_koide_kidnap_initialpose.py
+  scripts/make_bbs_relocalization_attempts.py
+  scripts/make_disabled_relocalization_attempts.py
+  scripts/make_map_grid_relocalization_attempts.py
+  scripts/make_registration_relocalization_jobs.py
+  scripts/make_relocalization_reset_commands.py
+  scripts/make_route_grid_relocalization_attempts.py
+  scripts/observe_relocalization_reset_execution.py
+  scripts/publish_relocalization_reset_commands.py
+  scripts/reinitialization_supervisor_node.py
+  scripts/reinitialization_supervisor_policy.py
+  scripts/republish_initialpose_on_reinit.py
+  scripts/resolve_registration_relocalization_scans.py
+  scripts/score_relocalization_candidates_with_reference.py
+  scripts/select_relocalization_reset_candidates.py
+  scripts/validate_relocalization_reset_candidate_plan.py
+  scripts/validate_relocalization_reset_commands.py)
+
+set(LIDAR_LOCALIZATION_EXPERIMENT_SCRIPTS
+  scripts/analyze_koide_imu_consistency.py
+  scripts/generate_bbs_golden_fixtures.py
+  scripts/run_autoware_istanbul_60s_predictor_compare.sh
   scripts/run_borderline_gate_experiments.py
   scripts/run_experiment_suite.py
+  scripts/run_hdl_g3_recovery_replay.sh
+  scripts/run_hdl_localization_docker_benchmark.sh
   scripts/run_imu_guard_experiments.py
-  scripts/run_koide_hard_imu_deskew_smoke.sh
   scripts/run_koide_corner_deskew_ab.sh
+  scripts/run_koide_g3_recovery_replay.sh
+  scripts/run_koide_hard_imu_deskew_smoke.sh
   scripts/run_lidar_localization_imu_comparison.py
-  scripts/summarize_koide_deskew_ab.py
-  scripts/summarize_registration_localizability.py
   scripts/run_measurement_acceptance_experiments.py
-  scripts/run_nav2_reinit_supervisor_sweep.sh
   scripts/run_nav2_reinit_supervisor_regression.sh
+  scripts/run_nav2_reinit_supervisor_sweep.sh
   scripts/run_recovery_action_experiments.py
+  scripts/run_registration_ordering_comparison.py
   scripts/run_reinit_trigger_experiments.py
   scripts/run_startup_integrity_experiments.py
   scripts/run_public_demo.sh
-  scripts/run_public_validation_dashboard.sh
-  scripts/run_v1_1_relocalization_smoke.sh
-  scripts/validate_v1_1_claim_language.py
   scripts/run_public_regression_suite.sh
+  scripts/run_public_validation_dashboard.sh
   scripts/run_release_regression_suite.sh
-  scripts/run_nav2_demo_smoke
-  scripts/run_nav2_replay_smoke
-  scripts/send_nav2_goal.py
+  scripts/run_v1_1_relocalization_smoke.sh
+  scripts/summarize_koide_deskew_ab.py
   scripts/summarize_localization_health.py
-  scripts/summarize_relocalization_attempts.py
+  scripts/summarize_registration_localizability.py
   scripts/summarize_registration_relocalization_scores.py
-  scripts/compare_registration_relocalization_score_summaries.py
-  scripts/run_registration_ordering_comparison.py
-  scripts/make_relocalization_reset_commands.py
-  scripts/select_relocalization_reset_candidates.py
-  scripts/validate_relocalization_reset_commands.py
-  scripts/validate_relocalization_reset_candidate_plan.py
+  scripts/summarize_relocalization_attempts.py
   scripts/validate_lidar_localization_imu.py
-  scripts/score_relocalization_candidates_with_reference.py
-  scripts/resolve_registration_relocalization_scans.py
-  scripts/run_autoware_istanbul_60s_predictor_compare.sh
-  scripts/run_hdl_localization_docker_benchmark.sh
+  scripts/validate_v1_1_claim_language.py)
+
+install(PROGRAMS
+  ${LIDAR_LOCALIZATION_CONFIG_SCRIPTS}
+  ${LIDAR_LOCALIZATION_BENCHMARK_SCRIPTS}
+  ${LIDAR_LOCALIZATION_DATA_SCRIPTS}
+  ${LIDAR_LOCALIZATION_ROS_ADAPTER_SCRIPTS}
+  ${LIDAR_LOCALIZATION_RECOVERY_SCRIPTS}
+  ${LIDAR_LOCALIZATION_EXPERIMENT_SCRIPTS}
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY

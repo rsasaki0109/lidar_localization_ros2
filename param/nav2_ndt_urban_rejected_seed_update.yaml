@@ -1,3 +1,6 @@
+# Preset: Nav2 urban immediate rejected-seed update.
+# Status: experiment-only derivative retained for comparison.
+
 /**:
   ros__parameters:
     registration_method: NDT_OMP

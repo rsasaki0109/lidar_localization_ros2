@@ -1,3 +1,6 @@
+# Preset: conservative urban NDT_OMP localizer for Nav2.
+# Status: recommended Nav2 localizer starting point.
+
 /**:
   ros__parameters:
     registration_method: NDT_OMP

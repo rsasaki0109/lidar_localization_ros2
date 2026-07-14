@@ -1,3 +1,6 @@
+# Preset: Nav2 urban last-pose retry after three rejections.
+# Status: experiment-only derivative; did not hold up on 120 s repeats.
+
 /**:
   ros__parameters:
     registration_method: NDT_OMP

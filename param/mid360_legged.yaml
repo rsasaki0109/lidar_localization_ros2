@@ -1,4 +1,5 @@
-# Jetson + Livox MID-360 preset for quadruped/biped robots.
+# Preset: Jetson + Livox MID-360 for quadruped/biped robots.
+# Status: hardware-specific runtime preset.
 # Runtime launch should override map_path and measured sensor extrinsics.
 /**:
   ros__parameters:

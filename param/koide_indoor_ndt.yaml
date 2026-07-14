@@ -1,3 +1,6 @@
+# Preset: Koide indoor sequence using NDT_OMP.
+# Status: dataset-specific baseline with IMU preintegration disabled.
+
 /**:
   ros__parameters:
     registration_method: NDT_OMP

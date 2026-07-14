@@ -1,3 +1,6 @@
+# Preset: Autoware Istanbul with the experimental GTSAM twist smoother.
+# Status: dataset-specific experiment; not a recommended runtime default.
+
 /**:
   ros__parameters:
     registration_method: NDT_OMP

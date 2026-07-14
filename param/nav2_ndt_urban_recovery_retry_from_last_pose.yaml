@@ -1,3 +1,6 @@
+# Preset: Nav2 urban aggressive last-pose recovery retry.
+# Status: experiment-only derivative; retained for benchmark reproduction.
+
 /**:
   ros__parameters:
     registration_method: NDT_OMP

@@ -1,3 +1,6 @@
+# Preset: Koide indoor sequence using the optional SMALL_GICP backend.
+# Status: dataset-specific backend comparison; requires small_gicp support.
+
 /**:
   ros__parameters:
     # SMALL_GICP with NDT initializer for indoor depth camera data.
