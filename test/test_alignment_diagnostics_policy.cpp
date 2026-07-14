@@ -133,9 +133,16 @@ void test_build_alignment_diagnostic_values_order_and_strings()
   input.registration_localizability.correspondence_count = 456;
   input.registration_localizability.eigenvalues[0] = 0.125;
   input.registration_localizability.weakest_eigenvector[0] = -0.5;
+  input.imu_seed_consistency_gate_enabled = true;
+  input.imu_seed_consistency_seed_allowed = true;
+  input.imu_seed_consistency_valid_comparison_count = 12;
+  input.imu_seed_consistency_consecutive_pass_count = 6;
+  input.imu_seed_consistency_translation_error_m = 0.2;
+  input.imu_seed_consistency_rotation_error_deg = 1.5;
+  input.imu_seed_consistency_sample_passed = true;
 
   const auto values = ll::buildAlignmentDiagnosticValues(input);
-  assert(values.size() == 88);
+  assert(values.size() == 95);
   assert(values[0].first == "registration_method");
   assert(values[0].second == "NDT");
   assert(values[1].first == "has_converged");
@@ -240,6 +247,20 @@ void test_build_alignment_diagnostic_values_order_and_strings()
   assert(values[86].second.find("0.250") == 0);
   assert(values[87].first == "localizability_guard_active");
   assert(values[87].second == "false");
+  assert(values[88].first == "imu_seed_consistency_gate_enabled");
+  assert(values[88].second == "true");
+  assert(values[89].first == "imu_seed_consistency_seed_allowed");
+  assert(values[89].second == "true");
+  assert(values[90].first == "imu_seed_consistency_valid_comparison_count");
+  assert(values[90].second == "12");
+  assert(values[91].first == "imu_seed_consistency_consecutive_pass_count");
+  assert(values[91].second == "6");
+  assert(values[92].first == "imu_seed_consistency_translation_error_m");
+  assert(values[92].second.find("0.200") == 0);
+  assert(values[93].first == "imu_seed_consistency_rotation_error_deg");
+  assert(values[93].second.find("1.500") == 0);
+  assert(values[94].first == "imu_seed_consistency_sample_passed");
+  assert(values[94].second == "true");
 }
 
 int main()

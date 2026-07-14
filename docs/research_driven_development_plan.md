@@ -194,6 +194,19 @@ alignment p95 `<=1.2`とした。全candidateがFAILしたため、既定値はd
 なお全modeでcrash、NaN、再初期化要求は0だった。共有機のCPU使用率が高いため、latency値は
 候補間gateにのみ使い、一般性能claimにはしない。
 
+### R1 IMU/scan時刻同期buffer result (2026-07-14): negative
+
+NDT計算中に未来時刻のIMUがsmootherへ入る可能性を切り分けるため、変換済みIMUをbufferし、
+対象cloud時刻までだけ積分するprototypeを同じ85--112 s区間で実行した。0.65 sのIMU gap後に
+回復する処理を含めても、deskew適用率は`3.8%`、trajectory coverageは`6.3%`、translation
+RMSEは`6.599 m`だった。最初の不正確なIMU seed後にregistrationが連続rejectされ、accepted
+poseからの正しい積分窓が1 sを超えたためである。時刻同期だけでは、初期速度0やbiasを含む
+open-loop seed誤差を解決できない。prototypeはrevertした。測定値と判断は
+[`../experiments/imu_scan_time_sync/README.md`](../experiments/imu_scan_time_sync/README.md)に残す。
+
+次のIMU runtime候補は、初期速度を観測または推定し、NDTへ接続する前のopen-loop seed accuracy
+gateを通すことを前提とする。deskew適用率だけを上げる変更は引き続き採用しない。
+
 ## Phase R2: Localizability診断と退化方向の抑制
 
 仮説: scalar fitnessだけではcorridor aliasや旋回時の弱拘束方向を判別できない。
@@ -324,6 +337,36 @@ Boreasでは閾値sweepを再開する前にdata contractを検証する。
 
 目安は1人で既存machineを使うengineering effortであり、dataset downloadやidle-machine待ちは
 含まない。各gateで仮説が反証された場合、次phaseへ機械的に進まず本書へnegative resultを追記する。
+
+## IMU seed consistency gate result (2026-07-14)
+
+直接のsmoother state保持やscan時刻queueの試作は、最初の不正確な予測がNDTのfeedback loopへ
+入った後にKoideで大きく悪化した。代わりにopen-loop比較を先行させる。IMU予測と受理済み
+LiDAR poseを比較し、0.5 mかつ5度以内を5回連続で満たすまでseedを禁止する。欠測、非有限値、
+閾値超過または非有限予測ではfail closedする。確立前の欠測は連続列を切るが、確立後の一時的な
+予測欠測は不一致の証拠ではないためpermissionを保持し、そのscanでは予測自体を使用しない。
+
+Koide `outdoor_hard_01a`先頭30秒では、並進誤差中央値0.995 m、回転誤差中央値5.25度、
+最長合格列4/5だった。このため44 alignment rowでIMU seedは0回だった。これは安全gateの
+期待どおりの結果であり、IMU精度改善を意味しない。詳細とmachine-readable値は
+`experiments/imu_seed_consistency/`に保存した。
+
+その後、noise densityの離散化で`density^2 / dt`が欠落していたことと、Koide Livox
+accelerationがm/s²ではなく`g`単位であることを特定した。単位修正、明示scale=9.80665、
+初期速度、状態保持、scan-bounded dual queueを組み合わせた先頭30秒の候補は、並進予測
+中央値0.064 m、回転0.763度、seed 38/47、reject streak 0、coverage 98.0%、並進RMSE
+0.079 mとなった。同じscaleのsingle-stream対照はcoverage 76.0%、並進RMSE 0.242 m、
+reject streak 8だった。詳細は`experiments/imu_dual_queue/`に保存した。
+
+その後、1秒window境界に10 msのtimestamp/scheduler jitter許容を設け（1.1秒の実gapは拒否）、
+IMU coverageが無い受理scanではIMU factorを捏造せずpose-only anchorとしてvelocity/biasを保持した。
+`outdoor_hard_01a`先頭30秒、同bagのoffset 85秒、`outdoor_hard_02a`先頭30秒を各3 repeatした結果、
+dual queueは全9 runでreject streak 0、coverage worst 96.7%以上となった。このmulti-window/
+multi-sequence gateを通過したため`imu_dual_queue_enabled=true`へ昇格した。
+
+dual queueとrelative-motion deskewを組み合わせた追加gateでは、`outdoor_hard_01a`は3/3通過したが、
+`outdoor_hard_02a`のtranslation RMSE中央値がno-deskew 0.095 mから0.146 mへ悪化した。
+したがってdual queue本体のみ採用し、continuous-time deskewはdefault-offを維持する。
 
 ## 直近の着手項目
 

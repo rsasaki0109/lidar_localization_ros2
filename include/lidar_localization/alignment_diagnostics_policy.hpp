@@ -101,6 +101,13 @@ struct AlignmentDiagnosticValuesInput
   bool bad_match_active{false};
   bool stale_prediction_active{false};
   bool overload_active{false};
+  bool imu_seed_consistency_gate_enabled{false};
+  bool imu_seed_consistency_seed_allowed{false};
+  std::size_t imu_seed_consistency_valid_comparison_count{0};
+  std::size_t imu_seed_consistency_consecutive_pass_count{0};
+  double imu_seed_consistency_translation_error_m{NAN};
+  double imu_seed_consistency_rotation_error_deg{NAN};
+  bool imu_seed_consistency_sample_passed{false};
 };
 
 inline const char * boolString(bool value)
@@ -273,6 +280,27 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
     "horizontal_localizability_eigenvalue_ratio",
     std::to_string(input.horizontal_localizability_eigenvalue_ratio));
   append("localizability_guard_active", boolString(input.localizability_guard_active));
+  append(
+    "imu_seed_consistency_gate_enabled",
+    boolString(input.imu_seed_consistency_gate_enabled));
+  append(
+    "imu_seed_consistency_seed_allowed",
+    boolString(input.imu_seed_consistency_seed_allowed));
+  append(
+    "imu_seed_consistency_valid_comparison_count",
+    std::to_string(input.imu_seed_consistency_valid_comparison_count));
+  append(
+    "imu_seed_consistency_consecutive_pass_count",
+    std::to_string(input.imu_seed_consistency_consecutive_pass_count));
+  append(
+    "imu_seed_consistency_translation_error_m",
+    std::to_string(input.imu_seed_consistency_translation_error_m));
+  append(
+    "imu_seed_consistency_rotation_error_deg",
+    std::to_string(input.imu_seed_consistency_rotation_error_deg));
+  append(
+    "imu_seed_consistency_sample_passed",
+    boolString(input.imu_seed_consistency_sample_passed));
   return values;
 }
 

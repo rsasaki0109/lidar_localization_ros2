@@ -1,0 +1,117 @@
+{
+  "date": "2026-07-14",
+  "imu_accel_scale": 9.80665,
+  "repeat_count_per_fixture": 3,
+  "dual_queue_no_deskew": {
+    "outdoor_hard_01a_0_30": {
+      "coverage_ratio_median": 0.979979,
+      "coverage_ratio_worst": 0.979979,
+      "translation_rmse_m_median": 0.084802,
+      "translation_rmse_m_worst": 0.085000,
+      "rotation_rmse_deg_median": 1.134165,
+      "rotation_rmse_deg_worst": 1.185000,
+      "translation_end_error_m_median": 0.054,
+      "translation_end_error_m_worst": 0.057,
+      "rotation_end_error_deg_median": 0.330,
+      "rotation_end_error_deg_worst": 0.350,
+      "reject_streak_max_worst": 0,
+      "imu_seed_ratio_median": 0.85417,
+      "imu_seed_ratio_worst": 0.84783,
+      "alignment_latency_p95_sec_median": 0.323,
+      "alignment_latency_p95_sec_worst": 0.336
+    },
+    "outdoor_hard_01a_85_112": {
+      "coverage_ratio_median": 0.966688,
+      "coverage_ratio_worst": 0.966688,
+      "translation_rmse_m_median": 0.073120,
+      "translation_rmse_m_worst": 0.081406,
+      "rotation_rmse_deg_median": 0.895,
+      "rotation_rmse_deg_worst": 1.060690,
+      "translation_end_error_m_median": 0.031,
+      "translation_end_error_m_worst": 0.034,
+      "rotation_end_error_deg_median": 0.517,
+      "rotation_end_error_deg_worst": 0.535,
+      "reject_streak_max_worst": 0,
+      "imu_seed_ratio_median": 0.69048,
+      "imu_seed_ratio_worst": 0.675,
+      "alignment_latency_p95_sec_median": 0.442,
+      "alignment_latency_p95_sec_worst": 0.457
+    },
+    "outdoor_hard_02a_0_30": {
+      "coverage_ratio_median": 0.986658,
+      "coverage_ratio_worst": 0.983313,
+      "translation_rmse_m_median": 0.094636,
+      "translation_rmse_m_worst": 0.095766,
+      "rotation_rmse_deg_median": 1.050963,
+      "rotation_rmse_deg_worst": 1.140939,
+      "translation_end_error_m_median": 0.117,
+      "translation_end_error_m_worst": 0.125,
+      "rotation_end_error_deg_median": 1.101,
+      "rotation_end_error_deg_worst": 1.122,
+      "reject_streak_max_worst": 0,
+      "imu_seed_ratio_median": 0.86,
+      "imu_seed_ratio_worst": 0.74510,
+      "alignment_latency_p95_sec_median": 0.323,
+      "alignment_latency_p95_sec_worst": 0.375
+    }
+  },
+  "controls": {
+    "outdoor_hard_01a_0_30_lidar_only": {
+      "coverage_ratio_median": 0.75997,
+      "translation_rmse_m_median": 0.336198,
+      "rotation_rmse_deg_median": 3.340312,
+      "reject_streak_max_median": 8
+    },
+    "outdoor_hard_01a_0_30_legacy_single_stream": {
+      "coverage_ratio_median": 0.763311,
+      "translation_rmse_m_median": 0.365202,
+      "rotation_rmse_deg_median": 3.925431,
+      "reject_streak_max_median": 7
+    },
+    "outdoor_hard_02a_0_30_lidar_only_valid_run": {
+      "coverage_ratio": 0.243340,
+      "translation_rmse_m": 0.338117,
+      "rotation_rmse_deg": 3.813385,
+      "reject_streak_max": 31
+    },
+    "outdoor_hard_02a_0_30_legacy_single_stream": {
+      "coverage_ratio": 0.823322,
+      "translation_rmse_m": 0.652040,
+      "rotation_rmse_deg": 4.264858,
+      "reject_streak_max": 6
+    }
+  },
+  "dual_queue_deskew": {
+    "outdoor_hard_01a_0_30": {
+      "coverage_ratio_median": 0.979979,
+      "translation_rmse_m_median": 0.080,
+      "rotation_rmse_deg_median": 0.974,
+      "reject_streak_max_worst": 0,
+      "imu_seed_ratio_worst": 0.80851,
+      "deskew_applied_ratio_median": 0.87755,
+      "deskew_applied_ratio_worst": 0.875,
+      "alignment_latency_p95_sec_worst": 0.363
+    },
+    "outdoor_hard_02a_0_30": {
+      "coverage_ratio_median": 0.983313,
+      "translation_rmse_m_median": 0.145606,
+      "rotation_rmse_deg_median": 1.168211,
+      "reject_streak_max_worst": 0,
+      "imu_seed_ratio_worst": 0.57447,
+      "deskew_applied_ratio_median": 0.81633,
+      "deskew_applied_ratio_worst": 0.76596,
+      "alignment_latency_p95_sec_worst": 0.478
+    }
+  },
+  "decisions": {
+    "imu_dual_queue": "promote_default_on_after_nine_of_nine_multi_window_multi_sequence_runs_pass",
+    "continuous_time_deskew": "keep_default_off_due_to_repeatable_outdoor_hard_02a_accuracy_regression"
+  },
+  "artifact_roots": [
+    "runs/imu_jitter_tolerance_ab_20260714",
+    "runs/imu_jitter_corner_ab_20260714",
+    "runs/imu_jitter_outdoor_hard_02a_ab_20260714",
+    "runs/imu_dual_queue_deskew_ab_20260714",
+    "runs/imu_dual_queue_deskew_outdoor_hard_02a_20260714"
+  ]
+}

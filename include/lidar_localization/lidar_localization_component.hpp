@@ -7,6 +7,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -66,6 +67,9 @@
 #include "lidar_localization/callback_state_coordinator.hpp"
 #include "lidar_localization/imu_preintegration_diagnostics_policy.hpp"
 #include "lidar_localization/imu_preintegration_guard_policy.hpp"
+#include "lidar_localization/imu_initialization_policy.hpp"
+#include "lidar_localization/imu_queue_policy.hpp"
+#include "lidar_localization/imu_seed_consistency_policy.hpp"
 #include "lidar_localization/measurement_gate_policy.hpp"
 #include "lidar_localization/localization_update_policy.hpp"
 #include "lidar_localization/pose_backend_result_policy.hpp"
@@ -192,6 +196,7 @@ public:
   // IMU preintegration smoother
   bool use_imu_preintegration_{false};
   bool imu_preintegration_use_base_frame_transform_{false};
+  double imu_accel_scale_{1.0};
   bool use_continuous_time_deskew_{false};
   std::string continuous_time_deskew_mode_{"relative_motion"};
   std::string continuous_time_cloud_stamp_reference_{"start"};
@@ -200,9 +205,18 @@ public:
   double imu_prediction_correction_guard_translation_m_{2.0};
   double imu_prediction_correction_guard_yaw_deg_{10.0};
   int imu_prediction_correction_guard_warmup_accepts_{5};
+  bool imu_seed_consistency_gate_enabled_{true};
+  bool imu_dual_queue_enabled_{true};
+  lidar_localization::ImuSeedConsistencyParams imu_seed_consistency_params_;
+  lidar_localization::ImuSeedConsistencyState imu_seed_consistency_state_;
   // Read on the per-scan path without taking imu_preintegration_mutex_.
   std::atomic<int> imu_guard_warmup_accepts_remaining_{0};
   ImuGtsamSmoother imu_smoother_;
+  ImuGtsamSmoother imu_prediction_smoother_;
+  lidar_localization::DualImuQueue imu_dual_queue_;
+  std::optional<lidar_localization::TimestampedImuSample> imu_optimization_anchor_sample_;
+  std::optional<lidar_localization::TimestampedImuSample> imu_prediction_anchor_sample_;
+  double latest_dual_queue_integrated_stamp_{0.0};
   double last_imu_stamp_{0.0};
   Eigen::Quaternionf continuous_time_imu_orientation_{Eigen::Quaternionf::Identity()};
   std::deque<lidar_localization::TimestampedPose> continuous_time_imu_pose_history_;
@@ -220,6 +234,13 @@ public:
   double latest_imu_seed_last_dt_sec_{std::numeric_limits<double>::quiet_NaN()};
   double latest_imu_seed_last_sample_age_sec_{std::numeric_limits<double>::quiet_NaN()};
   double latest_imu_seed_integration_window_sec_{0.0};
+  Eigen::Matrix4f latest_imu_open_loop_prediction_{Eigen::Matrix4f::Identity()};
+  bool latest_imu_open_loop_prediction_available_{false};
+  double latest_imu_seed_consistency_translation_error_m_{
+    std::numeric_limits<double>::quiet_NaN()};
+  double latest_imu_seed_consistency_rotation_error_deg_{
+    std::numeric_limits<double>::quiet_NaN()};
+  bool latest_imu_seed_consistency_sample_passed_{false};
   bool latest_continuous_time_deskew_applied_{false};
   std::string latest_continuous_time_deskew_status_{"continuous_time_deskew_disabled"};
   std::size_t latest_continuous_time_deskew_point_count_{0};

@@ -181,6 +181,13 @@ void test_prediction_active_and_helpers()
   input.last_dt_sec = 0.005;
   input.last_sample_age_sec = ll::imuLastSampleAgeSec(10.0, 9.9);
   input.integration_window_sec = ll::imuIntegrationWindowSec(9.9, 9.8);
+  input.seed_consistency_gate_enabled = true;
+  input.seed_consistency_seed_allowed = true;
+  input.seed_consistency_valid_comparison_count = 8;
+  input.seed_consistency_consecutive_pass_count = 5;
+  input.seed_consistency_translation_error_m = 0.2;
+  input.seed_consistency_rotation_error_deg = 1.0;
+  input.seed_consistency_sample_passed = true;
 
   const auto diagnostics = ll::makeImuPreintegrationDiagnostics(input);
 
@@ -193,6 +200,13 @@ void test_prediction_active_and_helpers()
   assert(diagnostics.last_dt_sec == 0.005);
   assert(std::abs(diagnostics.last_sample_age_sec - 0.1) < 1e-9);
   assert(std::abs(diagnostics.integration_window_sec - 0.1) < 1e-9);
+  assert(diagnostics.seed_consistency_gate_enabled);
+  assert(diagnostics.seed_consistency_seed_allowed);
+  assert(diagnostics.seed_consistency_valid_comparison_count == 8);
+  assert(diagnostics.seed_consistency_consecutive_pass_count == 5);
+  assert(diagnostics.seed_consistency_translation_error_m == 0.2);
+  assert(diagnostics.seed_consistency_rotation_error_deg == 1.0);
+  assert(diagnostics.seed_consistency_sample_passed);
   assert(ll::imuIntegrationWindowSec(9.9, 10.0) == 0.0);
   assert(std::isnan(ll::imuLastSampleAgeSec(10.0, 0.0)));
   assert(ll::imuStaleSampleAgeThresholdSec(0.05) == 0.2);
@@ -200,7 +214,8 @@ void test_prediction_active_and_helpers()
   assert(ll::imuMaximumIntegrationWindowSec(0.05) == 1.0);
   assert(ll::imuMaximumIntegrationWindowSec(0.2) == 1.0);
   assert(std::abs(ll::imuMaximumIntegrationWindowSec(0.3) - 1.5) < 1e-9);
-  assert(ll::isImuIntegrationWindowTooLarge(1.01, 1.0));
+  assert(!ll::isImuIntegrationWindowTooLarge(1.009, 1.0));
+  assert(ll::isImuIntegrationWindowTooLarge(1.011, 1.0));
   assert(!ll::isImuIntegrationWindowTooLarge(1.0, 1.0));
   assert(ll::isValidImuPreintegrationDt(0.001));
   assert(!ll::isValidImuPreintegrationDt(0.0));

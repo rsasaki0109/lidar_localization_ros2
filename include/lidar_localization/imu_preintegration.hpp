@@ -5,6 +5,7 @@
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+#include <cmath>
 #include <deque>
 
 struct ImuSample
@@ -22,6 +23,25 @@ struct ImuPreintegrationParams
   double accel_random_walk = 0.001;     // m/s^3/sqrt(Hz)
   Eigen::Vector3d gravity = Eigen::Vector3d(0, 0, -9.81);
 };
+
+/// Marginal variance of a bias after a continuous random walk over duration.
+/// This is also useful to keep a shared-window bias approximation from becoming
+/// overconfident as its window grows: Var[b(t)] = Var[b(0)] + sigma_rw^2 t.
+inline double imuBiasPriorVariance(
+  double initial_sigma, double random_walk_density, double duration_sec)
+{
+  if (!std::isfinite(initial_sigma) || initial_sigma <= 0.0) {
+    return 1.0;
+  }
+  const double initial_variance = initial_sigma * initial_sigma;
+  if (!std::isfinite(random_walk_density) || random_walk_density < 0.0 ||
+    !std::isfinite(duration_sec) || duration_sec <= 0.0)
+  {
+    return initial_variance;
+  }
+  return initial_variance +
+         random_walk_density * random_walk_density * duration_sec;
+}
 
 /// On-manifold IMU preintegration (Forster et al. 2017), pure Eigen
 class ImuPreintegration
@@ -105,8 +125,12 @@ public:
 
     // Continuous noise (per-axis)
     Matrix6d Qc = Matrix6d::Zero();
-    double na2 = params.accel_noise_density * params.accel_noise_density;
-    double ng2 = params.gyro_noise_density * params.gyro_noise_density;
+    // Noise parameters are continuous-time densities (/sqrt(Hz)). The variance
+    // of the average measurement over dt is density^2 / dt. B already contains
+    // the integration powers of dt, so omitting this conversion makes a factor
+    // spuriously more confident as the IMU sampling rate increases.
+    double na2 = params.accel_noise_density * params.accel_noise_density / dt;
+    double ng2 = params.gyro_noise_density * params.gyro_noise_density / dt;
     Qc.block<3, 3>(0, 0) = na2 * Eigen::Matrix3d::Identity();
     Qc.block<3, 3>(3, 3) = ng2 * Eigen::Matrix3d::Identity();
 

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "date": "2026-07-14",
+  "dataset": "koide/outdoor_hard_01a",
+  "bag_start_offset_sec": 85.0,
+  "bag_duration_sec": 27.0,
+  "runs": {
+    "existing_relative_motion": {
+      "deskew_applied_ratio": 0.533,
+      "translation_rmse_m": 0.14146055045395506,
+      "rotation_rmse_deg": 9.960559645686738,
+      "trajectory_duration_ratio": 0.8703965257715296
+    },
+    "rotation_only_pose_history_start_stamp": {
+      "deskew_applied_ratio": 0.943,
+      "translation_rmse_m": 1.8860262803115062,
+      "rotation_rmse_deg": 17.293493966173173,
+      "trajectory_duration_ratio": 0.9666875203450521
+    },
+    "scan_bounded_imu_buffer": {
+      "deskew_applied_ratio": 0.038,
+      "translation_rmse_m": 6.5985794064951975,
+      "rotation_rmse_deg": 4.2616374941366475,
+      "trajectory_duration_ratio": 0.06296239075837312,
+      "integration_window_too_large_count": 24,
+      "diagnostic_scan_count": 26
+    }
+  },
+  "cloud_stamp_hypothesis": {
+    "scan_count": 1200,
+    "preferred": "start",
+    "start_fitted_rate_rmse_rad_s": 0.05812944924752853,
+    "end_fitted_rate_rmse_rad_s": 0.07938818116306459
+  },
+  "decision": "rejected_and_reverted",
+  "next_gate": "validate initialized velocity or open-loop seed accuracy before runtime coupling"
+}
