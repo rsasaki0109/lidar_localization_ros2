@@ -13,20 +13,9 @@
   <img alt="License BSD 2 Clause" src="https://img.shields.io/badge/license-BSD--2--Clause-6b46c1">
 </p>
 
-<table>
-  <tr>
-    <td align="center"><strong>Guarded LiDAR + IMU localization</strong></td>
-    <td align="center"><strong>Kidnapped-start global relocalization</strong></td>
-  </tr>
-  <tr>
-    <td><img src="./images/koide_localization.gif" alt="Koide outdoor_kidnap_a guarded IMU localization replay" width="520"></td>
-    <td><img src="./images/global_localization_demo.gif" alt="BBS 2D global candidates followed by resumed NDT tracking" width="400"></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>Koide outdoor_kidnap_a · NDT_OMP + guarded IMU preintegration</sub></td>
-    <td align="center"><sub>No initial pose · BBS_2D candidates · NDT tracking resumes</sub></td>
-  </tr>
-</table>
+<img src="./images/path.png" alt="LiDAR localization path over pointcloud map" width="720">
+
+<p><sub>Green: localized path. Red: pointcloud map. Grid: 50 m × 50 m cells.</sub></p>
 
 <p><a href="./docs/koide_gif_gallery.md">Explore the complete Koide indoor/outdoor GIF gallery →</a></p>
 
