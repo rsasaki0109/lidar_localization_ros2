@@ -1,6 +1,6 @@
 # Development Plan
 
-Last updated: 2026-07-13
+Last updated: 2026-07-16
 
 This document is the working development plan for `lidar_localization_ros2`. It is more
 detailed and more dated than [competitive_roadmap.md](competitive_roadmap.md): the roadmap
@@ -18,7 +18,7 @@ Related documents:
 - [v1_status.md](v1_status.md): what v1.0.0 means and its validated boundary
 - [public_validation_log.md](public_validation_log.md): recorded validation snapshots
 
-## Current State (2026-07-13)
+## Current State (2026-07-14)
 
 For work after the 2026-07-09 configurable Livox scan-time guard, use
 [research_driven_development_plan.md](research_driven_development_plan.md) as the execution order.
@@ -26,21 +26,19 @@ The competitive roadmap's decision gates and claim rules still take precedence.
 
 What is true right now:
 
-- The first controlled Koide corner deskew A/B is complete (2026-07-13). Three repeats of
-  bag offset `85 s`, duration `27 s` rejected the current start-to-end deskew as a default
-  candidate: both LiDAR-only and deskew succeeded only `1/3`, and deskew had a catastrophic
-  worst run (`30.458 m` RMSE, `40.754 m` end error). The next step is timestamp-aligned,
-  piecewise IMU pose history with an explicit no-extrapolation coverage guard; see
-  [research_driven_development_plan.md](research_driven_development_plan.md).
-- **G3 guarded automatic reinitialization is validated on Koide outdoor_hard_01a (120 s).**
-  Sprint A landed G2 per-candidate NDT registration scoring (`g2_ndt_score`), the
-  `check_koide_recovery_health.py` stable-recovery rubric, and the fast-G2 recovery
-  preset in `global_localization_recovery.launch.py`. The replay harness
-  `scripts/run_koide_g3_recovery_replay.sh` passes with `recovery_confirmed` plus at
-  least one `stable_recovered_request_window` (validated 2026-07-03 on an idle
-  machine; load `< ~5` required for timing). Release regression now includes
-  `scripts/run_koide_g3_recovery_regression.sh` (skip with `--skip-koide-g3` when the
-  Koide dataset is absent).
+- The Koide corner motion-compensation track has a bounded result. Current start-to-end,
+  point-time IMU pose-history, and LiDAR constant-velocity deskew variants all failed the
+  repeated adoption gate, so continuous-time deskew remains default-off. The accepted IMU
+  improvement is instead the scan-bounded dual queue with explicit acceleration scaling,
+  initialization, coverage guards, and a seed-consistency gate. It passed all nine runs
+  across two windows and two Koide sequences with worst coverage at least `96.7%` and no
+  reject streak, and is now default-on as `imu_dual_queue_enabled=true`.
+- **G3 guarded automatic reinitialization has completed its two-scenario evidence gate.**
+  The corrected real-kidnap Koide 120 s run demonstrates a GT-confirmed recovered window,
+  while the full run still honestly ends lost after the later corner and north-corridor
+  alias boundary. HDL `hdl_400_ros2` was revalidated after the initial-pose causality and
+  single-threaded G2 scoring fixes and passes the stable-recovery rubric with a kidnap that
+  genuinely sticks. Neither result supports a production-grade automatic-recovery claim.
 - `v1.1.0` is released and tagged (commit `668fff2`): the accumulated reliability batch
   (Sprint 1/2 crash fixes #76/#56/#47, the frame/troubleshooting/map-alignment/covariance
   documentation set, Istanbul drift tuning, Koide recovery tuning, Boreas diagnostics) is
@@ -55,17 +53,19 @@ What is true right now:
   (multi-criteria acceptance) closed as a replay-falsified **negative result** after three
   closed-loop A/B replays; step 2 added the `/alignment_status` `failure_category`
   taxonomy; step 3 replaced the `/pcl_pose` covariance with a ground-truth-calibrated
-  `error_floor` model, closing the #72 promise. All on `main`; unit-test count is 36
-  C++/Python policy tests.
-- Global localization has reached G2. `MAP_GRID` and the admissible `BBS_2D`
+  `error_floor` model, closing the #72 promise. All changes are on `main` with focused
+  C++ and Python policy coverage.
+- Global localization has reached guarded G3. `MAP_GRID` and the admissible `BBS_2D`
   branch-and-bound engine are merged; `BBS_2D` was sped up ~8x with byte-identical output;
   and the opt-in `global_localization_node.py` runtime service (`~/query` ->
   `~/candidates`) is validated end-to-end on the HDL bag with a kidnapped start. A demo GIF
   of the full kidnapped-start -> relocalize -> resume flow is in the README.
-- Open work, in priority order, is **G3 second-scenario validation** (HDL
-  kidnapped-start or Koide 180 s), then Phase 2 Boreas recovery. Phase 1 Koide
-  backend comparison smoke60 harness is complete (2026-07-03); the full 380 s
-  ranking and NDT_OMP default are documented in
+- Open work now follows the research plan at **R3: BBS candidate 3D verification and G2
+  latency**. First compare KDTREE against `DIRECT7` at one and four threads without
+  exposing a new runtime default; then address the Koide north-corridor alias with an
+  offline route-crop or 3D-structure gate. Phase 2/R4 Boreas cause isolation follows when
+  its dataset mount is available. Phase 1 Koide backend comparison is complete; the full
+  verdict and NDT_OMP recommendation are documented in
   [phase1_koide_backend_comparison.md](phase1_koide_backend_comparison.md).
 
 Known execution constraints:
@@ -104,8 +104,8 @@ by the maintainer; this table is the triage record.
 | 54 | `corrent_pose_with_cov_stamped_ptr_` not locked | Resolved (2026-06-14) — the node runs on a `SingleThreadedExecutor` with the default mutually-exclusive callback group, so the shared pose pointer is serialized without a lock; documented the invariant in the node + header + CHANGELOG so a future executor change can't regress it silently |
 | 52 | different results (degrades each restart, worse after reboot) | Needs investigation — restart-to-restart degradation suggests state/seed leak, not documented run variance; keep open |
 | 68 | MGRS map not displayed in Rviz | Needs investigation — large-coordinate PCD likely hits float32 precision in the map path; reporter offered to implement, give a hint and keep open |
-| 77 | IMU angular velocity + estimator | Future enhancement track (IMU); keep open |
-| 36 | imu preintegration | Future enhancement track (IMU), overlaps #77; keep open |
+| 77 | IMU angular velocity + estimator | Implemented with guarded seed use and dual-queue validation; keep open only for broader public accuracy ranking |
+| 36 | imu preintegration | Implemented and multi-window validated; continuous-time deskew remains default-off after a negative gate |
 
 The two cheap code wins (#55, #54) were investigated on 2026-06-14: both turned out
 to be non-bugs under the shipped configuration (#55 already wired; #54 protected by the
@@ -291,11 +291,12 @@ Runs in parallel with Phases 1-3; detailed phases live in
   end-to-end on the HDL bag: kidnapped start -> query (23 s, 16 candidates, top score
   0.998) -> top as `/initialpose` -> NDT tracks the full remaining bag (858 poses). Demo
   GIF in the README and `scripts/render_global_localization_demo_gif.py`.
-- **G3 (guarded automatic reinitialization) — next.** Connect `/reinitialization_requested`
-  to the G2 service behind the recovery supervisor, gated by the roadmap's relocalization
-  runtime rules (candidate generation without oracle ordering, runtime-available scoring,
-  guarded reset publication, post-reset recovery evidence). Prerequisite: faster queries
-  for automation — either the ~9 s coarse-yaw setting or a C++ port of the BBS heap loop.
+- **G3 (guarded automatic reinitialization) — EVIDENCE GATE COMPLETE.** The opt-in
+  supervisor connects `/reinitialization_requested` to G2 behind bounded attempts,
+  score floors, cooldown, post-reset evidence, and cross-check gates. A corrected real
+  kidnap on Koide produced a GT-confirmed recovered window, and HDL was revalidated under
+  the fixed initial-pose causality path. Remaining work is breadth, determinism, and query
+  latency; G3 remains opt-in and is not a production recovery claim.
 
 ## Later
 
@@ -671,14 +672,57 @@ runは0/3。診断自体もalignment median `0.959--1.290 s`、coverage `0.415--
 満たさなかった。この指標はnegative resultとして記録し、TSVD freeze/soft regularizationへは
 進まない。詳細と再開条件は`research_driven_development_plan.md`のR2 resultに固定した。
 
-Phase 0, Phase 3 (all three steps), G1, the BBS speedup, G2, **G3 Koide 120 s
-recovery**, and **Phase 1 Koide backend comparison (smoke harness + full 380 s
-verdict)** are complete. Remaining, in priority order:
+### 2026-07-14: IMU dual queue adopted; deskew remains off
 
-1. **G3 second-scenario validation** — repeat the stable-recovery rubric on HDL
-   kidnapped-start or Koide outdoor 180 s; optional G2 query-latency work (C++ NDT batch
-   scoring) if stale seeds reappear on faster bags.
-2. **Phase 2 Boreas recovery** — root-cause the `local_map_crop_too_small` cliff;
-   long-running sweeps interleave well with the above.
-3. **Next release tag** once the second G3 scenario reaches a boundary, rolling up the
-   current `Unreleased` batch.
+Koide IMUのacceleration単位、noise densityの離散化、初期速度、scan境界のqueue処理を分離して
+再評価した。scan-bounded dual queueとseed-consistency gateを組み合わせた候補は、
+`outdoor_hard_01a`先頭30秒、同sequenceの85秒offset、`outdoor_hard_02a`先頭30秒を各3 repeatし、
+全9 runでreject streak 0、coverage worst `96.7%`以上を満たした。このためdual queue本体を
+`imu_dual_queue_enabled=true`へ昇格した。
+
+一方、relative-motion deskewとの組み合わせは`outdoor_hard_02a`でtranslation RMSE medianが
+`0.095 m`から`0.146 m`へ悪化したため、continuous-time deskewはdefault-offを維持する。
+IMU runtime候補は「適用率を上げること」ではなく、open-loop seed accuracy gateを通過することを
+引き続き必須条件とする。
+
+### Current execution order
+
+Phase 0、Phase 1、Phase 3、G1、BBS speedup、G2、およびG3のKoide/HDL evidence gateは完了した。
+以降は次の順序で進める。
+
+1. **R3 G2 latency A/B** — KDTREE + 1 threadをbaselineに、`DIRECT7`の1/4 threadを同じ
+   Koide/HDL artifactで比較する。candidate rank、fitness、GT seed error、query latencyを保存し、
+   safety/accuracy gateを通るまでthread parameterを公開しない。
+2. **R3 Koide north-corridor alias rejection** — BBS top-K recallを維持したまま、route-cropまたは
+   軽量3D structure gateで南corridor aliasをoffline artifact上すべて棄却する。勝ったvariantだけを
+   guarded live integrationへ進め、false confirm 0を維持する。
+3. **R4 Boreas cause isolation** — dataset mount復帰後、GT oracle cropとregistration scoreで
+   約12秒のcliffをmap overlap、seasonal difference、prediction、registration basin、frame/timeの
+   いずれかへ分類してからruntime変更を行う。
+4. **R5 release gate** — Koide、HDL、Istanbul、および利用可能になったBoreasのone-command
+   regressionを通し、現在の`Unreleased` batchを次のrelease候補として判断する。
+
+### Execution plan from 2026-07-16
+
+1人で進める場合の実装目安は3--5週間とする。共有machineのidle待ちとBoreas mount待ちは
+この工数に含めない。各work packageは前段のgateを通過した場合だけ次へ進み、反証された
+variantは`experiments/`へ結果を残してruntimeへ昇格させない。
+
+| WP | 目安 | 実施内容 | 成果物 | Exit gate |
+| --- | --- | --- | --- | --- |
+| WP0: baseline固定 | 0.5--1日 | Koide north-corridorとHDL kidnapped-startの入力、map hash、candidate上限、repeat数、評価commandをmanifestへ固定する。buildとfocused testを通し、idle時のKDTREE/1-thread baselineを採取する | frozen manifest、baseline JSON/Markdown、実行環境metadata | 同じ入力からcandidate rank、fitness、seed error、query latencyを再生成できる |
+| WP1: G2 latency A/B | 2--4日 | `KDTREE/1`を対照に、内部実験設定だけで`DIRECT7/1`と`DIRECT7/4`を比較する。search methodとthread数を別要因として計測する | 3条件のcandidate-level CSV、repeat summary、採否記録、focused unit/CLI test | false accept 0、true candidateのrank/fitnessを悪化させず、query p95がstale-seed境界内に収まる。未達ならKDTREE/1を維持する |
+| WP2: north-corridor alias offline gate | 4--7日 | まずroute-cropを比較し、不十分な場合だけ高さ分布などの軽量3D structure gateを追加する。既に不採用となったKISS-Matcherのparameter sweepは再開しない | top-K候補artifact、alias分類表、route-crop/3D gate A/B、negative resultを含むexperiment log | true candidate recall@Kを維持し、既知の南corridor aliasを全repeatで棄却する。GTは評価専用でcandidate orderingに使わない |
+| WP3: guarded live integration | 3--5日 | WP1/WP2の勝者だけをopt-inでG2/G3へ接続する。attempt上限、cooldown、post-reset cross-check、既存fallbackを保持する | opt-in parameter/launch、policy test、Koide 3-repeat、HDL kidnapped-start regression | false confirm 0、reset loop 0、Koideで3回中2回以上end recovered、HDL gate pass。defaultはまだ変更しない |
+| WP4: Boreas cause isolation | 3--6日、data依存 | mount復帰後にdataset contractとmap hashを固定し、GT oracle crop、overlap、正解pose scoreで約12秒のcliffを分類する。原因確定前の閾値sweepは禁止する | machine-readable dataset manifest、60秒diagnostic report、原因仮説の採否 | cliff前後をmap/season/prediction/registration/frame-timeのいずれかで説明できる。可能なら120秒coverage 90%以上、RMSE 2 m以下 |
+| WP5: release decision | 2--3日 | load 5未満のidle machineでKoide、HDL、Istanbul、利用可能ならBoreasをone-command実行し、変更有無を比較する | release regression summary、CHANGELOG候補、migration/rollback note | crash/NaN/false confirm 0、既存release gate非劣化、2公開datasetで採用gate通過。未達ならexperimentalのまま次releaseから除外する |
+
+実行中は次の制約を固定する。
+
+- `continuous_time_deskew`はdefault-off、`NDT_OMP`は推奨backendのままとし、R3と無関係な
+  parameter tuningを混ぜない。
+- 新しいsearch method/thread設定はWP3完了まで公開parameterにしない。
+- 性能値は実行前loadが5未満のrunだけをclaimに用いる。現在のような高負荷時はbuild、unit test、
+  artifact生成までに留める。
+- Boreas mountが無い間はWP4を待たず、WP0--WP3とrelease harnessのdata-independent testを進める。
+- 各WP終了時に`development_plan.md`と対応するexperiment validation JSONを同じ変更で更新する。
