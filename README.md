@@ -13,7 +13,11 @@
   <img alt="License BSD 2 Clause" src="https://img.shields.io/badge/license-BSD--2--Clause-6b46c1">
 </p>
 
-<p><a href="./docs/koide_gif_gallery.md">Koide indoor/outdoor dataset GIF gallery</a></p>
+<img src="./images/path.png" alt="LiDAR localization path over pointcloud map" width="720">
+
+<p><sub>Green: localized path. Red: pointcloud map. Grid: 50 m × 50 m cells.</sub></p>
+
+<p><a href="./docs/koide_gif_gallery.md">Explore the complete Koide indoor/outdoor GIF gallery →</a></p>
 
 </div>
 
