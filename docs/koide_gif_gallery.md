@@ -63,34 +63,46 @@ reference trajectory.
 These GIFs are generated from recorded `/pcl_pose`, not copied from ground truth. Each
 run covers the first 30 seconds of its bag, except `outdoor_kidnap_a`, which starts at
 `+0.6 s` so the published ground truth overlaps the replay. Indoor runs are LiDAR-only;
-outdoor runs use guarded IMU preintegration.
+outdoor runs use scan-bounded dual-queue IMU preintegration with the correction guard
+and `imu_accel_scale: 9.80665` (the Koide Livox bags publish acceleration in g).
 
-Indoor IMU was evaluated on `indoor_easy_01` with the published
-`depth_camera_link` to `imu_link` extrinsic and the correction guard enabled. Across
-three 30-second repeats, LiDAR-only achieved median translation/rotation RMSE of
-0.070 m / 1.58 deg and 100.0% diagnostic OK, while LiDAR + IMU achieved
-2.749 m / 4.69 deg and 94.2% diagnostic OK. The IMU transform failure count was zero
-in all three IMU runs, but every IMU run had higher translation RMSE, so indoor IMU was
-not adopted for these replays.
+The table below is the 2026-07-17 measurement on a quiet machine. Two earlier defects
+were fixed before it: the IMU acceleration unit/variance bugs (dual-queue
+preintegration work) and a missing `imu_accel_scale` in the generated benchmark
+manifests. The 2026-07-13 artifacts are archived next to the current runs
+(`runs_20260713/`). Coverage is the accepted-pose time span over the 30 s window; a
+low coverage means the estimator stopped publishing rather than tracked badly.
 
-This is a short-window engineering check, not a full-sequence benchmark. `Partial` means
-the matched poses were locally accurate but tracking coverage was low. A high diagnostic
-OK rate does not prove accuracy: `indoor_kidnap_01` is the clearest counterexample, with
-100% diagnostic OK rows but 11.10 m translation RMSE against ground truth.
+This is a short-window engineering check, not a full-sequence benchmark. Local
+diagnostics cannot prove accuracy: `indoor_kidnap_01` locks onto a wrong,
+locally-self-consistent match (map aliasing) that only ground truth reveals.
 
-| Bag | Mode | Matched poses | Translation RMSE | Rotation RMSE | Diagnostic OK | IMU seed | Result |
-|---|---|---:|---:|---:|---:|---:|---|
-| `indoor_easy_01` | LiDAR | 302 | 0.066 m | 1.37 deg | 100.0% | n/a | Bounded |
-| `indoor_easy_02` | LiDAR | 332 | 0.053 m | 1.35 deg | 100.0% | n/a | Bounded |
-| `indoor_hard_01` | LiDAR | 83 | 6.012 m | 46.63 deg | 25.6% | n/a | Failed |
-| `indoor_kidnap_01` | LiDAR | 298 | 11.095 m | 131.45 deg | 100.0% | n/a | Aliased |
-| `indoor_kidnap_02` | LiDAR | 183 | 9.808 m | 107.51 deg | 53.7% | n/a | Failed |
-| `outdoor_hard_01a` | LiDAR + IMU | 48 | 0.400 m | 3.88 deg | 58.8% | 63.8% | Partial |
-| `outdoor_hard_01b` | LiDAR + IMU | 46 | 1.347 m | 28.64 deg | 50.7% | 62.7% | Failed |
-| `outdoor_hard_02a` | LiDAR + IMU | 14 | 0.186 m | 0.51 deg | 16.7% | 17.9% | Partial |
-| `outdoor_hard_02b` | LiDAR + IMU | 63 | 1.593 m | 12.03 deg | 59.8% | 68.6% | Failed |
-| `outdoor_kidnap_a` | LiDAR + IMU | 91 | 0.191 m | 0.89 deg | 89.8% | 96.9% | Bounded |
-| `outdoor_kidnap_b` | LiDAR + IMU | 97 | 0.569 m | 5.12 deg | 84.2% | 93.9% | Drifted |
+| Bag | Mode | Matched poses | Coverage | Translation RMSE | Rotation RMSE | Result |
+|---|---|---:|---:|---:|---:|---|
+| `indoor_easy_01` | LiDAR | 315 | 94.3% | 0.061 m | 1.46 deg | Bounded |
+| `indoor_easy_02` | LiDAR | 342 | 92.9% | 0.127 m | 1.25 deg | Bounded |
+| `indoor_hard_01` | LiDAR | 289 | 93.3% | 5.444 m | 131.08 deg | Failed |
+| `indoor_kidnap_01` | LiDAR | 52 | 15.6% | 7.237 m | 115.92 deg | Aliased |
+| `indoor_kidnap_02` | LiDAR | 223 | 66.2% | 8.624 m | 119.07 deg | Failed |
+| `outdoor_hard_01a` | LiDAR + IMU | 93 | 90.0% | 0.198 m | 0.99 deg | Bounded |
+| `outdoor_hard_01b` | LiDAR + IMU | 84 | 91.7% | 0.668 m | 23.31 deg | Degraded |
+| `outdoor_hard_02a` | LiDAR + IMU | 91 | 91.0% | 0.181 m | 0.97 deg | Bounded |
+| `outdoor_hard_02b` | LiDAR + IMU | 101 | 92.3% | 0.243 m | 1.06 deg | Bounded |
+| `outdoor_kidnap_a` | LiDAR + IMU | 97 | 93.7% | 0.209 m | 0.58 deg | Bounded |
+| `outdoor_kidnap_b` | LiDAR + IMU | 106 | 91.7% | 0.271 m | 0.73 deg | Bounded |
+
+Versus the 2026-07-13 measurement, the IMU fixes repaired every outdoor failure mode
+but one: `outdoor_hard_01a` 0.400 m/48 poses -> 0.198 m/93 poses, `outdoor_hard_02a`
+14 poses (83% of the window unscored) -> 91 poses, `outdoor_hard_02b` 1.593 m/12.0 deg
+-> 0.243 m/1.06 deg, `outdoor_kidnap_b` 0.569 m/5.1 deg -> 0.271 m/0.73 deg.
+`outdoor_hard_01b` improved (1.347 m/28.6 deg -> 0.668 m/23.3 deg) but still has one
+late rotation-divergence event with the error growing at the window end. The indoor
+hard/kidnap failures are unchanged and tracked separately: sparse deskew-incapable
+depth-camera scans (~100 filtered points) destabilize NDT on `indoor_hard_01` /
+`indoor_kidnap_02`, and `indoor_kidnap_01` needs global verification, not local
+tuning. `indoor_easy_02` showed one transient bad run during the sweep (archived as
+`runs/indoor_easy_02_outlier_run1`); the tabulated rerun matches its historical
+behavior.
 
 ### Indoor easy 01 measured
 
