@@ -6,6 +6,7 @@ from typing import Optional
 
 import rclpy
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from nav_msgs.msg import Odometry
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy
@@ -40,12 +41,14 @@ class BenchmarkPoseRecorder(Node):
         self.declare_parameter("qos_reliability", "reliable")
         self.declare_parameter("qos_durability", "transient_local")
         self.declare_parameter("use_node_clock", False)
+        self.declare_parameter("message_type", "pose_with_covariance_stamped")
 
         self._topic = str(self.get_parameter("topic").value)
         self._output_path = str(self.get_parameter("output_path").value)
         self._qos_reliability = str(self.get_parameter("qos_reliability").value)
         self._qos_durability = str(self.get_parameter("qos_durability").value)
         self._use_node_clock = bool(self.get_parameter("use_node_clock").value)
+        self._message_type = str(self.get_parameter("message_type").value).strip().lower()
         self._message_count = 0
         self._last_stamp: Optional[float] = None
 
@@ -56,6 +59,7 @@ class BenchmarkPoseRecorder(Node):
             [
                 "message_index",
                 "stamp_sec",
+                "receive_stamp_sec",
                 "frame_id",
                 "position_x",
                 "position_y",
@@ -72,37 +76,48 @@ class BenchmarkPoseRecorder(Node):
         qos.reliability = parse_reliability(self._qos_reliability)
         qos.durability = parse_durability(self._qos_durability)
 
+        if self._message_type == "pose_with_covariance_stamped":
+            message_class = PoseWithCovarianceStamped
+        elif self._message_type == "odometry":
+            message_class = Odometry
+        else:
+            raise ValueError(
+                "message_type must be pose_with_covariance_stamped or odometry, got "
+                f"{self._message_type!r}"
+            )
         self._subscription = self.create_subscription(
-            PoseWithCovarianceStamped,
-            self._topic,
-            self._callback,
-            qos,
-        )
+            message_class, self._topic, self._callback, qos)
         self.get_logger().info(
             f"Recording poses from {self._topic} to {self._output_path}"
-            f" with reliability={self._qos_reliability} durability={self._qos_durability}"
+            f" as {self._message_type} with reliability={self._qos_reliability}"
+            f" durability={self._qos_durability}"
         )
 
-    def _callback(self, msg: PoseWithCovarianceStamped) -> None:
+    def _callback(self, msg) -> None:
+        receive_now = self.get_clock().now().to_msg()
+        receive_stamp_sec = float(receive_now.sec) + float(receive_now.nanosec) * 1e-9
         if self._use_node_clock:
-            now = self.get_clock().now().to_msg()
-            stamp_sec = float(now.sec) + float(now.nanosec) * 1e-9
+            stamp_sec = receive_stamp_sec
         else:
             stamp_sec = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
-        covariance = " ".join(f"{value:.10g}" for value in msg.pose.covariance)
+        pose_with_covariance = msg.pose
+        covariance = " ".join(
+            f"{value:.10g}" for value in pose_with_covariance.covariance)
+        pose = pose_with_covariance.pose
 
         self._writer.writerow(
             [
                 self._message_count,
                 f"{stamp_sec:.9f}",
+                f"{receive_stamp_sec:.9f}",
                 msg.header.frame_id,
-                f"{msg.pose.pose.position.x:.10f}",
-                f"{msg.pose.pose.position.y:.10f}",
-                f"{msg.pose.pose.position.z:.10f}",
-                f"{msg.pose.pose.orientation.x:.10f}",
-                f"{msg.pose.pose.orientation.y:.10f}",
-                f"{msg.pose.pose.orientation.z:.10f}",
-                f"{msg.pose.pose.orientation.w:.10f}",
+                f"{pose.position.x:.10f}",
+                f"{pose.position.y:.10f}",
+                f"{pose.position.z:.10f}",
+                f"{pose.orientation.x:.10f}",
+                f"{pose.orientation.y:.10f}",
+                f"{pose.orientation.z:.10f}",
+                f"{pose.orientation.w:.10f}",
                 covariance,
             ]
         )

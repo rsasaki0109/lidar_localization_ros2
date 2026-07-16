@@ -6,10 +6,17 @@ import subprocess
 import tempfile
 import time
 import unittest
+import importlib.util
+from importlib.machinery import SourceFileLoader
 
 
 REPO = Path(__file__).resolve().parents[1]
 RUNNER = REPO / "scripts" / "benchmark_runner"
+LOADER = SourceFileLoader("benchmark_runner", str(RUNNER))
+SPEC = importlib.util.spec_from_loader("benchmark_runner", LOADER)
+RUNNER_MODULE = importlib.util.module_from_spec(SPEC)
+assert SPEC.loader is not None
+SPEC.loader.exec_module(RUNNER_MODULE)
 
 
 def child_pids(pid: int) -> list[int]:
@@ -28,6 +35,17 @@ def cmdline(pid: int) -> str:
 
 
 class BenchmarkRunnerCleanupTest(unittest.TestCase):
+    def test_target_pid_matches_executable_not_argument_text(self):
+        original = RUNNER_MODULE.scan_processes
+        RUNNER_MODULE.scan_processes = lambda: [
+            {"pid": 10, "argv0": "python3", "cmdline": "runner --target fastlio_mapping"},
+            {"pid": 20, "argv0": "/opt/bin/fastlio_mapping", "cmdline": "/opt/bin/fastlio_mapping"},
+        ]
+        try:
+            self.assertEqual(RUNNER_MODULE.find_latest_pid("fastlio_mapping"), 20)
+        finally:
+            RUNNER_MODULE.scan_processes = original
+
     def run_interrupted_benchmark(self, interrupt_signal: signal.Signals, expected_code: int):
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "output"

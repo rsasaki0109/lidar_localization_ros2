@@ -43,14 +43,23 @@ def scan_processes() -> List[Dict[str, object]]:
                 parts = [chunk.decode("utf-8", errors="ignore") for chunk in stream.read().split(b"\0") if chunk]
             if not parts:
                 continue
-            entries.append({"pid": pid, "cmdline": " ".join(parts)})
+            entries.append({
+                "pid": pid,
+                "argv0": parts[0],
+                "cmdline": " ".join(parts),
+            })
         except OSError:
             continue
     return entries
 
 
 def find_latest_pid(pattern: str) -> Optional[int]:
-    matches = [entry["pid"] for entry in scan_processes() if pattern in str(entry["cmdline"])]
+    # Match the executable itself. The runner and ros2-launch wrapper both carry
+    # target_process_pattern in their argument strings, so a full-cmdline match
+    # silently monitors the wrong process before the actual node has spawned.
+    matches = [
+        entry["pid"] for entry in scan_processes()
+        if pattern in os.path.basename(str(entry.get("argv0", "")))]
     return max(matches) if matches else None
 
 
@@ -371,6 +380,12 @@ def parse_args() -> argparse.Namespace:
         help="Pose topic recorded into CSV",
     )
     parser.add_argument(
+        "--record-message-type",
+        choices=["pose_with_covariance_stamped", "odometry"],
+        default="pose_with_covariance_stamped",
+        help="ROS message type recorded into CSV",
+    )
+    parser.add_argument(
         "--record-qos-reliability",
         default="reliable",
         help="QoS reliability for the pose recorder: reliable or best_effort",
@@ -514,7 +529,8 @@ def main() -> int:
         "ros2 run lidar_localization_ros2 benchmark_pose_recorder "
         f"--ros-args -p topic:={args.record_topic} -p output_path:={pose_csv_path} "
         f"-p qos_reliability:={args.record_qos_reliability} "
-        f"-p qos_durability:={args.record_qos_durability}"
+        f"-p qos_durability:={args.record_qos_durability} "
+        f"-p message_type:={args.record_message_type}"
     )
     if args.record_use_node_clock:
         recorder_command += " -p use_node_clock:=true"
@@ -604,6 +620,7 @@ def main() -> int:
         "bag_path": args.bag_path,
         "output_dir": os.path.abspath(args.output_dir),
         "record_topic": args.record_topic,
+        "record_message_type": args.record_message_type,
         "record_qos_reliability": args.record_qos_reliability,
         "record_qos_durability": args.record_qos_durability,
         "record_use_node_clock": args.record_use_node_clock,
