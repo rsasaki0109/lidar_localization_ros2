@@ -1,0 +1,79 @@
+{
+  "dataset": {
+    "sequence": "outdoor_hard_01a",
+    "archive_md5": "d126024c8f310c2c48239f136d7e0ed0",
+    "ground_truth_archive_md5": "ab2a80dc1d06767b7c3ce1893f3020b0"
+  },
+  "implementation": {
+    "backend": "GLIM CPU GICP with IMU and online submap/global graph",
+    "glim_revision": "faa264a1bce1bda406f73457e35511f56cdc2eaa",
+    "glim_ros2_revision": "fc72f4603ed2d3dffcdf94cda5617963afe57e82",
+    "base_image_digest": "sha256:b487fb5c4f3fc2cd68407ce20c1952f31492124554d05b7e29f41c82a713dd38",
+    "validated_image_id": "sha256:1002a7bc67d26f5605173f33784e08690c0c45f2c332853db18013d3967e6f17",
+    "trajectory_postprocess": ["per-submap online graph correction", "constant-z ground vehicle constraint"],
+    "ground_truth_used_by_estimator": false
+  },
+  "thresholds": {
+    "coverage_ratio_min": 0.99,
+    "final_lag_sec_max": 1.0,
+    "max_pose_gap_sec_max": 1.0,
+    "translation_ate_rmse_m_max": 2.0,
+    "translation_end_error_m_max": 5.0,
+    "rpe_translation_median_m_max": 0.2,
+    "rpe_rotation_median_deg_max": 1.0,
+    "processing_p95_le_scan_period": true,
+    "required_repeats": 3
+  },
+  "runs": [
+    {
+      "run": 1,
+      "ok": true,
+      "coverage_ratio": 0.992104793222327,
+      "final_lag_sec": 0.0,
+      "max_pose_gap_sec": 0.10016703605651855,
+      "translation_ate_rmse_m": 1.7363033306432758,
+      "translation_end_error_m": 4.425171483146234,
+      "rpe_translation_median_m": 0.1602838029674319,
+      "rpe_rotation_median_deg": 0.6735695217873208,
+      "processing_p95_sec": 0.088356993,
+      "scan_period_sec": 0.10004591941833496,
+      "max_queue_depth": 7,
+      "skipped_sparse_frames": 9
+    },
+    {
+      "run": 2,
+      "ok": true,
+      "coverage_ratio": 0.992104793222327,
+      "final_lag_sec": 0.0,
+      "max_pose_gap_sec": 0.10016703605651855,
+      "translation_ate_rmse_m": 1.866071217608604,
+      "translation_end_error_m": 4.602606387410791,
+      "rpe_translation_median_m": 0.15615956343332066,
+      "rpe_rotation_median_deg": 0.678919697320001,
+      "processing_p95_sec": 0.073724287,
+      "scan_period_sec": 0.10004591941833496,
+      "max_queue_depth": 7,
+      "skipped_sparse_frames": 9
+    },
+    {
+      "run": 3,
+      "ok": true,
+      "coverage_ratio": 0.992104793222327,
+      "final_lag_sec": 0.0,
+      "max_pose_gap_sec": 0.10016703605651855,
+      "translation_ate_rmse_m": 1.5287335435591154,
+      "translation_end_error_m": 3.8705191817094686,
+      "rpe_translation_median_m": 0.16111279551086652,
+      "rpe_rotation_median_deg": 0.6755081904388309,
+      "processing_p95_sec": 0.066394446,
+      "scan_period_sec": 0.10004591941833496,
+      "max_queue_depth": 7,
+      "skipped_sparse_frames": 9
+    }
+  ],
+  "aggregate": {
+    "ok": true,
+    "passing_run_count": 3,
+    "failed_gates": []
+  }
+}

@@ -190,6 +190,12 @@ ros2 run lidar_localization_ros2 run_release_regression_suite.sh
 
 Public replay validation does not replace sensor-specific or real-robot testing.
 
+The experimental LiDAR/IMU track now has a reproducible 3/3 full-sequence pass on
+Koide `outdoor_hard_01a`. See the
+[GLIM GICP 6500 result](experiments/koide_odometry_glim_gicp6500/README.md) for
+metrics, fixed configuration, image provenance, and the replay command. This is
+research evidence and does not change the runtime default.
+
 ## Documentation
 
 | Need | Document |
@@ -200,7 +206,7 @@ Public replay validation does not replace sensor-specific or real-robot testing.
 | Nav2/MID-360 | [MID-360 bringup](docs/mid360_legged_jetson.md) |
 | IMU and covariance | [IMU estimation](docs/imu_estimation.md), [pose covariance](docs/pose_covariance.md) |
 | Relocalization | [global localization](docs/global_localization.md), [v1.1 relocalization](docs/v1_1_relocalization.md) |
-| Plans and decisions | [development plan](docs/development_plan.md), [decisions](docs/decisions.md) |
+| Plans and decisions | [development plan](docs/development_plan.md), [global localization + LIO plan](docs/global_localization_lio_development_plan.md), [decisions](docs/decisions.md) |
 
 ## Support
 

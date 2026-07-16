@@ -1,0 +1,35 @@
+# Primary tightly-coupled LiDAR/IMU candidate for the 380 s completion gate.
+# External source is the official hku-mars/FAST_LIO ROS2 branch; no GT or map is
+# passed to the process under test.
+mode: run
+dataset:
+  bag_path: repo://data/public/koide_hard_localization/sequences/outdoor_hard_01a
+  reference_csv: repo://data/public/koide_hard_localization/benchmark/outdoor_hard_01a/reference.csv
+  cloud_topic: /livox/lidar
+  imu_topic: /livox/imu
+system:
+  command: >-
+    ros2 launch fast_lio mapping.launch.py
+    use_sim_time:=true rviz:=false
+    config_path:=$(ros2 pkg prefix lidar_localization_ros2)/share/lidar_localization_ros2/param/odometry
+    config_file:=fast_lio_koide_outdoor.yaml
+benchmark:
+  output_dir: /tmp/lidarloc_koide_01a_full380_fast_lio_feature_biasadapt_run01
+  ros_domain_id: 159
+  target_process_pattern: fastlio_mapping
+  record_topic: /Odometry
+  record_message_type: odometry
+  record_qos_reliability: reliable
+  record_qos_durability: volatile
+  record_use_sim_time: true
+  diagnostic_topic: ''
+  # Wait for rosbag2 EOF. A wall-clock cutoff can truncate simulated time when
+  # compute backpressure slows playback and would invalidate coverage evidence.
+  bag_duration: 0.0
+  bag_start_offset: 0.0
+  settle_seconds: 5.0
+  post_roll_seconds: 1.0
+  max_time_diff: 0.05
+  write_health_summary: false
+  write_disabled_relocalization_attempts: false
+  write_relocalization_attempt_summary: false

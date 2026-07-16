@@ -1,0 +1,35 @@
+# Reproducible LiDAR-only control for the 380 s odometry completion gate.
+# KISS-ICP is an external MIT sidecar pinned separately; it does not consume GT,
+# the map, or IMU. A tightly coupled LIO must beat this control to satisfy the
+# LiDAR/IMU odometry goal.
+mode: run
+dataset:
+  bag_path: repo://data/public/koide_hard_localization/sequences/outdoor_hard_01a
+  reference_csv: repo://data/public/koide_hard_localization/benchmark/outdoor_hard_01a/reference.csv
+  cloud_topic: /livox/points
+  imu_topic: /livox/imu
+system:
+  command: >-
+    ros2 launch kiss_icp odometry.launch.py
+    topic:=/livox/points visualize:=false use_sim_time:=true
+    base_frame:=livox_frame lidar_odom_frame:=odom
+    publish_odom_tf:=true invert_odom_tf:=false
+    config_file:=$(ros2 pkg prefix lidar_localization_ros2)/share/lidar_localization_ros2/param/odometry/kiss_icp_koide_outdoor.yaml
+benchmark:
+  output_dir: /tmp/lidarloc_koide_01a_full380_kiss_icp_run01
+  ros_domain_id: 151
+  target_process_pattern: kiss_icp_node
+  record_topic: /kiss/odometry
+  record_message_type: odometry
+  record_qos_reliability: reliable
+  record_qos_durability: volatile
+  record_use_sim_time: true
+  diagnostic_topic: ''
+  bag_duration: 0.0
+  bag_start_offset: 0.0
+  settle_seconds: 5.0
+  post_roll_seconds: 1.0
+  max_time_diff: 0.05
+  write_health_summary: false
+  write_disabled_relocalization_attempts: false
+  write_relocalization_attempt_summary: false

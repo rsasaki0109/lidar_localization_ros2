@@ -17,6 +17,10 @@ moving files into subdirectories.
 | Run release regression | `run_release_regression_suite.sh` |
 | Run manifest benchmark | `benchmark_from_manifest` |
 | Compare benchmark runs | `benchmark_compare_runs` |
+| Build odometry runtime evidence | `build_odometry_runtime_evidence.py` |
+| Run fixed GLIM Koide odometry benchmark | `run_koide_glim_odometry_benchmark.py` |
+| Check Koide 380 s odometry goal | `check_koide_odometry_completion.py` |
+| Require Koide completion repeats | `summarize_koide_odometry_completion.py` |
 
 ## Categories
 

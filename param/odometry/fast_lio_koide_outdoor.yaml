@@ -1,0 +1,49 @@
+# FAST-LIO2 external-sidecar configuration for Koide outdoor_hard sequences.
+# The bag provides synchronized Livox CustomMsg and IMU topics. GT and the
+# localization map are deliberately absent from this runtime configuration.
+/**:
+  ros__parameters:
+    # Selected by the 170 s comparison: feature extraction reduced difficult-
+    # corner drift versus raw-point mode while lowering p95 latency.
+    feature_extract_enable: true
+    point_filter_num: 3
+    max_iteration: 3
+    filter_size_surf: 0.5
+    filter_size_map: 0.5
+    cube_side_length: 1000.0
+    runtime_pos_log_enable: false
+    map_file_path: /tmp/fast_lio_koide_unused.pcd
+    common:
+      lid_topic: /livox/lidar
+      imu_topic: /livox/imu
+      time_sync_en: false
+      time_offset_lidar_to_imu: 0.0
+    preprocess:
+      lidar_type: 1
+      scan_line: 6
+      blind: 1.0
+      timestamp_unit: 3
+      scan_rate: 10
+    mapping:
+      acc_cov: 0.1
+      gyr_cov: 0.1
+      b_acc_cov: 0.0001
+      # 170 s sweep winner (1e-6, 1e-4, 1e-3, 1e-2 compared).
+      b_gyr_cov: 0.001
+      fov_degree: 360.0
+      det_range: 100.0
+      extrinsic_est_en: false
+      extrinsic_T: [0.0, 0.0, 0.0]
+      extrinsic_R: [1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0]
+    publish:
+      path_en: false
+      effect_map_en: false
+      map_en: false
+      scan_publish_en: false
+      dense_publish_en: false
+      scan_bodyframe_pub_en: false
+    pcd_save:
+      pcd_save_en: false
+      interval: -1

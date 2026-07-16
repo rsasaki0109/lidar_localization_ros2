@@ -1,0 +1,28 @@
+diff --git a/src/glim/odometry/async_odometry_estimation.cpp b/src/glim/odometry/async_odometry_estimation.cpp
+--- a/src/glim/odometry/async_odometry_estimation.cpp
++++ b/src/glim/odometry/async_odometry_estimation.cpp
+@@ -124,17 +124,25 @@ void AsyncOdometryEstimation::run() {
+       }
+ 
+       const auto& frame = raw_frames.front();
++      const auto processing_start = std::chrono::steady_clock::now();
+       std::vector<EstimationFrame::ConstPtr> marginalized;
+       auto state = odometry_estimation->insert_frame(frame, marginalized);
++      const double processing_sec = std::chrono::duration<double>(
++        std::chrono::steady_clock::now() - processing_start).count();
+ 
+       output_estimation_results.push_back(state);
+       output_marginalized_frames.insert(marginalized);
+       raw_frames.pop_front();
+       internal_frame_queue_size = raw_frames.size();
++      logger->info(
++        "LIDARLOC_ODOMETRY_RUNTIME stamp={:.9f} processing_sec={:.9f} queue_after={}",
++        frame->stamp,
++        processing_sec,
++        internal_frame_queue_size.load());
+     }
+   }
+ 
+   auto marginalized = odometry_estimation->get_remaining_frames();
+   output_marginalized_frames.insert(marginalized);
+ }
