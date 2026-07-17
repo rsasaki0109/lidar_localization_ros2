@@ -5,10 +5,12 @@ LABEL org.opencontainers.image.description="GLIM v1.2.2 CPU benchmark with runti
       org.opencontainers.image.revision.glim_ros2="fc72f4603ed2d3dffcdf94cda5617963afe57e82"
 
 COPY patches/glim-runtime-instrumentation.patch /tmp/
+COPY patches/glim-gicp-coreset.patch /tmp/
 COPY patches/glim-ros-runtime-and-sparse-guard.patch /tmp/
 
 RUN cd /root/ros2_ws/src/glim \
     && patch -p1 < /tmp/glim-runtime-instrumentation.patch \
+    && patch -p1 < /tmp/glim-gicp-coreset.patch \
     && cd /root/ros2_ws/src/glim_ros2 \
     && patch -p1 < /tmp/glim-ros-runtime-and-sparse-guard.patch \
     && . /opt/ros/jazzy/setup.sh \

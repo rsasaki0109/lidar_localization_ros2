@@ -152,3 +152,34 @@ odometry continuous in the odom frame and applying graph-style corrections
 downstream (map -> odom), per the development plan's architecture rule.
 Open-loop artifacts: `pose_trace_openloop_planar.csv` /
 `odometry_completion_openloop_planar.json` in each gate-run directory.
+
+## Exact-coreset GICP linearization (glim_cpu2 reproduction M2, 2026-07-17)
+
+`patches/glim-gicp-coreset.patch` adds an `IntegratedGICPFactorCoreset_` to the
+image (clean-room fast-Caratheodory, arXiv:2505.01017): the first LM iteration
+per frame linearizes over all points and extracts a <=32-block weighted coreset
+that reproduces H/b/c exactly; later iterations reuse it while the pose stays
+within 0.1 m / 1 deg of the anchor. The cost (`error()`) path always evaluates
+the full set so LM step acceptance is unchanged. Enabled via
+`param/odometry/glim_koide_outdoor_gicp6500_coreset` (the baseline config is
+unchanged and remains the validated reference).
+
+12 runs (image `lidarloc/glim-ros2:jazzy-v1.2.2-coreset`, load median 1.9-4.0,
+run dirs `/tmp/lidarloc_koide_*_coreset*`):
+
+| Seq | ATE RMSE (baseline) | RPE_t (baseline) | p95 (baseline) |
+| --- | --- | --- | --- |
+| 01a x3 | 1.497--1.552 (1.529--1.866) | 0.168--0.184 (0.156--0.161) | 0.030--0.034 (0.066--0.088) |
+| 01b x3 | 1.314--2.034 (1.808--1.966) | 0.288--0.294 (0.249--0.276) | 0.033--0.054 (0.044) |
+| 02a x3 | 2.091--2.275 (1.884--2.341) | 0.180--0.190 (0.141--0.160) | 0.030 (0.034) |
+| 02b x3 | 1.124--1.541 (1.277--1.518) | 0.264--0.301 (0.211--0.231) | 0.032--0.033 (0.042) |
+
+Findings: `outdoor_hard_01a` passes ALL strict gates 3/3 with the coreset (ATE
+best-of-family, p95 2-3x faster); all 12 runs keep every plan-level gate
+(coverage, arrival, drift <=1%, zero crash/NaN/reset, realtime). Cost: 10 m RPE
+translation rises ~10-25% everywhere (correspondences and mahalanobis weights
+are frozen at the coreset anchor within a frame), so the b-leg RPE gate remains
+failing and 02a still straddles the 2.0 m ATE gate. A size-64 run on 01a left
+RPE_t unchanged (0.182) -- the RPE cost comes from the reuse tolerance, not the
+coreset size. The coreset stays an opt-in variant config; the validated
+baseline remains the default.
