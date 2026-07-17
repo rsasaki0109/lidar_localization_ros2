@@ -154,9 +154,15 @@ set(LIDAR_LOCALIZATION_BENCHMARK_SCRIPTS
   scripts/build_public_demo_report.py
   scripts/build_public_validation_dashboard.py
   scripts/build_relocalization_demo_report.py
+  scripts/build_odometry_runtime_evidence.py
+  scripts/build_glim_runtime_evidence.py
+  scripts/check_koide_odometry_completion.py
+  scripts/convert_glim_dump_to_pose_csv.py
   scripts/compare_nav2_reinit_supervisor_runs.py
   scripts/compare_registration_relocalization_score_summaries.py
-  scripts/make_localization_comparison_report.py)
+  scripts/make_localization_comparison_report.py
+  scripts/run_koide_glim_odometry_benchmark.py
+  scripts/summarize_koide_odometry_completion.py)
 
 set(LIDAR_LOCALIZATION_DATA_SCRIPTS
   scripts/augment_pointcloud_intensity.py
@@ -389,6 +395,24 @@ if(BUILD_TESTING)
   add_test(
     NAME alignment_failure_taxonomy
     COMMAND test_alignment_failure_taxonomy
+  )
+
+  add_executable(test_exact_quadratic_coreset
+    test/test_exact_quadratic_coreset.cpp)
+  target_include_directories(test_exact_quadratic_coreset PRIVATE
+    include)
+  add_test(
+    NAME exact_quadratic_coreset
+    COMMAND test_exact_quadratic_coreset
+  )
+
+  add_executable(test_exact_quadratic_coreset_reuse
+    test/test_exact_quadratic_coreset_reuse.cpp)
+  target_include_directories(test_exact_quadratic_coreset_reuse PRIVATE
+    include)
+  add_test(
+    NAME exact_quadratic_coreset_reuse
+    COMMAND test_exact_quadratic_coreset_reuse
   )
 
   add_executable(test_alignment_diagnostic_ros_adapter
@@ -887,6 +911,26 @@ if(BUILD_TESTING)
   add_test(
     NAME check_koide_recovery_health
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_check_koide_recovery_health.py
+  )
+  add_test(
+    NAME check_koide_odometry_completion
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_check_koide_odometry_completion.py
+  )
+  add_test(
+    NAME convert_glim_dump_to_pose_csv
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_convert_glim_dump_to_pose_csv.py
+  )
+  add_test(
+    NAME build_odometry_runtime_evidence
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_build_odometry_runtime_evidence.py
+  )
+  add_test(
+    NAME build_glim_runtime_evidence
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_build_glim_runtime_evidence.py
+  )
+  add_test(
+    NAME summarize_koide_odometry_completion
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_summarize_koide_odometry_completion.py
   )
   # Parity check for the optional C++ backend: compares bbs_cpp against the
   # Python reference when the compiled module is importable, and skips cleanly

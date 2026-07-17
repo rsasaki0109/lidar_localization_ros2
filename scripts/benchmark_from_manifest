@@ -4,6 +4,7 @@ import argparse
 import copy
 import json
 import os
+import signal
 import shlex
 import subprocess
 import sys
@@ -121,7 +122,21 @@ def run_command(command: list[str], print_only: bool) -> None:
     print(" ".join(quote(part) for part in command), flush=True)
     if print_only:
         return
-    subprocess.run(command, check=True)
+    process = subprocess.Popen(command, start_new_session=True)
+    try:
+        return_code = process.wait()
+    except KeyboardInterrupt:
+        # benchmark_runner owns its child process groups and handles SIGINT by
+        # synchronously cleaning them. Forward the interrupt instead of leaving
+        # an orphan replay when this manifest wrapper is interrupted.
+        try:
+            os.killpg(process.pid, signal.SIGINT)
+        except ProcessLookupError:
+            pass
+        return_code = process.wait()
+        raise
+    if return_code != 0:
+        raise subprocess.CalledProcessError(return_code, command)
 
 
 def csv_arg(value: Any) -> str:
@@ -1139,8 +1154,15 @@ def build_localization_yaml(
 def build_system_command(
     manifest: Dict[str, Any],
     manifest_dir: Path,
-    generated_yaml: Path,
+    generated_yaml: Optional[Path],
 ) -> str:
+    system = manifest.get("system")
+    if system is not None:
+        if not isinstance(system, dict) or not system.get("command"):
+            raise RuntimeError("system must be a mapping with a non-empty command")
+        return str(system["command"])
+    if generated_yaml is None:
+        raise RuntimeError("generated localization YAML is required without system.command")
     localizer = manifest.get("localizer", {})
     dataset = manifest.get("dataset", {})
     launch_package = str(localizer.get("launch_package", "lidar_localization_ros2"))
@@ -1188,7 +1210,11 @@ def run_single_benchmark(
     generated_dir = output_dir / "generated"
     generated_dir.mkdir(parents=True, exist_ok=True)
 
-    generated_yaml = build_localization_yaml(manifest, manifest_dir, generated_dir, print_only)
+    generated_yaml = (
+        None
+        if "system" in manifest
+        else build_localization_yaml(manifest, manifest_dir, generated_dir, print_only)
+    )
     system_command = build_system_command(manifest, manifest_dir, generated_yaml)
     manifest_copy_path = generated_dir / "manifest.yaml"
     write_yaml(manifest_copy_path, manifest)
@@ -1207,6 +1233,8 @@ def run_single_benchmark(
         str(benchmark.get("target_process_pattern", "lidar_localization_node")),
         "--record-topic",
         str(benchmark.get("record_topic", "/pcl_pose")),
+        "--record-message-type",
+        str(benchmark.get("record_message_type", "pose_with_covariance_stamped")),
         "--record-qos-reliability",
         str(benchmark.get("record_qos_reliability", "reliable")),
         "--record-qos-durability",

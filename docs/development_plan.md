@@ -10,6 +10,8 @@ claim rules and decision gates win.
 
 Related documents:
 
+- [global_localization_lio_development_plan.md](global_localization_lio_development_plan.md):
+  integrated global localization and LiDAR/IMU odometry architecture, backend choices, and gates
 - [research_driven_development_plan.md](research_driven_development_plan.md): post-2026-07-09
   literature-driven priorities, hypotheses, and experiment gates
 - [competitive_roadmap.md](competitive_roadmap.md): mission, competitors, decision gates, claim rules

@@ -1,0 +1,47 @@
+diff --git a/src/glim_ros/glim_ros.cpp b/src/glim_ros/glim_ros.cpp
+--- a/src/glim_ros/glim_ros.cpp
++++ b/src/glim_ros/glim_ros.cpp
+@@ -3,6 +3,7 @@
+ #define GLIM_ROS2
+ 
+ #include <deque>
++#include <chrono>
+ #include <thread>
+ #include <iostream>
+ #include <functional>
+@@ -279,6 +280,7 @@ void GlimROS::image_callback(const sensor_msgs::msg::Image::ConstSharedPtr msg)
+ #endif
+ 
+ size_t GlimROS::points_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg) {
++  const auto processing_start = std::chrono::steady_clock::now();
+   spdlog::trace("points: {}.{}", msg->header.stamp.sec, msg->header.stamp.nanosec);
+   if (!GlobalConfig::instance()->has_param("meta", "lidar_frame_id")) {
+     spdlog::debug("auto-detecting LiDAR frame ID: {}", msg->header.frame_id);
+@@ -297,6 +299,13 @@ size_t GlimROS::points_callback(const sensor_msgs::msg::PointCloud2::ConstShared
+     return 0;
+   }
+   auto preprocessed = preprocessor->preprocess(raw_points);
++  if (preprocessed == nullptr || preprocessed->size() < 100) {
++    spdlog::warn(
++      "LIDARLOC_SKIPPED_SPARSE_FRAME stamp={:.9f} points={}",
++      raw_points->stamp,
++      preprocessed ? preprocessed->size() : 0);
++    return odometry_estimation->workload();
++  }
+ 
+   if (keep_raw_points) {
+     // note: Raw points are used only in extension modules for visualization purposes.
+@@ -308,6 +317,13 @@ size_t GlimROS::points_callback(const sensor_msgs::msg::PointCloud2::ConstShared
+ 
+   const size_t workload = odometry_estimation->workload();
+   spdlog::debug("workload={}", workload);
++  const double processing_sec = std::chrono::duration<double>(
++    std::chrono::steady_clock::now() - processing_start).count();
++  spdlog::info(
++    "LIDARLOC_PREPROCESS_RUNTIME stamp={:.9f} processing_sec={:.9f} workload={}",
++    raw_points->stamp,
++    processing_sec,
++    workload);
+ 
+   return workload;
+ }

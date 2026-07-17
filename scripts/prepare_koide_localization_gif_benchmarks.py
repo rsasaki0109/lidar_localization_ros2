@@ -216,11 +216,15 @@ def main() -> int:
                 "scan_min_range": 1.0,
                 "scan_max_range": 100.0,
                 "score_threshold": 6.0,
+                # Koide Livox bags publish acceleration in g, not m/s^2.
+                "imu_accel_scale": 9.80665,
             }
             launch_args = [
                 "use_sim_time:=true",
                 "base_frame_id:=livox_frame",
                 "lidar_frame_id:=livox_frame",
+                # base == lidar frame: a self static TF is invalid and crashes tf2_ros.
+                "publish_lidar_tf:=false",
                 "use_imu_preintegration:=true",
             ]
 
@@ -250,7 +254,9 @@ def main() -> int:
             },
             "benchmark": {
                 "output_dir": str(runs_dir / sequence),
-                "ros_domain_id": 190 + index,
+                # Keep domain IDs <= 101: higher IDs map DDS discovery onto the
+                # Linux ephemeral port range and can silently break discovery.
+                "ros_domain_id": 60 + index,
                 "bag_duration": args.duration,
                 "bag_start_offset": start_offset,
                 "settle_seconds": 5,
