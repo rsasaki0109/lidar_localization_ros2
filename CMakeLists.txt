@@ -303,6 +303,24 @@ install(DIRECTORY
 if(BUILD_TESTING)
   find_package(Threads REQUIRED)
   link_libraries(Eigen3::Eigen)
+  add_executable(test_glim_prior_map_factor_policy
+    test/test_glim_prior_map_factor_policy.cpp)
+  target_include_directories(test_glim_prior_map_factor_policy PRIVATE
+    experiments/glim_prior_map_localizer/include)
+  add_test(
+    NAME glim_prior_map_factor_policy
+    COMMAND test_glim_prior_map_factor_policy
+  )
+
+  add_executable(test_glim_prior_map_ply_loader
+    test/test_glim_prior_map_ply_loader.cpp)
+  target_include_directories(test_glim_prior_map_ply_loader PRIVATE
+    experiments/glim_prior_map_localizer/include)
+  add_test(
+    NAME glim_prior_map_ply_loader
+    COMMAND test_glim_prior_map_ply_loader
+  )
+
   add_executable(test_registration_seed_policy
     test/test_registration_seed_policy.cpp)
   target_include_directories(test_registration_seed_policy PRIVATE
