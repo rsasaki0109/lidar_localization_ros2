@@ -1,0 +1,39 @@
+cmake_minimum_required(VERSION 3.16)
+project(glim_prior_map_localizer LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+find_package(glim REQUIRED)
+find_package(GTSAM REQUIRED)
+find_package(TBB REQUIRED)
+find_package(robin REQUIRED)
+find_package(kiss_matcher REQUIRED)
+find_package(spdlog REQUIRED)
+
+add_library(glim_prior_map_localizer SHARED
+  src/prior_map_localizer.cpp
+  src/vgicp_refiner.cpp)
+target_include_directories(glim_prior_map_localizer PRIVATE
+  include
+  ${GTSAM_INCLUDE_DIRS})
+target_link_libraries(glim_prior_map_localizer PRIVATE
+  glim::glim
+  kiss_matcher::kiss_matcher_core
+  robin::robin
+  spdlog::spdlog
+  ${GTSAM_LIBRARIES})
+
+add_executable(glim_prior_map_offline_match
+  src/offline_match.cpp
+  src/vgicp_refiner.cpp)
+target_include_directories(glim_prior_map_offline_match PRIVATE
+  include)
+target_link_libraries(glim_prior_map_offline_match PRIVATE
+  glim::glim
+  kiss_matcher::kiss_matcher_core
+  robin::robin)
+
+install(TARGETS glim_prior_map_localizer glim_prior_map_offline_match
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin)

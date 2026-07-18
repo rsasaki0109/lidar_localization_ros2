@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -31,6 +32,22 @@ def main() -> int:
         help="Expected covered duration forwarded to the completion checker "
         "(reference start to bag end; default keeps the outdoor_hard_01a gate).")
     parser.add_argument("--image", default=os.environ.get("GLIM_IMAGE", DEFAULT_IMAGE))
+    parser.add_argument(
+        "--config",
+        help="GLIM config directory (default: param/odometry/glim_koide_outdoor_gicp6500).",
+    )
+    parser.add_argument(
+        "--prior-map",
+        help="Enable libglim_prior_map_localizer.so with this PLY prior map.",
+    )
+    parser.add_argument(
+        "--prior-map-bootstrap-center", type=float, nargs=3, metavar=("X", "Y", "Z"),
+        help="Known approximate initial position in the prior-map frame; crop seed only.",
+    )
+    parser.add_argument(
+        "--prior-map-bootstrap-yaw-deg", type=float,
+        help="Known approximate initial yaw in the prior-map frame; requires bootstrap center.",
+    )
     parser.add_argument("--ros-domain-id", type=int, default=91)
     parser.add_argument(
         "--allow-image-mismatch", action="store_true",
@@ -41,7 +58,9 @@ def main() -> int:
     bag = Path(args.bag).resolve()
     reference = Path(args.reference).resolve()
     output = Path(args.output).resolve()
-    config = repo / "param/odometry/glim_koide_outdoor_gicp6500"
+    config = Path(args.config).resolve() if args.config else (
+        repo / "param/odometry/glim_koide_outdoor_gicp6500"
+    )
     if not (bag / "metadata.yaml").is_file():
         parser.error(f"not a rosbag2 directory: {bag}")
     if not reference.is_file():
@@ -49,6 +68,27 @@ def main() -> int:
     if output.exists() and any(output.iterdir()):
         parser.error(f"output directory must be empty: {output}")
     output.mkdir(parents=True, exist_ok=True)
+
+    prior_map = Path(args.prior_map).resolve() if args.prior_map else None
+    if prior_map is not None:
+        if prior_map.suffix.lower() != ".ply" or not prior_map.is_file():
+            parser.error(f"prior map must be an existing PLY file: {prior_map}")
+        generated_config = output / "glim_config"
+        shutil.copytree(config, generated_config)
+        config_ros_path = generated_config / "config_ros.json"
+        config_ros = json.loads(config_ros_path.read_text(encoding="utf-8"))
+        modules = config_ros["glim_ros"].setdefault("extension_modules", [])
+        if "libglim_prior_map_localizer.so" not in modules:
+            modules.append("libglim_prior_map_localizer.so")
+        config_ros_path.write_text(
+            json.dumps(config_ros, indent=2) + "\n", encoding="utf-8")
+        config = generated_config
+    elif (args.prior_map_bootstrap_center is not None or
+          args.prior_map_bootstrap_yaw_deg is not None):
+        parser.error("--prior-map-bootstrap-center requires --prior-map")
+    if ((args.prior_map_bootstrap_center is None) !=
+            (args.prior_map_bootstrap_yaw_deg is None)):
+        parser.error("bootstrap center and bootstrap yaw must be provided together")
 
     image_id = subprocess.check_output(
         ["docker", "image", "inspect", args.image, "--format", "{{.Id}}"], text=True
@@ -66,12 +106,27 @@ def main() -> int:
         "-v", f"{bag.parent}:/data:ro",
         "-v", f"{config}:/glim/config:ro",
         "-v", f"{output}:/tmp",
+    ]
+    if prior_map is not None:
+        docker_command.extend([
+            "-e", "GLIM_PRIOR_MAP_PATH=/prior_map.ply",
+            "-v", f"{prior_map}:/prior_map.ply:ro",
+        ])
+        if args.prior_map_bootstrap_center is not None:
+            for axis, value in zip("XYZ", args.prior_map_bootstrap_center):
+                docker_command.extend([
+                    "-e", f"GLIM_PRIOR_MAP_BOOTSTRAP_CENTER_{axis}={value}",
+                ])
+            docker_command.extend([
+                "-e", f"GLIM_PRIOR_MAP_BOOTSTRAP_YAW_DEG={args.prior_map_bootstrap_yaw_deg}",
+            ])
+    docker_command.extend([
         args.image,
         "bash", "-lc",
         ". /opt/ros/jazzy/setup.bash && . /root/ros2_ws/install/setup.bash && "
         f"ros2 run glim_ros glim_rosbag {container_bag} --ros-args "
         "-p config_path:=/glim/config -p auto_quit:=true",
-    ]
+    ])
     started = time.monotonic()
     with (output / "glim.log").open("w", encoding="utf-8") as log:
         process = subprocess.run(
@@ -87,6 +142,8 @@ def main() -> int:
         "wall_duration_sec": wall_duration,
         "image": args.image,
         "image_id": image_id,
+        "prior_map": str(prior_map) if prior_map is not None else None,
+        "config": str(config),
     }
     (output / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
