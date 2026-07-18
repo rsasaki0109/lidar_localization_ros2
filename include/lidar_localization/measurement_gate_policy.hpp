@@ -35,6 +35,23 @@ struct MeasurementGateParams
   double borderline_seed_gate_score_threshold{5.25};
   double borderline_seed_gate_min_seed_translation_m{1.0};
 
+  // An external odometry seed is a strong motion prior.  A very low NDT
+  // fitness can still be an aliased solution, so reject a result that jumps
+  // implausibly far away from that prior.  This is independently opt-in to
+  // preserve all existing configurations.
+  bool enable_odom_tf_prediction_correction_guard{false};
+  double odom_tf_prediction_correction_guard_translation_m{2.0};
+  double odom_tf_prediction_correction_guard_yaw_deg{30.0};
+  // After a sustained rejection streak, permit a larger correction only for
+  // a very strong scan match. This lets a slowly drifting odom bridge snap
+  // back to the map when distinctive geometry returns, without weakening the
+  // normal alias guard during healthy tracking.
+  bool enable_odom_tf_prediction_recovery_correction_guard{false};
+  int odom_tf_prediction_recovery_min_rejections{30};
+  double odom_tf_prediction_recovery_max_fitness{1.5};
+  double odom_tf_prediction_recovery_guard_translation_m{5.0};
+  double odom_tf_prediction_recovery_guard_yaw_deg{30.0};
+
   bool enable_rejected_seed_update{false};
   int rejected_seed_update_min_rejections{0};
   double rejected_seed_update_max_fitness{10.0};
@@ -50,6 +67,11 @@ struct MeasurementGateInput
   double correction_translation_m{0.0};
   double correction_yaw_deg{0.0};
   std::size_t consecutive_rejected_updates{0};
+  // True while the external-odom motion-model mode has an established
+  // map->odom anchor.  It deliberately remains true for a scan that falls
+  // back to previous_delta because the live TF lookup briefly missed; that
+  // is exactly when an aliased NDT result must not replace the good anchor.
+  bool odom_tf_prediction_guard_applicable{false};
 };
 
 struct MeasurementGateParamConfig
@@ -75,6 +97,15 @@ struct MeasurementGateParamConfig
   bool enable_borderline_seed_rejection_gate{false};
   double borderline_seed_gate_score_threshold{5.25};
   double borderline_seed_gate_min_seed_translation_m{1.0};
+
+  bool enable_odom_tf_prediction_correction_guard{false};
+  double odom_tf_prediction_correction_guard_translation_m{2.0};
+  double odom_tf_prediction_correction_guard_yaw_deg{30.0};
+  bool enable_odom_tf_prediction_recovery_correction_guard{false};
+  int odom_tf_prediction_recovery_min_rejections{30};
+  double odom_tf_prediction_recovery_max_fitness{1.5};
+  double odom_tf_prediction_recovery_guard_translation_m{5.0};
+  double odom_tf_prediction_recovery_guard_yaw_deg{30.0};
 
   bool enable_rejected_seed_update{false};
   int rejected_seed_update_min_rejections{0};
@@ -136,6 +167,22 @@ inline MeasurementGateParams makeMeasurementGateParams(
     config.borderline_seed_gate_score_threshold;
   params.borderline_seed_gate_min_seed_translation_m =
     config.borderline_seed_gate_min_seed_translation_m;
+  params.enable_odom_tf_prediction_correction_guard =
+    config.enable_odom_tf_prediction_correction_guard;
+  params.odom_tf_prediction_correction_guard_translation_m =
+    config.odom_tf_prediction_correction_guard_translation_m;
+  params.odom_tf_prediction_correction_guard_yaw_deg =
+    config.odom_tf_prediction_correction_guard_yaw_deg;
+  params.enable_odom_tf_prediction_recovery_correction_guard =
+    config.enable_odom_tf_prediction_recovery_correction_guard;
+  params.odom_tf_prediction_recovery_min_rejections =
+    config.odom_tf_prediction_recovery_min_rejections;
+  params.odom_tf_prediction_recovery_max_fitness =
+    config.odom_tf_prediction_recovery_max_fitness;
+  params.odom_tf_prediction_recovery_guard_translation_m =
+    config.odom_tf_prediction_recovery_guard_translation_m;
+  params.odom_tf_prediction_recovery_guard_yaw_deg =
+    config.odom_tf_prediction_recovery_guard_yaw_deg;
   params.enable_rejected_seed_update = config.enable_rejected_seed_update;
   params.rejected_seed_update_min_rejections =
     config.rejected_seed_update_min_rejections;
@@ -153,7 +200,8 @@ inline MeasurementGateInput makeMeasurementGateInput(
   double seed_translation_since_accept_m,
   double correction_translation_m,
   double correction_yaw_deg,
-  std::size_t consecutive_rejected_updates)
+  std::size_t consecutive_rejected_updates,
+  bool odom_tf_prediction_guard_applicable = false)
 {
   return {
     fitness_score,
@@ -161,7 +209,8 @@ inline MeasurementGateInput makeMeasurementGateInput(
     seed_translation_since_accept_m,
     correction_translation_m,
     correction_yaw_deg,
-    consecutive_rejected_updates};
+    consecutive_rejected_updates,
+    odom_tf_prediction_guard_applicable};
 }
 
 inline EffectiveScoreThresholdDecision computeEffectiveScoreThreshold(
@@ -220,6 +269,29 @@ inline MeasurementGateDecision evaluateMeasurementGate(
   gate.open_loop_strict_active = threshold_decision.open_loop_strict_active;
   gate.borderline_seed_gate_active =
     isBorderlineSeedGateActive(params, input, gate.effective_score_threshold);
+
+  const bool odom_recovery_correction_window =
+    params.enable_odom_tf_prediction_recovery_correction_guard &&
+    static_cast<int>(input.consecutive_rejected_updates) >=
+    params.odom_tf_prediction_recovery_min_rejections &&
+    input.fitness_score <= params.odom_tf_prediction_recovery_max_fitness;
+  const double odom_translation_limit = odom_recovery_correction_window ?
+    params.odom_tf_prediction_recovery_guard_translation_m :
+    params.odom_tf_prediction_correction_guard_translation_m;
+  const double odom_yaw_limit = odom_recovery_correction_window ?
+    params.odom_tf_prediction_recovery_guard_yaw_deg :
+    params.odom_tf_prediction_correction_guard_yaw_deg;
+  const bool odom_correction_guard_active =
+    params.enable_odom_tf_prediction_correction_guard &&
+    input.odom_tf_prediction_guard_applicable &&
+    ((input.correction_translation_m > odom_translation_limit) ||
+    (input.correction_yaw_deg > odom_yaw_limit));
+  if (odom_correction_guard_active) {
+    gate.status_level = kMeasurementGateWarn;
+    gate.status_message = "odom_tf_prediction_correction_guard_rejected";
+    gate.reject_measurement = true;
+    return gate;
+  }
 
   const bool threshold_exceeded = input.fitness_score > gate.effective_score_threshold;
   if (!threshold_exceeded && !gate.borderline_seed_gate_active) {

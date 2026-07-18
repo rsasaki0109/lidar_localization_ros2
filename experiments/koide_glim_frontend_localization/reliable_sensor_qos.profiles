@@ -1,0 +1,10 @@
+/livox/imu:
+  history: keep_last
+  depth: 1000
+  reliability: reliable
+  durability: volatile
+/livox/points:
+  history: keep_last
+  depth: 100
+  reliability: reliable
+  durability: volatile

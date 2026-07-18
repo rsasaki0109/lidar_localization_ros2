@@ -1,0 +1,26 @@
+{
+  "standard_viewer": {
+    "viewer_width": 2560,
+    "viewer_height": 1440,
+    "default_z_range": [-2.0, 4.0],
+    "enable_partial_rendering": false,
+    "partial_rendering_budget": 1024,
+    "point_shape_circle": true,
+    "point_size_metric": true,
+    "point_size": 0.025,
+    "points_alpha": 0.5,
+    "factors_alpha": 0.5
+  },
+  "interactive_viewer": {
+    "viewer_width": 2560,
+    "viewer_height": 1440,
+    "default_z_range": [-2.0, 4.0],
+    "enable_partial_rendering": false,
+    "partial_rendering_budget": 1024,
+    "point_shape_circle": true,
+    "point_size_metric": true,
+    "point_size": 0.025,
+    "points_alpha": 0.5,
+    "factors_alpha": 0.5
+  }
+}

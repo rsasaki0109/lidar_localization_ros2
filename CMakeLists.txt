@@ -857,6 +857,19 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_launch_argument_contract.py
   )
   add_test(
+    NAME glim_frontend_harness
+    COMMAND ${Python3_EXECUTABLE} test/test_glim_frontend_harness.py
+  )
+  add_test(
+    NAME glim_frontend_bridge_coverage
+    COMMAND ${Python3_EXECUTABLE} test/test_glim_frontend_bridge_coverage.py
+  )
+  set_tests_properties(
+    glim_frontend_harness
+    glim_frontend_bridge_coverage
+    PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  )
+  add_test(
     NAME cli_command_contract
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_cli_command_contract.py
   )

@@ -77,6 +77,13 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("odom_frame_id", "odom");
   declare_parameter("base_frame_id", "base_link");
   declare_parameter("enable_map_odom_tf", false);
+  declare_parameter("use_odom_tf_prediction", false);
+  declare_parameter("constrain_odom_tf_prediction_to_planar", false);
+  declare_parameter("constrain_odom_tf_prediction_height_only", false);
+  declare_parameter("publish_bridge_pose_when_lost", false);
+  declare_parameter("enable_map_odom_anchor_fitness_gate", false);
+  declare_parameter("map_odom_anchor_max_fitness", 1.5);
+  declare_parameter("map_odom_anchor_max_correction_rotation_deg", 10.0);
   declare_parameter("registration_method", "NDT");
   declare_parameter("score_threshold", 2.0);
   declare_parameter("ndt_resolution", 1.0);
@@ -161,6 +168,14 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("enable_borderline_seed_rejection_gate", false);
   declare_parameter("borderline_seed_gate_score_threshold", 5.25);
   declare_parameter("borderline_seed_gate_min_seed_translation_m", 1.0);
+  declare_parameter("enable_odom_tf_prediction_correction_guard", false);
+  declare_parameter("odom_tf_prediction_correction_guard_translation_m", 2.0);
+  declare_parameter("odom_tf_prediction_correction_guard_yaw_deg", 30.0);
+  declare_parameter("enable_odom_tf_prediction_recovery_correction_guard", false);
+  declare_parameter("odom_tf_prediction_recovery_min_rejections", 30);
+  declare_parameter("odom_tf_prediction_recovery_max_fitness", 1.5);
+  declare_parameter("odom_tf_prediction_recovery_guard_translation_m", 5.0);
+  declare_parameter("odom_tf_prediction_recovery_guard_yaw_deg", 30.0);
   declare_parameter("enable_rejected_seed_update", false);
   declare_parameter("rejected_seed_update_min_rejections", 0);
   declare_parameter("rejected_seed_update_max_fitness", 10.0);
@@ -172,6 +187,9 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("recovery_retry_from_last_pose_max_seed_translation_m", 1000000000.0);
   declare_parameter("enable_reinitialization_request_output", true);
   declare_parameter("enable_reinitialization_request_latch", true);
+  declare_parameter("reinitialization_request_clear_ok_samples", 5);
+  declare_parameter("reinitialization_request_clear_max_fitness", 1.0);
+  declare_parameter("reinitialization_request_clear_max_correction_translation_m", 0.5);
   declare_parameter("reinitialization_trigger_threshold", 0.95);
   declare_parameter("reinitialization_trigger_gap_scale_sec", 30.0);
   declare_parameter("reinitialization_trigger_seed_translation_scale_m", 100.0);
@@ -225,6 +243,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
   auto state_lock = callback_state_coordinator_.lockState();
 
   pose_pub_->on_activate();
+  odom_bridge_pose_pub_->on_activate();
   path_pub_->on_activate();
   status_pub_->on_activate();
   reinitialization_request_pub_->on_activate();
@@ -361,6 +380,7 @@ CallbackReturn PCLLocalization::on_deactivate(const rclcpp_lifecycle::State &)
 #endif
 
   pose_pub_->on_deactivate();
+  odom_bridge_pose_pub_->on_deactivate();
   path_pub_->on_deactivate();
   status_pub_->on_deactivate();
   reinitialization_request_pub_->on_deactivate();
@@ -412,6 +432,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   cloud_sub_.reset();
   imu_sub_.reset();
   initial_pose_callback_group_.reset();
+  pose_publish_callback_group_.reset();
   imu_callback_group_.reset();
 
   latest_twist_msg_.reset();
@@ -424,6 +445,14 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   status_pub_.reset();
   reinitialization_request_pub_.reset();
   pose_pub_.reset();
+  odom_bridge_pose_pub_.reset();
+  last_good_map_to_odom_ = geometry_msgs::msg::TransformStamped{};
+  has_last_good_map_to_odom_ = false;
+  odom_tf_constraint_anchor_pose_matrix_ = Eigen::Matrix4f::Identity();
+  has_odom_tf_constraint_anchor_pose_ = false;
+  odom_bridge_transform_history_.clear();
+  last_odom_bridge_source_advance_node_stamp_ = builtin_interfaces::msg::Time{};
+  has_last_odom_bridge_source_advance_node_stamp_ = false;
 
   auto registration_execution_lock =
     callback_state_coordinator_.lockRegistrationExecution();
@@ -475,6 +504,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   reinitialization_request_latch_reason_ = "not_requested";
   reinitialization_request_latch_score_ = 0.0;
   reinitialization_request_latch_stamp_sec_ = 0.0;
+  reinitialization_request_latch_consecutive_ok_samples_ = 0;
   recovery_supervisor_state_ = RecoverySupervisorState::kTracking;
   recovery_supervisor_action_ = "idle";
   recovery_supervisor_state_entered_stamp_sec_ = 0.0;
@@ -662,6 +692,21 @@ void PCLLocalization::initializeParameters()
   get_parameter("odom_frame_id", odom_frame_id_);
   get_parameter("base_frame_id", base_frame_id_);
   get_parameter("enable_map_odom_tf", enable_map_odom_tf_);
+  get_parameter("use_odom_tf_prediction", use_odom_tf_prediction_);
+  get_parameter(
+    "constrain_odom_tf_prediction_to_planar",
+    constrain_odom_tf_prediction_to_planar_);
+  get_parameter(
+    "constrain_odom_tf_prediction_height_only",
+    constrain_odom_tf_prediction_height_only_);
+  get_parameter("publish_bridge_pose_when_lost", publish_bridge_pose_when_lost_);
+  get_parameter(
+    "enable_map_odom_anchor_fitness_gate",
+    enable_map_odom_anchor_fitness_gate_);
+  get_parameter("map_odom_anchor_max_fitness", map_odom_anchor_max_fitness_);
+  get_parameter(
+    "map_odom_anchor_max_correction_rotation_deg",
+    map_odom_anchor_max_correction_rotation_deg_);
   get_parameter("registration_method", registration_method_);
   get_parameter("score_threshold", measurement_gate_config_.score_threshold);
   get_parameter("ndt_resolution", ndt_resolution_);
@@ -826,6 +871,30 @@ void PCLLocalization::initializeParameters()
   get_parameter(
     "borderline_seed_gate_min_seed_translation_m",
     measurement_gate_config_.borderline_seed_gate_min_seed_translation_m);
+  get_parameter(
+    "enable_odom_tf_prediction_correction_guard",
+    measurement_gate_config_.enable_odom_tf_prediction_correction_guard);
+  get_parameter(
+    "odom_tf_prediction_correction_guard_translation_m",
+    measurement_gate_config_.odom_tf_prediction_correction_guard_translation_m);
+  get_parameter(
+    "odom_tf_prediction_correction_guard_yaw_deg",
+    measurement_gate_config_.odom_tf_prediction_correction_guard_yaw_deg);
+  get_parameter(
+    "enable_odom_tf_prediction_recovery_correction_guard",
+    measurement_gate_config_.enable_odom_tf_prediction_recovery_correction_guard);
+  get_parameter(
+    "odom_tf_prediction_recovery_min_rejections",
+    measurement_gate_config_.odom_tf_prediction_recovery_min_rejections);
+  get_parameter(
+    "odom_tf_prediction_recovery_max_fitness",
+    measurement_gate_config_.odom_tf_prediction_recovery_max_fitness);
+  get_parameter(
+    "odom_tf_prediction_recovery_guard_translation_m",
+    measurement_gate_config_.odom_tf_prediction_recovery_guard_translation_m);
+  get_parameter(
+    "odom_tf_prediction_recovery_guard_yaw_deg",
+    measurement_gate_config_.odom_tf_prediction_recovery_guard_yaw_deg);
   get_parameter("enable_rejected_seed_update", measurement_gate_config_.enable_rejected_seed_update);
   get_parameter("rejected_seed_update_min_rejections", measurement_gate_config_.rejected_seed_update_min_rejections);
   get_parameter("rejected_seed_update_max_fitness", measurement_gate_config_.rejected_seed_update_max_fitness);
@@ -853,6 +922,21 @@ void PCLLocalization::initializeParameters()
   get_parameter(
     "enable_reinitialization_request_latch",
     enable_reinitialization_request_latch_);
+  get_parameter(
+    "reinitialization_request_clear_ok_samples",
+    reinitialization_request_clear_ok_samples_);
+  reinitialization_request_clear_ok_samples_ =
+    std::max(1, reinitialization_request_clear_ok_samples_);
+  get_parameter(
+    "reinitialization_request_clear_max_fitness",
+    reinitialization_request_clear_max_fitness_);
+  reinitialization_request_clear_max_fitness_ =
+    std::max(0.0, reinitialization_request_clear_max_fitness_);
+  get_parameter(
+    "reinitialization_request_clear_max_correction_translation_m",
+    reinitialization_request_clear_max_correction_translation_m_);
+  reinitialization_request_clear_max_correction_translation_m_ =
+    std::max(0.0, reinitialization_request_clear_max_correction_translation_m_);
   get_parameter(
     "reinitialization_trigger_threshold",
     reinitialization_trigger_config_.threshold);
@@ -925,6 +1009,24 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(),"odom_frame_id: %s", odom_frame_id_.c_str());
   RCLCPP_INFO(get_logger(),"base_frame_id: %s", base_frame_id_.c_str());
   RCLCPP_INFO(get_logger(),"enable_map_odom_tf: %d", enable_map_odom_tf_);
+  RCLCPP_INFO(get_logger(),"use_odom_tf_prediction: %d", use_odom_tf_prediction_);
+  RCLCPP_INFO(
+    get_logger(), "constrain_odom_tf_prediction_to_planar: %d",
+    constrain_odom_tf_prediction_to_planar_);
+  RCLCPP_INFO(
+    get_logger(), "constrain_odom_tf_prediction_height_only: %d",
+    constrain_odom_tf_prediction_height_only_);
+  RCLCPP_INFO(
+    get_logger(),"publish_bridge_pose_when_lost: %d", publish_bridge_pose_when_lost_);
+  RCLCPP_INFO(
+    get_logger(), "enable_map_odom_anchor_fitness_gate: %d",
+    enable_map_odom_anchor_fitness_gate_);
+  RCLCPP_INFO(
+    get_logger(), "map_odom_anchor_max_fitness: %lf",
+    map_odom_anchor_max_fitness_);
+  RCLCPP_INFO(
+    get_logger(), "map_odom_anchor_max_correction_rotation_deg: %lf",
+    map_odom_anchor_max_correction_rotation_deg_);
   RCLCPP_INFO(get_logger(),"registration_method: %s", registration_method_.c_str());
   RCLCPP_INFO(get_logger(),"ndt_resolution: %lf", ndt_resolution_);
   RCLCPP_INFO(get_logger(),"ndt_step_size: %lf", ndt_step_size_);
@@ -1054,6 +1156,30 @@ void PCLLocalization::initializeParameters()
     get_logger(), "rejected_seed_update_max_correction_yaw_deg: %lf",
     measurement_gate_config_.rejected_seed_update_max_correction_yaw_deg);
   RCLCPP_INFO(
+    get_logger(), "enable_odom_tf_prediction_correction_guard: %d",
+    measurement_gate_config_.enable_odom_tf_prediction_correction_guard);
+  RCLCPP_INFO(
+    get_logger(), "odom_tf_prediction_correction_guard_translation_m: %lf",
+    measurement_gate_config_.odom_tf_prediction_correction_guard_translation_m);
+  RCLCPP_INFO(
+    get_logger(), "odom_tf_prediction_correction_guard_yaw_deg: %lf",
+    measurement_gate_config_.odom_tf_prediction_correction_guard_yaw_deg);
+  RCLCPP_INFO(
+    get_logger(), "enable_odom_tf_prediction_recovery_correction_guard: %d",
+    measurement_gate_config_.enable_odom_tf_prediction_recovery_correction_guard);
+  RCLCPP_INFO(
+    get_logger(), "odom_tf_prediction_recovery_min_rejections: %d",
+    measurement_gate_config_.odom_tf_prediction_recovery_min_rejections);
+  RCLCPP_INFO(
+    get_logger(), "odom_tf_prediction_recovery_max_fitness: %lf",
+    measurement_gate_config_.odom_tf_prediction_recovery_max_fitness);
+  RCLCPP_INFO(
+    get_logger(), "odom_tf_prediction_recovery_guard_translation_m: %lf",
+    measurement_gate_config_.odom_tf_prediction_recovery_guard_translation_m);
+  RCLCPP_INFO(
+    get_logger(), "odom_tf_prediction_recovery_guard_yaw_deg: %lf",
+    measurement_gate_config_.odom_tf_prediction_recovery_guard_yaw_deg);
+  RCLCPP_INFO(
     get_logger(), "enable_recovery_retry_from_last_pose: %d",
     recovery_retry_from_last_pose_config_.enable);
   RCLCPP_INFO(
@@ -1071,6 +1197,15 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "enable_reinitialization_request_latch: %d",
     enable_reinitialization_request_latch_);
+  RCLCPP_INFO(
+    get_logger(), "reinitialization_request_clear_ok_samples: %d",
+    reinitialization_request_clear_ok_samples_);
+  RCLCPP_INFO(
+    get_logger(), "reinitialization_request_clear_max_fitness: %lf",
+    reinitialization_request_clear_max_fitness_);
+  RCLCPP_INFO(
+    get_logger(), "reinitialization_request_clear_max_correction_translation_m: %lf",
+    reinitialization_request_clear_max_correction_translation_m_);
   RCLCPP_INFO(
     get_logger(), "reinitialization_trigger_threshold: %lf",
     reinitialization_trigger_config_.threshold);
@@ -1105,6 +1240,10 @@ void PCLLocalization::initializePubSub()
 
   pose_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
     "pcl_pose",
+    rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
+
+  odom_bridge_pose_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
+    "odom_bridge_pose",
     rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
 
   path_pub_ = create_publisher<nav_msgs::msg::Path>(
@@ -1165,9 +1304,15 @@ void PCLLocalization::initializePubSub()
     imu_subscription_options);
 
   if (enable_timer_publishing_) {
+    pose_publish_callback_group_ =
+      create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     pose_publish_timer_ = create_wall_timer(
       lidar_localization::posePublishPeriodFromFrequencyHz(pose_publish_frequency_),
-      std::bind(&PCLLocalization::timerPublishPose, this));
+      std::bind(&PCLLocalization::timerPublishPose, this),
+      pose_publish_callback_group_);
+    RCLCPP_INFO(
+      get_logger(),
+      "Pose publication timer uses a dedicated callback group");
   }
 
   RCLCPP_INFO(get_logger(), "initializePubSub end");
@@ -1317,6 +1462,7 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   reinitialization_request_latch_reason_ = "not_requested";
   reinitialization_request_latch_score_ = 0.0;
   reinitialization_request_latch_stamp_sec_ = 0.0;
+  reinitialization_request_latch_consecutive_ok_samples_ = 0;
   recovery_supervisor_state_ = RecoverySupervisorState::kTracking;
   recovery_supervisor_action_ = "initial_pose_reset";
   recovery_supervisor_state_entered_stamp_sec_ = stamp_to_sec(msg->header.stamp);
@@ -1771,9 +1917,15 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   if (!admitScanMessage(msg, &scan_stamp_sec)) {
     return;
   }
+  // Odom bridge: keep map -> odom alive (re-stamped from the last accepted
+  // match) on every admitted scan callback, whether or not this particular
+  // scan ends up accepted below. See republishFrozenMapToOdomTransform and the
+  // freeze_as_last_good guard on publishMapToOdomTransform.
+  republishFrozenMapToOdomTransform(msg->header.stamp);
   const PreparedScanCloud prepared_scan = prepareScanForRegistration(msg, scan_stamp_sec);
   if (!lidar_localization::isPreparedScanReady(prepared_scan.status)) {
     handleScanPreparationFailure(msg->header.stamp, prepared_scan, scan_stamp_sec);
+    publishBridgePoseAsRejectedOutput(msg->header.stamp);
     return;
   }
   const std::size_t filtered_point_count = prepared_scan.filtered_point_count;
@@ -1782,7 +1934,8 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
 
   const std::uint64_t seed_generation =
     callback_state_coordinator_.initialPoseGeneration();
-  const SelectedRegistrationSeed selected_seed = selectRegistrationSeed(scan_stamp_sec);
+  const SelectedRegistrationSeed selected_seed =
+    selectRegistrationSeed(msg->header.stamp, scan_stamp_sec);
   const bool imu_prediction_ready = selected_seed.imu_prediction_ready;
   const std::string registration_seed_source =
     lidar_localization::registrationSeedSourceName(selected_seed.source);
@@ -1818,6 +1971,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       imu_prediction_ready,
       registration_seed_source))
   {
+    publishBridgePoseAsRejectedOutput(msg->header.stamp);
     return;
   }
   if (!applyAcceptedAlignmentPipelineResult(
@@ -1828,6 +1982,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       imu_prediction_ready,
       registration_seed_source))
   {
+    publishBridgePoseAsRejectedOutput(msg->header.stamp);
     return;
   }
 
@@ -2395,7 +2550,7 @@ void PCLLocalization::snapshotImuPreintegrationSampleCountersForScan()
 }
 
 PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSeed(
-  double scan_stamp_sec)
+  const builtin_interfaces::msg::Time & stamp, double scan_stamp_sec)
 {
   SelectedRegistrationSeed selected_seed;
   selected_seed.init_guess = currentPoseMatrix();
@@ -2507,6 +2662,10 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       (!imu_seed_consistency_gate_enabled_ || imu_seed_consistency_state_.seed_allowed);
   }
 
+  Eigen::Matrix4f odom_tf_prediction = Eigen::Matrix4f::Identity();
+  const bool odom_tf_bridge_available =
+    use_odom_tf_prediction_ && lookupOdomBridgePoseMatrix(stamp, odom_tf_prediction);
+
   const lidar_localization::RegistrationSeedPolicyDecision seed_decision =
     lidar_localization::chooseRegistrationSeed(
     lidar_localization::RegistrationSeedPolicyInput{
@@ -2522,7 +2681,9 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       use_twist_prediction_,
       have_last_accepted_pose_,
       static_cast<bool>(latest_twist_msg_),
-      predict_pose_from_previous_delta_});
+      predict_pose_from_previous_delta_,
+      use_odom_tf_prediction_,
+      odom_tf_bridge_available});
   selected_seed.source = seed_decision.source;
   selected_seed.imu_prediction_ready = seed_decision.imu_prediction_ready;
 
@@ -2559,6 +2720,9 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
     case lidar_localization::RegistrationSeedSource::kLocalizabilityGuard:
       break;
     case lidar_localization::RegistrationSeedSource::kCurrentPose:
+      break;
+    case lidar_localization::RegistrationSeedSource::kOdomTfPrediction:
+      selected_seed.init_guess = odom_tf_prediction;
       break;
   }
 
@@ -2840,13 +3004,14 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
         last_accepted_pose_matrix_, last_accepted_pose_matrix_, scan_stamp_sec,
         state_lock, seed_generation);
     },
-    [this](const lidar_localization::AlignmentAttempt & attempt) {
-      return evaluateMeasurementGateForAttempt(attempt);
+    [this, seed_source](const lidar_localization::AlignmentAttempt & attempt) {
+      return evaluateMeasurementGateForAttempt(attempt, seed_source);
     });
 }
 
 lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurementGateForAttempt(
-  const lidar_localization::AlignmentAttempt & attempt)
+  const lidar_localization::AlignmentAttempt & attempt,
+  lidar_localization::RegistrationSeedSource seed_source)
 {
   const auto gate_input = lidar_localization::makeMeasurementGateInput(
     attempt.fitness_score,
@@ -2854,7 +3019,8 @@ lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurement
     attempt.seed_translation_since_accept_m,
     attempt.correction_translation_m,
     attempt.correction_yaw_deg,
-    consecutive_rejected_updates_);
+    consecutive_rejected_updates_,
+    use_odom_tf_prediction_ && has_last_good_map_to_odom_);
   auto gate =
     lidar_localization::evaluateMeasurementGate(measurementGateParams(), gate_input);
   if (gate.status_level == lidar_localization::kMeasurementGateWarn) {
@@ -2939,8 +3105,32 @@ bool PCLLocalization::applyAcceptedAlignmentPipelineResult(
     return false;
   }
 
-  if (!enable_timer_publishing_) {
-    publishCurrentPose(stamp);
+  if (lidar_localization::shouldPublishAcceptedPoseImmediately(
+      enable_timer_publishing_, publish_bridge_pose_when_lost_))
+  {
+    // In bridge mode the timer supplements accepted scan outputs; it does not
+    // replace them.  Keeping the scan-stamped accepted pose guarantees an
+    // initial output/anchor and fills any short gap in the upstream odom TF,
+    // while timer ticks provide continuity when scans themselves pause.
+    publishCurrentPose(
+      stamp, pipeline_result.selected_attempt.fitness_score,
+      lidar_localization::rotationDeltaDeg(
+        pipeline_result.selected_attempt.init_guess,
+        pipeline_result.selected_attempt.final_transformation));
+  } else if (corrent_pose_with_cov_stamped_ptr_) {
+    // Timer publication still needs an accepted map->odom anchor before it
+    // can compose the live odom bridge.  publishCurrentPose normally creates
+    // that anchor, so skipping it in timer mode must skip only the pose/path
+    // messages, not the accepted transform update.
+    const bool freeze_as_last_good = lidar_localization::shouldFreezeMapToOdomAnchor(
+      enable_map_odom_anchor_fitness_gate_, map_odom_anchor_max_fitness_,
+      pipeline_result.selected_attempt.fitness_score,
+      map_odom_anchor_max_correction_rotation_deg_,
+      lidar_localization::rotationDeltaDeg(
+        pipeline_result.selected_attempt.init_guess,
+        pipeline_result.selected_attempt.final_transformation));
+    publishPoseTransform(
+      stamp, corrent_pose_with_cov_stamped_ptr_->pose.pose, freeze_as_last_good);
   }
   return true;
 }
@@ -3624,7 +3814,10 @@ void PCLLocalization::setCurrentPoseFromMatrix(
     lidar_localization::poseFromMatrix(pose_matrix);
 }
 
-void PCLLocalization::publishCurrentPose(const builtin_interfaces::msg::Time & stamp)
+void PCLLocalization::publishCurrentPose(
+  const builtin_interfaces::msg::Time & stamp,
+  double fitness_score,
+  double correction_rotation_deg)
 {
   if (
     shutting_down_.load(std::memory_order_acquire) ||
@@ -3632,8 +3825,27 @@ void PCLLocalization::publishCurrentPose(const builtin_interfaces::msg::Time & s
   {
     return;
   }
+  const bool freeze_as_last_good = lidar_localization::shouldFreezeMapToOdomAnchor(
+    enable_map_odom_anchor_fitness_gate_, map_odom_anchor_max_fitness_, fitness_score,
+    map_odom_anchor_max_correction_rotation_deg_, correction_rotation_deg);
+  if (
+    !freeze_as_last_good && publish_bridge_pose_when_lost_ &&
+    has_last_good_map_to_odom_)
+  {
+    // This accepted scan is useful to the estimator but not trustworthy
+    // enough to move the public odometry anchor. Do not inject its transient
+    // pose into /pcl_pose or TF; emit the confidence-bounded bridge at the
+    // same scan stamp instead.
+    publishBridgePoseAsRejectedOutput(stamp);
+    geometry_msgs::msg::TransformStamped frozen = last_good_map_to_odom_;
+    frozen.header.stamp = stamp;
+    broadcaster_.sendTransform(frozen);
+    return;
+  }
   publishPoseMessage(*corrent_pose_with_cov_stamped_ptr_);
-  if (!publishPoseTransform(stamp, corrent_pose_with_cov_stamped_ptr_->pose.pose)) {
+  if (!publishPoseTransform(
+      stamp, corrent_pose_with_cov_stamped_ptr_->pose.pose, freeze_as_last_good))
+  {
     return;
   }
 
@@ -3663,7 +3875,8 @@ void PCLLocalization::publishPathMessage()
 
 bool PCLLocalization::publishPoseTransform(
   const builtin_interfaces::msg::Time & stamp,
-  const geometry_msgs::msg::Pose & pose)
+  const geometry_msgs::msg::Pose & pose,
+  bool freeze_as_last_good)
 {
   const geometry_msgs::msg::TransformStamped map_to_base_link_stamped =
     lidar_localization::makeMapToBaseTransform(
@@ -3676,12 +3889,13 @@ bool PCLLocalization::publishPoseTransform(
     return true;
   }
 
-  return publishMapToOdomTransform(stamp, map_to_base_link_stamped);
+  return publishMapToOdomTransform(stamp, map_to_base_link_stamped, freeze_as_last_good);
 }
 
 bool PCLLocalization::publishMapToOdomTransform(
   const builtin_interfaces::msg::Time & stamp,
-  const geometry_msgs::msg::TransformStamped & map_to_base_link_stamped)
+  const geometry_msgs::msg::TransformStamped & map_to_base_link_stamped,
+  bool freeze_as_last_good)
 {
   geometry_msgs::msg::TransformStamped odom_to_base_link_msg;
   try {
@@ -3693,14 +3907,250 @@ bool PCLLocalization::publishMapToOdomTransform(
       base_frame_id_.c_str(), odom_frame_id_.c_str(), ex.what());
     return false;
   }
-  broadcaster_.sendTransform(
+  const geometry_msgs::msg::TransformStamped map_to_odom =
     lidar_localization::composeMapToOdomTransform(
       stamp,
       global_frame_id_,
       odom_frame_id_,
       map_to_base_link_stamped,
-      odom_to_base_link_msg));
+      odom_to_base_link_msg);
+  broadcaster_.sendTransform(map_to_odom);
+  // Freeze this map -> odom offset so republishFrozenMapToOdomTransform can keep
+  // it alive (re-stamped) through a dropout. Only called from accepted-match /
+  // accepted-reset call sites (see publishPoseTransform's default and its one
+  // explicit false caller, timerPublishPose) -- never from a rejected match.
+  if (freeze_as_last_good) {
+    last_good_map_to_odom_ = map_to_odom;
+    has_last_good_map_to_odom_ = true;
+    geometry_msgs::msg::Pose anchor_pose;
+    anchor_pose.position.x = map_to_base_link_stamped.transform.translation.x;
+    anchor_pose.position.y = map_to_base_link_stamped.transform.translation.y;
+    anchor_pose.position.z = map_to_base_link_stamped.transform.translation.z;
+    anchor_pose.orientation = map_to_base_link_stamped.transform.rotation;
+    Eigen::Affine3d anchor_affine;
+    tf2::fromMsg(anchor_pose, anchor_affine);
+    odom_tf_constraint_anchor_pose_matrix_ = anchor_affine.matrix().cast<float>();
+    has_odom_tf_constraint_anchor_pose_ = true;
+  }
   return true;
+}
+
+void PCLLocalization::republishFrozenMapToOdomTransform(
+  const builtin_interfaces::msg::Time & stamp)
+{
+  // AMCL-style bridge: while enable_map_odom_tf_ is on, keep the last ACCEPTED
+  // map -> odom offset alive with a fresh stamp even when the current scan was
+  // rejected/skipped, so map -> base_link stays resolvable via TF composition
+  // with the external front end's continuously-live odom -> base_link for the
+  // whole dropout (see docs on the GLIM front-end odom-bridge architecture).
+  if (!enable_map_odom_tf_ || !has_last_good_map_to_odom_) {
+    return;
+  }
+  geometry_msgs::msg::TransformStamped frozen = last_good_map_to_odom_;
+  frozen.header.stamp = stamp;
+  broadcaster_.sendTransform(frozen);
+  publishOdomBridgePose(stamp, frozen);
+}
+
+void PCLLocalization::publishOdomBridgePose(
+  const builtin_interfaces::msg::Time & stamp,
+  const geometry_msgs::msg::TransformStamped & frozen_map_to_odom)
+{
+  // Compose map -> base_link(now) = map -> odom(last accepted, frozen) x
+  // odom -> base_link(now) and publish it for G3's odom-bridge candidate
+  // source. This is the same composition publishMapToOdomTransform performs
+  // on an accept, just with the frozen offset and the current live odom edge.
+  //
+  // Published on a plain topic (not read back off /tf) because a *third*
+  // process's TF listener was found not to reliably receive this node's /tf
+  // in testing (default volatile durability -- a late/separate-process
+  // subscriber can miss every sample), while the KeepLast(1)/transient_local
+  // QoS used here and by pcl_pose does reach a late subscriber reliably.
+  if (!odom_bridge_pose_pub_ || !odom_bridge_pose_pub_->is_activated()) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "odom bridge: publisher missing or not activated; skipping");
+    return;
+  }
+  geometry_msgs::msg::TransformStamped odom_to_base_link_msg;
+  try {
+    odom_to_base_link_msg = tfbuffer_.lookupTransform(
+      odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(0.1));
+  } catch (tf2::TransformException & ex) {
+    // No live odom right now (external front end down/lagging): the odom
+    // bridge is simply unavailable this tick, exactly like any other TF-chain
+    // failure -- do not publish a stale/guessed pose.
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "odom bridge: %s -> %s lookup failed at publish time: %s",
+      odom_frame_id_.c_str(), base_frame_id_.c_str(), ex.what());
+    return;
+  }
+  tf2::Transform map_to_odom_tf;
+  tf2::Transform odom_to_base_tf;
+  tf2::fromMsg(frozen_map_to_odom.transform, map_to_odom_tf);
+  tf2::fromMsg(odom_to_base_link_msg.transform, odom_to_base_tf);
+  const geometry_msgs::msg::Transform composed_transform =
+    tf2::toMsg(map_to_odom_tf * odom_to_base_tf);
+
+  geometry_msgs::msg::Pose composed_pose;
+  composed_pose.position.x = composed_transform.translation.x;
+  composed_pose.position.y = composed_transform.translation.y;
+  composed_pose.position.z = composed_transform.translation.z;
+  composed_pose.orientation = composed_transform.rotation;
+  Eigen::Affine3d composed_affine;
+  tf2::fromMsg(composed_pose, composed_affine);
+  Eigen::Matrix4f bridge_matrix = composed_affine.matrix().cast<float>();
+  if (
+    constrain_odom_tf_prediction_height_only_ &&
+    has_odom_tf_constraint_anchor_pose_)
+  {
+    bridge_matrix = lidar_localization::constrainOdomPredictionHeightOnly(
+      bridge_matrix, odom_tf_constraint_anchor_pose_matrix_);
+    composed_pose = lidar_localization::poseFromMatrix(bridge_matrix);
+  } else if (
+    constrain_odom_tf_prediction_to_planar_ &&
+    has_odom_tf_constraint_anchor_pose_)
+  {
+    bridge_matrix = lidar_localization::constrainOdomPredictionToPlanarMotion(
+      bridge_matrix, odom_tf_constraint_anchor_pose_matrix_);
+    composed_pose = lidar_localization::poseFromMatrix(bridge_matrix);
+  }
+
+  geometry_msgs::msg::PoseWithCovarianceStamped msg;
+  msg.header.stamp = stamp;
+  msg.header.frame_id = global_frame_id_;
+  msg.pose.pose = composed_pose;
+  odom_bridge_pose_pub_->publish(msg);
+  RCLCPP_INFO_THROTTLE(
+    get_logger(), *get_clock(), 5000,
+    "odom bridge: published odom_bridge_pose (%.2f, %.2f, z=%.2f)",
+    msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z);
+}
+
+bool PCLLocalization::lookupOdomBridgePoseMatrix(
+  const builtin_interfaces::msg::Time & stamp,
+  Eigen::Matrix4f & out_pose_matrix,
+  bool use_latest_odom_transform,
+  builtin_interfaces::msg::Time * resolved_stamp)
+{
+  // Same composition as publishOdomBridgePose (frozen map -> odom x live
+  // odom -> base_link(stamp)), but returning an Eigen matrix for use as an
+  // NDT registration seed (see selectRegistrationSeed / use_odom_tf_prediction_).
+  if (!enable_map_odom_tf_ || !has_last_good_map_to_odom_) {
+    return false;
+  }
+  geometry_msgs::msg::TransformStamped odom_to_base_link_msg;
+  try {
+    if (use_latest_odom_transform) {
+      odom_to_base_link_msg = tfbuffer_.lookupTransform(
+        odom_frame_id_, base_frame_id_, tf2::TimePointZero);
+    } else {
+      odom_to_base_link_msg = tfbuffer_.lookupTransform(
+        odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(0.1));
+    }
+  } catch (tf2::TransformException &) {
+    return false;
+  }
+  if (use_latest_odom_transform) {
+    const rclcpp::Time node_stamp(stamp);
+    const bool source_advanced =
+      odom_bridge_transform_history_.empty() ||
+      rclcpp::Time(odom_to_base_link_msg.header.stamp) >
+      rclcpp::Time(odom_bridge_transform_history_.back().header.stamp);
+    if (source_advanced) {
+      odom_bridge_transform_history_.push_back(odom_to_base_link_msg);
+      while (
+        odom_bridge_transform_history_.size() > 2 &&
+        (rclcpp::Time(odom_bridge_transform_history_.back().header.stamp) -
+        rclcpp::Time(odom_bridge_transform_history_.front().header.stamp)).seconds() > 1.0)
+      {
+        odom_bridge_transform_history_.pop_front();
+      }
+      last_odom_bridge_source_advance_node_stamp_ = stamp;
+      has_last_odom_bridge_source_advance_node_stamp_ = true;
+    } else if (has_last_odom_bridge_source_advance_node_stamp_) {
+      const double paused_sec =
+        (node_stamp - rclcpp::Time(last_odom_bridge_source_advance_node_stamp_)).seconds();
+      if (paused_sec < 0.0) {
+        last_odom_bridge_source_advance_node_stamp_ = stamp;
+      } else if (paused_sec > 0.5 && odom_bridge_transform_history_.size() >= 2) {
+        const auto extrapolated =
+          lidar_localization::extrapolateTransformConstantBodyMotion(
+          odom_bridge_transform_history_.front(),
+          odom_bridge_transform_history_.back(), stamp, 2.0);
+        if (extrapolated.has_value()) {
+          odom_to_base_link_msg = extrapolated.value();
+          RCLCPP_WARN_THROTTLE(
+            get_logger(), *get_clock(), 5000,
+            "odom bridge: upstream TF paused for %.3f sec; publishing bounded constant-motion extrapolation",
+            paused_sec);
+        }
+      }
+    }
+  }
+  if (resolved_stamp != nullptr) {
+    *resolved_stamp = odom_to_base_link_msg.header.stamp;
+  }
+  tf2::Transform map_to_odom_tf;
+  tf2::Transform odom_to_base_tf;
+  tf2::fromMsg(last_good_map_to_odom_.transform, map_to_odom_tf);
+  tf2::fromMsg(odom_to_base_link_msg.transform, odom_to_base_tf);
+  const geometry_msgs::msg::Transform composed =
+    tf2::toMsg(map_to_odom_tf * odom_to_base_tf);
+
+  geometry_msgs::msg::Pose pose;
+  pose.position.x = composed.translation.x;
+  pose.position.y = composed.translation.y;
+  pose.position.z = composed.translation.z;
+  pose.orientation = composed.rotation;
+  Eigen::Affine3d affine;
+  tf2::fromMsg(pose, affine);
+  out_pose_matrix = affine.matrix().cast<float>();
+  if (
+    constrain_odom_tf_prediction_height_only_ &&
+    has_odom_tf_constraint_anchor_pose_)
+  {
+    out_pose_matrix = lidar_localization::constrainOdomPredictionHeightOnly(
+      out_pose_matrix, odom_tf_constraint_anchor_pose_matrix_);
+  } else if (
+    constrain_odom_tf_prediction_to_planar_ &&
+    has_odom_tf_constraint_anchor_pose_)
+  {
+    out_pose_matrix = lidar_localization::constrainOdomPredictionToPlanarMotion(
+      out_pose_matrix, odom_tf_constraint_anchor_pose_matrix_);
+  }
+  return true;
+}
+
+void PCLLocalization::publishBridgePoseAsRejectedOutput(
+  const builtin_interfaces::msg::Time & stamp)
+{
+  // Opt-in output continuity for a rejected/lost scan: /pcl_pose otherwise
+  // stays silent (only an accepted match calls publishCurrentPose), so the
+  // benchmark's coverage/RMSE would see a gap for the whole dropout even
+  // though the odom bridge has a perfectly good estimate. This intentionally
+  // never touches corrent_pose_with_cov_stamped_ptr_, predicted_pose_matrix_,
+  // or any other internal belief -- publishPoseMessage is a bare topic
+  // publish, so the next scan's seed/prediction is unaffected either way.
+  if (!publish_bridge_pose_when_lost_) {
+    return;
+  }
+  Eigen::Matrix4f bridge_pose_matrix;
+  if (!lookupOdomBridgePoseMatrix(stamp, bridge_pose_matrix)) {
+    return;
+  }
+  geometry_msgs::msg::PoseWithCovarianceStamped msg;
+  msg.header.stamp = stamp;
+  msg.header.frame_id = global_frame_id_;
+  msg.pose.pose = lidar_localization::poseFromMatrix(bridge_pose_matrix);
+  // Deliberately wider than an accepted fix's covariance (large fitness_score
+  // input to the same error-floor model fillPoseCovariance uses): this is an
+  // odometry-only prediction, not a scan-matched confirmation.
+  const auto covariance = lidar_localization::makeErrorFloorPoseCovariance(
+    error_floor_covariance_params_, error_floor_covariance_params_.xy_max_std_m * 10.0);
+  msg.pose.covariance = covariance;
+  publishPoseMessage(msg);
 }
 
 void PCLLocalization::fillPoseCovariance(double fitness_score)
@@ -3724,7 +4174,8 @@ void PCLLocalization::fillPoseCovariance(double fitness_score)
 PCLLocalization::ReinitializationRequestDecision
 PCLLocalization::applyReinitializationRequestLatch(
   const builtin_interfaces::msg::Time & stamp,
-  const ReinitializationRequestDecision & decision)
+  const ReinitializationRequestDecision & decision,
+  bool clear_sample)
 {
   const auto latch_result = lidar_localization::applyReinitializationRequestLatch(
     lidar_localization::ReinitializationRequestLatchInput{
@@ -3733,14 +4184,19 @@ PCLLocalization::applyReinitializationRequestLatch(
         reinitialization_request_latched_,
         reinitialization_request_latch_reason_,
         reinitialization_request_latch_score_,
-        reinitialization_request_latch_stamp_sec_},
+        reinitialization_request_latch_stamp_sec_,
+        reinitialization_request_latch_consecutive_ok_samples_},
       decision,
-      stamp_to_sec(stamp)});
+      stamp_to_sec(stamp),
+      clear_sample,
+      reinitialization_request_clear_ok_samples_});
 
   reinitialization_request_latched_ = latch_result.state.latched;
   reinitialization_request_latch_reason_ = latch_result.state.reason;
   reinitialization_request_latch_score_ = latch_result.state.score;
   reinitialization_request_latch_stamp_sec_ = latch_result.state.stamp_sec;
+  reinitialization_request_latch_consecutive_ok_samples_ =
+    latch_result.state.consecutive_clear_samples;
   return latch_result.decision;
 }
 
@@ -3964,7 +4420,14 @@ PCLLocalization::AlignmentStatusEvaluation PCLLocalization::evaluateAlignmentSta
   evaluation.reinitialization_request =
     applyReinitializationRequestLatch(
       stamp,
-      evaluation.status_preparation.reinitialization_request);
+      evaluation.status_preparation.reinitialization_request,
+      evaluation.status_input.level == diagnostic_msgs::msg::DiagnosticStatus::OK &&
+      evaluation.status_input.message == "ok" &&
+      std::isfinite(evaluation.status_input.fitness_score) &&
+      evaluation.status_input.fitness_score <= reinitialization_request_clear_max_fitness_ &&
+      std::isfinite(evaluation.status_input.correction_translation_m) &&
+      evaluation.status_input.correction_translation_m <=
+      reinitialization_request_clear_max_correction_translation_m_);
 
   const auto recovery_evaluation =
     lidar_localization::evaluateAlignmentStatusRecovery(
@@ -4131,15 +4594,68 @@ void PCLLocalization::timerPublishPose()
     return;
   }
   if (!corrent_pose_with_cov_stamped_ptr_) {return;}
+  builtin_interfaces::msg::Time publish_stamp = now();
   geometry_msgs::msg::PoseWithCovarianceStamped pose_copy =
-    lidar_localization::stampPoseWithCovariance(*corrent_pose_with_cov_stamped_ptr_, now());
+    lidar_localization::stampPoseWithCovariance(
+    *corrent_pose_with_cov_stamped_ptr_, publish_stamp);
+
+  // A scan-driven bridge alone cannot guarantee an output-rate contract when
+  // the upstream registered cloud pauses.  In the opt-in bridge mode, compose
+  // the frozen accepted map->odom anchor with GLIM's latest odom->base pose on
+  // every timer tick.  The latest lookup avoids needless future-extrapolation
+  // failures when /clock is a few milliseconds ahead of the newest odom TF.
+  bool published_odom_bridge_pose = false;
+  if (publish_bridge_pose_when_lost_) {
+    Eigen::Matrix4f bridge_pose_matrix;
+    if (!lookupOdomBridgePoseMatrix(
+        publish_stamp, bridge_pose_matrix, true))
+    {
+      // Before the first accepted map->odom anchor (or while GLIM has no live
+      // odom TF), publishing the stale configured initial pose would fabricate
+      // continuity.  It would also make the fallback exact-time lookup block
+      // this mutually-exclusive callback group on every timer tick.
+      return;
+    }
+    // Keep the timer's current ROS stamp even when the newest odom transform
+    // has not advanced yet. Reusing the source TF stamp makes consecutive
+    // timer outputs duplicates; consumers that de-duplicate by stamp then see
+    // an artificial output gap during a short upstream pause. The pose itself
+    // is still based on the latest transform (and becomes bounded
+    // constant-motion extrapolation after the pause threshold above).
+    pose_copy.pose.pose = lidar_localization::poseFromMatrix(bridge_pose_matrix);
+    pose_copy.pose.covariance = lidar_localization::makeErrorFloorPoseCovariance(
+      error_floor_covariance_params_,
+      error_floor_covariance_params_.xy_max_std_m * 10.0);
+    published_odom_bridge_pose = true;
+  }
 
   appendCurrentPoseToPath(pose_copy.header.stamp, pose_copy.pose.pose);
 
   nav_msgs::msg::Path path_copy = *path_ptr_;
 
   publishPoseMessage(pose_copy);
+  if (published_odom_bridge_pose && odom_bridge_pose_pub_) {
+    // Keep the supervisor candidate as fresh as the public bridge output.
+    // Reusing pose_copy avoids a second exact-time TF lookup and preserves
+    // the bounded extrapolation (plus its deliberately wide covariance)
+    // through upstream TF pauses.
+    odom_bridge_pose_pub_->publish(pose_copy);
+  }
   path_pub_->publish(path_copy);
 
-  publishPoseTransform(pose_copy.header.stamp, pose_copy.pose.pose);
+  // The timer republishes whatever pose was last set, which may already be
+  // stale (held by prediction, not a fresh accept); do not re-freeze it as the
+  // bridge's "last good" reference here -- that only happens at the accepted-
+  // match / accepted-reset call sites (publishCurrentPose, initialPoseReceived).
+  if (published_odom_bridge_pose) {
+    // The pose was derived from this exact frozen edge. Re-stamp only that
+    // edge here; republishFrozenMapToOdomTransform also performs an exact-time
+    // odom lookup for the supervisor topic, which can consume the whole 10 Hz
+    // callback budget while /clock is slightly ahead of GLIM's newest TF.
+    geometry_msgs::msg::TransformStamped frozen = last_good_map_to_odom_;
+    frozen.header.stamp = pose_copy.header.stamp;
+    broadcaster_.sendTransform(frozen);
+  } else {
+    publishPoseTransform(pose_copy.header.stamp, pose_copy.pose.pose, false);
+  }
 }

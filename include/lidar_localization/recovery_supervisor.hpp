@@ -86,7 +86,16 @@ inline bool isRecoveryFailureStatus(const std::string & status_message)
          status_message == "registration_not_converged" ||
          status_message == "filtered_scan_empty" ||
          status_message == "scan_missing_xyz_field" ||
-         status_message.rfind("fitness_score_over_", 0) == 0;
+         status_message.rfind("fitness_score_over_", 0) == 0 ||
+         status_message == "imu_prediction_correction_guard_rejected" ||
+         status_message == "odom_tf_prediction_correction_guard_rejected";
+}
+
+inline bool isRejectedMeasurementStatus(const std::string & status_message)
+{
+  return status_message.rfind("fitness_score_over_", 0) == 0 ||
+         status_message == "imu_prediction_correction_guard_rejected" ||
+         status_message == "odom_tf_prediction_correction_guard_rejected";
 }
 
 inline ReinitializationRequestDecision computeReinitializationRequest(
@@ -96,7 +105,7 @@ inline ReinitializationRequestDecision computeReinitializationRequest(
   ReinitializationRequestDecision decision;
   const bool target_unavailable = input.status_message == "local_map_crop_too_small";
   const bool not_converged = input.status_message == "registration_not_converged";
-  const bool rejected_measurement = input.status_message.rfind("fitness_score_over_", 0) == 0;
+  const bool rejected_measurement = isRejectedMeasurementStatus(input.status_message);
   const bool failure = target_unavailable || not_converged || rejected_measurement;
 
   if (!failure) {
@@ -121,6 +130,21 @@ inline ReinitializationRequestDecision computeReinitializationRequest(
     std::isfinite(input.fitness_score) &&
     input.fitness_score >= params.fitness_explosion_threshold;
 
+  // A scan can be "merely bad" (rejected, but never spiking past the
+  // fitness_explosion_threshold, and -- especially with a well-predicted
+  // seed, e.g. an odom-TF-bridged prediction -- never drifting far enough for
+  // seed_component to saturate either) for far longer than gap_scale_sec
+  // without a lucky spike ever recurring. Without this, the weighted score
+  // can plateau under threshold forever (0.45 gap + 0.20 streak = 0.65 here,
+  // both maxed, < 0.95) even though tracking has been fully lost -- zero
+  // accepted matches and every recent scan rejected -- for far longer than
+  // gap_scale_sec. Sustained saturation of BOTH the accepted-pose gap and the
+  // reject streak is on its own unambiguous "still stuck" evidence and must
+  // not depend on a fitness spike or a large seed excursion recurring, so it
+  // is treated as an independent trigger alongside target_unavailable /
+  // fitness_exploded rather than folded into the weighted sum.
+  const bool sustained_failure = gap_component >= 1.0 && streak_component >= 1.0;
+
   decision.score =
     0.45 * gap_component +
     0.30 * seed_component +
@@ -128,16 +152,19 @@ inline ReinitializationRequestDecision computeReinitializationRequest(
     (target_unavailable ? 0.15 : 0.0) +
     (fitness_exploded ? 0.15 : 0.0);
 
-  if (decision.score < params.threshold) {
+  if (decision.score < params.threshold && !sustained_failure) {
     decision.reason = "reinit_not_requested";
     return decision;
   }
 
   decision.requested = true;
+  decision.score = std::max(decision.score, params.threshold);
   if (target_unavailable) {
     decision.reason = "target_unavailable_reinit_requested";
   } else if (fitness_exploded) {
     decision.reason = "fitness_exploded_reinit_requested";
+  } else if (sustained_failure) {
+    decision.reason = "sustained_failure_reinit_requested";
   } else if (gap_component >= 1.0) {
     decision.reason = "accepted_gap_reinit_requested";
   } else if (streak_component >= 1.0) {
@@ -211,7 +238,7 @@ inline std::string classifyRecoverySupervisorAction(
     return "advance_prediction_without_measurement";
   }
   if (
-    status_message.rfind("fitness_score_over_", 0) == 0 &&
+    isRejectedMeasurementStatus(status_message) &&
     status_message.find("_rejected") != std::string::npos)
   {
     return "reject_measurement";

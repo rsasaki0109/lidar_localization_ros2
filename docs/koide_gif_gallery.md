@@ -60,13 +60,82 @@ reference trajectory.
 
 ## Measured localization replays
 
+### Full-sequence GLIM external-LIO replays (2026-07-19)
+
+These are full-bag measurements of the recovery architecture, not route previews or
+30-second smoke tests. GLIM supplies live `odom -> base_link`; NDT supplies the map
+anchor. While NDT rejects a scan, the last accepted `map -> odom` anchor is frozen and
+re-stamped, and the published `/pcl_pose` is composed from that anchor and live GLIM
+odometry. The G3 supervisor tries the same composed pose before any BBS global search.
+The GLIM configuration uses the exact quadratic coreset (size 32) and one worker thread.
+
+The two coverage columns deliberately measure different things:
+
+- **Output coverage** is the fraction of alignment scan times covered by the public
+  `/pcl_pose` stream. It includes accepted NDT poses and odom-bridge poses.
+- **NDT matched** is the fraction of alignment scans accepted by NDT. A low value does
+  not mean missing output: it shows how much of the sequence the bridge had to carry.
+
+| Bag | Duration | Translation RMSE | Max / final error | Output coverage | NDT matched | Max output gap | Gate |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `outdoor_hard_01a` | 380 s | 0.772 m | 3.230 / 0.487 m | 100.0% | 24.8% | 0.601 s | Pass |
+| `outdoor_hard_01b` | 302 s | 0.699 m | 2.096 / 0.221 m | 100.0% | 48.8% | 0.700 s | Pass |
+| `outdoor_hard_02a` | 363 s | 0.708 m | 1.949 / 0.195 m | 100.0% | 23.5% | 0.700 s | Pass |
+| `outdoor_hard_02b` | 298 s | 0.655 m | 2.307 / 0.193 m | 100.0% | 63.0% | 0.751 s | Pass |
+
+The gate requires output coverage >=99%, translation RMSE <=2.0 m, and maximum output
+gap <=1.0 s. All processes returned zero; false recovery confirmation, BBS reset,
+reset loops, NaN, crashes, and TF-parent conflicts were zero. The aspirational targets
+of 0.5 m RMSE and 95% NDT matched coverage remain open. For repeatability,
+`outdoor_hard_01a` was run three times: RMSE was 0.772--0.952 m, final error was
+0.475--0.495 m, and all three runs passed the output gates.
+
+In the GIFs, the teal line is the complete public `/pcl_pose` stream. Green dots are
+NDT-accepted scans, amber dots are odom-bridge output during rejection, and red dots
+are odom-bridge output while reinitialization is also requested. The blue dashed line
+is ground truth. Run-level metrics are loaded directly from `trajectory_eval.json` and
+`bridge_coverage.json` when rendering; they are not typed into the image by hand.
+
+#### Outdoor hard 01a — full sequence
+
+Representative repeat 3 of 3; the long red and amber spans remain covered by the
+external-LIO bridge.
+
+![Koide outdoor_hard_01a full GLIM localization replay](../images/koide/measured/glim_frontend/outdoor_hard_01a_full.gif)
+
+#### Outdoor hard 01b — full sequence
+
+![Koide outdoor_hard_01b full GLIM localization replay](../images/koide/measured/glim_frontend/outdoor_hard_01b_full.gif)
+
+#### Outdoor hard 02a — full sequence
+
+![Koide outdoor_hard_02a full GLIM localization replay](../images/koide/measured/glim_frontend/outdoor_hard_02a_full.gif)
+
+#### Outdoor hard 02b — full sequence
+
+![Koide outdoor_hard_02b full GLIM localization replay](../images/koide/measured/glim_frontend/outdoor_hard_02b_full.gif)
+
+#### Outdoor hard 02b — recovery and safe re-attachment
+
+This crop starts at `t=175 s`. It includes the reinitialization-request interval and the
+natural NDT re-attachment at `t=264.0 s`. The request latch clears only after five
+consecutive accepted samples with fitness <=1.0 and translation correction <=0.5 m.
+The qualifying samples tightened from fitness 0.937 to 0.561 with 0.014--0.064 m
+corrections; `/pcl_pose` remained continuous throughout.
+
+![Koide outdoor_hard_02b GLIM recovery and safe re-attachment](../images/koide/measured/glim_frontend/outdoor_hard_02b_recovery.gif)
+
+### 30-second NDT baseline (2026-07-17)
+
 These GIFs are generated from recorded `/pcl_pose`, not copied from ground truth. Each
 run covers the first 30 seconds of its bag, except `outdoor_kidnap_a`, which starts at
 `+0.6 s` so the published ground truth overlaps the replay. Indoor runs are LiDAR-only;
 outdoor runs use scan-bounded dual-queue IMU preintegration with the correction guard
 and `imu_accel_scale: 9.80665` (the Koide Livox bags publish acceleration in g).
 
-The table below is the 2026-07-17 measurement on a quiet machine. Two earlier defects
+The table below is the earlier 2026-07-17 measurement on a quiet machine. It uses the
+package's internal motion model rather than the GLIM external-LIO architecture above.
+Two earlier defects
 were fixed before it: the IMU acceleration unit/variance bugs (dual-queue
 preintegration work) and a missing `imu_accel_scale` in the generated benchmark
 manifests. The 2026-07-13 artifacts are archived next to the current runs
@@ -166,9 +235,33 @@ python3 scripts/prepare_koide_localization_gif_benchmarks.py \
   --output-root /media/sasaki/aiueo/datasets/koide_hard_localization/generated/localization_gif_benchmarks
 ```
 
-Each GIF contains 64 frames at 648 x 450. The red arrow is derived from trajectory motion,
-including a minimum spatial baseline at stops and trajectory endpoints, so it represents
-the direction of travel rather than the sensor quaternion.
+Render a full-sequence GLIM run from its recorded benchmark artifacts. This example is
+the 02b replay; substitute the corresponding run and reference paths for 01a/01b/02a:
+
+```bash
+DATA=/media/sasaki/aiueo/datasets/koide_hard_localization
+RUN=/tmp/glimfrontend_runs/outdoor_hard_02b_coreset_latch_clear_run04
+
+python3 scripts/render_koide_localization_gif.py \
+  --occupancy-yaml "$DATA/generated/gif_gallery/occupancy/outdoor_hard/map.yaml" \
+  --estimated-csv "$RUN/pose_trace.csv" \
+  --alignment-csv "$RUN/alignment_status.csv" \
+  --reference-csv \
+    "$DATA/generated/localization_gif_benchmarks/assets/outdoor_hard_02b_reference.csv" \
+  --trajectory-eval-json "$RUN/trajectory_eval.json" \
+  --bridge-coverage-json "$RUN/bridge_coverage.json" \
+  --output-gif images/koide/measured/glim_frontend/outdoor_hard_02b_full.gif \
+  --frames 72 --fps 9 \
+  --sequence-label "Koide outdoor_hard_02b (full 298 s)" \
+  --estimate-label "Published /pcl_pose" \
+  --title "GLIM external LIO + NDT map localization"
+```
+
+Add `--start-offset-sec 175 --duration-sec 123` for the 02b recovery crop. Full-sequence
+GIFs use 72 frames; the recovery crop and legacy gallery use 64. All are 648 x 450. The
+red arrow is derived from trajectory motion, including a minimum spatial baseline at
+stops and trajectory endpoints, so it represents direction of travel rather than the
+sensor quaternion.
 
 Dataset citation: Kenji Koide, *Hard Point Cloud Localization Dataset*, Zenodo, 2023,
 <https://doi.org/10.5281/zenodo.10122133>. Dataset files are distributed under CC BY 4.0.

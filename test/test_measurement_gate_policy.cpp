@@ -39,6 +39,9 @@ void test_param_and_input_builders_map_fields()
   config.enable_borderline_seed_rejection_gate = true;
   config.borderline_seed_gate_score_threshold = 6.25;
   config.borderline_seed_gate_min_seed_translation_m = 1.25;
+  config.enable_odom_tf_prediction_correction_guard = true;
+  config.odom_tf_prediction_correction_guard_translation_m = 1.9;
+  config.odom_tf_prediction_correction_guard_yaw_deg = 25.0;
   config.enable_rejected_seed_update = true;
   config.rejected_seed_update_min_rejections = 8;
   config.rejected_seed_update_max_fitness = 10.5;
@@ -63,6 +66,9 @@ void test_param_and_input_builders_map_fields()
   assert(params.enable_borderline_seed_rejection_gate);
   assert(params.borderline_seed_gate_score_threshold == 6.25);
   assert(params.borderline_seed_gate_min_seed_translation_m == 1.25);
+  assert(params.enable_odom_tf_prediction_correction_guard);
+  assert(params.odom_tf_prediction_correction_guard_translation_m == 1.9);
+  assert(params.odom_tf_prediction_correction_guard_yaw_deg == 25.0);
   assert(params.enable_rejected_seed_update);
   assert(params.rejected_seed_update_min_rejections == 8);
   assert(params.rejected_seed_update_max_fitness == 10.5);
@@ -76,6 +82,64 @@ void test_param_and_input_builders_map_fields()
   assert(input.correction_translation_m == 4.0);
   assert(input.correction_yaw_deg == 5.0);
   assert(input.consecutive_rejected_updates == 6);
+  assert(!input.odom_tf_prediction_guard_applicable);
+}
+
+void test_odom_tf_prediction_correction_guard_is_opt_in_and_seed_specific()
+{
+  auto params = default_params();
+  auto input = default_input();
+  input.odom_tf_prediction_guard_applicable = true;
+  input.correction_translation_m = 2.1;
+  input.correction_yaw_deg = 3.0;
+
+  auto gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);
+
+  params.enable_odom_tf_prediction_correction_guard = true;
+  params.odom_tf_prediction_correction_guard_translation_m = 2.0;
+  params.odom_tf_prediction_correction_guard_yaw_deg = 30.0;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(gate.reject_measurement);
+  assert(gate.status_message == "odom_tf_prediction_correction_guard_rejected");
+
+  input.odom_tf_prediction_guard_applicable = false;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);
+
+  input.odom_tf_prediction_guard_applicable = true;
+  input.correction_translation_m = 2.0;
+  input.correction_yaw_deg = 30.0;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);
+}
+
+void test_odom_tf_recovery_guard_relaxes_only_for_strong_match_after_streak()
+{
+  auto params = default_params();
+  params.enable_odom_tf_prediction_correction_guard = true;
+  params.odom_tf_prediction_correction_guard_translation_m = 1.5;
+  params.enable_odom_tf_prediction_recovery_correction_guard = true;
+  params.odom_tf_prediction_recovery_min_rejections = 30;
+  params.odom_tf_prediction_recovery_max_fitness = 1.5;
+  params.odom_tf_prediction_recovery_guard_translation_m = 5.0;
+
+  auto input = default_input();
+  input.odom_tf_prediction_guard_applicable = true;
+  input.correction_translation_m = 3.0;
+  input.fitness_score = 1.0;
+  input.consecutive_rejected_updates = 29;
+  assert(ll::evaluateMeasurementGate(params, input).reject_measurement);
+
+  input.consecutive_rejected_updates = 30;
+  assert(!ll::evaluateMeasurementGate(params, input).reject_measurement);
+
+  input.fitness_score = 1.6;
+  assert(ll::evaluateMeasurementGate(params, input).reject_measurement);
+
+  input.fitness_score = 1.0;
+  input.correction_translation_m = 5.1;
+  assert(ll::evaluateMeasurementGate(params, input).reject_measurement);
 }
 
 void test_default_ok_gate()
@@ -221,6 +285,8 @@ int main()
 {
   test_param_and_input_builders_map_fields();
   test_default_ok_gate();
+  test_odom_tf_prediction_correction_guard_is_opt_in_and_seed_specific();
+  test_odom_tf_recovery_guard_relaxes_only_for_strong_match_after_streak();
   test_effective_threshold_uses_lowest_active_strict_threshold();
   test_threshold_rejection_messages();
   test_open_loop_and_post_reject_messages();

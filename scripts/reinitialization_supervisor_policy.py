@@ -147,6 +147,19 @@ class SupervisorParams:
     enable_confirm_cross_check: bool = True
     # Euclidean xy distance (m) above which the verify query is treated as an alias.
     cross_check_mismatch_m: float = 5.0
+    # Odom bridge: try a candidate built from map -> odom(last accepted) x
+    # odom -> base_link(now) -- see the node's TF lookup -- before spending a G2
+    # BBS query. An external LIO front end (e.g. GLIM) with low relative odom
+    # drift makes this reseed far tighter than a BBS candidate during a short
+    # dropout, and it costs zero query latency. Off by default: it needs the
+    # continuous external odom -> base_link TF the GLIM front-end architecture
+    # provides, which most deployments do not have.
+    use_odom_bridge_candidate: bool = False
+    # Give the bridge this many publish-and-settle tries per episode before
+    # permanently falling back to the BBS query for the rest of the episode
+    # (each try is one settle_timeout_sec wait, not a BBS query, so it does not
+    # spend max_attempts).
+    odom_bridge_max_attempts: int = 1
 
 
 @dataclass(frozen=True)
@@ -172,6 +185,16 @@ class SupervisorState:
     # Set when a cross-check objectively detected the localizer is off; while True
     # the episode proceeds even if reinitialization_requested is de-asserted.
     alias_confirmed: bool = False
+    # Which source the reset currently being settled came from: "bbs" (a G2
+    # candidate, possibly walked) or "odom_bridge" (see SupervisorParams).
+    # Determines which failure-handling branch STATE_SETTLING takes.
+    active_source: str = "bbs"
+    # Odom-bridge publish-and-settle tries spent this episode, and whether the
+    # bridge has been given up on for the rest of the episode (both reset with
+    # every other per-episode field on exit -- see _reset_to_idle/_to_exhausted/
+    # _standdown_confirmed).
+    odom_bridge_attempts: int = 0
+    odom_bridge_exhausted: bool = False
 
 
 @dataclass(frozen=True)
@@ -199,6 +222,13 @@ class SupervisorObservation:
     # Distance (m) between the verify query's top raw fix and the localizer pose at
     # the fix scan stamp; None when the node could not evaluate it.
     cross_check_mismatch_m: Optional[float] = None
+    # True when the node currently has a usable odom-bridge candidate (a fresh
+    # TF lookup of global_frame_id -> base_frame_id composed from the frozen
+    # map -> odom offset and the live external odom -> base_link). The policy
+    # never sees the pose itself -- only the node publishes it, exactly like the
+    # BBS candidate list stays node-side -- this flag is all decide() needs to
+    # choose the bridge over a query.
+    odom_bridge_available: bool = False
 
 
 @dataclass(frozen=True)
@@ -208,17 +238,35 @@ class SupervisorDecision:
     state: SupervisorState
     # On ACTION_PUBLISH_RESET, which candidate (rank index, 0 = best) the node must
     # publish. The node holds the ranked candidate poses from the last query reply.
+    # Meaningless when candidate_source == "odom_bridge" (there is no ranked list).
     candidate_index: int = 0
+    # On ACTION_PUBLISH_RESET, which pose source the node must publish: "bbs"
+    # (index into its candidate list) or "odom_bridge" (its cached TF lookup).
+    # Mirrors state.active_source at the moment of this decision.
+    candidate_source: str = "bbs"
 
 
 def initial_state() -> SupervisorState:
     return SupervisorState()
 
 
+# Per-episode fields every exit branch (standdown, idle, exhausted) must clear so
+# a later, unrelated episode always starts with a clean slate -- the odom-bridge
+# budget included, exactly like alias_confirmed and the recovery-evidence counters.
+_EPISODE_RESET_FIELDS = dict(
+    recovery_evidence_count=0,
+    last_recovery_fitness_observed_sec=None,
+    alias_confirmed=False,
+    active_source="bbs",
+    odom_bridge_attempts=0,
+    odom_bridge_exhausted=False,
+)
+
+
 def _standdown_confirmed(state: SupervisorState) -> SupervisorState:
     """Next state after a confirmed recovery (direct or post verify cross-check)."""
-    return replace(
-        state,
+    fields = dict(
+        _EPISODE_RESET_FIELDS,
         name=STATE_STANDDOWN,
         attempts=0,
         last_reset_sec=None,
@@ -226,10 +274,8 @@ def _standdown_confirmed(state: SupervisorState) -> SupervisorState:
         query_issued_sec=None,
         candidate_scores=(),
         candidate_index=0,
-        recovery_evidence_count=0,
-        last_recovery_fitness_observed_sec=None,
-        alias_confirmed=False,
     )
+    return replace(state, **fields)
 
 
 def _reset_to_idle(state: SupervisorState, **overrides) -> SupervisorState:
@@ -238,25 +284,14 @@ def _reset_to_idle(state: SupervisorState, **overrides) -> SupervisorState:
     Centralized so no exit branch can forget alias_confirmed=False -- a latched
     flag would make future episodes permanently ignore request de-assertion.
     """
-    fields = dict(
-        name=STATE_IDLE,
-        attempts=0,
-        recovery_evidence_count=0,
-        last_recovery_fitness_observed_sec=None,
-        alias_confirmed=False,
-    )
+    fields = dict(_EPISODE_RESET_FIELDS, name=STATE_IDLE, attempts=0)
     fields.update(overrides)
     return replace(state, **fields)
 
 
 def _to_exhausted(state: SupervisorState, **overrides) -> SupervisorState:
     """Terminal EXHAUSTED state; same clearing rules as the IDLE exit."""
-    fields = dict(
-        name=STATE_EXHAUSTED,
-        recovery_evidence_count=0,
-        last_recovery_fitness_observed_sec=None,
-        alias_confirmed=False,
-    )
+    fields = dict(_EPISODE_RESET_FIELDS, name=STATE_EXHAUSTED)
     fields.update(overrides)
     return replace(state, **fields)
 
@@ -324,16 +359,35 @@ def decide(
             return SupervisorDecision(
                 ACTION_NONE, "request_cleared",
                 _reset_to_idle(state))
-        if state.attempts >= params.max_attempts:
-            return SupervisorDecision(
-                ACTION_GIVE_UP, "attempts_exhausted", _to_exhausted(state))
-        # Respect spacing relative to the previous reset, if any.
+        # Respect spacing relative to the previous reset, if any -- applies to
+        # the odom bridge too, so neither source can republish back-to-back.
         if (state.last_reset_sec is not None
                 and now - state.last_reset_sec < params.min_seconds_between_attempts):
             return SupervisorDecision(ACTION_NONE, "spacing_hold", state)
+        if (params.use_odom_bridge_candidate
+                and not state.odom_bridge_exhausted
+                and obs.odom_bridge_available):
+            # Zero-latency reseed from the external front end's odom (map ->
+            # odom(last accepted) x odom -> base_link(now)), tried before every
+            # BBS query -- see SupervisorParams.use_odom_bridge_candidate. Does
+            # not touch state.attempts: that ceiling is the BBS query budget,
+            # and the bridge has its own (odom_bridge_max_attempts) below.
+            return SupervisorDecision(
+                ACTION_PUBLISH_RESET, "odom_bridge_reset_published",
+                replace(
+                    state, name=STATE_SETTLING, last_reset_sec=now,
+                    query_issued_sec=None, active_source="odom_bridge",
+                    candidate_scores=(), candidate_index=0,
+                    recovery_evidence_count=0,
+                    last_recovery_fitness_observed_sec=None),
+                candidate_index=0, candidate_source="odom_bridge")
+        if state.attempts >= params.max_attempts:
+            return SupervisorDecision(
+                ACTION_GIVE_UP, "attempts_exhausted", _to_exhausted(state))
         return SupervisorDecision(
             ACTION_QUERY, "query_issued",
-            replace(state, name=STATE_AWAIT_CANDIDATES, query_issued_sec=now))
+            replace(state, name=STATE_AWAIT_CANDIDATES, query_issued_sec=now,
+                    active_source="bbs"))
 
     if name == STATE_AWAIT_CANDIDATES:
         reply_scores = _resolve_candidate_scores(obs)
@@ -404,6 +458,25 @@ def decide(
                 _standdown_confirmed(state_with_evidence))
         if (state.last_reset_sec is not None
                 and now - state.last_reset_sec >= params.settle_timeout_sec):
+            if state.active_source == "odom_bridge":
+                # The bridge reset did not take (e.g. the dropout is long enough
+                # that odom drift finally exceeded the registration basin). Spend
+                # one of the bridge's own tries, not a BBS attempt; once that
+                # budget is spent for this episode, every later AWAIT_QUERY visit
+                # falls through to the BBS query instead.
+                odom_bridge_attempts = state.odom_bridge_attempts + 1
+                odom_bridge_exhausted = (
+                    odom_bridge_attempts >= params.odom_bridge_max_attempts)
+                return _cooldown(
+                    replace(
+                        state_with_evidence,
+                        odom_bridge_attempts=odom_bridge_attempts,
+                        odom_bridge_exhausted=odom_bridge_exhausted,
+                        candidate_scores=(),
+                        candidate_index=0,
+                        recovery_evidence_count=0,
+                        last_recovery_fitness_observed_sec=None),
+                    now, "odom_bridge_unconfirmed")
             # This candidate did not take. Walk to the next-best candidate from the
             # same query (the localizer's fitness is the registration oracle) before
             # spending another attempt -- only re-querying consumes max_attempts.
@@ -475,10 +548,11 @@ def decide(
                         name=STATE_SETTLING,
                         last_reset_sec=now,
                         attempts=state.attempts + 1,
+                        active_source="bbs",
                         candidate_scores=tuple(reply_scores),
                         candidate_index=0,
                         alias_confirmed=True),
-                    candidate_index=0)
+                    candidate_index=0, candidate_source="bbs")
             return _cooldown(
                 replace(cleared, alias_confirmed=True), now, "cross_check_mismatch")
         if (state.query_issued_sec is not None
@@ -566,6 +640,105 @@ class SeedVelocity:
     vx: float = 0.0
     vy: float = 0.0
     valid: bool = False
+
+
+@dataclass(frozen=True)
+class ShadowMotionMismatch:
+    """SE(2) delta mismatch between successive global fixes and odometry."""
+
+    translation_m: float
+    yaw_deg: float
+
+
+@dataclass(frozen=True)
+class ShadowMotionGateResult:
+    publish_allowed: bool
+    consistent_samples: int
+    mismatch: Optional[ShadowMotionMismatch] = None
+
+
+def _wrap_angle_rad(angle: float) -> float:
+    return math.atan2(math.sin(angle), math.cos(angle))
+
+
+def compare_shadow_relative_motion(
+    first_candidate: Tuple[float, float, float],
+    second_candidate: Tuple[float, float, float],
+    first_odom: Tuple[float, float, float],
+    second_odom: Tuple[float, float, float],
+) -> ShadowMotionMismatch:
+    """Compare two motions without requiring a shared absolute map anchor.
+
+    Each pose is ``(x, y, yaw_rad)``. Both deltas are expressed in their own
+    first-pose frame, so an arbitrary constant transform between the global-fix
+    and odometry frames cancels. This lets G3 validate a BBS candidate sequence
+    before any candidate is published to the live localizer.
+    """
+
+    def relative(first, second):
+        dx = second[0] - first[0]
+        dy = second[1] - first[1]
+        c = math.cos(first[2])
+        s = math.sin(first[2])
+        return (
+            c * dx + s * dy,
+            -s * dx + c * dy,
+            _wrap_angle_rad(second[2] - first[2]),
+        )
+
+    candidate_delta = relative(first_candidate, second_candidate)
+    odom_delta = relative(first_odom, second_odom)
+    return ShadowMotionMismatch(
+        translation_m=math.hypot(
+            candidate_delta[0] - odom_delta[0],
+            candidate_delta[1] - odom_delta[1]),
+        yaw_deg=abs(math.degrees(_wrap_angle_rad(
+            candidate_delta[2] - odom_delta[2]))),
+    )
+
+
+class BbsShadowMotionGate:
+    """Stateful pre-publication gate for temporally consistent BBS fixes."""
+
+    def __init__(
+        self,
+        required_samples: int,
+        max_translation_mismatch_m: float,
+        max_yaw_mismatch_deg: float,
+    ) -> None:
+        self.required_samples = max(2, int(required_samples))
+        self.max_translation_mismatch_m = float(max_translation_mismatch_m)
+        self.max_yaw_mismatch_deg = float(max_yaw_mismatch_deg)
+        self.reset()
+
+    def reset(self) -> None:
+        self._sample = None
+        self.consistent_samples = 0
+
+    def observe(
+        self,
+        candidate_pose: Tuple[float, float, float],
+        odom_pose: Tuple[float, float, float],
+    ) -> ShadowMotionGateResult:
+        current = (candidate_pose, odom_pose)
+        if self._sample is None:
+            self._sample = current
+            self.consistent_samples = 1
+            return ShadowMotionGateResult(False, 1)
+        previous_candidate, previous_odom = self._sample
+        mismatch = compare_shadow_relative_motion(
+            previous_candidate, candidate_pose, previous_odom, odom_pose)
+        self._sample = current
+        if (mismatch.translation_m <= self.max_translation_mismatch_m
+                and mismatch.yaw_deg <= self.max_yaw_mismatch_deg):
+            self.consistent_samples += 1
+        else:
+            self.consistent_samples = 1
+        return ShadowMotionGateResult(
+            self.consistent_samples >= self.required_samples,
+            self.consistent_samples,
+            mismatch,
+        )
 
 
 def estimate_seed_velocity(

@@ -37,6 +37,9 @@ def generate_launch_description():
     imu_topic = LaunchConfiguration(
         'imu_topic',
         default='/imu')
+    odom_topic = LaunchConfiguration(
+        'odom_topic',
+        default='/odom')
     global_frame_id = LaunchConfiguration('global_frame_id', default='map')
     odom_frame_id = LaunchConfiguration('odom_frame_id', default='odom')
     base_frame_id = LaunchConfiguration('base_frame_id', default='base_link')
@@ -57,6 +60,12 @@ def generate_launch_description():
         'use_imu_preintegration', default='true')
     imu_preintegration_use_base_frame_transform = LaunchConfiguration(
         'imu_preintegration_use_base_frame_transform', default='false')
+    enable_map_odom_tf = LaunchConfiguration('enable_map_odom_tf', default='false')
+    use_odom = LaunchConfiguration('use_odom', default='false')
+    use_odom_tf_prediction = LaunchConfiguration(
+        'use_odom_tf_prediction', default='false')
+    publish_bridge_pose_when_lost = LaunchConfiguration(
+        'publish_bridge_pose_when_lost', default='false')
     use_continuous_time_deskew = LaunchConfiguration(
         'use_continuous_time_deskew', default='false')
     continuous_time_deskew_reference_time_sec = LaunchConfiguration(
@@ -167,13 +176,25 @@ def generate_launch_description():
                     use_imu_preintegration, value_type=bool),
                 'imu_preintegration_use_base_frame_transform': ParameterValue(
                     imu_preintegration_use_base_frame_transform, value_type=bool),
+                'enable_map_odom_tf': ParameterValue(
+                    enable_map_odom_tf, value_type=bool),
+                'use_odom': ParameterValue(use_odom, value_type=bool),
+                'use_odom_tf_prediction': ParameterValue(
+                    use_odom_tf_prediction, value_type=bool),
+                'publish_bridge_pose_when_lost': ParameterValue(
+                    publish_bridge_pose_when_lost, value_type=bool),
                 'use_continuous_time_deskew': ParameterValue(
                     use_continuous_time_deskew, value_type=bool),
                 'continuous_time_deskew_reference_time_sec': ParameterValue(
                     continuous_time_deskew_reference_time_sec, value_type=float),
             },
         ],
-        remappings=[('/cloud', cloud_topic), ('/twist', twist_topic), ('/imu', imu_topic)],
+        remappings=[
+            ('/cloud', cloud_topic),
+            ('/twist', twist_topic),
+            ('/imu', imu_topic),
+            ('/odom', odom_topic),
+        ],
         output='screen')
 
     to_inactive = launch.actions.EmitEvent(
@@ -229,6 +250,13 @@ def generate_launch_description():
             'imu_topic',
             default_value='/imu',
             description='Optional IMU topic remapped to /imu.'),
+        DeclareLaunchArgument(
+            'odom_topic',
+            default_value='/odom',
+            description='Optional nav_msgs/Odometry seed topic remapped to /odom '
+                        '(used as a twist-integration fallback when IMU '
+                        'preintegration is off, or as the source TF for '
+                        'enable_map_odom_tf).'),
         DeclareLaunchArgument('global_frame_id', default_value='map'),
         DeclareLaunchArgument('odom_frame_id', default_value='odom'),
         DeclareLaunchArgument('base_frame_id', default_value='base_link'),
@@ -237,6 +265,31 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'imu_preintegration_use_base_frame_transform',
             default_value='false'),
+        DeclareLaunchArgument(
+            'enable_map_odom_tf',
+            default_value='false',
+            description='Look up an external odom -> base_frame_id TF (e.g. from an '
+                        'external LIO front end) and publish map -> odom instead of '
+                        'map -> base_frame_id directly.'),
+        DeclareLaunchArgument(
+            'use_odom',
+            default_value='false',
+            description='Subscribe odom_topic (nav_msgs/Odometry) as a twist-'
+                        'integration seed fallback when IMU preintegration is off.'),
+        DeclareLaunchArgument(
+            'use_odom_tf_prediction',
+            default_value='false',
+            description='Seed scan registration from the composed frozen '
+                        'map -> odom x live odom -> base_frame_id TF (external '
+                        'LIO front end) instead of internal dead reckoning; '
+                        'requires enable_map_odom_tf.'),
+        DeclareLaunchArgument(
+            'publish_bridge_pose_when_lost',
+            default_value='false',
+            description='While scan matching is rejected, keep publishing the '
+                        'odom-bridge composed pose as the pose output so the '
+                        'estimate stays continuous through dropouts; requires '
+                        'enable_map_odom_tf.'),
         DeclareLaunchArgument('use_continuous_time_deskew', default_value='false'),
         DeclareLaunchArgument(
             'continuous_time_deskew_reference_time_sec',

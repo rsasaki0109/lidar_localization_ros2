@@ -80,6 +80,92 @@ void test_fallback_order_without_imu_candidate()
   assert(ll::chooseRegistrationSeed(input).source == ll::RegistrationSeedSource::kCurrentPose);
 }
 
+void test_odom_tf_prediction_preempts_everything_while_lost()
+{
+  // Tracking is lost and the odom bridge is available and opted in: it must
+  // win even over a fully-ready, finite IMU preintegration candidate -- the
+  // whole point is that IMU preintegration itself can be diverging through
+  // the same dropout, so the external front end takes over as the anchor.
+  ll::RegistrationSeedPolicyInput input;
+  input.use_imu_preintegration = true;
+  input.imu_smoother_initialized = true;
+  input.imu_has_new_samples = true;
+  input.imu_prediction_finite = true;
+  input.use_odom_tf_prediction = true;
+  input.odom_tf_bridge_available = true;
+
+  const auto decision = ll::chooseRegistrationSeed(input);
+  assert(decision.source == ll::RegistrationSeedSource::kOdomTfPrediction);
+  assert(decision.uses_prediction_state);
+}
+
+void test_odom_tf_prediction_off_by_default_preserves_imu_priority()
+{
+  // Same scenario as above but use_odom_tf_prediction is left at its default
+  // (false): behavior must be unchanged -- IMU preintegration still wins.
+  ll::RegistrationSeedPolicyInput input;
+  input.use_imu_preintegration = true;
+  input.imu_smoother_initialized = true;
+  input.imu_has_new_samples = true;
+  input.imu_prediction_finite = true;
+  input.odom_tf_bridge_available = true;
+  assert(!input.use_odom_tf_prediction);
+
+  const auto decision = ll::chooseRegistrationSeed(input);
+  assert(decision.source == ll::RegistrationSeedSource::kImuPreintegration);
+}
+
+void test_odom_tf_prediction_requires_bridge_available_even_when_lost()
+{
+  // Opted in and lost, but the bridge itself has nothing (no accepted match
+  // has ever frozen the offset, or the external front end's odom is stale):
+  // must fall through to the normal priority chain, not seed from nothing.
+  ll::RegistrationSeedPolicyInput input;
+  input.use_imu_preintegration = true;
+  input.imu_smoother_initialized = true;
+  input.imu_has_new_samples = true;
+  input.imu_prediction_finite = true;
+  input.use_odom_tf_prediction = true;
+  input.odom_tf_bridge_available = false;
+
+  const auto decision = ll::chooseRegistrationSeed(input);
+  assert(decision.source == ll::RegistrationSeedSource::kImuPreintegration);
+}
+
+void test_odom_tf_prediction_preempts_imu_while_tracking_and_opted_in()
+{
+  // Normal tracking uses the external odometry as the motion model too. It
+  // must win over a ready IMU seed instead of switching only after a reject.
+  ll::RegistrationSeedPolicyInput input;
+  input.use_imu_preintegration = true;
+  input.imu_smoother_initialized = true;
+  input.imu_has_new_samples = true;
+  input.imu_prediction_finite = true;
+  input.use_odom_tf_prediction = true;
+  input.odom_tf_bridge_available = true;
+  input.use_twist_prediction = true;
+  input.have_last_accepted_pose = true;
+  input.has_latest_twist = true;
+  input.predict_pose_from_previous_delta = true;
+
+  const auto decision = ll::chooseRegistrationSeed(input);
+  assert(decision.source == ll::RegistrationSeedSource::kOdomTfPrediction);
+  assert(decision.uses_prediction_state);
+}
+
+void test_odom_tf_prediction_falls_back_to_twist_when_unavailable_and_tracking()
+{
+  ll::RegistrationSeedPolicyInput input;
+  input.use_odom_tf_prediction = true;
+  input.odom_tf_bridge_available = false;
+  input.use_twist_prediction = true;
+  input.have_last_accepted_pose = true;
+  input.has_latest_twist = true;
+
+  const auto decision = ll::chooseRegistrationSeed(input);
+  assert(decision.source == ll::RegistrationSeedSource::kTwistPrediction);
+}
+
 void test_imu_sample_and_dt_helpers()
 {
   assert(ll::hasNewImuSamples(2.0, 1.0));
@@ -112,6 +198,9 @@ void test_registration_seed_source_names_are_stable_for_diagnostics()
   assert(
     std::string(ll::registrationSeedSourceName(ll::RegistrationSeedSource::kPreviousDelta)) ==
     "previous_delta");
+  assert(
+    std::string(ll::registrationSeedSourceName(ll::RegistrationSeedSource::kOdomTfPrediction)) ==
+    "odom_tf_prediction");
 }
 
 int main()
@@ -119,6 +208,11 @@ int main()
   test_imu_preintegration_has_highest_priority_when_finite();
   test_non_finite_imu_prediction_blocks_lower_priority_sources();
   test_fallback_order_without_imu_candidate();
+  test_odom_tf_prediction_preempts_everything_while_lost();
+  test_odom_tf_prediction_off_by_default_preserves_imu_priority();
+  test_odom_tf_prediction_requires_bridge_available_even_when_lost();
+  test_odom_tf_prediction_preempts_imu_while_tracking_and_opted_in();
+  test_odom_tf_prediction_falls_back_to_twist_when_unavailable_and_tracking();
   test_imu_sample_and_dt_helpers();
   test_registration_seed_source_names_are_stable_for_diagnostics();
   return 0;

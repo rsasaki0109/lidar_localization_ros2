@@ -1,0 +1,45 @@
+mode: run
+dataset:
+  bag_path: /media/sasaki/aiueo/datasets/koide_hard_localization/sequences/outdoor_hard_01a
+  map_path: /media/sasaki/aiueo/datasets/koide_hard_localization/map_outdoor_hard.ply
+  reference_csv: /media/sasaki/aiueo/datasets/koide_hard_localization/generated/localization_gif_benchmarks/assets/outdoor_hard_01a_reference.csv
+  initial_pose_yaml: /media/sasaki/aiueo/datasets/koide_hard_localization/generated/localization_gif_benchmarks/assets/outdoor_hard_01a_initial_pose.yaml
+  cloud_topic: /livox/points
+  imu_topic: /livox/imu
+# system mode: benchmark_from_manifest skips build_localization_yaml() and passes
+# this command straight to benchmark_runner --system-command. The wrapper below
+# builds its own merged localization.yaml (nav2_ndt_urban.yaml + this same
+# initial_pose_yaml + the outdoor_hard overrides) and starts the live GLIM
+# front-end container itself; see the wrapper's header comment for the full
+# external-LIO-front-end architecture (odom -> livox_frame TF from GLIM,
+# map -> odom from the localizer via enable_map_odom_tf).
+system:
+  command: >-
+    env
+    OUT_DIR=/tmp/glimfrontend_runs/outdoor_hard_01a_coreset_repeat03
+    ROS_DOMAIN_ID=98
+    GLIM_IMAGE=lidarloc/glim-ros2:jazzy-v1.2.2-coreset
+    LOCALIZER_SCORE_THRESHOLD=10.0
+    ENABLE_BORDERLINE_SEED_REJECTION_GATE=false
+    ENABLE_MAP_ODOM_ANCHOR_FITNESS_GATE=false
+    MAP_ODOM_ANCHOR_MAX_FITNESS=1.5
+    ODOM_TF_CONSTRAINT_MODE=planar
+    INITIAL_POSE_YAML=/media/sasaki/aiueo/datasets/koide_hard_localization/generated/localization_gif_benchmarks/assets/outdoor_hard_01a_initial_pose.yaml
+    /home/sasaki/workspace/old_~2026/lidarloc_ws/src/lidar_localization_ros2/experiments/koide_glim_frontend_localization/glim_frontend_system.sh
+benchmark:
+  output_dir: /tmp/glimfrontend_runs/outdoor_hard_01a_coreset_repeat03
+  ros_domain_id: 98
+  bag_duration: 384.0
+  bag_start_offset: 0.0
+  settle_seconds: 12
+  post_roll_seconds: 1
+  max_time_diff: 0.05
+  record_qos_reliability: reliable
+  record_qos_durability: volatile
+  record_use_sim_time: true
+  bag_command: >-
+    ros2 bag play
+    /media/sasaki/aiueo/datasets/koide_hard_localization/sequences/outdoor_hard_01a
+    --clock --rate 1.0 --delay 3 --playback-duration 380
+    --qos-profile-overrides-path
+    /home/sasaki/workspace/old_~2026/lidarloc_ws/src/lidar_localization_ros2/experiments/koide_glim_frontend_localization/reliable_sensor_qos.profiles

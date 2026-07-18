@@ -127,8 +127,18 @@ public:
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::ConstSharedPtr
     initial_pose_sub_;
   rclcpp::CallbackGroup::SharedPtr initial_pose_callback_group_;
+  rclcpp::CallbackGroup::SharedPtr pose_publish_callback_group_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
     pose_pub_;
+  // Odom bridge (see republishFrozenMapToOdomTransform): the composed
+  // map -> odom(last accepted) x odom -> base_link(now) pose, republished on
+  // every scan callback whenever both halves are available. G3's supervisor
+  // subscribes to this instead of doing its own TF lookup: this uses the same
+  // KeepLast(1)/transient_local/reliable QoS as pcl_pose below, which a
+  // separate-process late subscriber reliably receives, whereas /tf (default
+  // volatile durability) was found not to reach a third process reliably.
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
+    odom_bridge_pose_pub_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr
     path_pub_;
   rclcpp_lifecycle::LifecyclePublisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr
@@ -305,6 +315,47 @@ public:
   bool use_gtsam_smoother_{false};
   bool enable_debug_{false};
   bool enable_map_odom_tf_{false};
+  // AMCL-style odom bridge: the map -> odom offset composed from the last
+  // ACCEPTED scan match, frozen and rebroadcast (re-stamped) on every scan
+  // callback even while matches are rejected/lost, so map -> base_link stays
+  // available via TF composition with the (external, e.g. GLIM) live
+  // odom -> base_link the whole time -- never updated from a rejected match.
+  geometry_msgs::msg::TransformStamped last_good_map_to_odom_;
+  bool has_last_good_map_to_odom_{false};
+  // Map-frame pose whose z/roll/pitch accompany last_good_map_to_odom_. Keep
+  // the planar constraint on the same confidence boundary as the TF anchor;
+  // an accepted but weak match must not tilt the otherwise stable bridge.
+  Eigen::Matrix4f odom_tf_constraint_anchor_pose_matrix_{Eigen::Matrix4f::Identity()};
+  bool has_odom_tf_constraint_anchor_pose_{false};
+  std::deque<geometry_msgs::msg::TransformStamped> odom_bridge_transform_history_;
+  builtin_interfaces::msg::Time last_odom_bridge_source_advance_node_stamp_;
+  bool has_last_odom_bridge_source_advance_node_stamp_{false};
+  // Opt-in: use the odom bridge (frozen map -> odom x live odom -> base_link,
+  // same composition as publishOdomBridgePose) as the NDT registration seed --
+  // as the primary motion model on every scan while it is available, including
+  // while tracking is lost. See
+  // registration_seed_policy.hpp's kOdomTfPrediction. Off by default.
+  bool use_odom_tf_prediction_{false};
+  // Opt-in ground-vehicle constraint for an external odom bridge: retain the
+  // live odom prediction's x/y/yaw while holding z/roll/pitch at the last
+  // accepted map match. Off by default for general 6-DoF deployments.
+  bool constrain_odom_tf_prediction_to_planar_{false};
+  // Alternative for non-conventional sensor axes: hold only map-frame height
+  // while preserving the external odometry's full relative rotation.
+  bool constrain_odom_tf_prediction_height_only_{false};
+  // Opt-in output continuity: while a scan is rejected/lost, /pcl_pose (the
+  // benchmark's coverage/RMSE source) otherwise goes silent (only accepted
+  // matches call publishCurrentPose). When set, publish the odom bridge pose
+  // on /pcl_pose for rejected scans too -- output only, never touches the
+  // estimator's own internal belief (corrent_pose_with_cov_stamped_ptr_,
+  // prediction state, etc.), so it cannot change what the next scan seeds
+  // from. Off by default.
+  bool publish_bridge_pose_when_lost_{false};
+  // Opt-in confidence gate for replacing the frozen map -> odom anchor from
+  // an ordinary accepted scan. Initial-pose/reset anchors remain unconditional.
+  bool enable_map_odom_anchor_fitness_gate_{false};
+  double map_odom_anchor_max_fitness_{1.5};
+  double map_odom_anchor_max_correction_rotation_deg_{10.0};
   bool viz_downsample_{false};
   double viz_voxel_leaf_size_{0.5};
   bool predict_pose_from_previous_delta_{true};
@@ -358,10 +409,14 @@ public:
   std::string reinitialization_request_reason_{"not_requested"};
   double reinitialization_request_score_{0.0};
   bool enable_reinitialization_request_latch_{true};
+  int reinitialization_request_clear_ok_samples_{5};
+  double reinitialization_request_clear_max_fitness_{1.0};
+  double reinitialization_request_clear_max_correction_translation_m_{0.5};
   bool reinitialization_request_latched_{false};
   std::string reinitialization_request_latch_reason_{"not_requested"};
   double reinitialization_request_latch_score_{0.0};
   double reinitialization_request_latch_stamp_sec_{0.0};
+  int reinitialization_request_latch_consecutive_ok_samples_{0};
 
   RecoverySupervisorState recovery_supervisor_state_{RecoverySupervisorState::kTracking};
   std::string recovery_supervisor_action_{"idle"};
@@ -452,7 +507,8 @@ public:
     double scan_stamp_sec);
   void resetImuPreintegrationSampleCounters();
   void snapshotImuPreintegrationSampleCountersForScan();
-  SelectedRegistrationSeed selectRegistrationSeed(double scan_stamp_sec);
+  SelectedRegistrationSeed selectRegistrationSeed(
+    const builtin_interfaces::msg::Time & stamp, double scan_stamp_sec);
   Eigen::Matrix4f refineSeedWithNdtInitializer(
     const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud,
     const Eigen::Matrix4f & init_guess);
@@ -471,7 +527,8 @@ public:
     lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
     std::uint64_t seed_generation);
   lidar_localization::MeasurementGateDecision evaluateMeasurementGateForAttempt(
-    const lidar_localization::AlignmentAttempt & attempt);
+    const lidar_localization::AlignmentAttempt & attempt,
+    lidar_localization::RegistrationSeedSource seed_source);
   void logAlignmentPipelineRecovery(
     const lidar_localization::AlignmentPipelineResult & pipeline_result);
   bool handleTerminalAlignmentPipelineResult(
@@ -566,7 +623,10 @@ public:
   void setCurrentPoseFromMatrix(
     const Eigen::Matrix4f & pose_matrix,
     const builtin_interfaces::msg::Time & stamp);
-  void publishCurrentPose(const builtin_interfaces::msg::Time & stamp);
+  void publishCurrentPose(
+    const builtin_interfaces::msg::Time & stamp,
+    double fitness_score,
+    double correction_rotation_deg);
   void publishPoseMessage(
     const geometry_msgs::msg::PoseWithCovarianceStamped & pose);
   void appendCurrentPoseToPath(
@@ -575,10 +635,22 @@ public:
   void publishPathMessage();
   bool publishPoseTransform(
     const builtin_interfaces::msg::Time & stamp,
-    const geometry_msgs::msg::Pose & pose);
+    const geometry_msgs::msg::Pose & pose,
+    bool freeze_as_last_good = true);
   bool publishMapToOdomTransform(
     const builtin_interfaces::msg::Time & stamp,
-    const geometry_msgs::msg::TransformStamped & map_to_base_link_stamped);
+    const geometry_msgs::msg::TransformStamped & map_to_base_link_stamped,
+    bool freeze_as_last_good = true);
+  void republishFrozenMapToOdomTransform(const builtin_interfaces::msg::Time & stamp);
+  void publishOdomBridgePose(
+    const builtin_interfaces::msg::Time & stamp,
+    const geometry_msgs::msg::TransformStamped & frozen_map_to_odom);
+  bool lookupOdomBridgePoseMatrix(
+    const builtin_interfaces::msg::Time & stamp,
+    Eigen::Matrix4f & out_pose_matrix,
+    bool use_latest_odom_transform = false,
+    builtin_interfaces::msg::Time * resolved_stamp = nullptr);
+  void publishBridgePoseAsRejectedOutput(const builtin_interfaces::msg::Time & stamp);
   void fillPoseCovariance(double fitness_score);
   void publishAlignmentStatusForAttempt(
     const builtin_interfaces::msg::Time & stamp,
@@ -590,7 +662,8 @@ public:
     const std::string & registration_seed_source);
   ReinitializationRequestDecision applyReinitializationRequestLatch(
     const builtin_interfaces::msg::Time & stamp,
-    const ReinitializationRequestDecision & decision);
+    const ReinitializationRequestDecision & decision,
+    bool clear_sample);
   void updateRecoverySupervisorState(
     const builtin_interfaces::msg::Time & stamp,
     RecoverySupervisorState next_state,
