@@ -152,7 +152,8 @@ def test_supervisor_node_walks_to_second_candidate_and_recovers():
     # spend attempts -- a fresh query would have given up).
     sup.params = replace(
         sup.params, settle_timeout_sec=2.0, request_debounce_sec=0.5,
-        min_seconds_between_attempts=1.0, max_attempts=1)
+        min_seconds_between_attempts=1.0, max_attempts=1,
+        enable_confirm_cross_check=False)
     harness = _Harness(recover_on_second=True)
     executor = SingleThreadedExecutor()
     executor.add_node(sup)
@@ -216,6 +217,7 @@ def test_seed_motion_history_uses_one_fix_per_query(monkeypatch):
     sup = rsn.ReinitializationSupervisorNode()
     try:
         sup.enable_seed_motion = True
+        sup.seed_motion_wall_fallback = True
         sup.max_seed_speed = 30.0
         sup.max_seed_latency = 30.0
         sup._prev_fix = (0.0, 0.0, 100.0)
@@ -249,6 +251,7 @@ def test_seed_motion_uses_candidate_age_from_query_reply(monkeypatch):
     sup = rsn.ReinitializationSupervisorNode()
     try:
         sup.enable_seed_motion = True
+        sup.seed_motion_wall_fallback = True
         sup.max_seed_speed = 30.0
         sup.max_seed_latency = 30.0
         sup._prev_fix = (0.0, 0.0, 100.0)
@@ -277,11 +280,14 @@ def test_first_query_seed_motion_uses_local_pose_delta(monkeypatch):
     sup = rsn.ReinitializationSupervisorNode()
     try:
         sup.enable_seed_motion = True
+        sup.seed_motion_wall_fallback = True
         sup.max_seed_speed = 3.0
         sup.max_seed_latency = 30.0
         sup._query_issue_time = 100.0
         sup._current_query_issue_time = 100.0
         sup._query_issue_pose = (10.0, 20.0, 100.0)
+        sup._query_issue_pose_trusted = True
+        sup._stable_tracking = True
         sup._last_pose_x = 11.5
         sup._last_pose_y = 24.0
         sup._last_pose_observed_sec = 102.0
@@ -304,6 +310,7 @@ def test_first_query_seed_motion_falls_back_to_last_pose_velocity(monkeypatch):
     sup = rsn.ReinitializationSupervisorNode()
     try:
         sup.enable_seed_motion = True
+        sup.seed_motion_wall_fallback = True
         sup.max_seed_speed = 3.0
         sup.max_seed_latency = 30.0
         sup._query_issue_time = 100.0
@@ -326,6 +333,7 @@ def test_first_query_velocity_fallback_uses_candidate_age(monkeypatch):
     sup = rsn.ReinitializationSupervisorNode()
     try:
         sup.enable_seed_motion = True
+        sup.seed_motion_wall_fallback = True
         sup.max_seed_speed = 3.0
         sup.max_seed_latency = 30.0
         sup._query_issue_time = 100.0
@@ -388,8 +396,9 @@ def test_recovery_confirmation_requires_post_reset_fitness(monkeypatch):
             attempts=1,
             last_reset_sec=100.0,
             candidate_scores=(0.9,),
-            candidate_index=0,
-        )
+                candidate_index=0,
+            )
+        sup.params = replace(sup.params, enable_confirm_cross_check=False)
 
         monkeypatch.setattr(rsn.time, "monotonic", lambda: 101.0)
         sup._tick()

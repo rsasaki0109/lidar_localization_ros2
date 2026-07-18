@@ -20,6 +20,7 @@ Wiring::
 
     /reinitialization_requested (std_msgs/Bool)      --in-->  supervisor
     /alignment_status (diagnostic_msgs/DiagnosticArray) --in--> supervisor (fitness)
+    odom_bridge_pose (geometry_msgs/PoseWithCovarianceStamped) --in--> supervisor (opt-in)
     <query_service> (std_srvs/Trigger)               <--call-- supervisor
     /initialpose (geometry_msgs/PoseWithCovarianceStamped) <-pub- supervisor
 """
@@ -64,6 +65,12 @@ def _roll_pitch_from_quat(x: float, y: float, z: float, w: float):
     return roll, pitch
 
 
+def _yaw_from_quat(x: float, y: float, z: float, w: float) -> float:
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    return math.atan2(siny_cosp, cosy_cosp)
+
+
 def _quat_from_rpy(roll: float, pitch: float, yaw: float):
     """Quaternion (x, y, z, w) from roll/pitch/yaw (ZYX convention)."""
     cy, sy = math.cos(yaw * 0.5), math.sin(yaw * 0.5)
@@ -106,6 +113,28 @@ class ReinitializationSupervisorNode(Node):
         self.declare_parameter("max_walk_candidates", 4)
         self.declare_parameter("confirm_cross_check", True)
         self.declare_parameter("cross_check_mismatch_m", 5.0)
+        # Before publishing any BBS reset, require successive BBS fixes to
+        # describe the same relative SE(2) motion as the odom bridge. This is a
+        # shadow gate: withheld fixes never touch /initialpose or public TF.
+        self.declare_parameter("enable_bbs_shadow_motion_gate", False)
+        self.declare_parameter("bbs_shadow_required_samples", 2)
+        self.declare_parameter("bbs_shadow_max_translation_mismatch_m", 5.0)
+        self.declare_parameter("bbs_shadow_max_yaw_mismatch_deg", 20.0)
+        self.declare_parameter("bbs_shadow_bridge_stamp_tolerance_sec", 2.0)
+        # Odom bridge (see reinitialization_supervisor_policy): a candidate built
+        # from the C++ recovery supervisor's odom_bridge_pose topic, which -- with
+        # enable_map_odom_tf's frozen map -> odom rebroadcast and an external LIO
+        # front end's continuous odom -> base_link (e.g. GLIM) -- carries
+        # map -> odom(last accepted) x odom -> base_link(now). Published on a
+        # plain topic rather than read back off /tf: a separate process's TF
+        # listener was found not to reliably receive this node's /tf in testing.
+        # Opt-in; off by default because it needs that external front end.
+        self.declare_parameter("use_odom_bridge_candidate", False)
+        self.declare_parameter("odom_bridge_pose_topic", "/odom_bridge_pose")
+        self.declare_parameter("odom_bridge_max_attempts", 1)
+        self.declare_parameter("odom_bridge_max_age_sec", 2.0)
+        self.declare_parameter("odom_bridge_position_std_m", 0.3)
+        self.declare_parameter("odom_bridge_yaw_std_rad", 0.1)
         # Seed motion compensation: forward-extrapolate a candidate by the measured
         # query->publish latency so it lands where the moving vehicle is *now*, not
         # where it was when the (slow) BBS query was issued. Off by default; the
@@ -138,10 +167,41 @@ class ReinitializationSupervisorNode(Node):
                 self.get_parameter("confirm_cross_check").value),
             cross_check_mismatch_m=float(
                 self.get_parameter("cross_check_mismatch_m").value),
+            use_odom_bridge_candidate=bool(
+                self.get_parameter("use_odom_bridge_candidate").value),
+            odom_bridge_max_attempts=int(
+                self.get_parameter("odom_bridge_max_attempts").value),
         )
         self.state = rsp.initial_state()
 
         self.global_frame_id = self.get_parameter("global_frame_id").value
+        self.use_odom_bridge_candidate = self.params.use_odom_bridge_candidate
+        self.odom_bridge_max_age_sec = float(
+            self.get_parameter("odom_bridge_max_age_sec").value)
+        self.odom_bridge_position_std = float(
+            self.get_parameter("odom_bridge_position_std_m").value)
+        self.odom_bridge_yaw_std = float(
+            self.get_parameter("odom_bridge_yaw_std_rad").value)
+        self.enable_bbs_shadow_motion_gate = bool(
+            self.get_parameter("enable_bbs_shadow_motion_gate").value)
+        self.bbs_shadow_required_samples = max(
+            2, int(self.get_parameter("bbs_shadow_required_samples").value))
+        self.bbs_shadow_max_translation_mismatch = float(
+            self.get_parameter("bbs_shadow_max_translation_mismatch_m").value)
+        self.bbs_shadow_max_yaw_mismatch_deg = float(
+            self.get_parameter("bbs_shadow_max_yaw_mismatch_deg").value)
+        self.bbs_shadow_bridge_stamp_tolerance_sec = float(
+            self.get_parameter("bbs_shadow_bridge_stamp_tolerance_sec").value)
+        # Latest odom_bridge_pose message and the wall time it was received, for
+        # the freshness check in _odom_bridge_status. None while none has arrived
+        # yet (or use_odom_bridge_candidate is off).
+        self._odom_bridge_pose_msg = None
+        self._odom_bridge_pose_received_sec = None
+        self._odom_bridge_history = deque()
+        self._bbs_shadow_gate = rsp.BbsShadowMotionGate(
+            self.bbs_shadow_required_samples,
+            self.bbs_shadow_max_translation_mismatch,
+            self.bbs_shadow_max_yaw_mismatch_deg)
         self.position_std = float(self.get_parameter("reset_position_std_m").value)
         self.yaw_std = float(self.get_parameter("reset_yaw_std_rad").value)
         self.reset_default_z = float(self.get_parameter("reset_default_z_m").value)
@@ -165,9 +225,8 @@ class ReinitializationSupervisorNode(Node):
         self._stable_window_logged = False
         if self._event_log_csv is not None:
             self._event_log_csv.parent.mkdir(parents=True, exist_ok=True)
-            if not self._event_log_csv.is_file():
-                with self._event_log_csv.open("w", newline="", encoding="utf-8") as handle:
-                    csv.writer(handle).writerow(["stamp_sec", "event"])
+            with self._event_log_csv.open("w", newline="", encoding="utf-8") as handle:
+                csv.writer(handle).writerow(["stamp_sec", "event"])
 
         # Latest observed signals.
         self._requested = False
@@ -228,6 +287,14 @@ class ReinitializationSupervisorNode(Node):
         pose_qos.reliability = ReliabilityPolicy.RELIABLE
         pose_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
 
+        if self.use_odom_bridge_candidate or self.enable_bbs_shadow_motion_gate:
+            # Subscribe only when the bridge is consumed either as a candidate
+            # or as the independent relative-motion reference for shadow BBS.
+            self.create_subscription(
+                PoseWithCovarianceStamped,
+                self.get_parameter("odom_bridge_pose_topic").value,
+                self._on_odom_bridge_pose, pose_qos)
+
         self.create_subscription(
             Bool, self.get_parameter("reinitialization_topic").value,
             self._on_reinit, reliable)
@@ -258,11 +325,30 @@ class ReinitializationSupervisorNode(Node):
             self.get_logger().info(
                 "seed z: using reset_default_z_m=%.3f (prefer_reset_default_z_m=true)"
                 % self.reset_default_z)
+        if self.use_odom_bridge_candidate:
+            self.get_logger().info(
+                "odom bridge: enabled, tried before every BBS query; "
+                "topic=%s max_attempts=%d max_age_sec=%.2f "
+                "position_std_m=%.2f yaw_std_rad=%.2f"
+                % (self.get_parameter("odom_bridge_pose_topic").value,
+                   self.params.odom_bridge_max_attempts, self.odom_bridge_max_age_sec,
+                   self.odom_bridge_position_std, self.odom_bridge_yaw_std))
+        if self.enable_bbs_shadow_motion_gate:
+            self.get_logger().info(
+                "BBS shadow motion gate: required_samples=%d translation<=%.2fm "
+                "yaw<=%.1fdeg bridge_stamp_tolerance<=%.2fs"
+                % (self.bbs_shadow_required_samples,
+                   self.bbs_shadow_max_translation_mismatch,
+                   self.bbs_shadow_max_yaw_mismatch_deg,
+                   self.bbs_shadow_bridge_stamp_tolerance_sec))
 
     # --- subscriptions -------------------------------------------------------
 
     def _on_reinit(self, msg: Bool) -> None:
-        self._requested = bool(msg.data)
+        requested = bool(msg.data)
+        if requested and not self._requested:
+            self._bbs_shadow_gate.reset()
+        self._requested = requested
 
     def _wall_now_sec(self) -> float:
         """Wall clock for supervisor policy timing and G2 query latency."""
@@ -327,6 +413,52 @@ class ReinitializationSupervisorNode(Node):
                and self._pose_history[-1][0] - self._pose_history[0][0] > 180.0):
             self._pose_history.popleft()
 
+    def _on_odom_bridge_pose(self, msg: PoseWithCovarianceStamped) -> None:
+        """Latest map -> odom(last accepted) x odom -> base_link(now) pose.
+
+        Published by the C++ recovery supervisor (publishOdomBridgePose) only
+        while both halves are available -- a stale/missing chain (external
+        front end down, or no accepted match has ever happened) simply stops
+        this topic, which _odom_bridge_status's freshness check below catches.
+        """
+        if self._odom_bridge_pose_msg is None:
+            self.get_logger().info(
+                "odom bridge: first odom_bridge_pose received (stamp=%d.%09d)"
+                % (msg.header.stamp.sec, msg.header.stamp.nanosec))
+        self._odom_bridge_pose_msg = msg
+        self._odom_bridge_pose_received_sec = self._wall_now_sec()
+        self._update_last_sim_stamp(msg.header.stamp)
+        p = msg.pose.pose
+        stamp_sec = self._stamp_to_sec(msg.header.stamp)
+        self._odom_bridge_history.append((
+            stamp_sec,
+            float(p.position.x),
+            float(p.position.y),
+            _yaw_from_quat(
+                p.orientation.x, p.orientation.y,
+                p.orientation.z, p.orientation.w),
+        ))
+        while (len(self._odom_bridge_history) > 1
+               and self._odom_bridge_history[-1][0]
+               - self._odom_bridge_history[0][0] > 300.0):
+            self._odom_bridge_history.popleft()
+
+    def _odom_bridge_status(self):
+        """Return the current odom-bridge pose, or None if unavailable/stale."""
+        if not self.use_odom_bridge_candidate or self._odom_bridge_pose_msg is None:
+            return None
+        stamp_sec = self._stamp_to_sec(self._odom_bridge_pose_msg.header.stamp)
+        if (self._last_sim_stamp_sec is not None
+                and self._last_sim_stamp_sec - stamp_sec > self.odom_bridge_max_age_sec):
+            # Newer sim-clock traffic has arrived (e.g. /alignment_status) since
+            # this pose, but no fresher odom_bridge_pose -- the front end stalled.
+            self.get_logger().warn(
+                "odom bridge: pose stale (age %.2fs > %.2fs)"
+                % (self._last_sim_stamp_sec - stamp_sec, self.odom_bridge_max_age_sec),
+                throttle_duration_sec=5.0)
+            return None
+        return self._odom_bridge_pose_msg
+
     # --- main loop -----------------------------------------------------------
 
     def _tick(self) -> None:
@@ -351,6 +483,8 @@ class ReinitializationSupervisorNode(Node):
             best_fitness = None
             stable_tracking = None
 
+        odom_bridge_pose = self._odom_bridge_status()
+
         obs = rsp.SupervisorObservation(
             now_sec=now,
             reinitialization_requested=self._requested,
@@ -359,6 +493,7 @@ class ReinitializationSupervisorNode(Node):
             fitness_observed_sec=self._fitness_observed_sec,
             stable_tracking=stable_tracking,
             cross_check_mismatch_m=cross_check_mismatch_m,
+            odom_bridge_available=odom_bridge_pose is not None,
         )
         decision = rsp.decide(self.params, self.state, obs)
         self.state = decision.state
@@ -390,6 +525,8 @@ class ReinitializationSupervisorNode(Node):
             "self_clear_cross_check_query",
             "cross_check_mismatch",
             "cross_check_reseed",
+            "odom_bridge_reset_published",
+            "odom_bridge_unconfirmed",
         ):
             self._log_event(decision.reason)
 
@@ -398,7 +535,10 @@ class ReinitializationSupervisorNode(Node):
         if decision.action == rsp.ACTION_QUERY:
             self._issue_query()
         elif decision.action == rsp.ACTION_PUBLISH_RESET:
-            self._publish_reset(decision.candidate_index)
+            if decision.candidate_source == "odom_bridge":
+                self._publish_odom_bridge_reset()
+            else:
+                self._publish_reset(decision.candidate_index)
         elif decision.action == rsp.ACTION_GIVE_UP:
             self.get_logger().error(
                 "reinitialization gave up (%s) after %d attempt(s); operator "
@@ -501,6 +641,9 @@ class ReinitializationSupervisorNode(Node):
             self.get_logger().warn("could not parse query reply: %s" % exc)
             self._reset_failed_query_state()
             return
+        if self.enable_bbs_shadow_motion_gate:
+            scores = self._apply_bbs_shadow_motion_gate(
+                summary, candidates, scores)
         self._candidates = candidates
         self._pending_reply = scores
         self._current_query_velocity = rsp.SeedVelocity()
@@ -514,23 +657,93 @@ class ReinitializationSupervisorNode(Node):
             self._pending_cross_check_mismatch = self._cross_check_mismatch_m(
                 summary, candidates[0] if candidates else None)
 
+    def _apply_bbs_shadow_motion_gate(self, summary, candidates, scores):
+        """Withhold BBS candidates until their temporal motion matches odometry."""
+        withheld = tuple(0.0 for _ in scores)
+        if not candidates or not scores or scores[0] < self.params.min_candidate_score:
+            self.get_logger().info(
+                "BBS shadow gate: weak/empty top candidate withheld")
+            return withheld
+        scan_stamp_sec = self._parse_nonnegative_float(summary.get("scan_stamp_sec"))
+        if scan_stamp_sec is None:
+            self.get_logger().warn("BBS shadow gate: missing scan stamp; withholding")
+            return withheld
+        bridge = self._nearest_history_entry(
+            self._odom_bridge_history,
+            scan_stamp_sec,
+            self.bbs_shadow_bridge_stamp_tolerance_sec)
+        if bridge is None:
+            self.get_logger().warn(
+                "BBS shadow gate: no odom bridge sample near %.3f; withholding"
+                % scan_stamp_sec)
+            return withheld
+        try:
+            top = candidates[0]
+            candidate_pose = (
+                float(top["x"]), float(top["y"]),
+                math.radians(float(top["yaw_deg"])))
+        except (KeyError, TypeError, ValueError):
+            self.get_logger().warn("BBS shadow gate: malformed top pose; withholding")
+            return withheld
+        bridge_pose = (bridge[1], bridge[2], bridge[3])
+        result = self._bbs_shadow_gate.observe(candidate_pose, bridge_pose)
+        if result.mismatch is None:
+            self._log_event("bbs_shadow_primed")
+            self.get_logger().info(
+                "BBS shadow gate: primed 1/%d; candidate not published"
+                % self.bbs_shadow_required_samples)
+            return withheld
+        mismatch = result.mismatch
+        if not result.publish_allowed:
+            self._log_event("bbs_shadow_withheld")
+            self.get_logger().warn(
+                "BBS shadow gate: candidate withheld; relative mismatch=%.2fm/%.1fdeg "
+                "consistent_samples=%d/%d"
+                % (mismatch.translation_m, mismatch.yaw_deg,
+                   result.consistent_samples,
+                   self.bbs_shadow_required_samples))
+            return withheld
+
+        # Only rank 1 participated in the temporal validation. Keep the rest at
+        # zero so the policy cannot walk to an unvalidated candidate from this query.
+        self._log_event("bbs_shadow_validated")
+        self.get_logger().warn(
+            "BBS shadow gate: rank-1 candidate validated before publication; "
+            "relative mismatch=%.2fm/%.1fdeg samples=%d"
+            % (mismatch.translation_m, mismatch.yaw_deg,
+               result.consistent_samples))
+        return (scores[0],) + tuple(0.0 for _ in scores[1:])
+
     def _cross_check_mismatch_m(self, summary, top_candidate):
+        # Every "insufficient evidence" branch below returns math.inf, not
+        # None: a verify query that comes back empty, weak, or unparseable is
+        # not "cannot tell, so assume the reset is good" -- during a genuine
+        # recovery a fresh BBS query centered near the (correct) current pose
+        # should usually find at least one reasonable-scoring candidate, so a
+        # nothing/weak reply is itself mild evidence *against* confirming.
+        # (2026-07-18: a fail-open None here let a self-cleared episode
+        # confirm recovery off an empty/weak reply -- see g3_live_closed_loop
+        # postmortem -- while the localizer was still clearly lost, standing
+        # the supervisor down for the rest of the run instead of retrying.)
+        # The one deliberate exception is the query timeout path in the
+        # policy (STATE_VERIFYING's own fail-open when no reply arrives at
+        # all), which this function has no say over.
         if top_candidate is None:
-            return None
+            return math.inf
         try:
             score = float(top_candidate["score"])
         except (KeyError, TypeError, ValueError):
-            return None
+            return math.inf
         if score < self.params.min_candidate_score:
-            return None
+            return math.inf
         scan_stamp_sec = self._parse_nonnegative_float(summary.get("scan_stamp_sec"))
         if scan_stamp_sec is None:
-            return None
+            return math.inf
         try:
             fix_x = float(top_candidate["x"])
             fix_y = float(top_candidate["y"])
         except (KeyError, TypeError, ValueError):
-            return None
+            return math.inf
         nearest = self._nearest_pose_history_entry(scan_stamp_sec, max_delta_sec=2.0)
         if nearest is None:
             # A trustworthy fix with NO localizer pose near its scan stamp is not
@@ -543,11 +756,16 @@ class ReinitializationSupervisorNode(Node):
         return math.hypot(fix_x - pose_x, fix_y - pose_y)
 
     def _nearest_pose_history_entry(self, stamp_sec, max_delta_sec):
-        if not self._pose_history:
+        return self._nearest_history_entry(
+            self._pose_history, stamp_sec, max_delta_sec)
+
+    @staticmethod
+    def _nearest_history_entry(history, stamp_sec, max_delta_sec):
+        if not history:
             return None
         best = None
         best_delta = None
-        for entry in self._pose_history:
+        for entry in history:
             delta = abs(entry[0] - stamp_sec)
             if best_delta is None or delta < best_delta:
                 best = entry
@@ -633,6 +851,43 @@ class ReinitializationSupervisorNode(Node):
             "[candidate %d/%d]%s"
             % (seed_x, seed_y, z, top["yaw_deg"], top["score"],
                candidate_index + 1, len(self._candidates), comp_note))
+
+    def _publish_odom_bridge_reset(self) -> None:
+        """Publish /initialpose from the odom bridge's latest pose.
+
+        Unlike a BBS candidate, this pose already carries full 3D position and
+        orientation straight from the C++ node's TF composition
+        (map -> odom(last accepted) x odom -> base_link(now)) -- no z/roll/pitch
+        carry-over and no seed-motion compensation are needed, since it has zero
+        query latency by construction (see reinitialization_supervisor_policy's
+        odom-bridge section). A tighter covariance than the BBS reset reflects
+        the front end's low relative odom drift over a short dropout.
+        """
+        bridge_pose = self._odom_bridge_status()
+        if bridge_pose is None:
+            self.get_logger().error(
+                "publish_odom_bridge_reset requested with no bridge pose; "
+                "skipping")
+            return
+        p = bridge_pose.pose.pose
+        msg = PoseWithCovarianceStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.global_frame_id
+        msg.pose.pose.position.x = p.position.x
+        msg.pose.pose.position.y = p.position.y
+        msg.pose.pose.position.z = p.position.z
+        msg.pose.pose.orientation = p.orientation
+        cov = [0.0] * 36
+        cov[0] = self.odom_bridge_position_std ** 2   # x
+        cov[7] = self.odom_bridge_position_std ** 2   # y
+        cov[35] = self.odom_bridge_yaw_std ** 2       # yaw
+        msg.pose.covariance = cov
+        self.initialpose_pub.publish(msg)
+        self.get_logger().warn(
+            "published /initialpose reset from odom bridge to (%.2f, %.2f, z=%.2f) "
+            "[map -> odom(last accepted) x odom -> base_link(now), stamp=%d.%09d]"
+            % (p.position.x, p.position.y, p.position.z,
+               bridge_pose.header.stamp.sec, bridge_pose.header.stamp.nanosec))
 
     def _compensate_seed(self, raw_x: float, raw_y: float, candidate_index: int = 0):
         """Forward-extrapolate (raw_x, raw_y) by the query->publish latency.

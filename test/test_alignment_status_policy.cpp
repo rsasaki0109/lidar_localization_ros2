@@ -53,7 +53,7 @@ void test_prepare_alignment_status_computes_gate_and_reinit()
   assert(preparation.effective_reinitialization_metrics.accepted_gap_sec == 8.0);
   assert(preparation.effective_reinitialization_metrics.seed_translation_since_accept_m == 4.0);
   assert(preparation.reinitialization_request.requested);
-  assert(preparation.reinitialization_request.reason == "accepted_gap_reinit_requested");
+  assert(preparation.reinitialization_request.reason == "sustained_failure_reinit_requested");
 }
 
 void test_make_alignment_status_input_combines_observation_and_context()

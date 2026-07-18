@@ -152,7 +152,8 @@ inline AlignmentStatusPreparation prepareAlignmentStatus(
     input.seed_translation_since_accept_m,
     input.correction_translation_m,
     input.correction_yaw_deg,
-    input.consecutive_rejected_updates);
+    input.consecutive_rejected_updates,
+    input.registration_seed_source == "odom_tf_prediction");
   preparation.threshold_decision =
     computeEffectiveScoreThreshold(input.gate_params, preparation.gate_input);
   preparation.borderline_seed_gate_active = isBorderlineSeedGateActive(

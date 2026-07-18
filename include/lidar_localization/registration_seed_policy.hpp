@@ -16,6 +16,7 @@ enum class RegistrationSeedSource
   kTwistPrediction,
   kPreviousDelta,
   kLocalizabilityGuard,
+  kOdomTfPrediction,
 };
 
 struct RegistrationSeedPolicyInput
@@ -33,6 +34,16 @@ struct RegistrationSeedPolicyInput
   bool have_last_accepted_pose{false};
   bool has_latest_twist{false};
   bool predict_pose_from_previous_delta{false};
+  // Odom-TF-bridge prediction (opt-in, see PCLLocalization::use_odom_tf_prediction_):
+  // the composed map -> odom(last accepted) x odom -> base_link(now) pose from an
+  // external LIO front end (e.g. GLIM), same math as publishOdomBridgePose.
+  // Equivalently "last accepted pose x odom delta since that accept" -- both
+  // formulations compose through the same frozen offset and are identical.
+  bool use_odom_tf_prediction{false};
+  // Whether that composed pose is available this scan (an accepted match has
+  // frozen the offset at least once, and the live odom -> base_link edge
+  // resolved at the current scan stamp).
+  bool odom_tf_bridge_available{false};
 };
 
 struct RegistrationSeedPolicyDecision
@@ -71,6 +82,23 @@ inline double clampPredictionDt(
 inline RegistrationSeedPolicyDecision chooseRegistrationSeed(
   const RegistrationSeedPolicyInput & input)
 {
+  const bool odom_tf_seed_ready =
+    input.use_odom_tf_prediction && input.odom_tf_bridge_available;
+
+  // The opt-in external odometry is the map tracker's motion model, not merely
+  // a last-resort recovery seed. Prefer it on every scan while available so
+  // the seed is the last accepted map pose advanced by the front end's motion
+  // since that accept. This also avoids a discontinuous source switch at the
+  // first rejected scan. Default-off and unavailable cases fall through to
+  // the legacy priority chain unchanged.
+  if (odom_tf_seed_ready) {
+    return {
+      RegistrationSeedSource::kOdomTfPrediction,
+      true,
+      false,
+      false};
+  }
+
   const bool imu_candidate_ready = isImuSeedCandidateReady(input);
   if (imu_candidate_ready) {
     if (input.imu_prediction_finite) {
@@ -138,6 +166,8 @@ inline const char * registrationSeedSourceName(RegistrationSeedSource source)
       return "previous_delta";
     case RegistrationSeedSource::kLocalizabilityGuard:
       return "localizability_guard_current_pose";
+    case RegistrationSeedSource::kOdomTfPrediction:
+      return "odom_tf_prediction";
   }
   return "unknown";
 }

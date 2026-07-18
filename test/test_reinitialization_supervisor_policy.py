@@ -8,6 +8,7 @@ the Phase 3 degraded-acceptance work proved that a closed recovery loop can
 diverge if its bounds can be reset by the very acts they bound.
 """
 
+import math
 import sys
 from pathlib import Path
 
@@ -15,6 +16,68 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import reinitialization_supervisor_policy as rsp  # noqa: E402
+
+
+def test_shadow_relative_motion_ignores_constant_global_transform():
+    # Candidate fixes and odometry have different absolute origins/yaws, but
+    # describe the same 5 m forward move and 20 degree turn.
+    first_candidate = (100.0, -40.0, math.radians(70.0))
+    second_candidate = (
+        100.0 + 5.0 * math.cos(math.radians(70.0)),
+        -40.0 + 5.0 * math.sin(math.radians(70.0)),
+        math.radians(90.0),
+    )
+    first_odom = (-3.0, 8.0, math.radians(-30.0))
+    second_odom = (
+        -3.0 + 5.0 * math.cos(math.radians(-30.0)),
+        8.0 + 5.0 * math.sin(math.radians(-30.0)),
+        math.radians(-10.0),
+    )
+    mismatch = rsp.compare_shadow_relative_motion(
+        first_candidate, second_candidate, first_odom, second_odom)
+    assert mismatch.translation_m < 1.0e-9
+    assert mismatch.yaw_deg < 1.0e-9
+
+
+def test_shadow_relative_motion_rejects_alias_jump_and_wrong_turn():
+    mismatch = rsp.compare_shadow_relative_motion(
+        (0.0, 0.0, 0.0),
+        (80.0, 30.0, math.radians(100.0)),
+        (10.0, 20.0, math.radians(40.0)),
+        (13.0, 20.0, math.radians(45.0)),
+    )
+    assert mismatch.translation_m > 80.0
+    assert mismatch.yaw_deg > 90.0
+
+
+def test_shadow_motion_gate_withholds_until_required_consistent_sequence():
+    gate = rsp.BbsShadowMotionGate(
+        required_samples=3,
+        max_translation_mismatch_m=1.0,
+        max_yaw_mismatch_deg=5.0)
+    assert not gate.observe((0.0, 0.0, 0.0), (10.0, 5.0, 0.4)).publish_allowed
+    second = gate.observe((2.0, 0.0, 0.0), (
+        10.0 + 2.0 * math.cos(0.4),
+        5.0 + 2.0 * math.sin(0.4), 0.4))
+    assert second.consistent_samples == 2
+    assert not second.publish_allowed
+    third = gate.observe((4.0, 0.0, 0.0), (
+        10.0 + 4.0 * math.cos(0.4),
+        5.0 + 4.0 * math.sin(0.4), 0.4))
+    assert third.publish_allowed
+    assert third.consistent_samples == 3
+
+
+def test_shadow_motion_gate_alias_resets_streak_and_reset_clears_history():
+    gate = rsp.BbsShadowMotionGate(2, 2.0, 10.0)
+    gate.observe((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+    rejected = gate.observe((100.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+    assert not rejected.publish_allowed
+    assert rejected.consistent_samples == 1
+    gate.reset()
+    primed = gate.observe((101.0, 0.0, 0.0), (2.0, 0.0, 0.0))
+    assert not primed.publish_allowed
+    assert primed.mismatch is None
 
 
 def run(
@@ -319,6 +382,223 @@ def test_decide_is_pure_same_inputs_same_outputs():
     assert d1 == d2
     # Input state object is not mutated.
     assert state == rsp.initial_state()
+
+
+# --- Gate: odom bridge (map -> odom(last accepted) x live external odom) -----
+#
+# An external LIO front end (e.g. GLIM) with low relative odom drift makes
+# map -> odom(last accepted) x odom -> base_link(now) a far tighter reseed than
+# a BBS candidate during a short dropout, and it costs zero query latency. It is
+# opt-in (SupervisorParams.use_odom_bridge_candidate, default False) and must
+# never change BBS-only behavior when off, must be tried before every BBS query
+# when on and available, must never spend a BBS attempt, and must fall back to
+# BBS after odom_bridge_max_attempts unconfirmed tries.
+
+def run_with_bridge(
+    params,
+    ticks,
+    *,
+    requested,
+    odom_bridge_available,
+    candidate_score=None,
+    query_latency=1,
+    fitness=None,
+    dt=1.0,
+):
+    """Like run(), but also feeds SupervisorObservation.odom_bridge_available.
+
+    Returns 5-tuples (now, action, reason, state_name, candidate_source).
+    """
+    state = rsp.initial_state()
+    events = []
+    deliver_at = None
+    last_reset_sec = None
+
+    def value(spec, *args):
+        return spec(*args) if callable(spec) else spec
+
+    for i in range(ticks):
+        now = i * dt
+        req = bool(value(requested, now))
+        bridge_available = bool(value(odom_bridge_available, now))
+        score = None
+        if deliver_at is not None and i == deliver_at:
+            score = value(candidate_score, now)
+            deliver_at = None
+        fit = None
+        if fitness is not None:
+            fit = fitness(now, last_reset_sec) if callable(fitness) else fitness
+        obs = rsp.SupervisorObservation(
+            now, req, best_candidate_score=score, best_fitness=fit,
+            odom_bridge_available=bridge_available)
+        dec = rsp.decide(params, state, obs)
+        state = dec.state
+        events.append((now, dec.action, dec.reason, state.name, dec.candidate_source))
+        if dec.action == rsp.ACTION_QUERY:
+            deliver_at = i + query_latency
+        if dec.action == rsp.ACTION_PUBLISH_RESET:
+            last_reset_sec = now
+    return events
+
+
+def test_odom_bridge_off_by_default_preserves_bbs_only_behavior():
+    # use_odom_bridge_candidate defaults to False: even with a bridge candidate
+    # always available, behavior must be identical to plain BBS-only.
+    params = rsp.SupervisorParams(
+        request_debounce_sec=1.0, min_candidate_score=0.6,
+        recovery_fitness_threshold=1.5, enable_confirm_cross_check=False)
+    assert params.use_odom_bridge_candidate is False
+
+    def fitness(now, last_reset_sec):
+        if last_reset_sec is None:
+            return 9.0
+        return 0.4 if now - last_reset_sec >= 2.0 else 9.0
+
+    events = run_with_bridge(
+        params, 40, requested=True, odom_bridge_available=True,
+        candidate_score=0.95, fitness=fitness)
+    reasons = [r for (_, _, r, _, _) in events]
+    assert "odom_bridge_reset_published" not in reasons
+    assert "recovery_confirmed" in reasons
+    assert all(cs == "bbs" for (_, a, _, _, cs) in events
+               if a == rsp.ACTION_PUBLISH_RESET)
+
+
+def test_odom_bridge_tried_before_bbs_query_and_never_spends_bbs_attempt():
+    params = rsp.SupervisorParams(
+        request_debounce_sec=1.0, min_candidate_score=0.6,
+        recovery_fitness_threshold=1.5, enable_confirm_cross_check=False,
+        use_odom_bridge_candidate=True, odom_bridge_max_attempts=2,
+        max_attempts=1)
+
+    def fitness(now, last_reset_sec):
+        if last_reset_sec is None:
+            return 9.0
+        return 0.4 if now - last_reset_sec >= 2.0 else 9.0
+
+    events = run_with_bridge(
+        params, 40, requested=True, odom_bridge_available=True, fitness=fitness)
+    reasons = [r for (_, _, r, _, _) in events]
+    assert "odom_bridge_reset_published" in reasons
+    assert rsp.ACTION_QUERY not in [e[1] for e in events]
+    assert "recovery_confirmed" in reasons
+    publish_events = [e for e in events if e[1] == rsp.ACTION_PUBLISH_RESET]
+    assert len(publish_events) == 1
+    assert publish_events[0][4] == "odom_bridge"
+    # A BBS attempt (max_attempts=1) was never spent -- the recovery is the
+    # bridge's, and max_attempts is the BBS query ceiling.
+    assert events[-1][3] == rsp.STATE_STANDDOWN
+
+
+def test_odom_bridge_falls_back_to_bbs_after_unconfirmed_tries():
+    # Bridge is available but never recovers (fitness stays high); after
+    # odom_bridge_max_attempts unconfirmed tries it must stop retrying the
+    # bridge and fall back to a BBS query, which does recover.
+    params = rsp.SupervisorParams(
+        request_debounce_sec=1.0, min_candidate_score=0.6,
+        recovery_fitness_threshold=1.5, enable_confirm_cross_check=False,
+        use_odom_bridge_candidate=True, odom_bridge_max_attempts=1,
+        settle_timeout_sec=3.0, min_seconds_between_attempts=1.0,
+        max_attempts=2)
+
+    def fitness(now, last_reset_sec):
+        return 9.0
+
+    events = run_with_bridge(
+        params, 60, requested=True, odom_bridge_available=True,
+        candidate_score=0.95, fitness=fitness, query_latency=1)
+    reasons = [r for (_, _, r, _, _) in events]
+    assert "odom_bridge_unconfirmed" in reasons
+    # After exactly one unconfirmed bridge try (odom_bridge_max_attempts=1) it
+    # must fall back to the BBS query path.
+    assert rsp.ACTION_QUERY in [e[1] for e in events]
+    publish_sources = [cs for (_, a, _, _, cs) in events
+                        if a == rsp.ACTION_PUBLISH_RESET]
+    assert publish_sources[0] == "odom_bridge"
+    assert "bbs" in publish_sources
+
+
+def test_odom_bridge_unavailable_falls_back_to_bbs_immediately():
+    # use_odom_bridge_candidate is on, but the node never has a fresh TF fix
+    # (e.g. the external front end never came up): must behave like BBS-only.
+    params = rsp.SupervisorParams(
+        request_debounce_sec=1.0, min_candidate_score=0.6,
+        recovery_fitness_threshold=1.5, enable_confirm_cross_check=False,
+        use_odom_bridge_candidate=True)
+
+    def fitness(now, last_reset_sec):
+        if last_reset_sec is None:
+            return 9.0
+        return 0.4 if now - last_reset_sec >= 2.0 else 9.0
+
+    events = run_with_bridge(
+        params, 40, requested=True, odom_bridge_available=False,
+        candidate_score=0.95, fitness=fitness)
+    reasons = [r for (_, _, r, _, _) in events]
+    assert "odom_bridge_reset_published" not in reasons
+    assert rsp.ACTION_QUERY in [e[1] for e in events]
+    assert "recovery_confirmed" in reasons
+
+
+def test_odom_bridge_respects_reset_spacing():
+    # The bridge must not republish faster than min_seconds_between_attempts,
+    # exactly like the BBS path.
+    params = rsp.SupervisorParams(
+        request_debounce_sec=1.0, min_candidate_score=0.6,
+        recovery_fitness_threshold=1.5, enable_confirm_cross_check=False,
+        use_odom_bridge_candidate=True, odom_bridge_max_attempts=5,
+        settle_timeout_sec=1.0, min_seconds_between_attempts=6.0)
+
+    def fitness(now, last_reset_sec):
+        return 9.0  # never recovers, forcing repeated bridge tries
+
+    events = run_with_bridge(
+        params, 30, requested=True, odom_bridge_available=True, fitness=fitness)
+    reset_times_local = [e[0] for e in events if e[1] == rsp.ACTION_PUBLISH_RESET]
+    for a, b in zip(reset_times_local, reset_times_local[1:]):
+        assert b - a >= params.min_seconds_between_attempts
+
+
+def test_odom_bridge_budget_and_exhausted_flag_reset_on_new_episode():
+    # Exhausting the bridge budget in one episode must not carry over to a later,
+    # unrelated episode after the request clears.
+    params = rsp.SupervisorParams(
+        request_debounce_sec=1.0, min_candidate_score=0.6,
+        recovery_fitness_threshold=1.5, enable_confirm_cross_check=False,
+        use_odom_bridge_candidate=True, odom_bridge_max_attempts=1,
+        settle_timeout_sec=2.0, min_seconds_between_attempts=1.0,
+        max_attempts=1)
+
+    state = rsp.initial_state()
+    now = 0.0
+    seen_bridge_exhausted_mid_episode = False
+    # First episode: bridge never recovers, exhausts, falls back to BBS which is
+    # never delivered a candidate (times out) -> exhausted.
+    for _ in range(40):
+        obs = rsp.SupervisorObservation(
+            now, True, best_fitness=9.0, odom_bridge_available=True)
+        dec = rsp.decide(params, state, obs)
+        state = dec.state
+        now += 1.0
+        if state.odom_bridge_exhausted:
+            seen_bridge_exhausted_mid_episode = True
+        if state.name == rsp.STATE_EXHAUSTED:
+            break
+    assert state.name == rsp.STATE_EXHAUSTED
+    # The bridge budget was spent and set the flag while the episode was still
+    # live (falling back to BBS); reaching the terminal EXHAUSTED state clears
+    # it again along with every other per-episode field (it is meaningless once
+    # latched -- nothing reads it there).
+    assert seen_bridge_exhausted_mid_episode is True
+    assert state.odom_bridge_exhausted is False
+
+    # Request clears -> back to idle with the bridge budget reset.
+    dec = rsp.decide(
+        params, state, rsp.SupervisorObservation(now, False, odom_bridge_available=True))
+    state = dec.state
+    assert state.name == rsp.STATE_IDLE
+    assert state.odom_bridge_exhausted is False
+    assert state.odom_bridge_attempts == 0
 
 
 # --- Gate: ranked-candidate walk (the 2026-06-15 live-run lesson) -------------

@@ -61,6 +61,12 @@ def generate_launch_description():
     # bags) and the lidar frame can be selected from this single entry point.
     twist_topic = LaunchConfiguration('twist_topic')
     imu_topic = LaunchConfiguration('imu_topic')
+    odom_topic = LaunchConfiguration('odom_topic')
+    enable_map_odom_tf = LaunchConfiguration('enable_map_odom_tf')
+    use_odom = LaunchConfiguration('use_odom')
+    use_odom_tf_prediction = LaunchConfiguration('use_odom_tf_prediction')
+    publish_bridge_pose_when_lost = LaunchConfiguration(
+        'publish_bridge_pose_when_lost')
     use_dataset_tf_tree = LaunchConfiguration('use_dataset_tf_tree')
     dataset_root_frame = LaunchConfiguration('dataset_root_frame')
     publish_lidar_tf = LaunchConfiguration('publish_lidar_tf')
@@ -87,6 +93,16 @@ def generate_launch_description():
     supervisor_confirm_cross_check = LaunchConfiguration('supervisor_confirm_cross_check')
     supervisor_cross_check_mismatch_m = LaunchConfiguration(
         'supervisor_cross_check_mismatch_m')
+    supervisor_enable_bbs_shadow_motion_gate = LaunchConfiguration(
+        'supervisor_enable_bbs_shadow_motion_gate')
+    supervisor_bbs_shadow_required_samples = LaunchConfiguration(
+        'supervisor_bbs_shadow_required_samples')
+    supervisor_bbs_shadow_max_translation_mismatch_m = LaunchConfiguration(
+        'supervisor_bbs_shadow_max_translation_mismatch_m')
+    supervisor_bbs_shadow_max_yaw_mismatch_deg = LaunchConfiguration(
+        'supervisor_bbs_shadow_max_yaw_mismatch_deg')
+    supervisor_bbs_shadow_bridge_stamp_tolerance_sec = LaunchConfiguration(
+        'supervisor_bbs_shadow_bridge_stamp_tolerance_sec')
     supervisor_enable_seed_motion = LaunchConfiguration('supervisor_enable_seed_motion_compensation')
     supervisor_max_seed_speed_mps = LaunchConfiguration('supervisor_max_seed_speed_mps')
     supervisor_max_seed_latency_sec = LaunchConfiguration('supervisor_max_seed_latency_sec')
@@ -102,6 +118,21 @@ def generate_launch_description():
         'supervisor_seed_motion_skip_registration_fitness_threshold')
     g2_ndt_scan_voxel_leaf_size = LaunchConfiguration('g2_ndt_scan_voxel_leaf_size')
     g2_ndt_target_voxel_leaf_size = LaunchConfiguration('g2_ndt_target_voxel_leaf_size')
+
+    # Odom bridge (see reinitialization_supervisor_policy): a candidate built from
+    # a live TF lookup, tried before every BBS query. Needs the same
+    # enable_map_odom_tf front-end architecture as the localizer's own frozen
+    # map -> odom rebroadcast, so it defaults off with everything else here.
+    supervisor_use_odom_bridge_candidate = LaunchConfiguration(
+        'supervisor_use_odom_bridge_candidate')
+    supervisor_odom_bridge_max_attempts = LaunchConfiguration(
+        'supervisor_odom_bridge_max_attempts')
+    supervisor_odom_bridge_max_age_sec = LaunchConfiguration(
+        'supervisor_odom_bridge_max_age_sec')
+    supervisor_odom_bridge_position_std_m = LaunchConfiguration(
+        'supervisor_odom_bridge_position_std_m')
+    supervisor_odom_bridge_yaw_std_rad = LaunchConfiguration(
+        'supervisor_odom_bridge_yaw_std_rad')
 
     declared = [
         DeclareLaunchArgument(
@@ -141,6 +172,24 @@ def generate_launch_description():
             description='Parameter file for the core lidar_localization node.'),
         DeclareLaunchArgument('twist_topic', default_value='/twist'),
         DeclareLaunchArgument('imu_topic', default_value='/imu'),
+        DeclareLaunchArgument('odom_topic', default_value='/odom'),
+        DeclareLaunchArgument(
+            'enable_map_odom_tf', default_value='false',
+            description='Look up an external odom -> base_frame_id TF (e.g. from an '
+                        'external LIO front end) and publish map -> odom instead of '
+                        'map -> base_frame_id directly.'),
+        DeclareLaunchArgument(
+            'use_odom', default_value='false',
+            description='Subscribe odom_topic (nav_msgs/Odometry) as a twist-'
+                        'integration seed fallback when IMU preintegration is off.'),
+        DeclareLaunchArgument(
+            'use_odom_tf_prediction', default_value='false',
+            description='Seed scan registration from the frozen map -> odom x '
+                        'live odom -> base TF composition (external LIO).'),
+        DeclareLaunchArgument(
+            'publish_bridge_pose_when_lost', default_value='false',
+            description='Publish the odom-bridge composed pose as the pose '
+                        'output while scan matching is rejected.'),
         DeclareLaunchArgument('use_dataset_tf_tree', default_value='false'),
         DeclareLaunchArgument('dataset_root_frame', default_value='camera_base'),
         DeclareLaunchArgument('publish_lidar_tf', default_value='true'),
@@ -194,6 +243,20 @@ def generate_launch_description():
             description='Euclidean xy distance (m) above which the verify query is '
                         'treated as an alias and recovery is rejected.'),
         DeclareLaunchArgument(
+            'supervisor_enable_bbs_shadow_motion_gate', default_value='false',
+            description='Withhold BBS resets until successive global fixes have '
+                        'relative SE(2) motion consistent with the odom bridge.'),
+        DeclareLaunchArgument(
+            'supervisor_bbs_shadow_required_samples', default_value='2',
+            description='Consecutive temporally consistent BBS fixes required before '
+                        'rank-1 may be published.'),
+        DeclareLaunchArgument(
+            'supervisor_bbs_shadow_max_translation_mismatch_m', default_value='5.0'),
+        DeclareLaunchArgument(
+            'supervisor_bbs_shadow_max_yaw_mismatch_deg', default_value='20.0'),
+        DeclareLaunchArgument(
+            'supervisor_bbs_shadow_bridge_stamp_tolerance_sec', default_value='2.0'),
+        DeclareLaunchArgument(
             'supervisor_enable_seed_motion_compensation', default_value='false',
             description='Forward-extrapolate a candidate by the measured query->publish '
                         'latency so it lands where the moving vehicle is now, not where '
@@ -233,6 +296,31 @@ def generate_launch_description():
             description='Skip seed motion compensation when a candidate registration '
                         'fitness is at or below this value.'),
         DeclareLaunchArgument(
+            'supervisor_use_odom_bridge_candidate', default_value='false',
+            description="Try a candidate from the localizer's odom_bridge_pose "
+                        'topic before every BBS query -- with enable_map_odom_tf '
+                        'and an external LIO front end (e.g. GLIM) this carries '
+                        'map -> odom(last accepted) x odom -> base_link(now), a far '
+                        'tighter and zero-latency reseed during a short dropout. '
+                        'Off by default.'),
+        DeclareLaunchArgument(
+            'supervisor_odom_bridge_max_attempts', default_value='1',
+            description='Publish-and-settle tries the odom bridge gets per episode '
+                        'before permanently falling back to the BBS query for the '
+                        'rest of the episode (each try does not spend max_attempts).'),
+        DeclareLaunchArgument(
+            'supervisor_odom_bridge_max_age_sec', default_value='2.0',
+            description='Reject an odom_bridge_pose message older than this many '
+                        'seconds (bag/sim clock) -- the external front end stalled.'),
+        DeclareLaunchArgument(
+            'supervisor_odom_bridge_position_std_m', default_value='0.3',
+            description='Initial-pose x/y std advertised on an odom-bridge reset '
+                        '(tighter than the BBS reset -- see reset_position_std_m).'),
+        DeclareLaunchArgument(
+            'supervisor_odom_bridge_yaw_std_rad', default_value='0.1',
+            description='Initial-pose yaw std advertised on an odom-bridge reset '
+                        '(tighter than the BBS reset -- see reset_yaw_std_rad).'),
+        DeclareLaunchArgument(
             'g2_ndt_scan_voxel_leaf_size', default_value='1.0',
             description='G2 NDT scoring scan voxel size; 0 disables downsampling.'),
         DeclareLaunchArgument(
@@ -271,6 +359,11 @@ def generate_launch_description():
             'cloud_topic': cloud_topic,
             'twist_topic': twist_topic,
             'imu_topic': imu_topic,
+            'odom_topic': odom_topic,
+            'enable_map_odom_tf': enable_map_odom_tf,
+            'use_odom': use_odom,
+            'use_odom_tf_prediction': use_odom_tf_prediction,
+            'publish_bridge_pose_when_lost': publish_bridge_pose_when_lost,
             'global_frame_id': global_frame_id,
             'odom_frame_id': odom_frame_id,
             'base_frame_id': base_frame_id,
@@ -365,6 +458,16 @@ def generate_launch_description():
                 supervisor_confirm_cross_check, value_type=bool),
             'cross_check_mismatch_m': ParameterValue(
                 supervisor_cross_check_mismatch_m, value_type=float),
+            'enable_bbs_shadow_motion_gate': ParameterValue(
+                supervisor_enable_bbs_shadow_motion_gate, value_type=bool),
+            'bbs_shadow_required_samples': ParameterValue(
+                supervisor_bbs_shadow_required_samples, value_type=int),
+            'bbs_shadow_max_translation_mismatch_m': ParameterValue(
+                supervisor_bbs_shadow_max_translation_mismatch_m, value_type=float),
+            'bbs_shadow_max_yaw_mismatch_deg': ParameterValue(
+                supervisor_bbs_shadow_max_yaw_mismatch_deg, value_type=float),
+            'bbs_shadow_bridge_stamp_tolerance_sec': ParameterValue(
+                supervisor_bbs_shadow_bridge_stamp_tolerance_sec, value_type=float),
             'enable_seed_motion_compensation': ParameterValue(
                 supervisor_enable_seed_motion, value_type=bool),
             'max_seed_speed_mps': ParameterValue(
@@ -382,6 +485,16 @@ def generate_launch_description():
             'seed_motion_skip_registration_fitness_threshold': ParameterValue(
                 supervisor_seed_motion_skip_registration_fitness_threshold,
                 value_type=float),
+            'use_odom_bridge_candidate': ParameterValue(
+                supervisor_use_odom_bridge_candidate, value_type=bool),
+            'odom_bridge_max_attempts': ParameterValue(
+                supervisor_odom_bridge_max_attempts, value_type=int),
+            'odom_bridge_max_age_sec': ParameterValue(
+                supervisor_odom_bridge_max_age_sec, value_type=float),
+            'odom_bridge_position_std_m': ParameterValue(
+                supervisor_odom_bridge_position_std_m, value_type=float),
+            'odom_bridge_yaw_std_rad': ParameterValue(
+                supervisor_odom_bridge_yaw_std_rad, value_type=float),
             'event_log_csv': supervisor_event_log_csv,
             'use_sim_time': use_sim_time,
         }])
