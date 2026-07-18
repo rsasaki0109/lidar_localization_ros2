@@ -1,62 +1,10 @@
-# Koide Dataset GIF Gallery
+# Koide Measured Localization Gallery
 
-This page covers every reference trajectory in the
+This page presents measured localization replays from the
 [Hard Point Cloud Localization Dataset](https://zenodo.org/records/10122133).
-The route-overview GIFs animate published ground truth; they are dataset previews,
-not localization accuracy results. Measured localization replays are listed separately.
-
-## Dataset coverage
-
-The publication provides eight reference trajectories in eleven downloadable ROS 2 bag
-parts. Outdoor recordings are split into `a` and `b` archives while sharing one continuous
-reference trajectory.
-
-| Reference trajectory | ROS 2 bag archive(s) | Environment |
-|---|---|---|
-| `indoor_easy_01` | `indoor_easy_01` | Indoor |
-| `indoor_easy_02` | `indoor_easy_02` | Indoor |
-| `indoor_hard_01` | `indoor_hard_01` | Indoor |
-| `indoor_kidnap_01` | `indoor_kidnap_01` | Indoor, kidnapped |
-| `indoor_kidnap_02` | `indoor_kidnap_02` | Indoor, kidnapped |
-| `outdoor_hard_01` | `outdoor_hard_01a`, `outdoor_hard_01b` | Outdoor |
-| `outdoor_hard_02` | `outdoor_hard_02a`, `outdoor_hard_02b` | Outdoor |
-| `outdoor_kidnap` | `outdoor_kidnap_a`, `outdoor_kidnap_b` | Outdoor, kidnapped |
-
-## Indoor routes
-
-### Indoor easy 01
-
-![Koide indoor_easy_01 ground-truth route](../images/koide/indoor_easy_01.gif)
-
-### Indoor easy 02
-
-![Koide indoor_easy_02 ground-truth route](../images/koide/indoor_easy_02.gif)
-
-### Indoor hard 01
-
-![Koide indoor_hard_01 ground-truth route](../images/koide/indoor_hard_01.gif)
-
-### Indoor kidnap 01
-
-![Koide indoor_kidnap_01 ground-truth route](../images/koide/indoor_kidnap_01.gif)
-
-### Indoor kidnap 02
-
-![Koide indoor_kidnap_02 ground-truth route](../images/koide/indoor_kidnap_02.gif)
-
-## Outdoor routes
-
-### Outdoor hard 01
-
-![Koide outdoor_hard_01 ground-truth route](../images/koide/outdoor_hard_01.gif)
-
-### Outdoor hard 02
-
-![Koide outdoor_hard_02 ground-truth route](../images/koide/outdoor_hard_02.gif)
-
-### Outdoor kidnap
-
-![Koide outdoor_kidnap ground-truth route](../images/koide/outdoor_kidnap.gif)
+Ground truth appears only as a reference overlay in each replay; standalone animated
+ground-truth routes are intentionally omitted because they do not demonstrate localization
+accuracy or recovery behavior.
 
 ## Measured localization replays
 
@@ -217,15 +165,27 @@ behavior.
 
 ![Koide outdoor_kidnap_b measured localization](../images/koide/measured/outdoor_kidnap_b.gif)
 
-## Reproduce the route gallery
+## Dataset reference
+
+The publication provides eight reference trajectories in eleven downloadable ROS 2 bag
+parts. Outdoor recordings are split into `a` and `b` archives while sharing one continuous
+reference trajectory.
+
+| Reference trajectory | ROS 2 bag archive(s) | Environment |
+|---|---|---|
+| `indoor_easy_01` | `indoor_easy_01` | Indoor |
+| `indoor_easy_02` | `indoor_easy_02` | Indoor |
+| `indoor_hard_01` | `indoor_hard_01` | Indoor |
+| `indoor_kidnap_01` | `indoor_kidnap_01` | Indoor, kidnapped |
+| `indoor_kidnap_02` | `indoor_kidnap_02` | Indoor, kidnapped |
+| `outdoor_hard_01` | `outdoor_hard_01a`, `outdoor_hard_01b` | Outdoor |
+| `outdoor_hard_02` | `outdoor_hard_02a`, `outdoor_hard_02b` | Outdoor |
+| `outdoor_kidnap` | `outdoor_kidnap_a`, `outdoor_kidnap_b` | Outdoor, kidnapped |
+
+## Reproduce measured replays
 
 Keep the large maps, bags, generated occupancy maps, and reference CSV files outside the
-repository. For example, with the dataset on an external SSD:
-
-```bash
-scripts/render_koide_dataset_gallery.sh \
-  --data-dir /media/sasaki/aiueo/datasets/koide_hard_localization
-```
+repository.
 
 Prepare the measured 30-second benchmark manifests after sourcing ROS 2:
 
