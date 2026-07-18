@@ -112,6 +112,21 @@ more accurate. The next design gate is therefore a separately smoothed
 `map -> odom` correction output that never deforms GLIM odometry. Do not use
 this experiment to replace the validated localizer yet.
 
+A post-merge offline reconstruction tested that separation on the same run11
+dump. It left GLIM's raw orientation unchanged, held the startup map-to-odom
+yaw fixed, applied 20% of each accepted translation-anchor update, and used a
+2 s first-order transition. The reconstructed trajectory passed every current
+01a odometry gate: 1.998 m translation ATE, 4.596 m end error, 0.169 m median
+10 m translation RPE, and 1.644 degrees rotation ATE. With zero map correction,
+the same run's raw odometry measured 1.853 m ATE, 4.726 m end error, and 0.155 m
+RPE; the low-gain correction therefore improved the end error while preserving
+the local-odometry gates.
+
+These are offline replay-reconstruction results, not evidence of a live ROS TF
+publisher. The next implementation must reproduce the same fixed-yaw,
+low-gain, time-smoothed policy online and re-run the full bag before production
+use.
+
 ## Acceptance gates
 
 Before enabling this in measured replays:
