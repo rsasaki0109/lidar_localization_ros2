@@ -1,4 +1,5 @@
 #include "glim_prior_map_localizer/prior_map_factor_policy.hpp"
+#include "glim_prior_map_localizer/map_odom_policy.hpp"
 #include "glim_prior_map_localizer/ply_loader.hpp"
 #include "glim_prior_map_localizer/vgicp_refiner.hpp"
 
@@ -7,6 +8,7 @@
 #include <cstdlib>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -14,16 +16,9 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
-#include <gtsam/geometry/Pose3.h>
-#include <gtsam/inference/Symbol.h>
-#include <gtsam/nonlinear/NonlinearFactorGraph.h>
-#include <gtsam/nonlinear/Values.h>
-#include <gtsam_points/factors/integrated_vgicp_factor.hpp>
-#include <gtsam_points/optimizers/isam2_ext.hpp>
-#include <gtsam_points/types/gaussian_voxelmap_cpu.hpp>
-
 #include <glim/mapping/callbacks.hpp>
 #include <glim/mapping/sub_map.hpp>
+#include <glim/odometry/callbacks.hpp>
 #include <glim/util/extension_module.hpp>
 #include <glim/util/logging.hpp>
 
@@ -152,6 +147,8 @@ public:
       1, environmentSize("GLIM_PRIOR_MAP_BOOTSTRAP_SUBMAP_STRIDE", 2));
     tracking_submap_stride_ = std::max<std::size_t>(
       1, environmentSize("GLIM_PRIOR_MAP_TRACKING_SUBMAP_STRIDE", 10));
+    translation_gain_ = std::clamp(
+      environmentDouble("GLIM_PRIOR_MAP_TRANSLATION_GAIN", 0.2), 0.0, 1.0);
     full_global_search_ =
       environmentBool("GLIM_PRIOR_MAP_FULL_GLOBAL_SEARCH", false);
     const char * bootstrap_x = std::getenv("GLIM_PRIOR_MAP_BOOTSTRAP_CENTER_X");
@@ -172,33 +169,25 @@ public:
       bootstrap_anchor_.linear() = Eigen::AngleAxisd(
         std::stod(bootstrap_yaw) * degrees_to_radians, Eigen::Vector3d::UnitZ()).toRotationMatrix();
       bootstrap_anchor_available_ = true;
+      tracking_anchor_ = bootstrap_anchor_;
+      tracking_anchor_available_ = true;
     }
 
     using std::placeholders::_1;
-    using std::placeholders::_2;
-    using std::placeholders::_3;
+    glim::OdometryEstimationCallbacks::on_new_frame.add(
+      std::bind(&PriorMapLocalizer::onOdometryFrame, this, _1));
     glim::GlobalMappingCallbacks::on_insert_submap.add(
       std::bind(&PriorMapLocalizer::onSubmap, this, _1));
-    glim::GlobalMappingCallbacks::on_smoother_update.add(
-      std::bind(&PriorMapLocalizer::onSmootherUpdate, this, _1, _2, _3));
     logger_->info(
-      "loaded prior map with {} points; mode={} crop={:.1f}/{:.1f}m stride={}/{} seeded={}",
+      "loaded prior map with {} points; mode={} crop={:.1f}/{:.1f}m stride={}/{} "
+      "seeded={} translation_gain={:.3f}",
       prior_map_.size(), full_global_search_ ? "full-global" : "tracking-crop",
       bootstrap_crop_radius_m_, tracking_crop_radius_m_, bootstrap_submap_stride_,
       tracking_submap_stride_,
-      bootstrap_anchor_available_);
+      bootstrap_anchor_available_, translation_gain_);
   }
 
 private:
-  struct PendingFactor
-  {
-    int submap_id;
-    Eigen::Isometry3d map_from_submap;
-    bool global_relocalization;
-    gtsam_points::GaussianVoxelMapCPU::ConstPtr target_voxels;
-    gtsam_points::PointCloud::ConstPtr source;
-  };
-
   static std::string requiredMapPath()
   {
     const char * path = std::getenv("GLIM_PRIOR_MAP_PATH");
@@ -219,6 +208,22 @@ private:
     return config;
   }
 
+  void onOdometryFrame(const glim::EstimationFrame::ConstPtr & frame)
+  {
+    Eigen::Isometry3d initial_anchor = Eigen::Isometry3d::Identity();
+    {
+      std::lock_guard<std::mutex> lock(anchor_mutex_);
+      if (!tracking_anchor_available_ || initial_anchor_sent_) {
+        return;
+      }
+      initial_anchor = tracking_anchor_;
+      initial_anchor_sent_ = true;
+    }
+    glim::GlobalMappingCallbacks::on_external_map_odom_update(
+      frame->stamp, initial_anchor, true);
+    logger_->info("published startup map-to-odom anchor at stamp={:.6f}", frame->stamp);
+  }
+
   void onSubmap(const glim::SubMap::ConstPtr & submap)
   {
     const std::size_t active_stride = map_frame_initialized_ ?
@@ -232,14 +237,22 @@ private:
       return;
     }
 
-    const Eigen::Isometry3d predicted = submap->T_world_origin;
-    const Eigen::Isometry3d predicted_in_map =
-      (!graph_frame_seeded_ && bootstrap_anchor_available_) ?
-      bootstrap_anchor_ * predicted : predicted;
-    Eigen::Vector3d predicted_map_center = predicted_in_map.translation();
-    if (previous_global_anchor_available_) {
-      predicted_map_center = previous_global_anchor_ * predicted.translation();
+    const auto origin_odom_frame = submap->origin_odom_frame();
+    if (!origin_odom_frame) {
+      logger_->warn("submap {} has no odometry origin frame", submap->id);
+      return;
     }
+    const Eigen::Isometry3d odom_from_submap = origin_odom_frame->T_world_sensor();
+    Eigen::Isometry3d anchor_snapshot = Eigen::Isometry3d::Identity();
+    bool anchor_available = false;
+    {
+      std::lock_guard<std::mutex> lock(anchor_mutex_);
+      anchor_snapshot = tracking_anchor_;
+      anchor_available = tracking_anchor_available_;
+    }
+    const Eigen::Isometry3d predicted_in_map =
+      anchor_available ? anchor_snapshot * odom_from_submap : odom_from_submap;
+    const Eigen::Vector3d predicted_map_center = predicted_in_map.translation();
     const double crop_radius_m = map_frame_initialized_ ?
       tracking_crop_radius_m_ : bootstrap_crop_radius_m_;
     const auto cropped_map = full_global_search_ ?
@@ -256,7 +269,7 @@ private:
     // it on every submap adds CPU and can move a good prediction into a
     // repeated-structure basin.
     bool use_coarse_global_candidate =
-      !graph_frame_seeded_ || full_global_search_;
+      !anchor_available || full_global_search_;
     Eigen::Isometry3d candidate = predicted_in_map;
     bool coarse_valid = true;
     std::size_t coarse_inliers = gate_params_.min_final_inliers;
@@ -333,13 +346,18 @@ private:
     }
     candidate = refinement.pose;
 
-    // Compare in the map frame. Before the graph is anchored, predicted_in_map
-    // applies the approximate startup pose; afterwards GLIM's world is map.
+    // Compare in the external map frame. GLIM's odometry and global graph stay
+    // in their native frame; only this map-to-odom anchor is updated.
     const Eigen::Isometry3d local_correction = candidate * predicted_in_map.inverse();
-    const Eigen::Isometry3d global_anchor = candidate * predicted.inverse();
+    const Eigen::Isometry3d registration_anchor = candidate * odom_from_submap.inverse();
+    Eigen::Isometry3d map_odom_observation = registration_anchor;
+    if (anchor_available) {
+      map_odom_observation = observeMapOdomWithFixedRotation(
+        candidate, odom_from_submap, anchor_snapshot.linear());
+    }
     const Eigen::Isometry3d anchor_disagreement =
       previous_global_anchor_available_ ?
-      previous_global_anchor_.inverse() * global_anchor :
+      previous_global_anchor_.inverse() * registration_anchor :
       Eigen::Isometry3d::Identity();
 
     auto active_gate_params = gate_params_;
@@ -353,7 +371,7 @@ private:
       // anchor. Unseeded acquisition still requires explicit full-map mode.
       active_gate_params.allow_global_relocalization =
         gate_params_.allow_global_relocalization &&
-        (graph_frame_seeded_ || full_global_search_);
+        (anchor_available || full_global_search_);
     }
     const PriorMapFactorGateDecision decision = decidePriorMapFactor(
       active_gate_params,
@@ -370,8 +388,8 @@ private:
     if (!decision.accepted &&
       decision.reason.find("global_") == 0)
     {
-      previous_global_anchor_ = global_anchor;
-      previous_global_anchor_available_ = finiteTransform(global_anchor);
+      previous_global_anchor_ = registration_anchor;
+      previous_global_anchor_available_ = finiteTransform(registration_anchor);
     }
 
     logger_->info(
@@ -388,46 +406,36 @@ private:
       return;
     }
 
-    pending_factors_.push_back(
-      PendingFactor{
-        submap->id, candidate,
-        decision.accepted_as_global_relocalization || !graph_frame_seeded_,
-        refinement.target_voxels, submap->frame});
+    Eigen::Isometry3d updated_anchor = Eigen::Isometry3d::Identity();
+    bool reset = false;
+    {
+      std::lock_guard<std::mutex> lock(anchor_mutex_);
+      if (!tracking_anchor_available_) {
+        tracking_anchor_ = map_odom_observation;
+        tracking_anchor_available_ = true;
+        reference_anchor_ = tracking_anchor_;
+        reference_anchor_available_ = true;
+        reset = true;
+      } else if (!reference_anchor_available_) {
+        reference_anchor_ = tracking_anchor_;
+        reference_anchor_.translation() = map_odom_observation.translation();
+        tracking_anchor_ = reference_anchor_;
+        reference_anchor_available_ = true;
+      } else {
+        tracking_anchor_ = updateMapOdomTranslation(
+          reference_anchor_, map_odom_observation, translation_gain_);
+      }
+      updated_anchor = tracking_anchor_;
+      initial_anchor_sent_ = true;
+    }
+    glim::GlobalMappingCallbacks::on_external_map_odom_update(
+      origin_odom_frame->stamp, updated_anchor, reset);
+    logger_->info(
+      "updated map-to-odom target translation=({:.3f},{:.3f},{:.3f}) gain={:.3f}",
+      updated_anchor.translation().x(), updated_anchor.translation().y(),
+      updated_anchor.translation().z(), translation_gain_);
     map_frame_initialized_ = true;
     previous_global_anchor_available_ = false;
-  }
-
-  void onSmootherUpdate(
-    gtsam_points::ISAM2Ext &,
-    gtsam::NonlinearFactorGraph & new_factors,
-    gtsam::Values & new_values)
-  {
-    using gtsam::symbol_shorthand::X;
-    if (!graph_frame_seeded_ && bootstrap_anchor_available_ && new_values.exists(X(0))) {
-      const auto glim_world_from_submap = new_values.at<gtsam::Pose3>(X(0));
-      const Eigen::Isometry3d map_from_submap =
-        bootstrap_anchor_ * Eigen::Isometry3d(glim_world_from_submap.matrix());
-      new_values.update(X(0), gtsam::Pose3(map_from_submap.matrix()));
-      graph_frame_seeded_ = true;
-      logger_->info("seeded GLIM X(0) in the prior-map frame");
-    }
-    for (const auto & pending : pending_factors_) {
-      if (pending.global_relocalization && new_values.exists(X(pending.submap_id))) {
-        // The current submap has not entered iSAM2 yet. Seed its linearization
-        // at the consensus-validated map pose so an 80+ metre frame change is
-        // not linearized as one enormous increment from the GLIM-world pose.
-        new_values.update(
-          X(pending.submap_id), gtsam::Pose3(pending.map_from_submap.matrix()));
-      }
-      new_factors.emplace_shared<gtsam_points::IntegratedVGICPFactor>(
-        gtsam::Pose3::Identity(), X(pending.submap_id),
-        pending.target_voxels, pending.source);
-      logger_->info(
-        "injected {} prior-map VGICP factor on submap {}",
-        pending.global_relocalization ? "global-relocalization" : "local-tracking",
-        pending.submap_id);
-    }
-    pending_factors_.clear();
   }
 
   std::shared_ptr<spdlog::logger> logger_;
@@ -444,14 +452,19 @@ private:
   double bootstrap_crop_radius_m_{60.0};
   std::size_t bootstrap_submap_stride_{2};
   std::size_t tracking_submap_stride_{10};
+  double translation_gain_{0.2};
   bool full_global_search_{false};
   bool map_frame_initialized_{false};
-  bool graph_frame_seeded_{false};
   bool bootstrap_anchor_available_{false};
   Eigen::Isometry3d bootstrap_anchor_{Eigen::Isometry3d::Identity()};
+  std::mutex anchor_mutex_;
+  bool tracking_anchor_available_{false};
+  bool initial_anchor_sent_{false};
+  Eigen::Isometry3d tracking_anchor_{Eigen::Isometry3d::Identity()};
+  bool reference_anchor_available_{false};
+  Eigen::Isometry3d reference_anchor_{Eigen::Isometry3d::Identity()};
   bool previous_global_anchor_available_{false};
   Eigen::Isometry3d previous_global_anchor_{Eigen::Isometry3d::Identity()};
-  std::vector<PendingFactor> pending_factors_;
 };
 
 }  // namespace glim_prior_map_localizer

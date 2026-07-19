@@ -152,13 +152,25 @@ def main() -> int:
         return process.returncode
 
     python = sys.executable
-    run_checked([
+    conversion_command = [
         python, str(repo / "scripts/convert_glim_dump_to_pose_csv.py"),
         "--dump-dir", str(output / "dump"),
         "--output-csv", str(output / "pose_trace.csv"),
         "--summary-json", str(output / "conversion.json"),
-        "--apply-global-correction", "--planarize-z",
-    ])
+        "--planarize-z",
+    ]
+    if prior_map is not None:
+        live_map_odom = output / "dump" / "external_map_odom.txt"
+        if not live_map_odom.is_file():
+            print(
+                f"GLIM did not save its live external correction history: {live_map_odom}",
+                file=sys.stderr,
+            )
+            return 2
+        conversion_command.extend(["--map-odom-tum", str(live_map_odom)])
+    else:
+        conversion_command.append("--apply-global-correction")
+    run_checked(conversion_command)
     run_checked([
         python, str(repo / "scripts/build_glim_runtime_evidence.py"),
         "--glim-log", str(output / "glim.log"),

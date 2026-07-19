@@ -312,6 +312,15 @@ if(BUILD_TESTING)
     COMMAND test_glim_prior_map_factor_policy
   )
 
+  add_executable(test_glim_map_odom_policy
+    test/test_glim_map_odom_policy.cpp)
+  target_include_directories(test_glim_map_odom_policy PRIVATE
+    experiments/glim_prior_map_localizer/include)
+  add_test(
+    NAME glim_map_odom_policy
+    COMMAND test_glim_map_odom_policy
+  )
+
   add_executable(test_glim_prior_map_ply_loader
     test/test_glim_prior_map_ply_loader.cpp)
   target_include_directories(test_glim_prior_map_ply_loader PRIVATE

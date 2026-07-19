@@ -1,0 +1,46 @@
+{
+  "architecture": "continuous_glim_odom_with_smoothed_external_map_odom",
+  "date": "2026-07-19",
+  "docker_image": {
+    "id": "sha256:70d056317a475e8ce5a029e5b6d83d0b5e8f4e1587acd069d708eb00cd1b134a",
+    "tag": "lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom"
+  },
+  "fork_revisions": {
+    "glil_unofficial": "dd29667938cb56ef59de7f90290ad2dbc613f00c",
+    "glim_ros2": "cd4b2c9eb37a5c12c93d7339ce10167ebaa55288"
+  },
+  "policy": {
+    "coreset_size": 32,
+    "external_map_odom_time_constant_sec": 2.0,
+    "fixed_startup_rotation": true,
+    "normal_registration": "direct_vgicp",
+    "recovery_registration": "kiss_matcher_then_vgicp",
+    "translation_gain": 0.2
+  },
+  "sequence": {
+    "id": "outdoor_hard_01a",
+    "requested_duration_sec": 380.0,
+    "wall_duration_sec": 385.862303322996
+  },
+  "metrics": {
+    "coverage_ratio": 0.992104793222327,
+    "covered_duration_sec": 376.99982142448425,
+    "max_pose_gap_sec": 0.10016703605651855,
+    "max_pose_jump_m": 0.18924309870327405,
+    "max_pose_jump_rotation_deg": 3.852781611658036,
+    "processing_p95_sec": 0.028260725,
+    "rotation_ate_rmse_deg": 1.4787272019298572,
+    "rpe_rotation_median_deg": 0.6755623781791303,
+    "rpe_translation_median_m": 0.15727120912544518,
+    "tf_jump_count": 0,
+    "translation_ate_rmse_m": 1.1424958568206272,
+    "translation_end_error_m": 3.1115047065782298,
+    "unauthorized_reset_count": 0
+  },
+  "passed_all_current_gates": true,
+  "scope_limitations": [
+    "Only outdoor_hard_01a has been measured with this live architecture.",
+    "Kidnapped-pose recovery has not passed a full replay gate.",
+    "Map registration rejected after submap 60; the frozen correction and continuous odometry carried the remainder."
+  ]
+}
