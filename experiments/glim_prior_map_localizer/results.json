@@ -98,6 +98,43 @@
       "conclusion": "The failed repeat was dominated by raw GLIM odometry variability; the Z-bridge anchor changed ATE by about 0.02 m."
     }
   },
+  "outdoor_hard_01b_determinism_validation": {
+    "configuration": {
+      "preprocess_num_threads": 1,
+      "odometry_num_threads": 1,
+      "vertical_gain": 1.0
+    },
+    "root_cause": "Parallel ordering in random-grid preprocessing and the odometry optimizer changed the selected points and raw trajectory from the first scan.",
+    "raw_odom_sha256": "45d49d87932febc06b4ab18b29fc1ba58fc6f6ed043a7157523fe4e75f383642",
+    "raw_odom_bitwise_equal": true,
+    "raw_odom_row_count": 2218,
+    "external_map_odom_max_abs_difference": 0.04288318210210029,
+    "runs": [
+      {
+        "id": "run30",
+        "ok": true,
+        "wall_duration_sec": 306.5948609469924,
+        "translation_ate_rmse_m": 1.407079521839094,
+        "translation_end_error_m": 1.957432058163616,
+        "rpe_translation_median_m": 0.18690045253726886,
+        "processing_p95_sec": 0.044286789,
+        "tf_jump_count": 0,
+        "unauthorized_reset_count": 0
+      },
+      {
+        "id": "run31",
+        "ok": true,
+        "wall_duration_sec": 307.0096612229245,
+        "translation_ate_rmse_m": 1.4070793559048809,
+        "translation_end_error_m": 1.957432058163616,
+        "rpe_translation_median_m": 0.18694372463171008,
+        "processing_p95_sec": 0.047511732,
+        "tf_jump_count": 0,
+        "unauthorized_reset_count": 0
+      }
+    ],
+    "decision": "Use the one-thread coreset profile for reproducible measurements; keep vertical gain opt-in pending other-bag and non-planar validation."
+  },
   "runs": [
     {
       "id": "run13",
