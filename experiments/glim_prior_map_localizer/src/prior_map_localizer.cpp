@@ -2,11 +2,13 @@
 #include "glim_prior_map_localizer/map_odom_policy.hpp"
 #include "glim_prior_map_localizer/ply_loader.hpp"
 #include "glim_prior_map_localizer/vgicp_refiner.hpp"
+#include "glim_prior_map_localizer/prior_map_overlap_policy.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -16,9 +18,19 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
+#include <gtsam/geometry/Pose3.h>
+#include <gtsam/inference/Symbol.h>
+#include <gtsam/nonlinear/NonlinearFactorGraph.h>
+#include <gtsam/nonlinear/Values.h>
+#include <gtsam_points/ann/kdtree2.hpp>
+#include <gtsam_points/ann/nearest_neighbor_search.hpp>
+#include <gtsam_points/features/covariance_estimation.hpp>
+#include <gtsam_points/types/frame_traits.hpp>
+#include <gtsam_points/types/point_cloud_cpu.hpp>
 #include <glim/mapping/callbacks.hpp>
 #include <glim/mapping/sub_map.hpp>
 #include <glim/odometry/callbacks.hpp>
+#include <glim/odometry/integrated_gicp_factor_coreset.hpp>
 #include <glim/util/extension_module.hpp>
 #include <glim/util/logging.hpp>
 
@@ -77,6 +89,27 @@ std::vector<Eigen::Vector3f> loadPriorMap(const std::string & path)
   return loadPlyXyz(path);
 }
 
+gtsam_points::PointCloudCPU::Ptr makeTightlyCoupledPriorMap(
+  const std::vector<Eigen::Vector3f> & map,
+  double voxel_resolution_m,
+  int covariance_neighbors,
+  int num_threads)
+{
+  std::vector<Eigen::Vector4d> points;
+  points.reserve(map.size());
+  for (const auto & point : map) {
+    if (point.allFinite()) {
+      points.emplace_back(point.x(), point.y(), point.z(), 1.0);
+    }
+  }
+  auto dense = std::make_shared<gtsam_points::PointCloudCPU>(points);
+  auto sampled = gtsam_points::voxelgrid_sampling(
+    dense, voxel_resolution_m, num_threads);
+  sampled->add_covs(gtsam_points::estimate_covariances(
+    *sampled, covariance_neighbors, num_threads));
+  return sampled;
+}
+
 std::vector<Eigen::Vector3f> submapPoints(const glim::SubMap & submap)
 {
   std::vector<Eigen::Vector3f> points;
@@ -116,6 +149,8 @@ public:
     prior_map_(loadPriorMap(requiredMapPath())),
     matcher_(matcherConfig())
   {
+    tightly_coupled_ =
+      environmentBool("GLIM_PRIOR_MAP_TIGHTLY_COUPLED", false);
     gate_params_.min_final_inliers = environmentSize("GLIM_PRIOR_MAP_MIN_INLIERS", 10);
     gate_params_.max_local_correction_translation_m =
       environmentDouble("GLIM_PRIOR_MAP_MAX_LOCAL_TRANSLATION_M", 1.5);
@@ -155,6 +190,27 @@ public:
       environmentDouble("GLIM_PRIOR_MAP_VERTICAL_GAIN", translation_gain_), 0.0, 1.0);
     full_global_search_ =
       environmentBool("GLIM_PRIOR_MAP_FULL_GLOBAL_SEARCH", false);
+    map_factor_voxel_resolution_m_ =
+      environmentDouble("GLIM_PRIOR_MAP_FACTOR_VOXEL_RESOLUTION_M", 0.5);
+    map_factor_covariance_neighbors_ = static_cast<int>(
+      environmentSize("GLIM_PRIOR_MAP_FACTOR_COVARIANCE_NEIGHBORS", 10));
+    map_factor_max_correspondence_m_ =
+      environmentDouble("GLIM_PRIOR_MAP_FACTOR_MAX_CORRESPONDENCE_M", 2.0);
+    map_factor_coreset_size_ = static_cast<int>(
+      environmentSize("GLIM_PRIOR_MAP_FACTOR_CORESET_SIZE", 32));
+    map_factor_coreset_reuse_translation_m_ =
+      environmentDouble("GLIM_PRIOR_MAP_FACTOR_CORESET_REUSE_TRANSLATION_M", 0.25);
+    map_factor_coreset_reuse_rotation_rad_ =
+      environmentDouble("GLIM_PRIOR_MAP_FACTOR_CORESET_REUSE_ROTATION_RAD", 0.0043633231);
+    map_factor_num_threads_ = static_cast<int>(
+      environmentSize("GLIM_PRIOR_MAP_FACTOR_NUM_THREADS", 1));
+    map_factor_overlap_stride_ = std::max<std::size_t>(
+      1, environmentSize("GLIM_PRIOR_MAP_FACTOR_OVERLAP_STRIDE", 10));
+    map_factor_min_overlap_fraction_ = std::clamp(
+      environmentDouble("GLIM_PRIOR_MAP_FACTOR_MIN_OVERLAP_FRACTION", 0.05),
+      0.0, 1.0);
+    map_factor_min_overlap_inliers_ = environmentSize(
+      "GLIM_PRIOR_MAP_FACTOR_MIN_OVERLAP_INLIERS", 32);
     const char * bootstrap_x = std::getenv("GLIM_PRIOR_MAP_BOOTSTRAP_CENTER_X");
     const char * bootstrap_y = std::getenv("GLIM_PRIOR_MAP_BOOTSTRAP_CENTER_Y");
     const char * bootstrap_z = std::getenv("GLIM_PRIOR_MAP_BOOTSTRAP_CENTER_Z");
@@ -177,15 +233,39 @@ public:
       tracking_anchor_available_ = true;
     }
 
+    if (tightly_coupled_) {
+      if (!bootstrap_anchor_available_) {
+        throw std::invalid_argument(
+                "tightly coupled prior-map mode currently requires a 4-DoF bootstrap seed");
+      }
+      prior_map_frame_ = makeTightlyCoupledPriorMap(
+        prior_map_, map_factor_voxel_resolution_m_,
+        map_factor_covariance_neighbors_, map_factor_num_threads_);
+      prior_map_tree_ =
+        std::make_shared<gtsam_points::KdTree2<gtsam_points::PointCloud>>(
+        prior_map_frame_);
+    }
+
     using std::placeholders::_1;
     glim::OdometryEstimationCallbacks::on_new_frame.add(
       std::bind(&PriorMapLocalizer::onOdometryFrame, this, _1));
-    glim::GlobalMappingCallbacks::on_insert_submap.add(
-      std::bind(&PriorMapLocalizer::onSubmap, this, _1));
+    if (tightly_coupled_) {
+      using std::placeholders::_2;
+      using std::placeholders::_3;
+      using std::placeholders::_4;
+      glim::OdometryEstimationCallbacks::on_smoother_update.add(
+        std::bind(
+          &PriorMapLocalizer::onTightlyCoupledSmootherUpdate, this,
+          _1, _2, _3, _4));
+    } else {
+      glim::GlobalMappingCallbacks::on_insert_submap.add(
+        std::bind(&PriorMapLocalizer::onSubmap, this, _1));
+    }
     logger_->info(
-      "loaded prior map with {} points; mode={} crop={:.1f}/{:.1f}m stride={}/{} "
+      "loaded prior map with {} points; architecture={} mode={} crop={:.1f}/{:.1f}m stride={}/{} "
       "seeded={} translation_gain={:.3f} vertical_gain={:.3f} pending_z={}",
-      prior_map_.size(), full_global_search_ ? "full-global" : "tracking-crop",
+      prior_map_.size(), tightly_coupled_ ? "tightly-coupled" : "external-map-odom",
+      full_global_search_ ? "full-global" : "tracking-crop",
       bootstrap_crop_radius_m_, tracking_crop_radius_m_, bootstrap_submap_stride_,
       tracking_submap_stride_,
       bootstrap_anchor_available_, translation_gain_, vertical_gain_,
@@ -215,6 +295,14 @@ private:
 
   void onOdometryFrame(const glim::EstimationFrame::ConstPtr & frame)
   {
+    {
+      std::lock_guard<std::mutex> lock(frame_mutex_);
+      latest_odometry_frame_ = frame;
+    }
+    if (tightly_coupled_) {
+      return;
+    }
+
     Eigen::Isometry3d initial_anchor = Eigen::Isometry3d::Identity();
     {
       std::lock_guard<std::mutex> lock(anchor_mutex_);
@@ -227,6 +315,102 @@ private:
     glim::GlobalMappingCallbacks::on_external_map_odom_update(
       frame->stamp, initial_anchor, true);
     logger_->info("published startup map-to-odom anchor at stamp={:.6f}", frame->stamp);
+  }
+
+  void onTightlyCoupledSmootherUpdate(
+    gtsam_points::IncrementalFixedLagSmootherExtWithFallback &,
+    gtsam::NonlinearFactorGraph & new_factors,
+    gtsam::Values & new_values,
+    std::map<std::uint64_t, double> &)
+  {
+    glim::EstimationFrame::ConstPtr frame;
+    {
+      std::lock_guard<std::mutex> lock(frame_mutex_);
+      frame = latest_odometry_frame_;
+    }
+    if (!frame || !frame->frame || frame->frame->size() == 0) {
+      return;
+    }
+
+    using gtsam::symbol_shorthand::X;
+    const gtsam::Key pose_key = X(frame->id);
+    if (!new_values.exists(pose_key)) {
+      logger_->warn(
+        "cannot insert tightly coupled map factor: X({}) is not a new value",
+        frame->id);
+      return;
+    }
+
+    if (!tightly_coupled_graph_seeded_) {
+      const Eigen::Isometry3d map_from_imu =
+        bootstrap_anchor_ * frame->T_world_imu;
+      new_values.update(pose_key, gtsam::Pose3(map_from_imu.matrix()));
+      tightly_coupled_graph_seeded_ = true;
+      logger_->info(
+        "initialized tightly coupled graph in map frame at X({})",
+        frame->id);
+    }
+
+    const Eigen::Isometry3d map_from_imu(
+      new_values.at<gtsam::Pose3>(pose_key).matrix());
+    const auto [overlap_inliers, overlap_samples] = mapOverlap(
+      *frame->frame, map_from_imu);
+    const auto overlap = decidePriorMapOverlap(
+      overlap_inliers, overlap_samples, map_factor_min_overlap_inliers_,
+      map_factor_min_overlap_fraction_);
+    if (!overlap.sufficient) {
+      if (map_factor_active_) {
+        logger_->warn(
+          "prior-map overlap lost at X({}): {}/{} ({:.3f}); "
+          "continuing with scan-to-scan and IMU factors",
+          frame->id, overlap.inliers, overlap.samples, overlap.fraction);
+      }
+      map_factor_active_ = false;
+      return;
+    }
+    if (!map_factor_active_) {
+      logger_->info(
+        "prior-map overlap acquired at X({}): {}/{} ({:.3f}); "
+        "resuming unary map factors",
+        frame->id, overlap.inliers, overlap.samples, overlap.fraction);
+    }
+    map_factor_active_ = true;
+
+    auto factor = gtsam::make_shared<glim::IntegratedGICPFactorCoreset>(
+      gtsam::Pose3::Identity(), pose_key, prior_map_frame_, frame->frame,
+      prior_map_tree_);
+    factor->set_max_correspondence_distance(
+      map_factor_max_correspondence_m_);
+    factor->set_num_threads(map_factor_num_threads_);
+    factor->set_coreset_size(map_factor_coreset_size_);
+    factor->set_coreset_reuse_tolerance(
+      map_factor_coreset_reuse_rotation_rad_,
+      map_factor_coreset_reuse_translation_m_);
+    new_factors.add(factor);
+  }
+
+  std::pair<std::size_t, std::size_t> mapOverlap(
+    const gtsam_points::PointCloud & source,
+    const Eigen::Isometry3d & map_from_imu) const
+  {
+    std::size_t inliers = 0;
+    std::size_t samples = 0;
+    const double max_squared_distance =
+      map_factor_max_correspondence_m_ * map_factor_max_correspondence_m_;
+    for (
+      std::size_t index = 0; index < source.size();
+      index += map_factor_overlap_stride_)
+    {
+      const Eigen::Vector4d point =
+        map_from_imu * gtsam_points::frame::point(source, index);
+      std::size_t neighbor = 0;
+      double squared_distance = 0.0;
+      const std::size_t found = prior_map_tree_->knn_search(
+        point.data(), 1, &neighbor, &squared_distance, max_squared_distance);
+      ++samples;
+      inliers += found != 0 && squared_distance < max_squared_distance;
+    }
+    return {inliers, samples};
   }
 
   void onSubmap(const glim::SubMap::ConstPtr & submap)
@@ -472,6 +656,8 @@ private:
 
   std::shared_ptr<spdlog::logger> logger_;
   std::vector<Eigen::Vector3f> prior_map_;
+  gtsam_points::PointCloudCPU::Ptr prior_map_frame_;
+  std::shared_ptr<const gtsam_points::NearestNeighborSearch> prior_map_tree_;
   kiss_matcher::KISSMatcher matcher_;
   PriorMapFactorGateParams gate_params_;
   double vgicp_voxel_resolution_m_{1.0};
@@ -488,10 +674,25 @@ private:
   double vertical_gain_{0.2};
   bool pending_vertical_update_enabled_{false};
   bool full_global_search_{false};
+  bool tightly_coupled_{false};
+  bool tightly_coupled_graph_seeded_{false};
+  double map_factor_voxel_resolution_m_{0.5};
+  int map_factor_covariance_neighbors_{10};
+  double map_factor_max_correspondence_m_{2.0};
+  int map_factor_coreset_size_{32};
+  double map_factor_coreset_reuse_translation_m_{0.25};
+  double map_factor_coreset_reuse_rotation_rad_{0.0043633231};
+  int map_factor_num_threads_{1};
+  std::size_t map_factor_overlap_stride_{10};
+  double map_factor_min_overlap_fraction_{0.05};
+  std::size_t map_factor_min_overlap_inliers_{32};
+  bool map_factor_active_{false};
   bool map_frame_initialized_{false};
   bool bootstrap_anchor_available_{false};
   Eigen::Isometry3d bootstrap_anchor_{Eigen::Isometry3d::Identity()};
   std::mutex anchor_mutex_;
+  std::mutex frame_mutex_;
+  glim::EstimationFrame::ConstPtr latest_odometry_frame_;
   bool tracking_anchor_available_{false};
   bool initial_anchor_sent_{false};
   Eigen::Isometry3d tracking_anchor_{Eigen::Isometry3d::Identity()};

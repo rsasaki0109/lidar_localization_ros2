@@ -1,6 +1,6 @@
-# Koide GLIL Prior-Map Localization Gallery
+# Koide GLIL-Style Prior-Map Localization Gallery
 
-This page presents full-sequence measurements of the GLIL main architecture on the
+This page presents full-sequence measurements of the current GLIL-style architecture on the
 [Hard Point Cloud Localization Dataset](https://zenodo.org/records/10122133).
 GLIM provides continuous LiDAR/IMU odometry, while prior-map VGICP provides sparse
 map-frame corrections and KISS-Matcher is reserved for acquisition or recovery. NDT is
@@ -10,9 +10,9 @@ demonstrate localization accuracy or recovery behavior.
 
 ## Measured localization replays
 
-### GLIL prior-map localization — NDT-free (2026-07-19)
+### GLIL-style prior-map localization — NDT-free (2026-07-19)
 
-This is the first full live replay of the GLIL split: GLIM supplies continuous
+This is the first full live replay of the GLIL-style split: GLIM supplies continuous
 LiDAR/IMU `odom -> base_link`, while sparse prior-map VGICP registrations update only a
 smoothed `map -> odom`. It does **not** run NDT alongside GLIM. Direct VGICP is the
 normal submap-rate tracker; KISS-Matcher runs only as an acquisition or recovery

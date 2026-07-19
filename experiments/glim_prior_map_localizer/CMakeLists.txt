@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(glim_prior_map_localizer LANGUAGES CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -33,6 +35,13 @@ target_link_libraries(glim_prior_map_offline_match PRIVATE
   glim::glim
   kiss_matcher::kiss_matcher_core
   robin::robin)
+
+if(BUILD_TESTING)
+  add_executable(test_prior_map_overlap_policy
+    test/test_prior_map_overlap_policy.cpp)
+  target_include_directories(test_prior_map_overlap_policy PRIVATE include)
+  add_test(NAME prior_map_overlap_policy COMMAND test_prior_map_overlap_policy)
+endif()
 
 install(TARGETS glim_prior_map_localizer glim_prior_map_offline_match
   LIBRARY DESTINATION lib

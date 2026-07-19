@@ -225,7 +225,7 @@ diff --git a/include/glim/odometry/exact_quadratic_coreset.hpp b/include/glim/od
 diff --git a/include/glim/odometry/integrated_gicp_factor_coreset.hpp b/include/glim/odometry/integrated_gicp_factor_coreset.hpp
 --- a/include/glim/odometry/integrated_gicp_factor_coreset.hpp	1970-01-01 09:00:00.000000000 +0900
 +++ b/include/glim/odometry/integrated_gicp_factor_coreset.hpp	2026-07-17 08:16:16.135691936 +0900
-@@ -0,0 +1,595 @@
+@@ -0,0 +1,571 @@
 +// SPDX-License-Identifier: MIT
 +// Fork of gtsam_points::IntegratedGICPFactor_ (Segal et al., "Generalized-ICP",
 +// RSS2005) adding exact-coreset (fast Caratheodory) linearization, a
@@ -311,6 +311,8 @@ diff --git a/include/glim/odometry/integrated_gicp_factor_coreset.hpp b/include/
 +    coreset_reuse_tolerance_rot(0.0),
 +    coreset_reuse_tolerance_trans(0.0),
 +    contribution_dim(0),
++    full_cache_valid(false),
++    full_cache_anchor(Eigen::Isometry3d::Identity()),
 +    coreset_valid(false),
 +    coreset_anchor(Eigen::Isometry3d::Identity()),
 +    target(target),
@@ -340,6 +342,8 @@ diff --git a/include/glim/odometry/integrated_gicp_factor_coreset.hpp b/include/
 +    coreset_reuse_tolerance_rot(0.0),
 +    coreset_reuse_tolerance_trans(0.0),
 +    contribution_dim(0),
++    full_cache_valid(false),
++    full_cache_anchor(Eigen::Isometry3d::Identity()),
 +    coreset_valid(false),
 +    coreset_anchor(Eigen::Isometry3d::Identity()),
 +    target(target),
@@ -426,18 +430,13 @@ diff --git a/include/glim/odometry/integrated_gicp_factor_coreset.hpp b/include/
 +      this->target_tree.reset(new gtsam_points::KdTree2<TargetFrame>(target));
 +    }
 +
-+    // Dimensionality of the packed per-point contribution vector used to build the coreset:
-+    // stacked upper-triangular H blocks + b blocks + scalar error, covering every Hessian/b
-+    // block that linearize() actually reads back out of evaluate().
-+    //  - Unary factors (fixed target pose, the only kind glim's odometry_estimation_cpu.cpp
-+    //    constructs): only H_source/b_source/error are used by
-+    //    IntegratedMatchingCostFactor::linearize() to build the HessianFactor -- H_target and
-+    //    H_target_source are computed by stock evaluate() but never read back, so we don't pack
-+    //    them either: 21 (H_source upper-tri) + 6 (b_source) + 1 (error) = 28.
-+    //  - Binary factors need every block that linearize() reads: 21 (H_target upper-tri) + 21
-+    //    (H_source upper-tri) + 36 (H_target_source, NOT symmetric) + 6 (b_target) + 6 (b_source)
-+    //    + 1 (error) = 91.
-+    contribution_dim = is_binary ? (21 + 21 + 36 + 6 + 6 + 1) : (21 + 6 + 1);
++    // GICP depends on the six-DoF relative pose. At a fixed relative pose,
++    // every target-pose Jacobian is the source-pose Jacobian multiplied by
++    // the same adjoint matrix. Therefore preserving H_source, b_source and
++    // the scalar error also preserves every binary H/b block exactly; the
++    // redundant 12-DoF packing would inflate the Caratheodory dimension
++    // from 28 to 91 without adding information.
++    contribution_dim = 21 + 6 + 1;
 +  }
 +
 +  virtual void update_correspondences(const Eigen::Isometry3d& delta) const override {
@@ -454,6 +453,26 @@ diff --git a/include/glim/odometry/integrated_gicp_factor_coreset.hpp b/include/
 +      }
 +      // Displacement exceeded the reuse tolerance: invalidate and fall through to a full rebuild.
 +      coreset_valid = false;
++    }
++
++    // Deferred sampling from Koide et al. (ICRA 2025): the first
++    // linearization only caches the full point contributions. If the next
++    // linearization stays close, extract an exact coreset at that cached
++    // anchor and use it at the new point. Large optimizer steps discard the
++    // cache and trigger another full correspondence refresh instead of
++    // spending time extracting a coreset that would be invalid immediately.
++    if (full_cache_valid) {
++      const Eigen::Isometry3d diff = delta.inverse() * full_cache_anchor;
++      constexpr double extraction_tolerance_rot = 0.00436332313;  // 0.25 deg
++      constexpr double extraction_tolerance_trans = 0.25;         // metres
++      if (
++        Eigen::AngleAxisd(diff.linear()).angle() < extraction_tolerance_rot &&
++        diff.translation().norm() < extraction_tolerance_trans)
++      {
++        build_coreset(full_cache_anchor);
++        return;
++      }
++      full_cache_valid = false;
 +    }
 +
 +    // Full correspondence + mahalanobis rebuild (identical maths to stock IntegratedGICPFactor_,
@@ -496,6 +515,9 @@ diff --git a/include/glim/odometry/integrated_gicp_factor_coreset.hpp b/include/
 +      abort();
 +#endif
 +    }
++
++    full_cache_anchor = delta;
++    full_cache_valid = true;
 +  }
 +
 +  /// @brief Evaluate the residual and (if any H pointer is non-null) the Jacobian-derived
@@ -568,28 +590,14 @@ diff --git a/include/glim/odometry/integrated_gicp_factor_coreset.hpp b/include/
 +    const Eigen::Matrix<double, 6, 1>& b_target,
 +    const Eigen::Matrix<double, 6, 1>& b_source,
 +    double error) const {
++    (void)h_target;
++    (void)h_target_source;
++    (void)b_target;
 +    Eigen::VectorXd v(contribution_dim);
 +    int k = 0;
-+    if (is_binary) {
-+      for (int r = 0; r < 6; ++r) {
-+        for (int c = r; c < 6; ++c) {
-+          v(k++) = h_target(r, c);
-+        }
-+      }
-+    }
 +    for (int r = 0; r < 6; ++r) {
 +      for (int c = r; c < 6; ++c) {
 +        v(k++) = h_source(r, c);
-+      }
-+    }
-+    if (is_binary) {
-+      for (int r = 0; r < 6; ++r) {
-+        for (int c = 0; c < 6; ++c) {
-+          v(k++) = h_target_source(r, c);
-+        }
-+      }
-+      for (int r = 0; r < 6; ++r) {
-+        v(k++) = b_target(r);
 +      }
 +    }
 +    for (int r = 0; r < 6; ++r) {
@@ -597,52 +605,6 @@ diff --git a/include/glim/odometry/integrated_gicp_factor_coreset.hpp b/include/
 +    }
 +    v(k++) = error;
 +    return v;
-+  }
-+
-+  /// @brief Inverse of pack_contribution(): expand an (already weighted-summed) coreset vector
-+  ///        back into H_target/H_source/H_target_source/b_target/b_source/error. Only touches
-+  ///        the target-related outputs when is_binary (they are never read back otherwise).
-+  void unpack_contribution(
-+    const Eigen::VectorXd& v,
-+    Eigen::Matrix<double, 6, 6>* h_target,
-+    Eigen::Matrix<double, 6, 6>* h_source,
-+    Eigen::Matrix<double, 6, 6>* h_target_source,
-+    Eigen::Matrix<double, 6, 1>* b_target,
-+    Eigen::Matrix<double, 6, 1>* b_source,
-+    double* error) const {
-+    int k = 0;
-+    if (is_binary) {
-+      h_target->setZero();
-+      for (int r = 0; r < 6; ++r) {
-+        for (int c = r; c < 6; ++c) {
-+          (*h_target)(r, c) = v(k);
-+          (*h_target)(c, r) = v(k);
-+          ++k;
-+        }
-+      }
-+    }
-+    h_source->setZero();
-+    for (int r = 0; r < 6; ++r) {
-+      for (int c = r; c < 6; ++c) {
-+        (*h_source)(r, c) = v(k);
-+        (*h_source)(c, r) = v(k);
-+        ++k;
-+      }
-+    }
-+    if (is_binary) {
-+      for (int r = 0; r < 6; ++r) {
-+        for (int c = 0; c < 6; ++c) {
-+          (*h_target_source)(r, c) = v(k++);
-+        }
-+      }
-+      for (int r = 0; r < 6; ++r) {
-+        (*b_target)(r) = v(k++);
-+      }
-+    }
-+    for (int r = 0; r < 6; ++r) {
-+      (*b_source)(r) = v(k++);
-+    }
-+    *error = v(k++);
 +  }
 +
 +  /// @brief Full O(N) evaluation of a source point, in the accumulate-into-thread-local-Hessian
@@ -699,6 +661,7 @@ diff --git a/include/glim/odometry/integrated_gicp_factor_coreset.hpp b/include/
 +    coreset_weights = coreset.weights;
 +    coreset_anchor = delta;
 +    coreset_valid = true;
++    full_cache_valid = false;
 +  }
 +
 +  /// @brief O(coreset_size) evaluation: recompute each coreset point's residual/Jacobian at the
@@ -711,7 +674,14 @@ diff --git a/include/glim/odometry/integrated_gicp_factor_coreset.hpp b/include/
 +    Eigen::Matrix<double, 6, 6>* H_target_source,
 +    Eigen::Matrix<double, 6, 1>* b_target,
 +    Eigen::Matrix<double, 6, 1>* b_source) const {
-+    Eigen::VectorXd sum = Eigen::VectorXd::Zero(contribution_dim);
++    H_source->setZero();
++    b_source->setZero();
++    if (is_binary) {
++      H_target->setZero();
++      H_target_source->setZero();
++      b_target->setZero();
++    }
++    double weighted_error = 0.0;
 +
 +    // Deliberately a plain serial loop: the coreset only has O(tens) of points, and this is the
 +    // whole point of using it (avoid the O(N) parallel reduction).
@@ -726,12 +696,17 @@ diff --git a/include/glim/odometry/integrated_gicp_factor_coreset.hpp b/include/
 +      Eigen::Matrix<double, 6, 1> b_s = Eigen::Matrix<double, 6, 1>::Zero();
 +      const double error = perpoint_evaluate(i, delta, &h_t, &h_s, &h_ts, &b_t, &b_s);
 +
-+      sum += w * pack_contribution(h_t, h_s, h_ts, b_t, b_s, error);
++      *H_source += w * h_s;
++      *b_source += w * b_s;
++      if (is_binary) {
++        *H_target += w * h_t;
++        *H_target_source += w * h_ts;
++        *b_target += w * b_t;
++      }
++      weighted_error += w * error;
 +    }
 +
-+    double error = 0.0;
-+    unpack_contribution(sum, H_target, H_source, H_target_source, b_target, b_source, &error);
-+    return error;
++    return weighted_error;
 +  }
 +
 +  virtual double evaluate(
@@ -772,8 +747,10 @@ diff --git a/include/glim/odometry/integrated_gicp_factor_coreset.hpp b/include/
 +      return evaluate_coreset(delta, H_target, H_source, H_target_source, b_target, b_source);
 +    }
 +
-+    // No valid coreset yet (or it was just invalidated by update_correspondences()): do the full
-+    // evaluation (stock-equivalent OMP/TBB reduction), then extract a fresh coreset from it.
++    // No valid coreset yet (or a large optimizer step invalidated the
++    // previous one): do a stock-equivalent full evaluation. Coreset
++    // extraction is deliberately deferred until a later, nearby
++    // linearization in update_correspondences().
 +    const auto task = [&](
 +                         int i,
 +                         Eigen::Matrix<double, 6, 6>* ht,
@@ -788,9 +765,6 @@ diff --git a/include/glim/odometry/integrated_gicp_factor_coreset.hpp b/include/
 +    } else {
 +      error = gtsam_points::scan_matching_reduce_tbb(task, n, H_target, H_source, H_target_source, b_target, b_source);
 +    }
-+
-+    build_coreset(delta);
-+
 +    return error;
 +  }
 +
@@ -808,6 +782,8 @@ diff --git a/include/glim/odometry/integrated_gicp_factor_coreset.hpp b/include/
 +  mutable Eigen::Isometry3d linearization_point;
 +  mutable std::vector<long> correspondences;
 +  mutable std::vector<Eigen::Matrix4d> mahalanobis;
++  mutable bool full_cache_valid;
++  mutable Eigen::Isometry3d full_cache_anchor;
 +
 +  mutable bool coreset_valid;
 +  mutable Eigen::Isometry3d coreset_anchor;

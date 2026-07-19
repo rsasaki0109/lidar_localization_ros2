@@ -1,4 +1,5 @@
-FROM lidarloc/glim-ros2:jazzy-v1.2.2-coreset
+ARG GLIM_BASE_IMAGE=lidarloc/glim-ros2:jazzy-v1.2.2-coreset
+FROM ${GLIM_BASE_IMAGE}
 
 ARG KISS_MATCHER_REVISION=669fe866b1c612daa3702292571c25dc1bc61c86
 ARG GLIL_REVISION=dd29667938cb56ef59de7f90290ad2dbc613f00c
@@ -51,6 +52,7 @@ RUN . /opt/ros/jazzy/setup.sh \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INSTALL_PREFIX=/usr/local \
     && cmake --build /tmp/glim_prior_map_localizer/build -j2 \
+    && ctest --test-dir /tmp/glim_prior_map_localizer/build --output-on-failure \
     && cmake --install /tmp/glim_prior_map_localizer/build \
     && rm -rf /tmp/glim_prior_map_localizer
 

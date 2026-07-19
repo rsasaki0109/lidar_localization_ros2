@@ -36,6 +36,10 @@ def main() -> int:
         "--requested-duration-sec", type=float, default=380.0,
         help="Expected covered duration forwarded to the completion checker "
         "(reference start to bag end; default keeps the outdoor_hard_01a gate).")
+    parser.add_argument(
+        "--playback-duration-sec", type=float,
+        help="Stop rosbag playback after this many seconds (for focused smoke runs).",
+    )
     parser.add_argument("--image", default=os.environ.get("GLIM_IMAGE", DEFAULT_IMAGE))
     parser.add_argument(
         "--config",
@@ -56,6 +60,15 @@ def main() -> int:
     parser.add_argument(
         "--prior-map-vertical-gain", type=float,
         help="Optional map-to-odom Z correction gain in [0, 1].",
+    )
+    parser.add_argument(
+        "--prior-map-tightly-coupled", action="store_true",
+        help="Insert exact-coreset scan-to-prior-map factors into GLIM's fixed-lag "
+        "graph instead of producing an external map-to-odom correction.",
+    )
+    parser.add_argument(
+        "--tightly-coupled-num-threads", type=int, default=4,
+        help="CPU threads for tightly coupled scan and prior-map factors (default: 4).",
     )
     parser.add_argument("--ros-domain-id", type=int, default=91)
     parser.add_argument(
@@ -91,6 +104,17 @@ def main() -> int:
             modules.append("libglim_prior_map_localizer.so")
         config_ros_path.write_text(
             json.dumps(config_ros, indent=2) + "\n", encoding="utf-8")
+        if args.prior_map_tightly_coupled:
+            config_odometry_path = generated_config / "config_odometry_cpu.json"
+            config_odometry = json.loads(
+                config_odometry_path.read_text(encoding="utf-8"))
+            odometry = config_odometry["odometry_estimation"]
+            odometry["use_gicp_coreset"] = True
+            odometry["use_tightly_coupled_coreset"] = True
+            odometry["full_connection_window_size"] = 3
+            odometry["num_threads"] = args.tightly_coupled_num_threads
+            config_odometry_path.write_text(
+                json.dumps(config_odometry, indent=2) + "\n", encoding="utf-8")
         config = generated_config
     elif (args.prior_map_bootstrap_center is not None or
           args.prior_map_bootstrap_yaw_deg is not None):
@@ -98,6 +122,18 @@ def main() -> int:
     if ((args.prior_map_bootstrap_center is None) !=
             (args.prior_map_bootstrap_yaw_deg is None)):
         parser.error("bootstrap center and bootstrap yaw must be provided together")
+    if args.prior_map_tightly_coupled and prior_map is None:
+        parser.error("--prior-map-tightly-coupled requires --prior-map")
+    if args.prior_map_tightly_coupled and args.prior_map_bootstrap_center is None:
+        parser.error(
+            "--prior-map-tightly-coupled currently requires the bootstrap center and yaw")
+    if args.prior_map_tightly_coupled and args.prior_map_vertical_gain is not None:
+        parser.error(
+            "--prior-map-vertical-gain applies only to external map-to-odom mode")
+    if args.tightly_coupled_num_threads < 1:
+        parser.error("--tightly-coupled-num-threads must be positive")
+    if args.playback_duration_sec is not None and args.playback_duration_sec <= 0.0:
+        parser.error("--playback-duration-sec must be positive")
     if (args.prior_map_vertical_gain is not None and not (
             0.0 <= args.prior_map_vertical_gain <= 1.0)):
         parser.error("--prior-map-vertical-gain must be in [0, 1]")
@@ -142,12 +178,24 @@ def main() -> int:
             docker_command.extend([
                 "-e", f"GLIM_PRIOR_MAP_VERTICAL_GAIN={args.prior_map_vertical_gain}",
             ])
+        if args.prior_map_tightly_coupled:
+            docker_command.extend([
+                "-e", "GLIM_PRIOR_MAP_TIGHTLY_COUPLED=true",
+                "-e", (
+                    "GLIM_PRIOR_MAP_FACTOR_NUM_THREADS="
+                    f"{args.tightly_coupled_num_threads}"
+                ),
+            ])
+    playback_duration_parameter = (
+        f" -p playback_duration:={args.playback_duration_sec}"
+        if args.playback_duration_sec is not None else ""
+    )
     docker_command.extend([
         args.image,
         "bash", "-lc",
         ". /opt/ros/jazzy/setup.bash && . /root/ros2_ws/install/setup.bash && "
         f"ros2 run glim_ros glim_rosbag {container_bag} --ros-args "
-        "-p config_path:=/glim/config -p auto_quit:=true",
+        f"-p config_path:=/glim/config -p auto_quit:=true{playback_duration_parameter}",
     ])
     started = time.monotonic()
     with (output / "glim.log").open("w", encoding="utf-8") as log:
@@ -162,9 +210,12 @@ def main() -> int:
         "bag_stopped_by_runner": False,
         "return_codes": {"bag_play": process.returncode},
         "wall_duration_sec": wall_duration,
+        "playback_duration_sec": args.playback_duration_sec,
         "image": args.image,
         "image_id": image_id,
         "prior_map": str(prior_map) if prior_map is not None else None,
+        "prior_map_tightly_coupled": args.prior_map_tightly_coupled,
+        "tightly_coupled_num_threads": args.tightly_coupled_num_threads,
         "config": str(config),
     }
     (output / "summary.json").write_text(
@@ -181,7 +232,7 @@ def main() -> int:
         "--summary-json", str(output / "conversion.json"),
         "--planarize-z",
     ]
-    if prior_map is not None:
+    if prior_map is not None and not args.prior_map_tightly_coupled:
         live_map_odom = output / "dump" / "external_map_odom.txt"
         if not live_map_odom.is_file():
             print(
