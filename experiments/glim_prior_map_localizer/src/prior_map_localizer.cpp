@@ -98,6 +98,7 @@ std::vector<Eigen::Vector3f> loadPriorMap(const std::string & path)
 gtsam_points::PointCloudCPU::Ptr makeTightlyCoupledPriorMap(
   const std::vector<Eigen::Vector3f> & map,
   double voxel_resolution_m,
+  double covariance_scale,
   int covariance_neighbors,
   int num_threads)
 {
@@ -111,8 +112,12 @@ gtsam_points::PointCloudCPU::Ptr makeTightlyCoupledPriorMap(
   auto dense = std::make_shared<gtsam_points::PointCloudCPU>(points);
   auto sampled = gtsam_points::voxelgrid_sampling(
     dense, voxel_resolution_m, num_threads);
-  sampled->add_covs(gtsam_points::estimate_covariances(
-    *sampled, covariance_neighbors, num_threads));
+  auto covariances = gtsam_points::estimate_covariances(
+    *sampled, covariance_neighbors, num_threads);
+  for (auto & covariance : covariances) {
+    covariance.topLeftCorner<3, 3>() *= covariance_scale;
+  }
+  sampled->add_covs(covariances);
   return sampled;
 }
 
@@ -200,14 +205,19 @@ public:
       environmentDouble("GLIM_PRIOR_MAP_FACTOR_VOXEL_RESOLUTION_M", 0.5);
     map_factor_covariance_neighbors_ = static_cast<int>(
       environmentSize("GLIM_PRIOR_MAP_FACTOR_COVARIANCE_NEIGHBORS", 10));
+    map_factor_covariance_scale_ = environmentDouble(
+      "GLIM_PRIOR_MAP_FACTOR_COVARIANCE_SCALE", 0.25);
+    if (map_factor_covariance_scale_ <= 0.0) {
+      throw std::invalid_argument("GLIM prior-map covariance scale must be positive");
+    }
     map_factor_max_correspondence_m_ =
       environmentDouble("GLIM_PRIOR_MAP_FACTOR_MAX_CORRESPONDENCE_M", 2.0);
     map_factor_coreset_size_ = static_cast<int>(
       environmentSize("GLIM_PRIOR_MAP_FACTOR_CORESET_SIZE", 32));
     map_factor_coreset_reuse_translation_m_ =
-      environmentDouble("GLIM_PRIOR_MAP_FACTOR_CORESET_REUSE_TRANSLATION_M", 0.25);
+      environmentDouble("GLIM_PRIOR_MAP_FACTOR_CORESET_REUSE_TRANSLATION_M", 1.0);
     map_factor_coreset_reuse_rotation_rad_ =
-      environmentDouble("GLIM_PRIOR_MAP_FACTOR_CORESET_REUSE_ROTATION_RAD", 0.0043633231);
+      environmentDouble("GLIM_PRIOR_MAP_FACTOR_CORESET_REUSE_ROTATION_RAD", 0.035);
     map_factor_num_threads_ = static_cast<int>(
       environmentSize("GLIM_PRIOR_MAP_FACTOR_NUM_THREADS", 1));
     map_factor_overlap_stride_ = std::max<std::size_t>(
@@ -266,6 +276,7 @@ public:
       }
       prior_map_frame_ = makeTightlyCoupledPriorMap(
         prior_map_, map_factor_voxel_resolution_m_,
+        map_factor_covariance_scale_,
         map_factor_covariance_neighbors_, map_factor_num_threads_);
       prior_map_tree_ =
         std::make_shared<gtsam_points::KdTree2<gtsam_points::PointCloud>>(
@@ -897,10 +908,11 @@ private:
   bool tightly_coupled_graph_seeded_{false};
   double map_factor_voxel_resolution_m_{0.5};
   int map_factor_covariance_neighbors_{10};
+  double map_factor_covariance_scale_{0.25};
   double map_factor_max_correspondence_m_{2.0};
   int map_factor_coreset_size_{32};
-  double map_factor_coreset_reuse_translation_m_{0.25};
-  double map_factor_coreset_reuse_rotation_rad_{0.0043633231};
+  double map_factor_coreset_reuse_translation_m_{1.0};
+  double map_factor_coreset_reuse_rotation_rad_{0.035};
   int map_factor_num_threads_{1};
   std::size_t map_factor_overlap_stride_{10};
   double map_factor_min_overlap_fraction_{0.05};

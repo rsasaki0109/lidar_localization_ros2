@@ -67,8 +67,8 @@ def main() -> int:
         "graph instead of producing an external map-to-odom correction.",
     )
     parser.add_argument(
-        "--tightly-coupled-num-threads", type=int, default=4,
-        help="CPU threads for tightly coupled scan and prior-map factors (default: 4).",
+        "--tightly-coupled-num-threads", type=int, default=8,
+        help="CPU threads for tightly coupled scan and prior-map factors (default: 8).",
     )
     parser.add_argument("--ros-domain-id", type=int, default=91)
     parser.add_argument(
@@ -113,6 +113,8 @@ def main() -> int:
             odometry["use_tightly_coupled_coreset"] = True
             odometry["full_connection_window_size"] = 3
             odometry["num_threads"] = args.tightly_coupled_num_threads
+            odometry["coreset_reuse_tolerance_trans"] = 0.25
+            odometry["coreset_reuse_tolerance_rot"] = 0.035
             config_odometry_path.write_text(
                 json.dumps(config_odometry, indent=2) + "\n", encoding="utf-8")
         config = generated_config

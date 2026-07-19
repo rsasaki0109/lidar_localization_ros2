@@ -39,6 +39,11 @@ is inserted; scan-to-scan and IMU factors continue range inertial odometry. Map 
 resume when overlap returns, so past states still inside the window participate in the
 correction.
 
+Prior-map covariances use a 0.25 scale relative to their estimated geometric covariance.
+This raises the scan-to-map information relative to scan-to-scan/IMU while retaining the
+same exact correspondences and coreset construction; it is an explicit benchmarked sensor
+noise parameter rather than duplicated factors.
+
 ## Exact point-cloud downsampling
 
 Both binary scan-to-scan and unary scan-to-map GICP factors use the same exact-coreset
@@ -53,6 +58,11 @@ The factor follows the ICRA 2025 deferred-sampling state machine:
    from that cache and evaluate it at the new estimate;
 3. reuse the coreset while the estimate remains close to its sampling point;
 4. otherwise perform another full linearization and refresh the cache.
+
+The prior-map factor uses a 1.0 m / 2 deg nearby-state reuse bound, within its 2 m
+correspondence gate. Binary odometry factors use the tighter 0.25 m / 2 deg profile.
+Exceeding either bound forces an exact full refresh; these bounds are not registration
+acceptance thresholds.
 
 Correspondences are exact nearest-neighbor queries. The coreset accelerates
 linearization only; nonlinear error evaluation used for optimizer acceptance remains a
