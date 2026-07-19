@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import bisect
 import csv
 import json
 import math
@@ -123,15 +124,113 @@ def load_imu_rate_trajectory(
     return unique, invalid_rows, duplicate_rows
 
 
+def load_tum_trajectory(path: Path, planarize_z: bool = False):
+    rows = []
+    invalid_rows = 0
+    with path.open(encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, 1):
+            try:
+                values = tuple(float(value) for value in line.split())
+                if len(values) != 8 or not all(math.isfinite(value) for value in values):
+                    raise ValueError("expected eight finite TUM values")
+                if sum(value * value for value in values[4:]) <= 1e-12:
+                    raise ValueError("zero quaternion")
+                rows.append((values, path, line_number))
+            except ValueError:
+                invalid_rows += 1
+
+    rows.sort(key=lambda item: item[0][0])
+    unique = []
+    duplicate_rows = 0
+    for item in rows:
+        if unique and item[0][0] == unique[-1][0][0]:
+            duplicate_rows += 1
+            unique[-1] = item
+        else:
+            unique.append(item)
+    if not unique:
+        raise ValueError(f"no valid poses found in {path}")
+    if planarize_z:
+        origin_z = unique[0][0][3]
+        unique = [
+            ((values[0], values[1], values[2], origin_z, *values[4:]), source, line_number)
+            for values, source, line_number in unique
+        ]
+    return unique, invalid_rows, duplicate_rows
+
+
+def _interpolate_tum_transform(samples, stamps, stamp):
+    upper = bisect.bisect_right(stamps, stamp)
+    if upper == 0:
+        return samples[0][1:4], samples[0][4:8]
+    if upper >= len(samples):
+        return samples[-1][1:4], samples[-1][4:8]
+
+    before = samples[upper - 1]
+    after = samples[upper]
+    span = after[0] - before[0]
+    alpha = 0.0 if span <= 0.0 else (stamp - before[0]) / span
+    translation = tuple(
+        (1.0 - alpha) * a + alpha * b for a, b in zip(before[1:4], after[1:4]))
+    q0 = before[4:8]
+    q1 = after[4:8]
+    if sum(a * b for a, b in zip(q0, q1)) < 0.0:
+        q1 = tuple(-value for value in q1)
+    quaternion = tuple((1.0 - alpha) * a + alpha * b for a, b in zip(q0, q1))
+    norm = math.sqrt(sum(value * value for value in quaternion))
+    quaternion = tuple(value / norm for value in quaternion)
+    return translation, quaternion
+
+
+def load_external_map_odom_trajectory(
+    dump_dir: Path, map_odom_tum: Path, planarize_z: bool = False
+):
+    rows, invalid_rows, duplicate_rows = load_imu_rate_trajectory(
+        dump_dir, apply_global_correction=False, planarize_z=False)
+    corrections = _load_tum(map_odom_tum)
+    if not corrections:
+        raise ValueError(f"no valid map-to-odom transforms found in {map_odom_tum}")
+    corrections.sort(key=lambda values: values[0])
+    correction_stamps = [values[0] for values in corrections]
+
+    corrected = []
+    for values, source, line_number in rows:
+        stamp = values[0]
+        translation, rotation = _interpolate_tum_transform(
+            corrections, correction_stamps, stamp)
+        position = tuple(
+            a + b for a, b in zip(translation, _quat_rotate(rotation, values[1:4])))
+        quaternion = _quat_multiply(rotation, values[4:8])
+        corrected.append(((stamp, *position, *quaternion), source, line_number))
+    if planarize_z:
+        origin_z = corrected[0][0][3]
+        corrected = [
+            ((values[0], values[1], values[2], origin_z, *values[4:]), source, line_number)
+            for values, source, line_number in corrected
+        ]
+    return corrected, invalid_rows, duplicate_rows
+
+
 def convert(
     dump_dir: Path,
     output_csv: Path,
     frame_id: str,
     apply_global_correction: bool = False,
     planarize_z: bool = False,
+    trajectory_tum: Path | None = None,
+    map_odom_tum: Path | None = None,
 ):
-    rows, invalid_rows, duplicate_rows = load_imu_rate_trajectory(
-        dump_dir, apply_global_correction, planarize_z)
+    if trajectory_tum is not None and map_odom_tum is not None:
+        raise ValueError("trajectory_tum and map_odom_tum are mutually exclusive")
+    if map_odom_tum is not None:
+        rows, invalid_rows, duplicate_rows = load_external_map_odom_trajectory(
+            dump_dir, map_odom_tum, planarize_z)
+    elif trajectory_tum is None:
+        rows, invalid_rows, duplicate_rows = load_imu_rate_trajectory(
+            dump_dir, apply_global_correction, planarize_z)
+    else:
+        rows, invalid_rows, duplicate_rows = load_tum_trajectory(
+            trajectory_tum, planarize_z)
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     with output_csv.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=FIELDS)
@@ -154,6 +253,10 @@ def convert(
             })
     return {
         "source_dump_dir": str(dump_dir.resolve()),
+        "source_trajectory_tum": (
+            str(trajectory_tum.resolve()) if trajectory_tum is not None else None),
+        "source_map_odom_tum": (
+            str(map_odom_tum.resolve()) if map_odom_tum is not None else None),
         "output_csv": str(output_csv.resolve()),
         "pose_count": len(rows),
         "invalid_source_row_count": invalid_rows,
@@ -178,6 +281,14 @@ def main() -> int:
     parser.add_argument("--frame-id", default="glim_map")
     parser.add_argument("--apply-global-correction", action="store_true")
     parser.add_argument("--planarize-z", action="store_true")
+    parser.add_argument(
+        "--trajectory-tum",
+        help="Use this live TUM trajectory instead of reconstructing poses from the dump.",
+    )
+    parser.add_argument(
+        "--map-odom-tum",
+        help="Compose this recorded live map-to-odom TUM history with raw dump poses.",
+    )
     args = parser.parse_args()
     try:
         summary = convert(
@@ -186,6 +297,8 @@ def main() -> int:
             args.frame_id,
             args.apply_global_correction,
             args.planarize_z,
+            Path(args.trajectory_tum) if args.trajectory_tum else None,
+            Path(args.map_odom_tum) if args.map_odom_tum else None,
         )
     except (OSError, ValueError) as error:
         parser.error(str(error))

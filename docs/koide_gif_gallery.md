@@ -8,6 +8,31 @@ accuracy or recovery behavior.
 
 ## Measured localization replays
 
+### GLIL-style prior-map localization replay (2026-07-19)
+
+This is the first full live replay of the GLIL-style split: GLIM supplies continuous
+LiDAR/IMU `odom -> base_link`, while sparse prior-map VGICP registrations update only a
+smoothed `map -> odom`. It does **not** run NDT alongside GLIM. Direct VGICP is the
+normal submap-rate tracker; KISS-Matcher runs only as an acquisition or recovery
+fallback. Rejected localization therefore freezes the last map anchor instead of
+interrupting or deforming GLIM odometry.
+
+| Bag | Front end | Coverage | Translation ATE | Final error | Median 10 m RPE | Rotation ATE | Processing p95 | Gate |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| `outdoor_hard_01a` | GLIM exact coreset 32 + sparse VGICP | 99.21% | 1.142 m | 3.112 m | 0.157 m | 1.479 deg | 28.3 ms | Pass |
+
+The startup yaw is fixed, accepted translation displacement uses gain 0.2, and GLIM
+ROS applies a 2 s first-order transition. Registrations were accepted through submap
+60. Later direct and KISS fallback candidates were rejected, or the crop contained no
+map points; the frozen map correction plus live odometry carried the remaining output.
+The 380 s run had a 0.100 s maximum pose gap, 0.189 m maximum translation jump, and
+zero TF jumps or unauthorized resets. Ground truth is only the dashed evaluation
+overlay. The other outdoor-hard bags and kidnapped-pose recovery remain unmeasured for
+this architecture, so this result does not yet replace the four-bag GLIM+NDT bridge
+below.
+
+![Koide outdoor_hard_01a GLIL-style live map-to-odom replay](../images/koide/measured/glil/outdoor_hard_01a_live_map_odom.gif)
+
 ### Full-sequence GLIM external-LIO replays (2026-07-19)
 
 These are full-bag measurements of the recovery architecture, not route previews or
@@ -193,6 +218,36 @@ Prepare the measured 30-second benchmark manifests after sourcing ROS 2:
 python3 scripts/prepare_koide_localization_gif_benchmarks.py \
   --data-dir /media/sasaki/aiueo/datasets/koide_hard_localization \
   --output-root /media/sasaki/aiueo/datasets/koide_hard_localization/generated/localization_gif_benchmarks
+```
+
+Reproduce and render the GLIL-style 01a replay:
+
+```bash
+DATA=/media/sasaki/aiueo/datasets/koide_hard_localization
+RUN=/tmp/glil_outdoor_hard_01a
+
+python3 scripts/run_koide_glim_odometry_benchmark.py \
+  --bag "$DATA/sequences/outdoor_hard_01a" \
+  --reference "$DATA/benchmark/outdoor_hard_01a/reference.csv" \
+  --prior-map "$DATA/map_outdoor_hard.ply" \
+  --prior-map-bootstrap-center -86.040205 -8.857126 -11.043077 \
+  --prior-map-bootstrap-yaw-deg -82.0063 \
+  --config param/odometry/glim_koide_outdoor_gicp6500_coreset \
+  --image lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom \
+  --output "$RUN"
+
+python3 scripts/render_koide_localization_gif.py \
+  --occupancy-yaml "$DATA/generated/gif_gallery/occupancy/outdoor_hard/map.yaml" \
+  --estimated-csv "$RUN/pose_trace.csv" \
+  --reference-csv \
+    "$DATA/generated/localization_gif_benchmarks/assets/outdoor_hard_01a_reference.csv" \
+  --output-gif images/koide/measured/glil/outdoor_hard_01a_live_map_odom.gif \
+  --frames 72 --fps 9 \
+  --sequence-label "Koide outdoor_hard_01a (full 380 s)" \
+  --estimate-label "GLIL map-frame pose" \
+  --title "GLIL: GLIM coreset odometry + prior-map VGICP" \
+  --metrics-label \
+    "Full run: ATE 1.142 m | coverage 99.2% | RPE10 0.157 m | p95 28.3 ms"
 ```
 
 Render a full-sequence GLIM run from its recorded benchmark artifacts. This example is

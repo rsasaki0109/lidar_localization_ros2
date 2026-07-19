@@ -1,140 +1,128 @@
-# GLIM prior-map localizer experiment
+# GLIL-style GLIM prior-map localizer
 
-This experiment makes prior-map localization part of GLIM's global factor
-graph. It is intended to replace continuously running NDT, not GLIM odometry.
+This experiment keeps GLIM LiDAR/IMU odometry continuous and applies prior-map
+localization only through a smoothed `map -> odom` transform. It replaces continuously
+running NDT; it does not deform GLIM's factor graph or rewrite the raw odometry.
 
-## Design
+## Architecture
 
-The extension keeps GLIM as the continuous LiDAR/IMU odometry front end. At a
-sparse submap interval it crops the prior PLY map around GLIM's prediction and
-uses that prediction to initialize GLIM's own CPU VGICP implementation. Normal
-tracking does not run KISS-Matcher. KISS is used only to acquire an unknown
-frame or as a fallback after direct VGICP loses lock. Accepted registrations
-are inserted as fixed-map `IntegratedVGICPFactor`s, matching GLIM's native
-global-mapping formulation rather than converting a coarse match into an
-arbitrarily strong pose prior.
+GLIM produces `odom -> base_link` at scan rate. At a sparse submap interval, this
+extension crops the prior PLY map around the current prediction and runs CPU VGICP.
+Normal tracking uses direct VGICP; KISS-Matcher is invoked only for initial acquisition
+or after direct VGICP rejects the candidate. A large recovery correction requires two
+independent submaps to agree before it is accepted.
 
-When an approximate startup pose is supplied, the extension transforms GLIM's
-X(0) initial value into the map frame before its first iSAM2 update. GLIM's own
-gauge-fixing damping factor then anchors the correct frame from the beginning;
-later map factors are bounded refinements, not an ill-conditioned 80+ metre
-late graph shift.
+An accepted registration is converted into a `map -> odom` observation. The output:
 
-The policy has two modes:
+- keeps the configured startup rotation fixed;
+- defines its translation reference from the first accepted observation;
+- applies 20% of each later translation displacement from that reference by default;
+- transitions with a 2 s first-order smoother in GLIM ROS; and
+- freezes and re-stamps the last valid transform while map matching is rejected.
 
-- Tracking: accept a well-supported pose only when its full 3D correction from
-  GLIM's prediction is bounded.
-- Recovery: a large correction is not accepted until registrations from two
-  independent GLIM submaps produce consistent map-from-GLIM-world anchors.
-  In a seeded tracking crop this supports reattachment after local lock loss;
-  unseeded recovery still requires explicit full-map mode.
+No ground truth is used at runtime. Ground truth is used only by the evaluator and GIF
+renderer. Full-map KISS search remains experimental and is disabled by default because
+the unseeded outdoor replay found a repeatable structural ambiguity.
 
-Full-map KISS alone is not yet accepted as a production kidnap-recovery path;
-the measured unseeded replay found a repeatable structural ambiguity, so this
-remains an experimental opt-in.
+The callback and ROS consumer are maintained in two forks:
 
-No ground truth is used at runtime. Ground truth or a previously saved GLIM
-pose may be used only by the offline evaluator. Tracking uses a local prior-map
-crop and runs at submap rate, not scan rate. Full-map KISS search is
-experimental and disabled by default; an unseeded saved-submap search took
-29.55 seconds and repeated a structurally ambiguous match.
+- [GLIL unofficial core callback](https://github.com/rsasaki0109/glil_unofficial/commit/dd29667938cb56ef59de7f90290ad2dbc613f00c)
+- [GLIM ROS external map-to-odom consumer](https://github.com/rsasaki0109/glim_ros2/commit/cd4b2c9eb37a5c12c93d7339ce10167ebaa55288)
 
-The extension uses GLIM's documented global-mapping callbacks rather than
-patching GLIM itself. Relevant primary sources:
+The Dockerfile pins both commits. The design follows the
+[GLIM paper](https://arxiv.org/abs/2407.10344),
+[GLIM extension API](https://github.com/koide3/glim/blob/master/docs/extend.md), and
+[KISS-Matcher paper](https://arxiv.org/abs/2409.15615).
 
-- [GLIM paper](https://arxiv.org/abs/2407.10344)
-- [GLIM extension API](https://github.com/koide3/glim/blob/master/docs/extend.md)
-- [KISS-Matcher paper](https://arxiv.org/abs/2409.15615)
-- [KISS-Matcher implementation](https://github.com/MIT-SPARK/KISS-Matcher)
+## Build
 
-## Build and offline check
+```bash
+docker build -t lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom \
+  experiments/glim_prior_map_localizer
+```
 
-    docker build -t lidarloc/glim-ros2:jazzy-v1.2.2-prior-map \
-      experiments/glim_prior_map_localizer
-
-    docker run --rm \
-      -v /path/to/glim_dump:/dump:ro \
-      -v /path/to/map.ply:/map.ply:ro \
-      lidarloc/glim-ros2:jazzy-v1.2.2-prior-map \
-      /usr/local/bin/glim_prior_map_offline_match /dump/000050 /map.ply 0.5
-
-The offline output is one JSON object containing KISS validity/inliers, VGICP
-overlap/error, runtime, the refined matrix, and its difference from the pose
-stored in the GLIM dump. Add `direct` after the crop radius to initialize VGICP
-from the stored GLIM pose instead of the KISS pose. The stored-pose error is an
-evaluation diagnostic, not a runtime gate.
+The build compiles and tests the GLIM ROS smoother before installing the extension.
 
 ## Runtime configuration
 
-Add libglim_prior_map_localizer.so to extension_modules in GLIM's
-config_ros.json, mount the prior map, and set GLIM_PRIOR_MAP_PATH.
-
-Important environment variables and defaults:
+The benchmark runner adds `libglim_prior_map_localizer.so` to GLIM's
+`extension_modules`. Important environment variables are:
 
 | Variable | Default | Meaning |
 | --- | ---: | --- |
-| GLIM_PRIOR_MAP_PATH | required | ASCII or little-endian binary PLY prior map |
-| GLIM_PRIOR_MAP_VOXEL_SIZE_M | 0.75 | KISS-Matcher resolution |
-| GLIM_PRIOR_MAP_MIN_INLIERS | 10 | minimum KISS inliers when coarse fallback is used |
-| GLIM_PRIOR_MAP_BOOTSTRAP_CROP_RADIUS_M | 60.0 | pre-alignment search radius |
-| GLIM_PRIOR_MAP_BOOTSTRAP_CENTER_X/Y/Z | unset | approximate initial map position |
-| GLIM_PRIOR_MAP_BOOTSTRAP_YAW_DEG | unset | approximate initial map yaw |
-| GLIM_PRIOR_MAP_MAX_BOOTSTRAP_TRANSLATION_M | 10.0 | seeded-candidate correction bound |
-| GLIM_PRIOR_MAP_TRACKING_CROP_RADIUS_M | 35.0 | local tracking-map radius |
-| GLIM_PRIOR_MAP_BOOTSTRAP_SUBMAP_STRIDE | 2 | pre-alignment match interval |
-| GLIM_PRIOR_MAP_TRACKING_SUBMAP_STRIDE | 10 | post-alignment match interval |
-| GLIM_PRIOR_MAP_FULL_GLOBAL_SEARCH | false | experimental full-map mode |
-| GLIM_PRIOR_MAP_MAX_LOCAL_TRANSLATION_M | 1.5 | single-submap tracking correction bound |
-| GLIM_PRIOR_MAP_MAX_LOCAL_YAW_DEG | 10.0 | full 3D rotation bound (legacy name) |
-| GLIM_PRIOR_MAP_ALLOW_GLOBAL_RELOCALIZATION | true | enable two-submap recovery |
-| GLIM_PRIOR_MAP_MAX_GLOBAL_DISAGREEMENT_M | 2.0 | recovery-anchor agreement |
-| GLIM_PRIOR_MAP_MAX_GLOBAL_DISAGREEMENT_YAW_DEG | 10.0 | 3D rotation agreement |
-| GLIM_PRIOR_MAP_VGICP_VOXEL_RESOLUTION_M | 1.0 | prior-map VGICP voxel size |
-| GLIM_PRIOR_MAP_VGICP_MAX_ITERATIONS | 10 | refinement iterations |
-| GLIM_PRIOR_MAP_VGICP_MIN_INLIER_FRACTION | 0.50 | minimum overlap (same as GLIM pose-graph default) |
-| GLIM_PRIOR_MAP_VGICP_MAX_NORMALIZED_ERROR | 5.0 | maximum VGICP error per inlier |
-| GLIM_PRIOR_MAP_VGICP_MAX_COARSE_DELTA_M | 2.0 | maximum KISS-to-VGICP translation change |
-| GLIM_PRIOR_MAP_VGICP_MAX_COARSE_DELTA_DEG | 5.0 | maximum KISS-to-VGICP rotation change |
+| `GLIM_PRIOR_MAP_PATH` | required | ASCII or little-endian binary PLY prior map |
+| `GLIM_PRIOR_MAP_VOXEL_SIZE_M` | 0.75 | KISS-Matcher resolution |
+| `GLIM_PRIOR_MAP_MIN_INLIERS` | 10 | minimum KISS inliers for coarse fallback |
+| `GLIM_PRIOR_MAP_BOOTSTRAP_CENTER_X/Y/Z` | unset | approximate startup position in map frame |
+| `GLIM_PRIOR_MAP_BOOTSTRAP_YAW_DEG` | unset | approximate startup yaw |
+| `GLIM_PRIOR_MAP_BOOTSTRAP_CROP_RADIUS_M` | 60.0 | acquisition crop radius |
+| `GLIM_PRIOR_MAP_TRACKING_CROP_RADIUS_M` | 35.0 | tracking crop radius |
+| `GLIM_PRIOR_MAP_BOOTSTRAP_SUBMAP_STRIDE` | 2 | acquisition match interval |
+| `GLIM_PRIOR_MAP_TRACKING_SUBMAP_STRIDE` | 10 | tracking match interval |
+| `GLIM_PRIOR_MAP_TRANSLATION_GAIN` | 0.2 | accepted displacement gain from first anchor |
+| `GLIM_PRIOR_MAP_MAX_LOCAL_TRANSLATION_M` | 1.5 | tracking correction bound |
+| `GLIM_PRIOR_MAP_MAX_LOCAL_YAW_DEG` | 10.0 | full 3D rotation bound (legacy name) |
+| `GLIM_PRIOR_MAP_ALLOW_GLOBAL_RELOCALIZATION` | true | enable two-submap recovery consensus |
+| `GLIM_PRIOR_MAP_MAX_GLOBAL_DISAGREEMENT_M` | 2.0 | recovery translation agreement bound |
+| `GLIM_PRIOR_MAP_MAX_GLOBAL_DISAGREEMENT_YAW_DEG` | 10.0 | recovery rotation agreement bound |
+| `GLIM_PRIOR_MAP_FULL_GLOBAL_SEARCH` | false | experimental unseeded full-map KISS search |
+| `GLIM_PRIOR_MAP_VGICP_VOXEL_RESOLUTION_M` | 1.0 | prior-map VGICP voxel size |
+| `GLIM_PRIOR_MAP_VGICP_MAX_ITERATIONS` | 10 | refinement iterations |
+| `GLIM_PRIOR_MAP_VGICP_MIN_INLIER_FRACTION` | 0.50 | minimum overlap |
+| `GLIM_PRIOR_MAP_VGICP_MAX_NORMALIZED_ERROR` | 5.0 | maximum error per inlier |
 
-## Measured status
+GLIM ROS parameter `glim_ros.external_map_odom_time_constant` controls smoothing and
+defaults to 2.0 s.
 
-On `outdoor_hard_01a` (380 s), the direct-VGICP plus two-submap consensus
-replay achieved 99.21% coverage, 2.196 m translation ATE, 4.434 m end error,
-0.313 m median 10 m translation RPE, 46.9 ms processing p95, and no TF jumps.
-It improves the earlier coarse-KISS pose-prior prototype (3.379 m ATE, 7.668 m
-end error) and demonstrated a real consensus reattachment at submaps 30/40,
-followed by normal tracking through submap 80.
+## Measured full replay
 
-It is not yet a production win: the GLIM coreset baseline remains better at
-1.696 m ATE and 0.182 m RPE. The remaining issue is that global-map factors
-alter the corrected trajectory even though GLIM's local odometry is already
-more accurate. The next design gate is therefore a separately smoothed
-`map -> odom` correction output that never deforms GLIM odometry. Do not use
-this experiment to replace the validated localizer yet.
+The live architecture passed every current completion gate on the full 380 s
+`outdoor_hard_01a` replay using the exact quadratic coreset (size 32):
 
-A post-merge offline reconstruction tested that separation on the same run11
-dump. It left GLIM's raw orientation unchanged, held the startup map-to-odom
-yaw fixed, applied 20% of each accepted translation-anchor update, and used a
-2 s first-order transition. The reconstructed trajectory passed every current
-01a odometry gate: 1.998 m translation ATE, 4.596 m end error, 0.169 m median
-10 m translation RPE, and 1.644 degrees rotation ATE. With zero map correction,
-the same run's raw odometry measured 1.853 m ATE, 4.726 m end error, and 0.155 m
-RPE; the low-gain correction therefore improved the end error while preserving
-the local-odometry gates.
+| Metric | Result |
+| --- | ---: |
+| Output coverage | 99.21% |
+| Translation ATE RMSE | 1.142 m |
+| Final translation error | 3.112 m |
+| Median 10 m translation RPE | 0.157 m |
+| Rotation ATE RMSE | 1.479 deg |
+| Median 10 m rotation RPE | 0.676 deg |
+| Processing p95 | 28.3 ms |
+| Maximum pose gap | 0.100 s |
+| Maximum translation jump | 0.189 m |
+| TF jumps / unauthorized resets | 0 / 0 |
 
-These are offline replay-reconstruction results, not evidence of a live ROS TF
-publisher. The next implementation must reproduce the same fixed-yaw,
-low-gain, time-smoothed policy online and re-run the full bag before production
-use.
+Map registration was accepted through submap 60. Later candidates were rejected or
+had no points in the crop; the map correction then stayed frozen while GLIM odometry
+continued to provide a smooth output. This proves the separation and failure behavior,
+but it is not yet evidence for the other three outdoor-hard bags or kidnapped-pose
+recovery. The authoritative recorded values are in
+[`results.json`](results.json).
 
-## Acceptance gates
+The converter composes the canonical raw GLIM poses with the recorded live
+`external_map_odom.txt` history. This evaluates the transform actually published by
+the live policy and avoids introducing a second offline correction model.
 
-Before enabling this in measured replays:
+## Reproduce the measured run
 
-1. Compile and unit-test the factor acceptance policy.
-2. Measure registration success, error, and wall time on saved submaps from all
-   four Koide sequences, including false-match and kidnapped-pose cases.
-3. Run a 60-second GLIM-only replay and verify factor insertion and TF
-   continuity.
-4. Run all full sequences, compare ATE/recovery with the current hybrid, and
-   measure whole-process CPU. Do not remove NDT until these gates pass.
+```bash
+python3 scripts/run_koide_glim_odometry_benchmark.py \
+  --bag "$DATA/sequences/outdoor_hard_01a" \
+  --reference "$DATA/benchmark/outdoor_hard_01a/reference.csv" \
+  --prior-map "$DATA/map_outdoor_hard.ply" \
+  --prior-map-bootstrap-center -86.040205 -8.857126 -11.043077 \
+  --prior-map-bootstrap-yaw-deg -82.0063 \
+  --config param/odometry/glim_koide_outdoor_gicp6500_coreset \
+  --image lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom \
+  --output /tmp/glil_outdoor_hard_01a
+```
+
+## Remaining acceptance work
+
+1. Repeat full replays for `outdoor_hard_01b`, `outdoor_hard_02a`, and
+   `outdoor_hard_02b`.
+2. Measure seeded and unseeded false-match and kidnapped-pose recovery cases.
+3. Confirm that two-submap recovery reacquires a deliberately displaced pose without
+   discontinuity or a false map anchor.
+4. Compare whole-process CPU and accuracy with the validated GLIM+NDT bridge before
+   changing the default localizer.
