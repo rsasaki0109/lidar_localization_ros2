@@ -379,9 +379,13 @@ def evaluate_completion(
             or run_summary.get("bag_stopped_by_runner") is True),
     }
     failed = [name for name, passed in gates.items() if not passed]
+    sequence_id = reference_csv.parent.name
+    requested_duration = f"{thresholds.requested_duration_sec:g}"
     return {
         "ok": not failed,
-        "goal": "Koide outdoor_hard_01a full 380 s LiDAR/IMU odometry completion",
+        "goal": (
+            f"Koide {sequence_id} full {requested_duration} s "
+            "LiDAR/IMU odometry completion"),
         "estimated_csv": str(estimated_csv.resolve()),
         "reference_csv": str(reference_csv.resolve()),
         "runtime_json": str(runtime_json.resolve()),

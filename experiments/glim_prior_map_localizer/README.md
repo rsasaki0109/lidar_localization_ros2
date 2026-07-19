@@ -74,36 +74,34 @@ The benchmark runner adds `libglim_prior_map_localizer.so` to GLIM's
 GLIM ROS parameter `glim_ros.external_map_odom_time_constant` controls smoothing and
 defaults to 2.0 s.
 
-## Measured full replay
+## Measured full replays
 
-The live architecture passed every current completion gate on the full 380 s
-`outdoor_hard_01a` replay using the exact quadratic coreset (size 32):
+All four outdoor-hard bags were replayed with the exact quadratic coreset (size 32).
+Three passed every current completion gate. `outdoor_hard_02a` passed coverage, final
+error, RPE, rotation, runtime, queue, and continuity gates, but exceeded the 2.0 m ATE
+limit in both repeats.
 
-| Metric | Result |
-| --- | ---: |
-| Output coverage | 99.21% |
-| Translation ATE RMSE | 1.142 m |
-| Final translation error | 3.112 m |
-| Median 10 m translation RPE | 0.157 m |
-| Rotation ATE RMSE | 1.479 deg |
-| Median 10 m rotation RPE | 0.676 deg |
-| Processing p95 | 28.3 ms |
-| Maximum pose gap | 0.100 s |
-| Maximum translation jump | 0.189 m |
-| TF jumps / unauthorized resets | 0 / 0 |
+| Bag | Coverage | Translation ATE | Final error | Median 10 m RPE | Rotation ATE | Processing p95 | Gate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `outdoor_hard_01a` | 99.21% | 1.142 m | 3.112 m | 0.157 m | 1.479 deg | 28.3 ms | Pass |
+| `outdoor_hard_01b` | 99.04% | 1.539 m | 2.055 m | 0.191 m | 1.598 deg | 53.8 ms | Pass |
+| `outdoor_hard_02a` repeat 1 | 99.15% | 2.059 m | 3.078 m | 0.180 m | 1.676 deg | 35.8 ms | ATE fail |
+| `outdoor_hard_02a` repeat 2 | 99.15% | 2.023 m | 3.049 m | 0.183 m | 1.715 deg | 37.2 ms | ATE fail |
+| `outdoor_hard_02b` | 99.03% | 0.908 m | 1.412 m | 0.177 m | 1.765 deg | 47.9 ms | Pass |
 
-Map registration was accepted through submap 60. Later candidates were rejected or
-had no points in the crop; the map correction then stayed frozen while GLIM odometry
-continued to provide a smooth output. This proves the separation and failure behavior,
-but it is not yet evidence for the other three outdoor-hard bags or kidnapped-pose
-recovery. The authoritative recorded values are in
-[`results.json`](results.json).
+Every run had zero TF jumps and zero unauthorized resets. Registration stopped being
+accepted during each sequence, after which the last map correction stayed frozen while
+GLIM odometry carried the output. The maximum translation jump was 0.189 m on 01a and
+at most 0.017 m on the three newly measured sequences. The 02a repeats differed in
+whether submap 30 was accepted, but both landed just outside the ATE gate; this is a
+measured limitation rather than a passing result. Kidnapped-pose recovery remains
+unverified. The authoritative recorded values are in [`results.json`](results.json).
 
 The converter composes the canonical raw GLIM poses with the recorded live
 `external_map_odom.txt` history. This evaluates the transform actually published by
 the live policy and avoids introducing a second offline correction model.
 
-## Reproduce the measured run
+## Reproduce a measured run
 
 ```bash
 python3 scripts/run_koide_glim_odometry_benchmark.py \
@@ -119,8 +117,8 @@ python3 scripts/run_koide_glim_odometry_benchmark.py \
 
 ## Remaining acceptance work
 
-1. Repeat full replays for `outdoor_hard_01b`, `outdoor_hard_02a`, and
-   `outdoor_hard_02b`.
+1. Reduce `outdoor_hard_02a` ATE below 2.0 m without weakening its RPE or continuity
+   gates, then confirm the result across repeated full runs.
 2. Measure seeded and unseeded false-match and kidnapped-pose recovery cases.
 3. Confirm that two-submap recovery reacquires a deliberately displaced pose without
    discontinuity or a false map anchor.

@@ -20,18 +20,40 @@ interrupting or deforming GLIM odometry.
 | Bag | Front end | Coverage | Translation ATE | Final error | Median 10 m RPE | Rotation ATE | Processing p95 | Gate |
 |---|---|---:|---:|---:|---:|---:|---:|---|
 | `outdoor_hard_01a` | GLIM exact coreset 32 + sparse VGICP | 99.21% | 1.142 m | 3.112 m | 0.157 m | 1.479 deg | 28.3 ms | Pass |
+| `outdoor_hard_01b` | GLIM exact coreset 32 + sparse VGICP | 99.04% | 1.539 m | 2.055 m | 0.191 m | 1.598 deg | 53.8 ms | Pass |
+| `outdoor_hard_02a` repeat 1 | GLIM exact coreset 32 + sparse VGICP | 99.15% | 2.059 m | 3.078 m | 0.180 m | 1.676 deg | 35.8 ms | ATE fail |
+| `outdoor_hard_02a` repeat 2 | GLIM exact coreset 32 + sparse VGICP | 99.15% | 2.023 m | 3.049 m | 0.183 m | 1.715 deg | 37.2 ms | ATE fail |
+| `outdoor_hard_02b` | GLIM exact coreset 32 + sparse VGICP | 99.03% | 0.908 m | 1.412 m | 0.177 m | 1.765 deg | 47.9 ms | Pass |
 
 The startup yaw is fixed, accepted translation displacement uses gain 0.2, and GLIM
-ROS applies a 2 s first-order transition. Registrations were accepted through submap
-60. Later direct and KISS fallback candidates were rejected, or the crop contained no
-map points; the frozen map correction plus live odometry carried the remaining output.
-The 380 s run had a 0.100 s maximum pose gap, 0.189 m maximum translation jump, and
-zero TF jumps or unauthorized resets. Ground truth is only the dashed evaluation
-overlay. The other outdoor-hard bags and kidnapped-pose recovery remain unmeasured for
-this architecture, so this result does not yet replace the four-bag GLIM+NDT bridge
-below.
+ROS applies a 2 s first-order transition. All four sequences retained at least 99%
+output coverage, and every run had zero TF jumps and zero unauthorized resets. Direct
+and KISS fallback candidates were rejected once they stopped satisfying the gates; the
+frozen map correction plus live odometry carried the remaining output.
+
+Three sequences passed every gate. `outdoor_hard_02a` was repeated because its first
+ATE was close to the 2.0 m limit; both repeats failed only that gate at 2.059 m and
+2.023 m. Their RPE, final-error, rotation, runtime, queue, and continuity gates passed.
+The two runs differed in whether submap 30 was accepted, so the table retains both
+results instead of selecting the better run. Ground truth is only the dashed evaluation
+overlay. Kidnapped-pose recovery remains unmeasured for this architecture, and the 02a
+ATE regression means it does not yet replace the four-bag GLIM+NDT bridge below.
+
+#### Outdoor hard 01a
 
 ![Koide outdoor_hard_01a GLIL-style live map-to-odom replay](../images/koide/measured/glil/outdoor_hard_01a_live_map_odom.gif)
+
+#### Outdoor hard 01b
+
+![Koide outdoor_hard_01b GLIL-style live map-to-odom replay](../images/koide/measured/glil/outdoor_hard_01b_live_map_odom.gif)
+
+#### Outdoor hard 02a — representative repeat 2, ATE gate failed
+
+![Koide outdoor_hard_02a GLIL-style live map-to-odom replay](../images/koide/measured/glil/outdoor_hard_02a_live_map_odom.gif)
+
+#### Outdoor hard 02b
+
+![Koide outdoor_hard_02b GLIL-style live map-to-odom replay](../images/koide/measured/glil/outdoor_hard_02b_live_map_odom.gif)
 
 ### Full-sequence GLIM external-LIO replays (2026-07-19)
 
@@ -220,7 +242,18 @@ python3 scripts/prepare_koide_localization_gif_benchmarks.py \
   --output-root /media/sasaki/aiueo/datasets/koide_hard_localization/generated/localization_gif_benchmarks
 ```
 
-Reproduce and render the GLIL-style 01a replay:
+The GLIL-style full runs used these startup crop seeds. They are approximate runtime
+initialization inputs, not evaluator ground truth:
+
+| Bag | X | Y | Z | Yaw |
+|---|---:|---:|---:|---:|
+| `outdoor_hard_01a` | -86.040205 | -8.857126 | -11.043077 | -82.0063 deg |
+| `outdoor_hard_01b` | 103.703859 | -3.360581 | -11.276523 | -3.0042 deg |
+| `outdoor_hard_02a` | -104.343538 | -10.324673 | -11.620099 | 163.3613 deg |
+| `outdoor_hard_02b` | 103.616685 | -1.693832 | -11.022091 | 4.4813 deg |
+
+This example reproduces and renders 01a. Substitute the sequence, duration, output,
+reference, seed, and metric label for the other rows:
 
 ```bash
 DATA=/media/sasaki/aiueo/datasets/koide_hard_localization

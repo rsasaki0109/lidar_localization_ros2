@@ -88,6 +88,7 @@ def test_perfect_full_trajectory_passes_all_gates():
     assert result["metrics"]["coverage_ratio"] == 1.0
     assert result["metrics"]["translation_ate_rmse_m"] < 1e-9
     assert result["metrics"]["rpe_sample_count"] > 0
+    assert result["goal"].endswith("full 20 s LiDAR/IMU odometry completion")
 
 
 def test_short_accurate_trajectory_cannot_pass_completion():
