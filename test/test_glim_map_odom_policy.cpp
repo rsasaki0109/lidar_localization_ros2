@@ -30,6 +30,15 @@ int main()
   const auto clamped_low = gp::updateMapOdomTranslation(current, observed, -1.0);
   assert(clamped_low.matrix().isApprox(current.matrix()));
 
+  const auto split_gain = gp::updateMapOdomTranslation(current, observed, 0.2, 1.0);
+  assert(split_gain.translation().isApprox(Eigen::Vector3d(12.0, 0.0, -4.0)));
+  assert(split_gain.linear().isApprox(current.linear()));
+
+  const auto vertical_only = gp::updateMapOdomVertical(
+    current, updated, observed, 0.5);
+  assert(vertical_only.translation().isApprox(Eigen::Vector3d(12.0, 0.0, -1.5)));
+  assert(vertical_only.linear().isApprox(updated.linear()));
+
   Eigen::Isometry3d odom_from_sensor = Eigen::Isometry3d::Identity();
   odom_from_sensor.translation() = Eigen::Vector3d(3.0, -2.0, 1.0);
   const Eigen::Matrix3d fixed_rotation = Eigen::AngleAxisd(

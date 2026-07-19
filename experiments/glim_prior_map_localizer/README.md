@@ -17,6 +17,8 @@ An accepted registration is converted into a `map -> odom` observation. The outp
 - keeps the configured startup rotation fixed;
 - defines its translation reference from the first accepted observation;
 - applies 20% of each later translation displacement from that reference by default;
+- optionally uses a separate vertical gain and, during global-consensus pending, updates
+  only Z while keeping the last accepted XY and rotation;
 - transitions with a 2 s first-order smoother in GLIM ROS; and
 - freezes and re-stamps the last valid transform while map matching is rejected.
 
@@ -60,6 +62,7 @@ The benchmark runner adds `libglim_prior_map_localizer.so` to GLIM's
 | `GLIM_PRIOR_MAP_BOOTSTRAP_SUBMAP_STRIDE` | 2 | acquisition match interval |
 | `GLIM_PRIOR_MAP_TRACKING_SUBMAP_STRIDE` | 10 | tracking match interval |
 | `GLIM_PRIOR_MAP_TRANSLATION_GAIN` | 0.2 | accepted displacement gain from first anchor |
+| `GLIM_PRIOR_MAP_VERTICAL_GAIN` | translation gain | separate accepted/pending Z gain |
 | `GLIM_PRIOR_MAP_MAX_LOCAL_TRANSLATION_M` | 1.5 | tracking correction bound |
 | `GLIM_PRIOR_MAP_MAX_LOCAL_YAW_DEG` | 10.0 | full 3D rotation bound (legacy name) |
 | `GLIM_PRIOR_MAP_ALLOW_GLOBAL_RELOCALIZATION` | true | enable two-submap recovery consensus |
@@ -77,25 +80,28 @@ defaults to 2.0 s.
 ## Measured full replays
 
 All four outdoor-hard bags were replayed with the exact quadratic coreset (size 32).
-Three passed every current completion gate. `outdoor_hard_02a` passed coverage, final
-error, RPE, rotation, runtime, queue, and continuity gates, but exceeded the 2.0 m ATE
-limit in both repeats.
+The original policy passed three bags, while `outdoor_hard_02a` exceeded the 2.0 m ATE
+limit in both repeats. A targeted 02a variant with vertical gain 1.0 then passed two
+independent full repeats without changing the horizontal gain or acceptance gates.
 
 | Bag | Coverage | Translation ATE | Final error | Median 10 m RPE | Rotation ATE | Processing p95 | Gate |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | `outdoor_hard_01a` | 99.21% | 1.142 m | 3.112 m | 0.157 m | 1.479 deg | 28.3 ms | Pass |
 | `outdoor_hard_01b` | 99.04% | 1.539 m | 2.055 m | 0.191 m | 1.598 deg | 53.8 ms | Pass |
-| `outdoor_hard_02a` repeat 1 | 99.15% | 2.059 m | 3.078 m | 0.180 m | 1.676 deg | 35.8 ms | ATE fail |
-| `outdoor_hard_02a` repeat 2 | 99.15% | 2.023 m | 3.049 m | 0.183 m | 1.715 deg | 37.2 ms | ATE fail |
+| `outdoor_hard_02a` baseline repeat 1 | 99.15% | 2.059 m | 3.078 m | 0.180 m | 1.676 deg | 35.8 ms | ATE fail |
+| `outdoor_hard_02a` baseline repeat 2 | 99.15% | 2.023 m | 3.049 m | 0.183 m | 1.715 deg | 37.2 ms | ATE fail |
+| `outdoor_hard_02a` Z-bridge repeat 1 | 99.15% | 1.926 m | 2.854 m | 0.181 m | 1.683 deg | 38.5 ms | Pass |
+| `outdoor_hard_02a` Z-bridge repeat 2 | 99.15% | 1.795 m | 2.827 m | 0.181 m | 1.703 deg | 30.4 ms | Pass |
 | `outdoor_hard_02b` | 99.03% | 0.908 m | 1.412 m | 0.177 m | 1.765 deg | 47.9 ms | Pass |
 
 Every run had zero TF jumps and zero unauthorized resets. Registration stopped being
 accepted during each sequence, after which the last map correction stayed frozen while
 GLIM odometry carried the output. The maximum translation jump was 0.189 m on 01a and
-at most 0.017 m on the three newly measured sequences. The 02a repeats differed in
-whether submap 30 was accepted, but both landed just outside the ATE gate; this is a
-measured limitation rather than a passing result. Kidnapped-pose recovery remains
-unverified. The authoritative recorded values are in [`results.json`](results.json).
+at most 0.017 m on the other measured runs. In the Z-bridge repeats, submap 30 entered
+global consensus and updated only Z; no global XY candidate was promoted. Both planar
+runs passed, but repeat 2 still measured 9.21 m non-planar 3D ATE and 14.29 m final
+error. Full 3D drift and kidnapped-pose recovery therefore remain unverified. The
+authoritative recorded values are in [`results.json`](results.json).
 
 The converter composes the canonical raw GLIM poses with the recorded live
 `external_map_odom.txt` history. This evaluates the transform actually published by
@@ -115,10 +121,12 @@ python3 scripts/run_koide_glim_odometry_benchmark.py \
   --output /tmp/glil_outdoor_hard_01a
 ```
 
+Add `--prior-map-vertical-gain 1.0` for the measured 02a Z-bridge policy.
+
 ## Remaining acceptance work
 
-1. Reduce `outdoor_hard_02a` ATE below 2.0 m without weakening its RPE or continuity
-   gates, then confirm the result across repeated full runs.
+1. Resolve the remaining non-planar Z drift and validate the vertical policy across all
+   four outdoor-hard bags before making it the default.
 2. Measure seeded and unseeded false-match and kidnapped-pose recovery cases.
 3. Confirm that two-submap recovery reacquires a deliberately displaced pose without
    discontinuity or a false map anchor.

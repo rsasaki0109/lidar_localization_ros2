@@ -149,6 +149,10 @@ public:
       1, environmentSize("GLIM_PRIOR_MAP_TRACKING_SUBMAP_STRIDE", 10));
     translation_gain_ = std::clamp(
       environmentDouble("GLIM_PRIOR_MAP_TRANSLATION_GAIN", 0.2), 0.0, 1.0);
+    pending_vertical_update_enabled_ =
+      std::getenv("GLIM_PRIOR_MAP_VERTICAL_GAIN") != nullptr;
+    vertical_gain_ = std::clamp(
+      environmentDouble("GLIM_PRIOR_MAP_VERTICAL_GAIN", translation_gain_), 0.0, 1.0);
     full_global_search_ =
       environmentBool("GLIM_PRIOR_MAP_FULL_GLOBAL_SEARCH", false);
     const char * bootstrap_x = std::getenv("GLIM_PRIOR_MAP_BOOTSTRAP_CENTER_X");
@@ -180,11 +184,12 @@ public:
       std::bind(&PriorMapLocalizer::onSubmap, this, _1));
     logger_->info(
       "loaded prior map with {} points; mode={} crop={:.1f}/{:.1f}m stride={}/{} "
-      "seeded={} translation_gain={:.3f}",
+      "seeded={} translation_gain={:.3f} vertical_gain={:.3f} pending_z={}",
       prior_map_.size(), full_global_search_ ? "full-global" : "tracking-crop",
       bootstrap_crop_radius_m_, tracking_crop_radius_m_, bootstrap_submap_stride_,
       tracking_submap_stride_,
-      bootstrap_anchor_available_, translation_gain_);
+      bootstrap_anchor_available_, translation_gain_, vertical_gain_,
+      pending_vertical_update_enabled_);
   }
 
 private:
@@ -307,8 +312,11 @@ private:
     bool refinement_accepted = refinementAccepted();
     if (!refinement_accepted && !use_coarse_global_candidate) {
       logger_->info(
-        "submap={} direct VGICP rejected; trying crop-local KISS fallback",
-        submap->id);
+        "submap={} direct VGICP rejected valid={} inliers={} overlap={:.3f} "
+        "error={:.3f} delta={:.3f}m/{:.2f}deg; trying crop-local KISS fallback",
+        submap->id, refinement.valid, refinement.num_inliers,
+        refinement.inlier_fraction, refinement.normalized_error,
+        refinement_delta.translation().norm(), rotationDegrees(refinement_delta));
       matcher_.reset();
       const auto solution = matcher_.estimate(source, target);
       coarse_valid = solution.valid;
@@ -403,6 +411,29 @@ private:
       local_correction.translation().norm(), rotationDegrees(local_correction),
       decision.reason);
     if (!decision.accepted) {
+      if (
+        decision.reason == "global_consensus_pending" &&
+        pending_vertical_update_enabled_)
+      {
+        Eigen::Isometry3d vertical_anchor = Eigen::Isometry3d::Identity();
+        bool vertical_anchor_available = false;
+        {
+          std::lock_guard<std::mutex> lock(anchor_mutex_);
+          if (tracking_anchor_available_ && reference_anchor_available_) {
+            tracking_anchor_ = updateMapOdomVertical(
+              reference_anchor_, tracking_anchor_, map_odom_observation, vertical_gain_);
+            vertical_anchor = tracking_anchor_;
+            vertical_anchor_available = true;
+          }
+        }
+        if (vertical_anchor_available) {
+          glim::GlobalMappingCallbacks::on_external_map_odom_update(
+            origin_odom_frame->stamp, vertical_anchor, false);
+          logger_->info(
+            "updated pending-consensus map-to-odom Z target={:.3f} gain={:.3f}",
+            vertical_anchor.translation().z(), vertical_gain_);
+        }
+      }
       return;
     }
 
@@ -423,7 +454,7 @@ private:
         reference_anchor_available_ = true;
       } else {
         tracking_anchor_ = updateMapOdomTranslation(
-          reference_anchor_, map_odom_observation, translation_gain_);
+          reference_anchor_, map_odom_observation, translation_gain_, vertical_gain_);
       }
       updated_anchor = tracking_anchor_;
       initial_anchor_sent_ = true;
@@ -431,9 +462,10 @@ private:
     glim::GlobalMappingCallbacks::on_external_map_odom_update(
       origin_odom_frame->stamp, updated_anchor, reset);
     logger_->info(
-      "updated map-to-odom target translation=({:.3f},{:.3f},{:.3f}) gain={:.3f}",
+      "updated map-to-odom target translation=({:.3f},{:.3f},{:.3f}) "
+      "gain={:.3f}/{:.3f}",
       updated_anchor.translation().x(), updated_anchor.translation().y(),
-      updated_anchor.translation().z(), translation_gain_);
+      updated_anchor.translation().z(), translation_gain_, vertical_gain_);
     map_frame_initialized_ = true;
     previous_global_anchor_available_ = false;
   }
@@ -453,6 +485,8 @@ private:
   std::size_t bootstrap_submap_stride_{2};
   std::size_t tracking_submap_stride_{10};
   double translation_gain_{0.2};
+  double vertical_gain_{0.2};
+  bool pending_vertical_update_enabled_{false};
   bool full_global_search_{false};
   bool map_frame_initialized_{false};
   bool bootstrap_anchor_available_{false};

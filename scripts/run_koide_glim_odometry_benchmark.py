@@ -53,6 +53,10 @@ def main() -> int:
         "--prior-map-bootstrap-yaw-deg", type=float,
         help="Known approximate initial yaw in the prior-map frame; requires bootstrap center.",
     )
+    parser.add_argument(
+        "--prior-map-vertical-gain", type=float,
+        help="Optional map-to-odom Z correction gain in [0, 1].",
+    )
     parser.add_argument("--ros-domain-id", type=int, default=91)
     parser.add_argument(
         "--allow-image-mismatch", action="store_true",
@@ -94,6 +98,9 @@ def main() -> int:
     if ((args.prior_map_bootstrap_center is None) !=
             (args.prior_map_bootstrap_yaw_deg is None)):
         parser.error("bootstrap center and bootstrap yaw must be provided together")
+    if (args.prior_map_vertical_gain is not None and not (
+            0.0 <= args.prior_map_vertical_gain <= 1.0)):
+        parser.error("--prior-map-vertical-gain must be in [0, 1]")
 
     image_id = subprocess.check_output(
         ["docker", "image", "inspect", args.image, "--format", "{{.Id}}"], text=True
@@ -130,6 +137,10 @@ def main() -> int:
                 ])
             docker_command.extend([
                 "-e", f"GLIM_PRIOR_MAP_BOOTSTRAP_YAW_DEG={args.prior_map_bootstrap_yaw_deg}",
+            ])
+        if args.prior_map_vertical_gain is not None:
+            docker_command.extend([
+                "-e", f"GLIM_PRIOR_MAP_VERTICAL_GAIN={args.prior_map_vertical_gain}",
             ])
     docker_command.extend([
         args.image,
