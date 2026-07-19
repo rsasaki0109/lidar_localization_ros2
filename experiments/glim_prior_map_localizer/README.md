@@ -111,6 +111,13 @@ anchor, whereas baseline raw odometry remained passing at 1.562 m with the Z-bri
 anchor. The variance therefore came primarily from raw GLIM odometry, not the anchor,
 but the Z bridge remains opt-in until repeatability and non-planar drift improve.
 
+The raw 01b variance was reproduced from the first scan and traced to parallel ordering
+in random-grid preprocessing and the odometry optimizer. Setting both thread counts to
+one made two full 302 s raw odometry dumps byte-identical. Both full outputs passed at
+1.407079 m ATE, 1.957 m final error, and 0.187 m median 10 m RPE; processing p95 was
+44.3 ms and 47.5 ms. Prior-map VGICP still produced a small run-to-run Z-anchor
+difference, but it changed planar ATE by less than one micrometre.
+
 The converter composes the canonical raw GLIM poses with the recorded live
 `external_map_odom.txt` history. This evaluates the transform actually published by
 the live policy and avoids introducing a second offline correction model.
@@ -133,8 +140,8 @@ Add `--prior-map-vertical-gain 1.0` for the measured 02a Z-bridge policy.
 
 ## Remaining acceptance work
 
-1. Resolve the remaining non-planar Z drift and the 01b raw-odometry run-to-run variance
-   before making the vertical policy the default.
+1. Replay the deterministic one-thread profile on 01a/02a/02b and resolve the remaining
+   non-planar Z drift before making the vertical policy the default.
 2. Measure seeded and unseeded false-match and kidnapped-pose recovery cases.
 3. Confirm that two-submap recovery reacquires a deliberately displaced pose without
    discontinuity or a false map anchor.

@@ -25,6 +25,6 @@
     "coreset_reuse_tolerance_rot": 0.0175,
     "validate_imu": true,
     "save_imu_rate_trajectory": true,
-    "num_threads": 2
+    "num_threads": 1
   }
 }

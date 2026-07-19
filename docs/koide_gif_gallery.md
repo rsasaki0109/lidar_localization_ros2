@@ -66,6 +66,16 @@ the failed repeat was dominated by raw-odometry variability. This clears the Z b
 a direct 01b regression, but one-pass-per-bag evidence is not sufficient to enable it by
 default.
 
+The raw-odometry variance was then isolated to parallel ordering in random-grid
+preprocessing and the odometry optimizer. With both coreset-profile thread counts fixed
+to one, two new full 01b replays produced byte-identical 2,218-row `odom_lidar.txt`
+files (SHA-256 `45d49d87932febc06b4ab18b29fc1ba58fc6f6ed043a7157523fe4e75f383642`).
+Both passed at 1.407079 m ATE and 1.957 m final error; RPE was 0.18690/0.18694 m and
+processing p95 was 44.3/47.5 ms. Sparse prior-map VGICP still varied its Z anchor by up
+to 4.3 cm, but the resulting planar ATE difference was below 0.000001 m. The vertical
+bridge remains opt-in until this deterministic profile is replayed on the other bags and
+the non-planar drift is resolved.
+
 #### Outdoor hard 01a
 
 ![Koide outdoor_hard_01a GLIL-style live map-to-odom replay](../images/koide/measured/glil/outdoor_hard_01a_live_map_odom.gif)
