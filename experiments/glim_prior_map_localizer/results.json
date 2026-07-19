@@ -17,30 +17,136 @@
     "recovery_registration": "kiss_matcher_then_vgicp",
     "translation_gain": 0.2
   },
-  "sequence": {
-    "id": "outdoor_hard_01a",
-    "requested_duration_sec": 380.0,
-    "wall_duration_sec": 385.862303322996
+  "gate_summary": {
+    "passing_sequences": 3,
+    "total_sequences": 4,
+    "outdoor_hard_02a_passes": 0,
+    "outdoor_hard_02a_repeats": 2
   },
-  "metrics": {
-    "coverage_ratio": 0.992104793222327,
-    "covered_duration_sec": 376.99982142448425,
-    "max_pose_gap_sec": 0.10016703605651855,
-    "max_pose_jump_m": 0.18924309870327405,
-    "max_pose_jump_rotation_deg": 3.852781611658036,
-    "processing_p95_sec": 0.028260725,
-    "rotation_ate_rmse_deg": 1.4787272019298572,
-    "rpe_rotation_median_deg": 0.6755623781791303,
-    "rpe_translation_median_m": 0.15727120912544518,
-    "tf_jump_count": 0,
-    "translation_ate_rmse_m": 1.1424958568206272,
-    "translation_end_error_m": 3.1115047065782298,
-    "unauthorized_reset_count": 0
-  },
-  "passed_all_current_gates": true,
+  "runs": [
+    {
+      "id": "run13",
+      "sequence": "outdoor_hard_01a",
+      "requested_duration_sec": 380.0,
+      "wall_duration_sec": 385.862303322996,
+      "passed_all_current_gates": true,
+      "failed_gates": [],
+      "metrics": {
+        "coverage_ratio": 0.992104793222327,
+        "covered_duration_sec": 376.99982142448425,
+        "translation_ate_rmse_m": 1.1424958568206272,
+        "translation_end_error_m": 3.1115047065782298,
+        "rpe_translation_median_m": 0.15727120912544518,
+        "rotation_ate_rmse_deg": 1.4787272019298572,
+        "rpe_rotation_median_deg": 0.6755623781791303,
+        "max_pose_gap_sec": 0.10016703605651855,
+        "max_pose_jump_m": 0.18924309870327405,
+        "max_pose_jump_rotation_deg": 3.852781611658036,
+        "processing_p95_sec": 0.028260725,
+        "tf_jump_count": 0,
+        "unauthorized_reset_count": 0
+      }
+    },
+    {
+      "id": "run14",
+      "sequence": "outdoor_hard_01b",
+      "requested_duration_sec": 302.0,
+      "wall_duration_sec": 307.8987200439442,
+      "passed_all_current_gates": true,
+      "failed_gates": [],
+      "metrics": {
+        "coverage_ratio": 0.9903985167181255,
+        "covered_duration_sec": 299.1003520488739,
+        "translation_ate_rmse_m": 1.5385721145395466,
+        "translation_end_error_m": 2.0545771028778854,
+        "rpe_translation_median_m": 0.19121423233678908,
+        "rotation_ate_rmse_deg": 1.5977825136849375,
+        "rpe_rotation_median_deg": 0.8412398113046388,
+        "max_pose_gap_sec": 0.008353948593139648,
+        "max_pose_jump_m": 0.014261851487581597,
+        "max_pose_jump_rotation_deg": 5.898945994843444,
+        "processing_p95_sec": 0.053849948999999994,
+        "tf_jump_count": 0,
+        "unauthorized_reset_count": 0
+      }
+    },
+    {
+      "id": "run15_repeat01",
+      "sequence": "outdoor_hard_02a",
+      "requested_duration_sec": 363.0,
+      "wall_duration_sec": 368.88135802105535,
+      "passed_all_current_gates": false,
+      "failed_gates": [
+        "translation_ate"
+      ],
+      "metrics": {
+        "coverage_ratio": 0.991460301659324,
+        "covered_duration_sec": 359.9000895023346,
+        "translation_ate_rmse_m": 2.0594281295588655,
+        "translation_end_error_m": 3.078060161008636,
+        "rpe_translation_median_m": 0.1797306274662206,
+        "rotation_ate_rmse_deg": 1.6761399395320535,
+        "rpe_rotation_median_deg": 0.6346931240763218,
+        "max_pose_gap_sec": 0.008573770523071289,
+        "max_pose_jump_m": 0.016247899655651103,
+        "max_pose_jump_rotation_deg": 3.585360445454061,
+        "processing_p95_sec": 0.035808224,
+        "tf_jump_count": 0,
+        "unauthorized_reset_count": 0
+      }
+    },
+    {
+      "id": "run17_repeat02",
+      "sequence": "outdoor_hard_02a",
+      "requested_duration_sec": 363.0,
+      "wall_duration_sec": 368.7091412129812,
+      "passed_all_current_gates": false,
+      "failed_gates": [
+        "translation_ate"
+      ],
+      "metrics": {
+        "coverage_ratio": 0.991460301659324,
+        "covered_duration_sec": 359.9000895023346,
+        "translation_ate_rmse_m": 2.02337196963614,
+        "translation_end_error_m": 3.0488783026985775,
+        "rpe_translation_median_m": 0.18296961497204062,
+        "rotation_ate_rmse_deg": 1.7154309499160851,
+        "rpe_rotation_median_deg": 0.6379835624584066,
+        "max_pose_gap_sec": 0.008573770523071289,
+        "max_pose_jump_m": 0.01645161341394391,
+        "max_pose_jump_rotation_deg": 3.5850877258366145,
+        "processing_p95_sec": 0.037163337,
+        "tf_jump_count": 0,
+        "unauthorized_reset_count": 0
+      }
+    },
+    {
+      "id": "run16",
+      "sequence": "outdoor_hard_02b",
+      "requested_duration_sec": 298.0,
+      "wall_duration_sec": 302.83892562706023,
+      "passed_all_current_gates": true,
+      "failed_gates": [],
+      "metrics": {
+        "coverage_ratio": 0.99026580144895,
+        "covered_duration_sec": 295.0992088317871,
+        "translation_ate_rmse_m": 0.9078793107108399,
+        "translation_end_error_m": 1.411690387835277,
+        "rpe_translation_median_m": 0.17744844712044822,
+        "rotation_ate_rmse_deg": 1.7647443406606451,
+        "rpe_rotation_median_deg": 0.9222871498968318,
+        "max_pose_gap_sec": 0.00823211669921875,
+        "max_pose_jump_m": 0.014882369875702895,
+        "max_pose_jump_rotation_deg": 3.5380758093153233,
+        "processing_p95_sec": 0.047886651,
+        "tf_jump_count": 0,
+        "unauthorized_reset_count": 0
+      }
+    }
+  ],
   "scope_limitations": [
-    "Only outdoor_hard_01a has been measured with this live architecture.",
+    "outdoor_hard_02a failed only the 2.0 m translation ATE gate in both repeats (2.059 m and 2.023 m).",
     "Kidnapped-pose recovery has not passed a full replay gate.",
-    "Map registration rejected after submap 60; the frozen correction and continuous odometry carried the remainder."
+    "Map registration eventually rejected in every sequence; the frozen correction and continuous odometry carried the remainder."
   ]
 }

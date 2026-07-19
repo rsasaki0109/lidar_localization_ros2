@@ -14,7 +14,12 @@ from pathlib import Path
 
 
 DEFAULT_IMAGE = "lidarloc/glim-ros2:jazzy-v1.2.2-instrumented-guarded"
-EXPECTED_IMAGE_ID = "sha256:1002a7bc67d26f5605173f33784e08690c0c45f2c332853db18013d3967e6f17"
+EXPECTED_IMAGE_IDS = {
+    DEFAULT_IMAGE:
+        "sha256:1002a7bc67d26f5605173f33784e08690c0c45f2c332853db18013d3967e6f17",
+    "lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom":
+        "sha256:70d056317a475e8ce5a029e5b6d83d0b5e8f4e1587acd069d708eb00cd1b134a",
+}
 
 
 def run_checked(command):
@@ -51,7 +56,7 @@ def main() -> int:
     parser.add_argument("--ros-domain-id", type=int, default=91)
     parser.add_argument(
         "--allow-image-mismatch", action="store_true",
-        help="Allow a rebuilt image whose local ID differs from the archived validation image.")
+        help="Allow an unregistered image or a rebuilt image whose ID differs from its archive.")
     args = parser.parse_args()
 
     repo = Path(__file__).resolve().parents[1]
@@ -93,10 +98,16 @@ def main() -> int:
     image_id = subprocess.check_output(
         ["docker", "image", "inspect", args.image, "--format", "{{.Id}}"], text=True
     ).strip()
-    if image_id != EXPECTED_IMAGE_ID and not args.allow_image_mismatch:
+    expected_image_id = EXPECTED_IMAGE_IDS.get(args.image)
+    if expected_image_id is None and not args.allow_image_mismatch:
         parser.error(
-            f"image ID is {image_id}, expected {EXPECTED_IMAGE_ID}; "
-            "rebuild from experiments/koide_odometry_glim_gicp6500 or pass "
+            f"image tag {args.image} has no archived validation ID; pass "
+            "--allow-image-mismatch and archive the new tag and ID")
+    if (expected_image_id is not None and image_id != expected_image_id and
+            not args.allow_image_mismatch):
+        parser.error(
+            f"image ID is {image_id}, expected {expected_image_id} for {args.image}; "
+            "rebuild the archived image or pass "
             "--allow-image-mismatch and archive the new ID")
 
     container_bag = f"/data/{bag.name}"
