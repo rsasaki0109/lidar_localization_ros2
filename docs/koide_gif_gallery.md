@@ -44,6 +44,28 @@ A separate non-planar check of repeat 2 improved from the earlier 10.4--10.7 m r
 9.21 m ATE but still failed, so full 3D drift and kidnapped-pose recovery remain open.
 Ground truth is only the dashed evaluation overlay.
 
+#### Four-bag Z-bridge regression
+
+Vertical gain 1.0 was subsequently replayed across all four outdoor-hard bags with the
+same image and unchanged gates. It passed at least once on every bag, but remains opt-in
+because one of two 01b repeats exceeded the ATE limit.
+
+| Bag | Repeat | Translation ATE | Final error | Median 10 m RPE | Processing p95 | Gate |
+|---|---:|---:|---:|---:|---:|---|
+| `outdoor_hard_01a` | 1 | 1.106 m | 2.738 m | 0.160 m | 60.3 ms | Pass |
+| `outdoor_hard_01b` | 1 | 2.219 m | 2.412 m | 0.183 m | 78.3 ms | ATE fail |
+| `outdoor_hard_01b` | 2 | 1.867 m | 2.022 m | 0.192 m | 94.1 ms | Pass |
+| `outdoor_hard_02a` | 1 | 1.926 m | 2.854 m | 0.181 m | 38.5 ms | Pass |
+| `outdoor_hard_02a` | 2 | 1.795 m | 2.827 m | 0.181 m | 30.4 ms | Pass |
+| `outdoor_hard_02b` | 1 | 1.097 m | 1.538 m | 0.175 m | 81.4 ms | Pass |
+
+Cross-composing the 01b artifacts isolated the failure: repeat-1 raw GLIM odometry with
+the baseline map anchor still produced 2.210 m ATE, while baseline raw odometry with the
+repeat-1 Z-bridge anchor produced 1.562 m. The anchor changed ATE by only about 0.02 m;
+the failed repeat was dominated by raw-odometry variability. This clears the Z bridge of
+a direct 01b regression, but one-pass-per-bag evidence is not sufficient to enable it by
+default.
+
 #### Outdoor hard 01a
 
 ![Koide outdoor_hard_01a GLIL-style live map-to-odom replay](../images/koide/measured/glil/outdoor_hard_01a_live_map_odom.gif)

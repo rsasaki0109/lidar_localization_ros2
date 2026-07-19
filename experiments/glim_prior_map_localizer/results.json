@@ -28,6 +28,76 @@
     "outdoor_hard_02a_passes": 2,
     "outdoor_hard_02a_repeats": 4
   },
+  "four_bag_vertical_gain_validation": {
+    "image_id": "sha256:a37681c646540d5ebab3037108495e8d6e2574dc53ad9b720278515d2582f821",
+    "vertical_gain": 1.0,
+    "default_enabled": false,
+    "decision": "Keep opt-in: every bag passed at least once, but outdoor_hard_01b passed only one of two repeats and non-planar drift remains unresolved.",
+    "runs": [
+      {
+        "id": "run22",
+        "sequence": "outdoor_hard_01a",
+        "ok": true,
+        "translation_ate_rmse_m": 1.1059563868093492,
+        "translation_end_error_m": 2.7380426690111515,
+        "rpe_translation_median_m": 0.15974521089054913,
+        "processing_p95_sec": 0.060261482
+      },
+      {
+        "id": "run23_repeat01",
+        "sequence": "outdoor_hard_01b",
+        "ok": false,
+        "failed_gates": [
+          "translation_ate"
+        ],
+        "translation_ate_rmse_m": 2.2192020897060774,
+        "translation_end_error_m": 2.4117412672055027,
+        "rpe_translation_median_m": 0.18280792674184734,
+        "processing_p95_sec": 0.078321586
+      },
+      {
+        "id": "run25_repeat02",
+        "sequence": "outdoor_hard_01b",
+        "ok": true,
+        "translation_ate_rmse_m": 1.8666354199732293,
+        "translation_end_error_m": 2.0215093971060494,
+        "rpe_translation_median_m": 0.1921255401376088,
+        "processing_p95_sec": 0.094137254
+      },
+      {
+        "id": "run20_repeat01",
+        "sequence": "outdoor_hard_02a",
+        "ok": true,
+        "translation_ate_rmse_m": 1.9261487862027733,
+        "translation_end_error_m": 2.853730416097297,
+        "rpe_translation_median_m": 0.1806983865230643,
+        "processing_p95_sec": 0.038549368
+      },
+      {
+        "id": "run21_repeat02",
+        "sequence": "outdoor_hard_02a",
+        "ok": true,
+        "translation_ate_rmse_m": 1.7946390730291173,
+        "translation_end_error_m": 2.8269908244298674,
+        "rpe_translation_median_m": 0.18096794788754772,
+        "processing_p95_sec": 0.030422028999999996
+      },
+      {
+        "id": "run24",
+        "sequence": "outdoor_hard_02b",
+        "ok": true,
+        "translation_ate_rmse_m": 1.0974642709448172,
+        "translation_end_error_m": 1.5378621361495903,
+        "rpe_translation_median_m": 0.17482914373973615,
+        "processing_p95_sec": 0.081358522
+      }
+    ],
+    "outdoor_hard_01b_cross_composition": {
+      "repeat01_raw_odom_with_baseline_anchor_ate_m": 2.2098280569472197,
+      "baseline_raw_odom_with_repeat01_anchor_ate_m": 1.562110968048621,
+      "conclusion": "The failed repeat was dominated by raw GLIM odometry variability; the Z-bridge anchor changed ATE by about 0.02 m."
+    }
+  },
   "runs": [
     {
       "id": "run13",
