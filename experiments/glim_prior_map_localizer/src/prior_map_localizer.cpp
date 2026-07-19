@@ -1,8 +1,11 @@
 #include "glim_prior_map_localizer/prior_map_factor_policy.hpp"
 #include "glim_prior_map_localizer/map_odom_policy.hpp"
+#include "glim_prior_map_localizer/map_odom_transition_policy.hpp"
 #include "glim_prior_map_localizer/ply_loader.hpp"
 #include "glim_prior_map_localizer/vgicp_refiner.hpp"
 #include "glim_prior_map_localizer/prior_map_overlap_policy.hpp"
+#include "glim_prior_map_localizer/recovery_consensus_policy.hpp"
+#include "glim_prior_map_localizer/recovery_pose_policy.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -25,6 +28,7 @@
 #include <gtsam_points/ann/kdtree2.hpp>
 #include <gtsam_points/ann/nearest_neighbor_search.hpp>
 #include <gtsam_points/features/covariance_estimation.hpp>
+#include <gtsam_points/optimizers/incremental_fixed_lag_smoother_with_fallback.hpp>
 #include <gtsam_points/types/frame_traits.hpp>
 #include <gtsam_points/types/point_cloud_cpu.hpp>
 #include <glim/mapping/callbacks.hpp>
@@ -32,8 +36,10 @@
 #include <glim/odometry/callbacks.hpp>
 #include <glim/odometry/integrated_gicp_factor_coreset.hpp>
 #include <glim/util/extension_module.hpp>
+#include <glim/util/extension_module_ros2.hpp>
 #include <glim/util/logging.hpp>
 
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <kiss_matcher/KISSMatcher.hpp>
 #include <spdlog/spdlog.h>
 
@@ -141,7 +147,7 @@ std::vector<Eigen::Vector3f> cropMap(
 
 }  // namespace
 
-class PriorMapLocalizer : public glim::ExtensionModule
+class PriorMapLocalizer : public glim::ExtensionModuleROS2
 {
 public:
   PriorMapLocalizer()
@@ -211,6 +217,26 @@ public:
       0.0, 1.0);
     map_factor_min_overlap_inliers_ = environmentSize(
       "GLIM_PRIOR_MAP_FACTOR_MIN_OVERLAP_INLIERS", 32);
+    recovery_confirmation_frames_ = std::max<std::size_t>(
+      2, environmentSize("GLIM_PRIOR_MAP_RECOVERY_CONFIRMATION_FRAMES", 3));
+    recovery_rejection_frames_ = std::max<std::size_t>(
+      1, environmentSize("GLIM_PRIOR_MAP_RECOVERY_REJECTION_FRAMES", 3));
+    recovery_max_correction_translation_m_ = environmentDouble(
+      "GLIM_PRIOR_MAP_RECOVERY_MAX_CORRECTION_M", 1.0);
+    recovery_max_correction_rotation_deg_ = environmentDouble(
+      "GLIM_PRIOR_MAP_RECOVERY_MAX_CORRECTION_DEG", 3.0);
+    recovery_max_consensus_translation_m_ = environmentDouble(
+      "GLIM_PRIOR_MAP_RECOVERY_MAX_CONSENSUS_M", 1.0);
+    recovery_max_consensus_rotation_deg_ = environmentDouble(
+      "GLIM_PRIOR_MAP_RECOVERY_MAX_CONSENSUS_DEG", 3.0);
+    public_max_translation_step_m_ = environmentDouble(
+      "GLIM_PRIOR_MAP_PUBLIC_MAX_TRANSLATION_STEP_M", 0.25);
+    public_max_rotation_step_deg_ = environmentDouble(
+      "GLIM_PRIOR_MAP_PUBLIC_MAX_ROTATION_STEP_DEG", 2.0);
+    if (public_max_translation_step_m_ <= 0.0 || public_max_rotation_step_deg_ <= 0.0) {
+      throw std::invalid_argument(
+              "GLIM prior-map public transition bounds must be positive");
+    }
     const char * bootstrap_x = std::getenv("GLIM_PRIOR_MAP_BOOTSTRAP_CENTER_X");
     const char * bootstrap_y = std::getenv("GLIM_PRIOR_MAP_BOOTSTRAP_CENTER_Y");
     const char * bootstrap_z = std::getenv("GLIM_PRIOR_MAP_BOOTSTRAP_CENTER_Z");
@@ -257,6 +283,10 @@ public:
         std::bind(
           &PriorMapLocalizer::onTightlyCoupledSmootherUpdate, this,
           _1, _2, _3, _4));
+      glim::OdometryEstimationCallbacks::on_smoother_update_finish.add(
+        std::bind(
+          &PriorMapLocalizer::onTightlyCoupledSmootherUpdateFinish, this,
+          _1));
     } else {
       glim::GlobalMappingCallbacks::on_insert_submap.add(
         std::bind(&PriorMapLocalizer::onSubmap, this, _1));
@@ -270,6 +300,20 @@ public:
       tracking_submap_stride_,
       bootstrap_anchor_available_, translation_gain_, vertical_gain_,
       pending_vertical_update_enabled_);
+  }
+
+  std::vector<glim::GenericTopicSubscription::Ptr> create_subscriptions(
+    rclcpp::Node &) override
+  {
+    if (!tightly_coupled_) {
+      return {};
+    }
+    using Message = geometry_msgs::msg::PoseWithCovarianceStamped;
+    return {
+      std::make_shared<glim::TopicSubscription<Message>>(
+        "/initialpose",
+        std::bind(&PriorMapLocalizer::onRelocalizationCandidate, this,
+          std::placeholders::_1))};
   }
 
 private:
@@ -318,10 +362,10 @@ private:
   }
 
   void onTightlyCoupledSmootherUpdate(
-    gtsam_points::IncrementalFixedLagSmootherExtWithFallback &,
+    gtsam_points::IncrementalFixedLagSmootherExtWithFallback & smoother,
     gtsam::NonlinearFactorGraph & new_factors,
     gtsam::Values & new_values,
-    std::map<std::uint64_t, double> &)
+    std::map<std::uint64_t, double> & new_stamps)
   {
     glim::EstimationFrame::ConstPtr frame;
     {
@@ -344,15 +388,28 @@ private:
     if (!tightly_coupled_graph_seeded_) {
       const Eigen::Isometry3d map_from_imu =
         bootstrap_anchor_ * frame->T_world_imu;
-      new_values.update(pose_key, gtsam::Pose3(map_from_imu.matrix()));
+      const Eigen::Isometry3d odom_from_map =
+        frame->T_world_imu * map_from_imu.inverse();
+      new_values.insert(map_state_key_, gtsam::Pose3(odom_from_map.matrix()));
       tightly_coupled_graph_seeded_ = true;
       logger_->info(
-        "initialized tightly coupled graph in map frame at X({})",
+        "initialized tightly coupled odom-from-map state at X({})",
         frame->id);
     }
 
-    const Eigen::Isometry3d map_from_imu(
+    const Eigen::Isometry3d odom_from_imu(
       new_values.at<gtsam::Pose3>(pose_key).matrix());
+    evaluatePendingRecovery(
+      *frame, odom_from_imu, new_values, new_stamps);
+    new_stamps[map_state_key_] = frame->stamp;
+    latest_tightly_coupled_stamp_ = frame->stamp;
+
+    const gtsam::Pose3 odom_from_map_pose = new_values.exists(map_state_key_) ?
+      new_values.at<gtsam::Pose3>(map_state_key_) :
+      smoother.calculateEstimate<gtsam::Pose3>(map_state_key_);
+    const Eigen::Isometry3d odom_from_map(odom_from_map_pose.matrix());
+    const Eigen::Isometry3d map_from_imu =
+      odom_from_map.inverse() * odom_from_imu;
     const auto [overlap_inliers, overlap_samples] = mapOverlap(
       *frame->frame, map_from_imu);
     const auto overlap = decidePriorMapOverlap(
@@ -377,7 +434,7 @@ private:
     map_factor_active_ = true;
 
     auto factor = gtsam::make_shared<glim::IntegratedGICPFactorCoreset>(
-      gtsam::Pose3::Identity(), pose_key, prior_map_frame_, frame->frame,
+      map_state_key_, pose_key, prior_map_frame_, frame->frame,
       prior_map_tree_);
     factor->set_max_correspondence_distance(
       map_factor_max_correspondence_m_);
@@ -387,6 +444,168 @@ private:
       map_factor_coreset_reuse_rotation_rad_,
       map_factor_coreset_reuse_translation_m_);
     new_factors.add(factor);
+  }
+
+  void onRelocalizationCandidate(
+    const std::shared_ptr<const geometry_msgs::msg::PoseWithCovarianceStamped> & message)
+  {
+    const auto & pose = message->pose.pose;
+    Eigen::Quaterniond orientation(
+      pose.orientation.w, pose.orientation.x, pose.orientation.y,
+      pose.orientation.z);
+    if (!orientation.coeffs().allFinite() || orientation.norm() < 1.0e-6) {
+      logger_->warn("rejected non-finite /initialpose recovery candidate");
+      return;
+    }
+    orientation.normalize();
+    Eigen::Isometry3d map_from_sensor = Eigen::Isometry3d::Identity();
+    map_from_sensor.linear() = orientation.toRotationMatrix();
+    map_from_sensor.translation() = Eigen::Vector3d(
+      pose.position.x, pose.position.y, pose.position.z);
+    if (!finiteTransform(map_from_sensor)) {
+      logger_->warn("rejected invalid /initialpose recovery candidate");
+      return;
+    }
+
+    std::lock_guard<std::mutex> lock(recovery_mutex_);
+    pending_recovery_map_from_sensor_ = map_from_sensor;
+    pending_recovery_anchor_initialized_ = false;
+    pending_recovery_confirmations_ = 0;
+    pending_recovery_failures_ = 0;
+    pending_recovery_ = true;
+    ++pending_recovery_generation_;
+    logger_->info(
+      "received recovery candidate generation={} at ({:.3f},{:.3f},{:.3f})",
+      pending_recovery_generation_, map_from_sensor.translation().x(),
+      map_from_sensor.translation().y(), map_from_sensor.translation().z());
+  }
+
+  void evaluatePendingRecovery(
+    const glim::EstimationFrame & frame,
+    const Eigen::Isometry3d & odom_from_imu,
+    gtsam::Values & new_values,
+    std::map<std::uint64_t, double> & new_stamps)
+  {
+    std::size_t generation = 0;
+    Eigen::Isometry3d candidate_odom_from_map = Eigen::Isometry3d::Identity();
+    {
+      std::lock_guard<std::mutex> lock(recovery_mutex_);
+      if (!pending_recovery_) {
+        return;
+      }
+      generation = pending_recovery_generation_;
+      if (!pending_recovery_anchor_initialized_) {
+        pending_recovery_odom_from_map_ =
+          odom_from_imu * pending_recovery_map_from_sensor_.inverse();
+        pending_recovery_anchor_initialized_ = true;
+      }
+      candidate_odom_from_map = pending_recovery_odom_from_map_;
+    }
+
+    const Eigen::Isometry3d predicted_map_from_imu =
+      candidate_odom_from_map.inverse() * odom_from_imu;
+    const auto target = cropMap(
+      prior_map_, predicted_map_from_imu.translation(), tracking_crop_radius_m_);
+    VgicpRefinementResult refinement;
+    if (!target.empty()) {
+      refinement = refineWithVgicp(
+        target, frame.frame, predicted_map_from_imu,
+        vgicp_voxel_resolution_m_, vgicp_max_iterations_);
+    }
+    // Measure the candidate correction in the sensor-local tangent frame.
+    // The opposite product rotates the map-frame origin and turns a small
+    // angular correction into a large apparent translation far from (0, 0).
+    const Eigen::Isometry3d correction =
+      recoveryPoseCorrection(predicted_map_from_imu, refinement.pose);
+    const Eigen::Isometry3d observed_odom_from_map =
+      odom_from_imu * refinement.pose.inverse();
+    const Eigen::Isometry3d disagreement = correction;
+    const bool accepted =
+      refinement.valid &&
+      refinement.inlier_fraction >= vgicp_min_inlier_fraction_ &&
+      refinement.normalized_error <= vgicp_max_normalized_error_ &&
+      correction.translation().norm() <= recovery_max_correction_translation_m_ &&
+      rotationDegrees(correction) <= recovery_max_correction_rotation_deg_ &&
+      disagreement.translation().norm() <= recovery_max_consensus_translation_m_ &&
+      rotationDegrees(disagreement) <= recovery_max_consensus_rotation_deg_;
+    logger_->info(
+      "recovery generation={} frame={} valid={} inliers={} overlap={:.3f} error={:.3f} "
+      "correction={:.3f}m/{:.2f}deg disagreement={:.3f}m/{:.2f}deg accepted={}",
+      generation, frame.id, refinement.valid, refinement.num_inliers,
+      refinement.inlier_fraction, refinement.normalized_error,
+      correction.translation().norm(), rotationDegrees(correction),
+      disagreement.translation().norm(), rotationDegrees(disagreement), accepted);
+
+    RecoveryConsensusAction consensus_action = RecoveryConsensusAction::kPending;
+    {
+      std::lock_guard<std::mutex> lock(recovery_mutex_);
+      if (!pending_recovery_ || generation != pending_recovery_generation_) {
+        return;
+      }
+      if (accepted) {
+        pending_recovery_odom_from_map_ = observed_odom_from_map;
+      }
+      RecoveryConsensusState state{
+        pending_recovery_confirmations_, pending_recovery_failures_};
+      consensus_action = updateRecoveryConsensus(
+        state, accepted, recovery_confirmation_frames_, recovery_rejection_frames_);
+      pending_recovery_confirmations_ = state.confirmations;
+      pending_recovery_failures_ = state.failures;
+      if (consensus_action == RecoveryConsensusAction::kReject) {
+        pending_recovery_ = false;
+        logger_->warn(
+          "rejected recovery candidate generation={} after {} inconsistent frames",
+          generation, pending_recovery_failures_);
+      } else if (consensus_action == RecoveryConsensusAction::kActivate) {
+        pending_recovery_ = false;
+      }
+    }
+    if (consensus_action != RecoveryConsensusAction::kActivate) {
+      return;
+    }
+
+    ++map_state_epoch_;
+    map_state_key_ = gtsam::Symbol('m', map_state_epoch_);
+    new_values.insert(
+      map_state_key_, gtsam::Pose3(observed_odom_from_map.matrix()));
+    new_stamps[map_state_key_] = frame.stamp;
+    map_factor_active_ = false;
+    logger_->warn(
+      "activated independently verified recovery generation={} as map state m{}",
+      generation, map_state_epoch_);
+  }
+
+  void onTightlyCoupledSmootherUpdateFinish(
+    gtsam_points::IncrementalFixedLagSmootherExtWithFallback & smoother)
+  {
+    if (!tightly_coupled_graph_seeded_) {
+      return;
+    }
+    const gtsam::Pose3 odom_from_map =
+      smoother.calculateEstimate<gtsam::Pose3>(map_state_key_);
+    const Eigen::Isometry3d target_map_from_odom(
+      odom_from_map.inverse().matrix());
+    if (!finiteTransform(target_map_from_odom)) {
+      logger_->error("refusing non-finite tightly coupled map-to-odom estimate");
+      return;
+    }
+    BoundedMapOdomStep public_step;
+    if (!public_map_odom_initialized_) {
+      public_step.transform = target_map_from_odom;
+      public_map_odom_initialized_ = true;
+    } else {
+      public_step = boundMapOdomStep(
+        public_map_from_odom_, target_map_from_odom,
+        public_max_translation_step_m_, public_max_rotation_step_deg_);
+    }
+    public_map_from_odom_ = public_step.transform;
+    glim::GlobalMappingCallbacks::on_external_map_odom_update(
+      latest_tightly_coupled_stamp_, public_map_from_odom_, true);
+    if (public_step.translation_limited || public_step.rotation_limited) {
+      logger_->warn(
+        "bounded public map-to-odom transition (translation_limited={}, rotation_limited={})",
+        public_step.translation_limited, public_step.rotation_limited);
+    }
   }
 
   std::pair<std::size_t, std::size_t> mapOverlap(
@@ -687,6 +906,28 @@ private:
   double map_factor_min_overlap_fraction_{0.05};
   std::size_t map_factor_min_overlap_inliers_{32};
   bool map_factor_active_{false};
+  gtsam::Key map_state_key_{gtsam::Symbol('m', 0)};
+  std::uint64_t map_state_epoch_{0};
+  double latest_tightly_coupled_stamp_{0.0};
+
+  std::mutex recovery_mutex_;
+  bool pending_recovery_{false};
+  bool pending_recovery_anchor_initialized_{false};
+  std::size_t pending_recovery_generation_{0};
+  std::size_t pending_recovery_confirmations_{0};
+  std::size_t pending_recovery_failures_{0};
+  Eigen::Isometry3d pending_recovery_map_from_sensor_{Eigen::Isometry3d::Identity()};
+  Eigen::Isometry3d pending_recovery_odom_from_map_{Eigen::Isometry3d::Identity()};
+  std::size_t recovery_confirmation_frames_{3};
+  std::size_t recovery_rejection_frames_{3};
+  double recovery_max_correction_translation_m_{1.0};
+  double recovery_max_correction_rotation_deg_{3.0};
+  double recovery_max_consensus_translation_m_{1.0};
+  double recovery_max_consensus_rotation_deg_{3.0};
+  double public_max_translation_step_m_{0.25};
+  double public_max_rotation_step_deg_{2.0};
+  bool public_map_odom_initialized_{false};
+  Eigen::Isometry3d public_map_from_odom_{Eigen::Isometry3d::Identity()};
   bool map_frame_initialized_{false};
   bool bootstrap_anchor_available_{false};
   Eigen::Isometry3d bootstrap_anchor_{Eigen::Isometry3d::Identity()};

@@ -232,7 +232,7 @@ def main() -> int:
         "--summary-json", str(output / "conversion.json"),
         "--planarize-z",
     ]
-    if prior_map is not None and not args.prior_map_tightly_coupled:
+    if prior_map is not None:
         live_map_odom = output / "dump" / "external_map_odom.txt"
         if not live_map_odom.is_file():
             print(

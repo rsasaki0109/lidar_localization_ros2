@@ -29,11 +29,15 @@ a `map -> odom` observation. It must constrain the same `X(i)` optimized by the 
 scan-to-scan factors in the same smoother update. This is the boundary between the
 target tightly coupled estimator and the previous GLIL-style split.
 
-The prior map is the fixed target at the identity pose in the estimator's map frame.
-The initial map pose seeds the graph's first `X(0)`. When the sensor has insufficient
-map overlap, no map factor is inserted; scan-to-scan and IMU factors continue range
-inertial odometry. Map factors resume when overlap returns, so past states still inside
-the window participate in the correction.
+The pose states `X(i)` remain in the continuous odometry frame. The graph also owns a
+persistent `odom_from_map` pose, and every scan-to-map factor is a binary GICP factor
+between that pose and `X(i)`. Its relative pose is exactly `map_from_sensor`, making it
+gauge-equivalent to fixing the prior map at identity and expressing every `X(i)` in map,
+while preserving a continuous raw `odom -> base_link` output. The inverse graph state is
+the sole `map -> odom` edge. When the sensor has insufficient map overlap, no map factor
+is inserted; scan-to-scan and IMU factors continue range inertial odometry. Map factors
+resume when overlap returns, so past states still inside the window participate in the
+correction.
 
 ## Exact point-cloud downsampling
 
@@ -61,7 +65,7 @@ paths still require separate algebra tests.
 ## Initialization and recovery
 
 The first implementation accepts a gravity-aligned 4-DoF seed and initializes the
-graph directly in the map frame. It must also preserve the paper's initialization path:
+graph's shared `odom_from_map` state. It must also preserve the paper's initialization path:
 
 1. estimate gravity, velocity, and IMU bias from a short point-cloud/IMU batch;
 2. reduce global registration to 3- or 4-DoF using gravity (and optional sensor height);
@@ -72,6 +76,14 @@ verified global candidate and multi-frame consensus. Recovery must re-anchor the
 active map-frame state without resetting raw continuous odometry, creating a second TF
 parent, or publishing an unbounded pose discontinuity. The last valid public transform
 remains available while a candidate is pending or rejected.
+
+An accepted recovery starts a new persistent `odom_from_map` graph epoch. The raw
+odometry states are not reset, while old map epochs age out through normal fixed-lag
+marginalization. The sole public `map -> odom` transform approaches the graph estimate
+with explicit per-update translation and rotation limits (default 0.25 m and 2 deg),
+including during recovery. `/initialpose` supplies the independently generated global
+candidate; VGICP validation and consecutive-frame consensus occur before graph
+activation.
 
 ## ROS and TF invariants
 
