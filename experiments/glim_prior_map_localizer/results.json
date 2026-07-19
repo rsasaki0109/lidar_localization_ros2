@@ -3,7 +3,9 @@
   "date": "2026-07-19",
   "docker_image": {
     "id": "sha256:70d056317a475e8ce5a029e5b6d83d0b5e8f4e1587acd069d708eb00cd1b134a",
-    "tag": "lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom"
+    "tag": "lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom",
+    "02a_z_bridge_id": "sha256:5af587b79a4e9afe50f16f2397b6c78821c76603492cf1fba1fd408ea103ea32",
+    "02a_z_bridge_tag": "lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom-pending-z"
   },
   "fork_revisions": {
     "glil_unofficial": "dd29667938cb56ef59de7f90290ad2dbc613f00c",
@@ -15,13 +17,16 @@
     "fixed_startup_rotation": true,
     "normal_registration": "direct_vgicp",
     "recovery_registration": "kiss_matcher_then_vgicp",
-    "translation_gain": 0.2
+    "translation_gain": 0.2,
+    "vertical_gain_default": "translation_gain",
+    "02a_z_bridge_vertical_gain": 1.0,
+    "pending_global_consensus_updates": "z_only"
   },
   "gate_summary": {
-    "passing_sequences": 3,
+    "passing_sequences": 4,
     "total_sequences": 4,
-    "outdoor_hard_02a_passes": 0,
-    "outdoor_hard_02a_repeats": 2
+    "outdoor_hard_02a_passes": 2,
+    "outdoor_hard_02a_repeats": 4
   },
   "runs": [
     {
@@ -121,6 +126,65 @@
       }
     },
     {
+      "id": "run20_z_bridge_repeat01",
+      "sequence": "outdoor_hard_02a",
+      "requested_duration_sec": 363.0,
+      "wall_duration_sec": 368.87160101300105,
+      "prior_map_vertical_gain": 1.0,
+      "passed_all_current_gates": true,
+      "failed_gates": [],
+      "metrics": {
+        "coverage_ratio": 0.991460301659324,
+        "covered_duration_sec": 359.9000895023346,
+        "translation_ate_rmse_m": 1.9261487862027733,
+        "translation_end_error_m": 2.853730416097297,
+        "rpe_translation_median_m": 0.1806983865230643,
+        "rotation_ate_rmse_deg": 1.6825618166674927,
+        "rpe_rotation_median_deg": 0.629357097783559,
+        "max_pose_gap_sec": 0.008573770523071289,
+        "max_pose_jump_m": 0.015996936118981897,
+        "max_pose_jump_rotation_deg": 3.5852858074735043,
+        "processing_p95_sec": 0.038549368,
+        "tf_jump_count": 0,
+        "unauthorized_reset_count": 0
+      }
+    },
+    {
+      "id": "run21_z_bridge_repeat02",
+      "sequence": "outdoor_hard_02a",
+      "requested_duration_sec": 363.0,
+      "wall_duration_sec": 367.7832050919533,
+      "prior_map_vertical_gain": 1.0,
+      "passed_all_current_gates": true,
+      "failed_gates": [],
+      "metrics": {
+        "coverage_ratio": 0.991460301659324,
+        "covered_duration_sec": 359.9000895023346,
+        "translation_ate_rmse_m": 1.7946390730291173,
+        "translation_end_error_m": 2.8269908244298674,
+        "rpe_translation_median_m": 0.18096794788754772,
+        "rotation_ate_rmse_deg": 1.7027576667313622,
+        "rpe_rotation_median_deg": 0.6281462839212184,
+        "max_pose_gap_sec": 0.008573770523071289,
+        "max_pose_jump_m": 0.016581540851882046,
+        "max_pose_jump_rotation_deg": 3.585714341357547,
+        "processing_p95_sec": 0.030422028999999996,
+        "tf_jump_count": 0,
+        "unauthorized_reset_count": 0
+      },
+      "non_planar_3d_check": {
+        "passed_all_current_gates": false,
+        "failed_gates": [
+          "translation_ate",
+          "translation_end",
+          "rpe_translation"
+        ],
+        "translation_ate_rmse_m": 9.206421424461631,
+        "translation_end_error_m": 14.293483119081827,
+        "rpe_translation_median_m": 0.29667413191675013
+      }
+    },
+    {
       "id": "run16",
       "sequence": "outdoor_hard_02b",
       "requested_duration_sec": 298.0,
@@ -145,7 +209,7 @@
     }
   ],
   "scope_limitations": [
-    "outdoor_hard_02a failed only the 2.0 m translation ATE gate in both repeats (2.059 m and 2.023 m).",
+    "The opt-in outdoor_hard_02a Z-bridge passed the planar ground-vehicle gate twice (1.926 m and 1.795 m ATE), but its repeat-2 non-planar 3D ATE remained 9.206 m.",
     "Kidnapped-pose recovery has not passed a full replay gate.",
     "Map registration eventually rejected in every sequence; the frozen correction and continuous odometry carried the remainder."
   ]

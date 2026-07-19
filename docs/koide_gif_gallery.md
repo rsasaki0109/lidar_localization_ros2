@@ -21,8 +21,10 @@ interrupting or deforming GLIM odometry.
 |---|---|---:|---:|---:|---:|---:|---:|---|
 | `outdoor_hard_01a` | GLIM exact coreset 32 + sparse VGICP | 99.21% | 1.142 m | 3.112 m | 0.157 m | 1.479 deg | 28.3 ms | Pass |
 | `outdoor_hard_01b` | GLIM exact coreset 32 + sparse VGICP | 99.04% | 1.539 m | 2.055 m | 0.191 m | 1.598 deg | 53.8 ms | Pass |
-| `outdoor_hard_02a` repeat 1 | GLIM exact coreset 32 + sparse VGICP | 99.15% | 2.059 m | 3.078 m | 0.180 m | 1.676 deg | 35.8 ms | ATE fail |
-| `outdoor_hard_02a` repeat 2 | GLIM exact coreset 32 + sparse VGICP | 99.15% | 2.023 m | 3.049 m | 0.183 m | 1.715 deg | 37.2 ms | ATE fail |
+| `outdoor_hard_02a` baseline repeat 1 | GLIM exact coreset 32 + sparse VGICP | 99.15% | 2.059 m | 3.078 m | 0.180 m | 1.676 deg | 35.8 ms | ATE fail |
+| `outdoor_hard_02a` baseline repeat 2 | GLIM exact coreset 32 + sparse VGICP | 99.15% | 2.023 m | 3.049 m | 0.183 m | 1.715 deg | 37.2 ms | ATE fail |
+| `outdoor_hard_02a` Z-bridge repeat 1 | GLIM exact coreset 32 + sparse VGICP | 99.15% | 1.926 m | 2.854 m | 0.181 m | 1.683 deg | 38.5 ms | Pass |
+| `outdoor_hard_02a` Z-bridge repeat 2 | GLIM exact coreset 32 + sparse VGICP | 99.15% | 1.795 m | 2.827 m | 0.181 m | 1.703 deg | 30.4 ms | Pass |
 | `outdoor_hard_02b` | GLIM exact coreset 32 + sparse VGICP | 99.03% | 0.908 m | 1.412 m | 0.177 m | 1.765 deg | 47.9 ms | Pass |
 
 The startup yaw is fixed, accepted translation displacement uses gain 0.2, and GLIM
@@ -31,13 +33,16 @@ output coverage, and every run had zero TF jumps and zero unauthorized resets. D
 and KISS fallback candidates were rejected once they stopped satisfying the gates; the
 frozen map correction plus live odometry carried the remaining output.
 
-Three sequences passed every gate. `outdoor_hard_02a` was repeated because its first
-ATE was close to the 2.0 m limit; both repeats failed only that gate at 2.059 m and
-2.023 m. Their RPE, final-error, rotation, runtime, queue, and continuity gates passed.
-The two runs differed in whether submap 30 was accepted, so the table retains both
-results instead of selecting the better run. Ground truth is only the dashed evaluation
-overlay. Kidnapped-pose recovery remains unmeasured for this architecture, and the 02a
-ATE regression means it does not yet replace the four-bag GLIM+NDT bridge below.
+The original `outdoor_hard_02a` policy failed only the 2.0 m ATE gate in two repeats.
+Its submap-30 prior-map candidate was good enough to enter two-submap recovery consensus,
+but freezing Z while waiting moved the next submap away from the prior-map surface. The
+Z-bridge variant keeps XY and yaw frozen while applying the candidate's vertical
+map-to-odom correction. It passed two new full repeats at 1.926 m and 1.795 m ATE with
+zero TF jumps and zero unauthorized resets. This is opt-in with vertical gain 1.0; the
+default remains backward compatible. The published ground-vehicle gate planarizes Z.
+A separate non-planar check of repeat 2 improved from the earlier 10.4--10.7 m range to
+9.21 m ATE but still failed, so full 3D drift and kidnapped-pose recovery remain open.
+Ground truth is only the dashed evaluation overlay.
 
 #### Outdoor hard 01a
 
@@ -47,7 +52,7 @@ ATE regression means it does not yet replace the four-bag GLIM+NDT bridge below.
 
 ![Koide outdoor_hard_01b GLIL-style live map-to-odom replay](../images/koide/measured/glil/outdoor_hard_01b_live_map_odom.gif)
 
-#### Outdoor hard 02a — representative repeat 2, ATE gate failed
+#### Outdoor hard 02a — Z-bridge repeat 2, all planar gates passed
 
 ![Koide outdoor_hard_02a GLIL-style live map-to-odom replay](../images/koide/measured/glil/outdoor_hard_02a_live_map_odom.gif)
 
@@ -282,6 +287,10 @@ python3 scripts/render_koide_localization_gif.py \
   --metrics-label \
     "Full run: ATE 1.142 m | coverage 99.2% | RPE10 0.157 m | p95 28.3 ms"
 ```
+
+For the measured 02a Z-bridge repeats, add
+`--prior-map-vertical-gain 1.0`; this follows Z during a global-consensus pending
+candidate without accepting its XY or yaw correction.
 
 Render a full-sequence GLIM run from its recorded benchmark artifacts. This example is
 the 02b replay; substitute the corresponding run and reference paths for 01a/01b/02a:

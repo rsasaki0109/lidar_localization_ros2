@@ -22,12 +22,39 @@ inline Eigen::Isometry3d observeMapOdomWithFixedRotation(
 inline Eigen::Isometry3d updateMapOdomTranslation(
   const Eigen::Isometry3d & reference,
   const Eigen::Isometry3d & observed,
-  double gain)
+  double horizontal_gain,
+  double vertical_gain)
 {
   Eigen::Isometry3d updated = reference;
-  const double bounded_gain = std::clamp(gain, 0.0, 1.0);
-  updated.translation() +=
-    bounded_gain * (observed.translation() - reference.translation());
+  const double bounded_horizontal_gain = std::clamp(horizontal_gain, 0.0, 1.0);
+  const double bounded_vertical_gain = std::clamp(vertical_gain, 0.0, 1.0);
+  const Eigen::Vector3d displacement =
+    observed.translation() - reference.translation();
+  updated.translation().head<2>() +=
+    bounded_horizontal_gain * displacement.head<2>();
+  updated.translation().z() += bounded_vertical_gain * displacement.z();
+  return updated;
+}
+
+inline Eigen::Isometry3d updateMapOdomTranslation(
+  const Eigen::Isometry3d & reference,
+  const Eigen::Isometry3d & observed,
+  double gain)
+{
+  return updateMapOdomTranslation(reference, observed, gain, gain);
+}
+
+inline Eigen::Isometry3d updateMapOdomVertical(
+  const Eigen::Isometry3d & reference,
+  const Eigen::Isometry3d & current,
+  const Eigen::Isometry3d & observed,
+  double vertical_gain)
+{
+  Eigen::Isometry3d updated = current;
+  const double bounded_vertical_gain = std::clamp(vertical_gain, 0.0, 1.0);
+  updated.translation().z() = reference.translation().z() +
+    bounded_vertical_gain *
+    (observed.translation().z() - reference.translation().z());
   return updated;
 }
 
