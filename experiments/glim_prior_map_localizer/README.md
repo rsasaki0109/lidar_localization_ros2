@@ -103,6 +103,14 @@ runs passed, but repeat 2 still measured 9.21 m non-planar 3D ATE and 14.29 m fi
 error. Full 3D drift and kidnapped-pose recovery therefore remain unverified. The
 authoritative recorded values are in [`results.json`](results.json).
 
+A follow-up four-bag regression used vertical gain 1.0 everywhere. 01a passed at
+1.106 m ATE, 02b passed at 1.097 m, and the two previously recorded 02a repeats passed
+at 1.926 m and 1.795 m. 01b passed one repeat at 1.867 m and failed one at 2.219 m.
+Cross-composition showed that failed repeat remained at 2.210 m with the baseline map
+anchor, whereas baseline raw odometry remained passing at 1.562 m with the Z-bridge
+anchor. The variance therefore came primarily from raw GLIM odometry, not the anchor,
+but the Z bridge remains opt-in until repeatability and non-planar drift improve.
+
 The converter composes the canonical raw GLIM poses with the recorded live
 `external_map_odom.txt` history. This evaluates the transform actually published by
 the live policy and avoids introducing a second offline correction model.
@@ -125,8 +133,8 @@ Add `--prior-map-vertical-gain 1.0` for the measured 02a Z-bridge policy.
 
 ## Remaining acceptance work
 
-1. Resolve the remaining non-planar Z drift and validate the vertical policy across all
-   four outdoor-hard bags before making it the default.
+1. Resolve the remaining non-planar Z drift and the 01b raw-odometry run-to-run variance
+   before making the vertical policy the default.
 2. Measure seeded and unseeded false-match and kidnapped-pose recovery cases.
 3. Confirm that two-submap recovery reacquires a deliberately displaced pose without
    discontinuity or a false map anchor.
