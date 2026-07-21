@@ -39,6 +39,19 @@ is inserted; scan-to-scan and IMU factors continue range inertial odometry. Map 
 resume when overlap returns, so past states still inside the window participate in the
 correction.
 
+Verified low-rate submap VGICP observations do not publish a second transform. They
+start a new `odom_from_map` epoch inside the same smoother; subsequent per-scan map
+factors connect that epoch to `X(i)`, while the previous epoch and its factors leave via
+normal fixed-lag marginalization. This supplies a bounded anchor along map-degenerate
+directions without splitting scan-map localization into an external pose solver. A
+verified observation uses the configured robust horizontal gain and its full vertical
+component, since long sloped runs are weak along Z while full XY injection amplifies
+submap registration noise. The sole public `map -> odom` callback additionally retains
+its independent 0.25 m / 2 degree per-update limits. The graph output resets the ROS
+consumer to that already-bounded transform on every update; target-mode smoothing is
+not used because that consumer deliberately freezes target rotations and would lag the
+time-varying odometry gauge while the system is outside the map.
+
 Prior-map covariances use a 0.25 scale relative to their estimated geometric covariance.
 This raises the scan-to-map information relative to scan-to-scan/IMU while retaining the
 same exact correspondences and coreset construction; it is an explicit benchmarked sensor

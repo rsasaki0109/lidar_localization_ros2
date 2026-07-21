@@ -298,10 +298,9 @@ public:
         std::bind(
           &PriorMapLocalizer::onTightlyCoupledSmootherUpdateFinish, this,
           _1));
-    } else {
-      glim::GlobalMappingCallbacks::on_insert_submap.add(
-        std::bind(&PriorMapLocalizer::onSubmap, this, _1));
     }
+    glim::GlobalMappingCallbacks::on_insert_submap.add(
+      std::bind(&PriorMapLocalizer::onSubmap, this, _1));
     logger_->info(
       "loaded prior map with {} points; architecture={} mode={} crop={:.1f}/{:.1f}m stride={}/{} "
       "seeded={} translation_gain={:.3f} vertical_gain={:.3f} pending_z={}",
@@ -410,6 +409,7 @@ private:
 
     const Eigen::Isometry3d odom_from_imu(
       new_values.at<gtsam::Pose3>(pose_key).matrix());
+    activatePendingSparseAnchor(*frame, new_values, new_stamps);
     evaluatePendingRecovery(
       *frame, odom_from_imu, new_values, new_stamps);
     new_stamps[map_state_key_] = frame->stamp;
@@ -489,6 +489,30 @@ private:
       "received recovery candidate generation={} at ({:.3f},{:.3f},{:.3f})",
       pending_recovery_generation_, map_from_sensor.translation().x(),
       map_from_sensor.translation().y(), map_from_sensor.translation().z());
+  }
+
+  void activatePendingSparseAnchor(
+    const glim::EstimationFrame & frame,
+    gtsam::Values & new_values,
+    std::map<std::uint64_t, double> & new_stamps)
+  {
+    Eigen::Isometry3d odom_from_map = Eigen::Isometry3d::Identity();
+    {
+      std::lock_guard<std::mutex> lock(sparse_anchor_mutex_);
+      if (!pending_sparse_anchor_) {
+        return;
+      }
+      odom_from_map = pending_sparse_odom_from_map_;
+      pending_sparse_anchor_ = false;
+    }
+    ++map_state_epoch_;
+    map_state_key_ = gtsam::Symbol('m', map_state_epoch_);
+    new_values.insert(map_state_key_, gtsam::Pose3(odom_from_map.matrix()));
+    new_stamps[map_state_key_] = frame.stamp;
+    map_factor_active_ = false;
+    logger_->info(
+      "activated verified sparse prior-map anchor as map state m{}",
+      map_state_epoch_);
   }
 
   void evaluatePendingRecovery(
@@ -853,6 +877,13 @@ private:
 
     Eigen::Isometry3d updated_anchor = Eigen::Isometry3d::Identity();
     bool reset = false;
+    // Preserve the complete vertical component of a verified sparse
+    // observation in tightly coupled mode.  Long sloped runs are weak along Z,
+    // while full XY injection amplifies submap registration noise; XY retains
+    // the configured robust gain.  The public map->odom callback additionally
+    // applies its independent 0.25 m / 2 deg transition bound.
+    const double anchor_horizontal_gain = translation_gain_;
+    const double anchor_vertical_gain = tightly_coupled_ ? 1.0 : vertical_gain_;
     {
       std::lock_guard<std::mutex> lock(anchor_mutex_);
       if (!tracking_anchor_available_) {
@@ -868,18 +899,25 @@ private:
         reference_anchor_available_ = true;
       } else {
         tracking_anchor_ = updateMapOdomTranslation(
-          reference_anchor_, map_odom_observation, translation_gain_, vertical_gain_);
+          reference_anchor_, map_odom_observation,
+          anchor_horizontal_gain, anchor_vertical_gain);
       }
       updated_anchor = tracking_anchor_;
       initial_anchor_sent_ = true;
     }
-    glim::GlobalMappingCallbacks::on_external_map_odom_update(
-      origin_odom_frame->stamp, updated_anchor, reset);
+    if (tightly_coupled_) {
+      std::lock_guard<std::mutex> lock(sparse_anchor_mutex_);
+      pending_sparse_odom_from_map_ = updated_anchor.inverse();
+      pending_sparse_anchor_ = true;
+    } else {
+      glim::GlobalMappingCallbacks::on_external_map_odom_update(
+        origin_odom_frame->stamp, updated_anchor, reset);
+    }
     logger_->info(
       "updated map-to-odom target translation=({:.3f},{:.3f},{:.3f}) "
       "gain={:.3f}/{:.3f}",
       updated_anchor.translation().x(), updated_anchor.translation().y(),
-      updated_anchor.translation().z(), translation_gain_, vertical_gain_);
+      updated_anchor.translation().z(), anchor_horizontal_gain, anchor_vertical_gain);
     map_frame_initialized_ = true;
     previous_global_anchor_available_ = false;
   }
@@ -921,6 +959,10 @@ private:
   gtsam::Key map_state_key_{gtsam::Symbol('m', 0)};
   std::uint64_t map_state_epoch_{0};
   double latest_tightly_coupled_stamp_{0.0};
+
+  std::mutex sparse_anchor_mutex_;
+  bool pending_sparse_anchor_{false};
+  Eigen::Isometry3d pending_sparse_odom_from_map_{Eigen::Isometry3d::Identity()};
 
   std::mutex recovery_mutex_;
   bool pending_recovery_{false};
