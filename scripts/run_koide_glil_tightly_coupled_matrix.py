@@ -17,17 +17,31 @@ class Sequence:
     duration_sec: float
     center: tuple[float, float, float]
     yaw_deg: float
+    reference: str
+    map_name: str
 
 
 SEQUENCES = {
     "outdoor_hard_01a": Sequence(
-        380.0, (-86.040205, -8.857126, -11.043077), -82.0063),
+        380.0, (-86.040205, -8.857126, -11.043077), -82.0063,
+        "benchmark/outdoor_hard_01a/reference.csv", "map_outdoor_hard.ply"),
     "outdoor_hard_01b": Sequence(
-        302.0, (103.703859, -3.360581, -11.276523), -3.0042),
+        302.0, (103.703859, -3.360581, -11.276523), -3.0042,
+        "benchmark/outdoor_hard_01b/reference.csv", "map_outdoor_hard.ply"),
     "outdoor_hard_02a": Sequence(
-        363.0, (-104.343538, -10.324673, -11.620099), 163.3613),
+        363.0, (-104.343538, -10.324673, -11.620099), 163.3613,
+        "benchmark/outdoor_hard_02a/reference.csv", "map_outdoor_hard.ply"),
     "outdoor_hard_02b": Sequence(
-        298.0, (103.616685, -1.693832, -11.022091), 4.4813),
+        298.0, (103.616685, -1.693832, -11.022091), 4.4813,
+        "benchmark/outdoor_hard_02b/reference.csv", "map_outdoor_hard.ply"),
+    "outdoor_kidnap_a": Sequence(
+        203.0, (-91.067991, -8.690833, -11.279882), -78.8705,
+        "generated/localization_gif_benchmarks/assets/outdoor_kidnap_a_reference.csv",
+        "map_outdoor_kidnap.ply"),
+    "outdoor_kidnap_b": Sequence(
+        349.0, (59.897016, 66.271040, -11.501114), 104.1564,
+        "generated/localization_gif_benchmarks/assets/outdoor_kidnap_b_reference.csv",
+        "map_outdoor_kidnap.ply"),
 }
 
 
@@ -72,11 +86,11 @@ def main() -> int:
         command = [
             sys.executable, str(runner),
             "--bag", str(data_dir / "sequences" / name),
-            "--reference", str(data_dir / "benchmark" / name / "reference.csv"),
+            "--reference", str(data_dir / sequence.reference),
             "--output", str(output),
             "--requested-duration-sec", str(sequence.duration_sec),
             "--image", args.image,
-            "--prior-map", str(data_dir / "map_outdoor_hard.ply"),
+            "--prior-map", str(data_dir / sequence.map_name),
             "--prior-map-bootstrap-center", *(str(value) for value in sequence.center),
             "--prior-map-bootstrap-yaw-deg", str(sequence.yaw_deg),
             "--prior-map-tightly-coupled",
