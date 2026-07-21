@@ -46,3 +46,29 @@ def test_resource_evidence_records_cpu_memory_and_rss(tmp_path):
         assert list(csv.DictReader(stream))[-1]["rss_bytes"] == "1500"
     persisted = json.loads((tmp_path / "resource_summary.json").read_text())
     assert persisted == summary
+
+
+def test_indoor_sensor_profile_sets_topics_extrinsic_and_voxels(tmp_path):
+    configs = {
+        "config_ros.json": {"glim_ros": {}},
+        "config_sensors.json": {"sensors": {}},
+        "config_preprocess.json": {"preprocess": {}},
+        "config_odometry_cpu.json": {"odometry_estimation": {}},
+    }
+    for name, value in configs.items():
+        (tmp_path / name).write_text(json.dumps(value))
+
+    RUNNER["apply_sensor_profile"](tmp_path, "indoor_azure_kinect")
+    ros = json.loads((tmp_path / "config_ros.json").read_text())["glim_ros"]
+    assert ros["imu_topic"] == "/imu"
+    assert ros["points_topic"] == "/points2/decompressed"
+    sensors = json.loads(
+        (tmp_path / "config_sensors.json").read_text())["sensors"]
+    assert sensors["global_shutter_lidar"] is True
+    assert sensors["T_lidar_imu"] == RUNNER["INDOOR_AZURE_KINECT_T_LIDAR_IMU"]
+    preprocess = json.loads(
+        (tmp_path / "config_preprocess.json").read_text())["preprocess"]
+    assert preprocess["downsample_resolution"] == 0.25
+    odometry = json.loads(
+        (tmp_path / "config_odometry_cpu.json").read_text())["odometry_estimation"]
+    assert odometry["ivox_resolution"] == 0.5

@@ -35,6 +35,16 @@ SIZE_MULTIPLIERS = {
     "GIB": 1024.0 ** 3,
 }
 
+INDOOR_AZURE_KINECT_T_LIDAR_IMU = [
+    0.003463566434548747,
+    0.0041740033449125195,
+    -0.05071645628165228,
+    -0.47551890747667463,
+    0.4736570557695826,
+    0.5236230425615598,
+    0.5247377168171308,
+]
+
 
 def run_checked(command):
     print("+", " ".join(str(value) for value in command), flush=True)
@@ -136,6 +146,54 @@ def write_resource_evidence(output: Path, samples: list[dict]) -> dict:
     return summary
 
 
+def apply_sensor_profile(config_dir: Path, profile: str) -> None:
+    if profile == "outdoor_livox":
+        return
+    if profile != "indoor_azure_kinect":
+        raise ValueError(f"unsupported sensor profile: {profile}")
+
+    ros_path = config_dir / "config_ros.json"
+    ros_config = json.loads(ros_path.read_text(encoding="utf-8"))
+    ros = ros_config["glim_ros"]
+    ros.update({
+        "imu_topic": "/imu",
+        "points_topic": "/points2/decompressed",
+        "acc_scale": 0.0,
+        "base_frame_id": "depth_camera_link",
+        "publish_imu2lidar": True,
+    })
+    ros_path.write_text(json.dumps(ros_config, indent=2) + "\n", encoding="utf-8")
+
+    sensors_path = config_dir / "config_sensors.json"
+    sensors_config = json.loads(sensors_path.read_text(encoding="utf-8"))
+    sensors = sensors_config["sensors"]
+    sensors.update({
+        "global_shutter_lidar": True,
+        "T_lidar_imu": INDOOR_AZURE_KINECT_T_LIDAR_IMU,
+        "intensity_field": "",
+        "ring_field": "",
+        "autoconf_perpoint_times": False,
+    })
+    sensors_path.write_text(
+        json.dumps(sensors_config, indent=2) + "\n", encoding="utf-8")
+
+    preprocess_path = config_dir / "config_preprocess.json"
+    preprocess_config = json.loads(preprocess_path.read_text(encoding="utf-8"))
+    preprocess_config["preprocess"].update({
+        "distance_near_thresh": 0.2,
+        "distance_far_thresh": 30.0,
+        "downsample_resolution": 0.25,
+    })
+    preprocess_path.write_text(
+        json.dumps(preprocess_config, indent=2) + "\n", encoding="utf-8")
+
+    odometry_path = config_dir / "config_odometry_cpu.json"
+    odometry_config = json.loads(odometry_path.read_text(encoding="utf-8"))
+    odometry_config["odometry_estimation"]["ivox_resolution"] = 0.5
+    odometry_path.write_text(
+        json.dumps(odometry_config, indent=2) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bag", required=True, help="outdoor_hard rosbag2 directory")
@@ -153,6 +211,11 @@ def main() -> int:
     parser.add_argument(
         "--config",
         help="GLIM config directory (default: param/odometry/glim_koide_outdoor_gicp6500).",
+    )
+    parser.add_argument(
+        "--sensor-profile", choices=("outdoor_livox", "indoor_azure_kinect"),
+        default="outdoor_livox",
+        help="Dataset sensor topics, extrinsic, and preprocessing profile.",
     )
     parser.add_argument(
         "--prior-map",
@@ -214,31 +277,34 @@ def main() -> int:
     if prior_map is not None:
         if prior_map.suffix.lower() != ".ply" or not prior_map.is_file():
             parser.error(f"prior map must be an existing PLY file: {prior_map}")
+    if prior_map is not None or args.sensor_profile != "outdoor_livox":
         generated_config = output / "glim_config"
         shutil.copytree(config, generated_config)
-        config_ros_path = generated_config / "config_ros.json"
-        config_ros = json.loads(config_ros_path.read_text(encoding="utf-8"))
-        modules = config_ros["glim_ros"].setdefault("extension_modules", [])
-        if "libglim_prior_map_localizer.so" not in modules:
-            modules.append("libglim_prior_map_localizer.so")
-        config_ros_path.write_text(
-            json.dumps(config_ros, indent=2) + "\n", encoding="utf-8")
-        if args.prior_map_tightly_coupled:
-            config_odometry_path = generated_config / "config_odometry_cpu.json"
-            config_odometry = json.loads(
-                config_odometry_path.read_text(encoding="utf-8"))
-            odometry = config_odometry["odometry_estimation"]
-            odometry["use_gicp_coreset"] = True
-            odometry["use_tightly_coupled_coreset"] = True
-            odometry["full_connection_window_size"] = 3
-            odometry["num_threads"] = args.tightly_coupled_num_threads
-            odometry["coreset_reuse_tolerance_trans"] = 0.25
-            odometry["coreset_reuse_tolerance_rot"] = 0.035
-            config_odometry_path.write_text(
-                json.dumps(config_odometry, indent=2) + "\n", encoding="utf-8")
+        apply_sensor_profile(generated_config, args.sensor_profile)
+        if prior_map is not None:
+            config_ros_path = generated_config / "config_ros.json"
+            config_ros = json.loads(config_ros_path.read_text(encoding="utf-8"))
+            modules = config_ros["glim_ros"].setdefault("extension_modules", [])
+            if "libglim_prior_map_localizer.so" not in modules:
+                modules.append("libglim_prior_map_localizer.so")
+            config_ros_path.write_text(
+                json.dumps(config_ros, indent=2) + "\n", encoding="utf-8")
+            if args.prior_map_tightly_coupled:
+                config_odometry_path = generated_config / "config_odometry_cpu.json"
+                config_odometry = json.loads(
+                    config_odometry_path.read_text(encoding="utf-8"))
+                odometry = config_odometry["odometry_estimation"]
+                odometry["use_gicp_coreset"] = True
+                odometry["use_tightly_coupled_coreset"] = True
+                odometry["full_connection_window_size"] = 3
+                odometry["num_threads"] = args.tightly_coupled_num_threads
+                odometry["coreset_reuse_tolerance_trans"] = 0.25
+                odometry["coreset_reuse_tolerance_rot"] = 0.035
+                config_odometry_path.write_text(
+                    json.dumps(config_odometry, indent=2) + "\n", encoding="utf-8")
         config = generated_config
-    elif (args.prior_map_bootstrap_center is not None or
-          args.prior_map_bootstrap_yaw_deg is not None):
+    if prior_map is None and (args.prior_map_bootstrap_center is not None or
+                              args.prior_map_bootstrap_yaw_deg is not None):
         parser.error("--prior-map-bootstrap-center requires --prior-map")
     if ((args.prior_map_bootstrap_center is None) !=
             (args.prior_map_bootstrap_yaw_deg is None)):
@@ -375,6 +441,7 @@ def main() -> int:
         "tightly_coupled_num_threads": args.tightly_coupled_num_threads,
         "injected_initial_pose": args.inject_initial_pose,
         "initial_pose_delay_sec": args.initial_pose_delay_sec,
+        "sensor_profile": args.sensor_profile,
         "resource_summary": resource_summary,
         "config": str(config),
     }
