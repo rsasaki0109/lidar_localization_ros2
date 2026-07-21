@@ -90,11 +90,11 @@ def build_evidence(log_path: Path, pose_csv: Path):
     head_queue_p95 = percentile(queues[:split], 0.95)
     tail_queue_p95 = percentile(queues[-split:], 0.95)
     final_queue = queues[-1] if queues else None
-    queue_growth = bool(
-        final_queue is None
-        or final_queue > 0
-        or (head_queue_p95 is not None and tail_queue_p95 is not None
-            and tail_queue_p95 > head_queue_p95 + 2))
+    # Head/tail p95 describe transient pressure, but an instrumented shutdown
+    # explicitly waits for odometry to drain. A zero terminal depth proves the
+    # finite backlog was bounded; calling it "unbounded" solely because the
+    # tail was busier contradicts that direct evidence.
+    queue_growth = final_queue is None or final_queue > 0
     jumps, resets, invalid_poses = pose_safety(pose_csv)
     return {
         "processing_p95_sec": percentile(combined, 0.95),

@@ -133,13 +133,16 @@ gtsam_points::PointCloudCPU::Ptr makeTightlyCoupledPriorMap(
 gtsam_points::PointCloudCPU::Ptr makeRecoveryLidarFrame(
   const glim::PreprocessedFrame & raw_frame,
   int covariance_neighbors,
-  int num_threads)
+  int num_threads,
+  double voxel_resolution_m = 0.0)
 {
   if (raw_frame.points.empty()) {
     return nullptr;
   }
-  auto source = std::make_shared<gtsam_points::PointCloudCPU>(
+  auto dense = std::make_shared<gtsam_points::PointCloudCPU>(
     raw_frame.points);
+  auto source = voxel_resolution_m > 0.0 ?
+    gtsam_points::voxelgrid_sampling(dense, voxel_resolution_m, num_threads) : dense;
   source->add_covs(gtsam_points::estimate_covariances(
     *source, covariance_neighbors, num_threads));
   return source;
@@ -218,6 +221,12 @@ public:
       "GLIM_PRIOR_MAP_RECOVERY_MAX_NORMALIZED_ERROR", 12.0);
     recovery_min_inlier_fraction_ = environmentDouble(
       "GLIM_PRIOR_MAP_RECOVERY_MIN_INLIER_FRACTION", 0.75);
+    recovery_rearm_cooldown_sec_ = environmentDouble(
+      "GLIM_PRIOR_MAP_RECOVERY_REARM_COOLDOWN_SEC", 30.0);
+    recovery_rerank_voxel_resolution_m_ = environmentDouble(
+      "GLIM_PRIOR_MAP_RECOVERY_RERANK_VOXEL_RESOLUTION_M", 1.0);
+    recovery_rerank_max_iterations_ = static_cast<int>(environmentSize(
+      "GLIM_PRIOR_MAP_RECOVERY_RERANK_MAX_ITERATIONS", 5));
     vgicp_max_coarse_delta_translation_m_ =
       environmentDouble("GLIM_PRIOR_MAP_VGICP_MAX_COARSE_DELTA_M", 2.0);
     vgicp_max_coarse_delta_rotation_deg_ =
@@ -335,6 +344,8 @@ public:
       prior_map_tree_ =
         std::make_shared<gtsam_points::KdTree2<gtsam_points::PointCloud>>(
         prior_map_frame_);
+      recovery_rerank_target_ = makeVgicpTarget(
+        prior_map_frame_, vgicp_voxel_resolution_m_);
     }
 
     using std::placeholders::_1;
@@ -540,7 +551,9 @@ private:
           "prior-map overlap lost at X({}): {}/{} ({:.3f}); "
           "continuing with scan-to-scan and IMU factors",
           frame->id, overlap.inliers, overlap.samples, overlap.fraction);
-        if (!map_lock_lost_.exchange(true)) {
+        const bool recovery_rearm_allowed = recoveryRearmAllowed(
+          last_verified_recovery_stamp_, frame->stamp, recovery_rearm_cooldown_sec_);
+        if (recovery_rearm_allowed && !map_lock_lost_.exchange(true)) {
           {
             std::lock_guard<std::mutex> lock(public_transform_mutex_);
             const Eigen::Isometry3d current_map_from_odom =
@@ -550,6 +563,10 @@ private:
             public_pose_hold_initialized_ = true;
           }
           publishRecoveryRequested(true);
+        } else if (!recovery_rearm_allowed) {
+          logger_->info(
+            "suppressed recovery rearm {:.1f}s after verified recovery",
+            frame->stamp - last_verified_recovery_stamp_);
         }
       }
       map_factor_active_ = false;
@@ -579,13 +596,13 @@ private:
   void onRelocalizationCandidate(
     const std::shared_ptr<const geometry_msgs::msg::PoseWithCovarianceStamped> & message)
   {
-    {
-      std::lock_guard<std::mutex> lock(recovery_mutex_);
-      if (rerank_bbs_candidates_ && map_lock_lost_.load()) {
-        logger_->info(
-          "ignored rank-1 /initialpose because GLIL BBS batch reranking is enabled");
-        return;
-      }
+    if (rerank_bbs_candidates_) {
+      // PoseArray re-ranking is authoritative in this mode. The supervisor's
+      // rank-1 compatibility topic can arrive after the batch has already
+      // recovered and must not start a second graph epoch.
+      logger_->info(
+        "ignored rank-1 /initialpose because GLIL BBS batch reranking is enabled");
+      return;
     }
     const auto & pose = message->pose.pose;
     Eigen::Quaterniond orientation(
@@ -687,9 +704,18 @@ private:
       return;
     }
     const auto source = makeRecoveryLidarFrame(
-      *raw_frame, map_factor_covariance_neighbors_, map_factor_num_threads_);
+      *raw_frame, map_factor_covariance_neighbors_, map_factor_num_threads_,
+      recovery_rerank_voxel_resolution_m_);
     if (!source) {
       return;
+    }
+    {
+      std::lock_guard<std::mutex> lock(recovery_mutex_);
+      if (bbs_batch_candidate_active_ || pending_recovery_) {
+        logger_->info("ignored duplicate BBS candidate batch while recovery is pending");
+        return;
+      }
+      bbs_batch_candidate_active_ = true;
     }
 
     bool selected = false;
@@ -711,13 +737,11 @@ private:
       if (!finiteTransform(seed)) {
         continue;
       }
-      const auto target = cropMap(
-        prior_map_, seed.translation(), tracking_crop_radius_m_);
-      if (target.empty()) {
+      if (!recovery_rerank_target_) {
         continue;
       }
       const auto refinement = refineWithVgicp(
-        target, source, seed, vgicp_voxel_resolution_m_, vgicp_max_iterations_);
+        recovery_rerank_target_, source, seed, recovery_rerank_max_iterations_);
       const Eigen::Isometry3d correction = recoveryPoseCorrection(seed, refinement.pose);
       const bool admissible = refinement.valid &&
         refinement.inlier_fraction >= 0.30 &&
@@ -740,6 +764,10 @@ private:
       }
     }
     if (!selected) {
+      {
+        std::lock_guard<std::mutex> lock(recovery_mutex_);
+        bbs_batch_candidate_active_ = false;
+      }
       logger_->warn("BBS/VGICP rejected all {} global candidates", message->poses.size());
       return;
     }
@@ -978,6 +1006,7 @@ private:
       public_pose_hold_initialized_ = false;
     }
     map_lock_lost_.store(false);
+    last_verified_recovery_stamp_ = frame.stamp;
     publishRecoveryRequested(false);
     logger_->warn(
       "activated independently verified recovery generation={} as map state m{}",
@@ -1350,6 +1379,7 @@ private:
   std::vector<Eigen::Vector3f> prior_map_;
   gtsam_points::PointCloudCPU::Ptr prior_map_frame_;
   std::shared_ptr<const gtsam_points::NearestNeighborSearch> prior_map_tree_;
+  std::shared_ptr<const gtsam_points::GaussianVoxelMapCPU> recovery_rerank_target_;
   kiss_matcher::KISSMatcher matcher_;
   PriorMapFactorGateParams gate_params_;
   double vgicp_voxel_resolution_m_{1.0};
@@ -1366,6 +1396,10 @@ private:
   // 0.5--0.6 overlap. A global recovery must satisfy a stronger overlap gate
   // than ordinary tracking before it is allowed to move the public map frame.
   double recovery_min_inlier_fraction_{0.75};
+  double recovery_rearm_cooldown_sec_{30.0};
+  double recovery_rerank_voxel_resolution_m_{1.0};
+  int recovery_rerank_max_iterations_{5};
+  double last_verified_recovery_stamp_{-1.0};
   double vgicp_max_coarse_delta_translation_m_{2.0};
   double vgicp_max_coarse_delta_rotation_deg_{5.0};
   double tracking_crop_radius_m_{35.0};

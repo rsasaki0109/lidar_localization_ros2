@@ -73,6 +73,9 @@ The benchmark runner adds `libglim_prior_map_localizer.so` to GLIM's
 | `GLIM_PRIOR_MAP_RECOVERY_CONFIRMATION_FRAMES` | 3 | consistent frames required for recovery |
 | `GLIM_PRIOR_MAP_RECOVERY_MIN_INLIER_FRACTION` | 0.75 | strict overlap gate that rejects repetitive-road aliases |
 | `GLIM_PRIOR_MAP_RECOVERY_MAX_NORMALIZED_ERROR` | 12.0 | raw-scan VGICP recovery ceiling; overlap, correction, rotation, and multi-frame consensus gates remain active |
+| `GLIM_PRIOR_MAP_RECOVERY_REARM_COOLDOWN_SEC` | 30.0 | suppress transient sparse-scan rearming after verified recovery |
+| `GLIM_PRIOR_MAP_RECOVERY_RERANK_VOXEL_RESOLUTION_M` | 1.0 | sparse first-stage cloud used only to rank BBS candidates |
+| `GLIM_PRIOR_MAP_RECOVERY_RERANK_MAX_ITERATIONS` | 5 | first-stage VGICP iteration cap; winner verification remains full-resolution |
 | `GLIM_PRIOR_MAP_PUBLIC_MAX_TRANSLATION_STEP_M` | 0.25 | public TF translation bound per update |
 | `GLIM_PRIOR_MAP_PUBLIC_MAX_ROTATION_STEP_DEG` | 2.0 | public TF rotation bound per update |
 | `GLIM_PRIOR_MAP_VOXEL_SIZE_M` | 0.75 | KISS-Matcher resolution |
@@ -108,6 +111,13 @@ overlap, then reacquired the prior-map factor at 0.997 overlap. The GT-only eval
 reported `recovered_true`, a 29.90 s terminal recovered window, and 0.113 m final XY
 error. The process completed with finite monotonic poses, zero TF jumps, zero
 unauthorized resets, bounded queue growth, and a drained final queue.
+
+On `outdoor_kidnap_a`, caching one global prior-map Gaussian voxel map for all 32
+first-stage candidates reduced re-ranking from about 3.1 s to 0.325 s. The full-scan
+verifier then passed at 0.903, 0.906, and 0.909 overlap. The evaluator reported
+`recovered_true`, a 25.71 s terminal recovered window, 0.064 m final XY error, zero TF
+jumps, and a drained final queue. Rank-1 compatibility messages and duplicate candidate
+batches are ignored while PoseArray re-ranking is authoritative.
 
 An 8-candidate comparison selected a repetitive-road alias with about 0.60 overlap;
 the safety evaluator rejected the run, and that alias is below the new 0.75 gate. This

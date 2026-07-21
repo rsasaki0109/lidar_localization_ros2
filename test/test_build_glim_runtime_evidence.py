@@ -61,6 +61,27 @@ class GlimRuntimeEvidenceTest(unittest.TestCase):
         self.assertEqual(result["tf_jump_count"], 1)
         self.assertEqual(result["unauthorized_reset_count"], 1)
 
+    def test_transient_tail_backlog_that_drains_is_bounded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = root / "glim.log"
+            poses = root / "poses.csv"
+            lines = []
+            for index in range(40):
+                queue = 20 if index >= 30 and index < 39 else 0
+                lines.append(
+                    f"LIDARLOC_PREPROCESS_RUNTIME stamp={index * 0.1:.6f} "
+                    f"processing_sec=0.02 workload={queue}")
+                lines.append(
+                    f"LIDARLOC_ODOMETRY_RUNTIME stamp={index * 0.1:.6f} "
+                    f"processing_sec=0.05 queue_after={queue}")
+            log.write_text("\n".join(lines), encoding="utf-8")
+            self.write_poses(poses)
+            result = MODULE.build_evidence(log, poses)
+        self.assertGreater(result["evidence"]["tail_queue_p95"], 0)
+        self.assertEqual(result["evidence"]["final_queue_depth"], 0)
+        self.assertFalse(result["queue_growth_unbounded"])
+
 
 if __name__ == "__main__":
     unittest.main()

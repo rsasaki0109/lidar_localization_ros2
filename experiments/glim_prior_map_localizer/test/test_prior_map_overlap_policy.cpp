@@ -105,6 +105,9 @@ int main()
   const Eigen::Isometry3d propagated = localizer::propagateRecoveryPose(
     candidate_odom_from_map, current_odom_from_sensor);
   assert((propagated.translation() - Eigen::Vector3d(102.0, 37.0, -11.0)).norm() < 1.0e-9);
+  assert(localizer::recoveryRearmAllowed(-1.0, 100.0, 30.0));
+  assert(!localizer::recoveryRearmAllowed(100.0, 129.9, 30.0));
+  assert(localizer::recoveryRearmAllowed(100.0, 130.0, 30.0));
 
   gtsam::NonlinearFactorGraph keep_alive_factors;
   const gtsam::Key map_key = gtsam::Symbol('m', 2);

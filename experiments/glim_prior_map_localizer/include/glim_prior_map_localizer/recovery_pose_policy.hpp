@@ -22,4 +22,13 @@ inline Eigen::Isometry3d propagateRecoveryPose(
   return odom_from_map_at_candidate.inverse() * odom_from_sensor_now;
 }
 
+inline bool recoveryRearmAllowed(
+  double last_verified_stamp,
+  double current_stamp,
+  double cooldown_sec)
+{
+  return last_verified_stamp < 0.0 ||
+         current_stamp - last_verified_stamp >= cooldown_sec;
+}
+
 }  // namespace glim_prior_map_localizer
