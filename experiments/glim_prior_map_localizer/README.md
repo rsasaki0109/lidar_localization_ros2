@@ -33,11 +33,9 @@ No ground truth is used at runtime. Ground truth is used only by the evaluator a
 renderer. Full-map KISS search remains experimental and is disabled by default because
 the unseeded outdoor replay found a repeatable structural ambiguity.
 
-The previously published callback and ROS consumer are maintained in these forks;
-the exact-coreset GLIM update will be pinned here when the tightly coupled branch is
-published:
+The exact-coreset GLIM core and ROS consumer are pinned to published fork revisions:
 
-- [GLIL unofficial core callback](https://github.com/rsasaki0109/glil_unofficial/commit/dd29667938cb56ef59de7f90290ad2dbc613f00c)
+- [GLIL unofficial tightly coupled exact-coreset core](https://github.com/rsasaki0109/glil_unofficial/commit/9e0d5c65430a30a4df88fa2af1736bca92b11d1e)
 - [GLIM ROS external map-to-odom consumer](https://github.com/rsasaki0109/glim_ros2/commit/cd4b2c9eb37a5c12c93d7339ce10167ebaa55288)
 
 The Dockerfile pins the published fork revisions. The design follows the
@@ -155,7 +153,6 @@ python3 scripts/run_koide_glim_odometry_benchmark.py \
   --prior-map-tightly-coupled \
   --tightly-coupled-num-threads 8 \
   --image lidarloc/glim-ros2:jazzy-v1.2.2-tightly-coupled \
-  --allow-image-mismatch \
   --output /tmp/glil_outdoor_hard_01a
 ```
 

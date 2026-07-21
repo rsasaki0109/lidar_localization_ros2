@@ -2,7 +2,7 @@ ARG GLIM_BASE_IMAGE=lidarloc/glim-ros2:jazzy-v1.2.2-coreset
 FROM ${GLIM_BASE_IMAGE}
 
 ARG KISS_MATCHER_REVISION=669fe866b1c612daa3702292571c25dc1bc61c86
-ARG GLIL_REVISION=dd29667938cb56ef59de7f90290ad2dbc613f00c
+ARG GLIL_REVISION=9e0d5c65430a30a4df88fa2af1736bca92b11d1e
 ARG GLIM_ROS2_REVISION=cd4b2c9eb37a5c12c93d7339ce10167ebaa55288
 
 LABEL org.opencontainers.image.revision.glil="${GLIL_REVISION}" \
@@ -15,8 +15,8 @@ RUN git clone https://github.com/MIT-SPARK/KISS-Matcher.git /tmp/KISS-Matcher \
       CMAKE_EXTRA_ARGS=-DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     && rm -rf /tmp/KISS-Matcher
 
-# Keep the benchmark image's exact-coreset and runtime instrumentation patches,
-# then overlay only the externally published map-to-odom API and ROS consumer.
+# Keep the benchmark image's runtime instrumentation, then overlay the pinned
+# exact-coreset/tightly-coupled GLIM fork and external map-to-odom ROS consumer.
 RUN git clone https://github.com/rsasaki0109/glil_unofficial.git /tmp/glil \
     && git -C /tmp/glil checkout "${GLIL_REVISION}" \
     && git clone https://github.com/rsasaki0109/glim_ros2.git /tmp/glim_ros2_fork \
@@ -25,6 +25,16 @@ RUN git clone https://github.com/rsasaki0109/glil_unofficial.git /tmp/glil \
       /root/ros2_ws/src/glim/include/glim/mapping/callbacks.hpp \
     && cp /tmp/glil/src/glim/mapping/callbacks.cpp \
       /root/ros2_ws/src/glim/src/glim/mapping/callbacks.cpp \
+    && cp /tmp/glil/include/glim/odometry/exact_quadratic_coreset.hpp \
+      /root/ros2_ws/src/glim/include/glim/odometry/exact_quadratic_coreset.hpp \
+    && cp /tmp/glil/include/glim/odometry/integrated_gicp_factor_coreset.hpp \
+      /root/ros2_ws/src/glim/include/glim/odometry/integrated_gicp_factor_coreset.hpp \
+    && cp /tmp/glil/include/glim/odometry/odometry_estimation_cpu.hpp \
+      /root/ros2_ws/src/glim/include/glim/odometry/odometry_estimation_cpu.hpp \
+    && cp /tmp/glil/src/glim/odometry/odometry_estimation_cpu.cpp \
+      /root/ros2_ws/src/glim/src/glim/odometry/odometry_estimation_cpu.cpp \
+    && cp /tmp/glil/src/glim/odometry/odometry_estimation_imu.cpp \
+      /root/ros2_ws/src/glim/src/glim/odometry/odometry_estimation_imu.cpp \
     && cp /tmp/glim_ros2_fork/CMakeLists.txt \
       /root/ros2_ws/src/glim_ros2/CMakeLists.txt \
     && cp /tmp/glim_ros2_fork/include/glim_ros/rviz_viewer.hpp \
