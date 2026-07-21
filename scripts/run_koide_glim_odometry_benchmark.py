@@ -70,6 +70,16 @@ def main() -> int:
         "--tightly-coupled-num-threads", type=int, default=8,
         help="CPU threads for tightly coupled scan and prior-map factors (default: 8).",
     )
+    parser.add_argument(
+        "--inject-initial-pose", type=float, nargs=7,
+        metavar=("X", "Y", "Z", "QX", "QY", "QZ", "QW"),
+        help="Publish one reliable /initialpose candidate after the extension subscribes; "
+        "intended for repeatable recovery integration tests.",
+    )
+    parser.add_argument(
+        "--initial-pose-delay-sec", type=float, default=0.0,
+        help="Wall-clock delay before waiting for the /initialpose subscriber (default: 0).",
+    )
     parser.add_argument("--ros-domain-id", type=int, default=91)
     parser.add_argument(
         "--allow-image-mismatch", action="store_true",
@@ -134,6 +144,10 @@ def main() -> int:
             "--prior-map-vertical-gain applies only to external map-to-odom mode")
     if args.tightly_coupled_num_threads < 1:
         parser.error("--tightly-coupled-num-threads must be positive")
+    if args.initial_pose_delay_sec < 0.0:
+        parser.error("--initial-pose-delay-sec must be non-negative")
+    if args.inject_initial_pose is not None and prior_map is None:
+        parser.error("--inject-initial-pose requires --prior-map")
     if args.playback_duration_sec is not None and args.playback_duration_sec <= 0.0:
         parser.error("--playback-duration-sec must be positive")
     if (args.prior_map_vertical_gain is not None and not (
@@ -192,12 +206,33 @@ def main() -> int:
         f" -p playback_duration:={args.playback_duration_sec}"
         if args.playback_duration_sec is not None else ""
     )
+    run_command = (
+        f"ros2 run glim_ros glim_rosbag {container_bag} --ros-args "
+        f"-p config_path:=/glim/config -p auto_quit:=true{playback_duration_parameter}"
+    )
+    if args.inject_initial_pose is not None:
+        x, y, z, qx, qy, qz, qw = args.inject_initial_pose
+        pose_message = (
+            "{header: {frame_id: map}, pose: {pose: {position: "
+            f"{{x: {x:.17g}, y: {y:.17g}, z: {z:.17g}}}, orientation: "
+            f"{{x: {qx:.17g}, y: {qy:.17g}, z: {qz:.17g}, w: {qw:.17g}}}}}}}}}"
+        )
+        publisher_command = (
+            f"sleep {args.initial_pose_delay_sec:.17g}; "
+            "ros2 topic pub --once --wait-matching-subscriptions 1 /initialpose "
+            f"geometry_msgs/msg/PoseWithCovarianceStamped '{pose_message}'"
+        )
+        run_command = (
+            f"({publisher_command}) > /tmp/injected_initial_pose.log 2>&1 & "
+            "injection_pid=$!; "
+            f"{run_command}; run_rc=$?; "
+            "wait \"$injection_pid\" || true; exit \"$run_rc\""
+        )
     docker_command.extend([
         args.image,
         "bash", "-lc",
         ". /opt/ros/jazzy/setup.bash && . /root/ros2_ws/install/setup.bash && "
-        f"ros2 run glim_ros glim_rosbag {container_bag} --ros-args "
-        f"-p config_path:=/glim/config -p auto_quit:=true{playback_duration_parameter}",
+        f"{run_command}",
     ])
     started = time.monotonic()
     with (output / "glim.log").open("w", encoding="utf-8") as log:
@@ -218,6 +253,8 @@ def main() -> int:
         "prior_map": str(prior_map) if prior_map is not None else None,
         "prior_map_tightly_coupled": args.prior_map_tightly_coupled,
         "tightly_coupled_num_threads": args.tightly_coupled_num_threads,
+        "injected_initial_pose": args.inject_initial_pose,
+        "initial_pose_delay_sec": args.initial_pose_delay_sec,
         "config": str(config),
     }
     (output / "summary.json").write_text(

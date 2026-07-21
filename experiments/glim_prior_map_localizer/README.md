@@ -162,6 +162,28 @@ python3 scripts/run_koide_glim_odometry_benchmark.py \
 Do not combine `--prior-map-vertical-gain` with tightly coupled mode. Sparse verified
 graph epochs already use the configured horizontal gain and full vertical observation.
 
+### Reproduce the startup recovery integration test
+
+Append the following options to the 01a command above. The pose is an independently
+generated map-frame candidate for the first stabilized fixed-lag window. The delay is
+wall-clock time and is specific to the measured one-thread container profile.
+
+```bash
+  --tightly-coupled-num-threads 1 \
+  --playback-duration-sec 15 \
+  --requested-duration-sec 15 \
+  --inject-initial-pose \
+    -86.775441 -8.903109 -11.123637 \
+    -0.006297 -0.009488 -0.716092 0.697913 \
+  --initial-pose-delay-sec 6.5
+```
+
+The accepted smoke run validated frames 28--30 consecutively and logged
+`activated independently verified recovery generation=1 as map state m1`. An
+inconsistent candidate was rejected after three frames without creating a map state.
+Both cases retained zero TF jumps and zero unauthorized resets. Full recovery latency
+and throughput are measured separately on the kidnap bags.
+
 ## Remaining acceptance work
 
 1. Record clean full 01a/01b/02a/02b tightly coupled replays after competing CPU jobs
