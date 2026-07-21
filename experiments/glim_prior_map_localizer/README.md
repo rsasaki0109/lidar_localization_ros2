@@ -168,8 +168,9 @@ python3 scripts/run_koide_glil_tightly_coupled_matrix.py \
   --threads 8
 ```
 
-The matrix continues after an individual metric-gate failure so all four sequences
-produce evidence, then returns nonzero if any run failed. Each run records the normal
+The matrix continues after an individual metric-gate failure so the four outdoor-hard
+and two outdoor-kidnap sequences all produce evidence, then returns nonzero if any run
+failed. Each run records the normal
 trajectory and runtime checks plus `resource_trace.csv` and `resource_summary.json`.
 The latter contains whole-container CPU mean/p95/max, Docker memory usage, and the peak
 sum of `VmRSS` across all container processes.
@@ -198,8 +199,8 @@ and throughput are measured separately on the kidnap bags.
 
 ## Remaining acceptance work
 
-1. Record clean full 01a/01b/02a/02b tightly coupled replays after competing CPU jobs
-   finish, including CPU/RSS and non-planar metrics.
-2. Run the indoor and outdoor kidnap bags plus an injected-displacement recovery case.
-3. Pin and publish the updated GLIM/GLIM ROS forks and benchmark image.
-4. Regenerate the GLIL-only gallery GIFs from the accepted runs.
+1. Record the clean six-run outdoor-hard/outdoor-kidnap matrix after competing CPU jobs
+   finish, including CPU/RSS, non-planar metrics, and recovery behavior.
+2. Resolve the indoor RGB-D scan-to-map correspondence ambiguity exposed by the Azure
+   Kinect profile before claiming indoor kidnap acceptance.
+3. Regenerate the GLIL-only gallery GIFs from the accepted runs.

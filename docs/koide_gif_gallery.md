@@ -16,7 +16,9 @@ localization accuracy or recovery behavior.
 
 ### Tightly coupled GLIL — NDT-free
 
-The tightly coupled implementation is under final four-sequence and kidnap measurement.
+The tightly coupled implementation is under final six-run outdoor-hard/outdoor-kidnap
+measurement. An indoor Azure Kinect profile is also available, but its dense RGB-D
+scan-to-map ambiguity remains under investigation and is not counted as an accepted run.
 Unlike the earlier split, scan-to-map results are not solved independently and converted
 to smoothed corrections. Each accepted map observation constrains the same active pose
 states as scan-to-scan and IMU factors. Loss of map overlap omits only map factors;
@@ -24,8 +26,8 @@ continuous range-inertial odometry and the last bounded `map -> odom` remain ava
 Verified recovery creates a new graph map-state epoch after three consistent frames,
 without resetting raw odometry or adding a second TF authority.
 
-The final 01a/01b/02a/02b table and GLIL-only GIFs will replace this measurement notice
-after the pinned image completes the acceptance matrix.
+The final 01a/01b/02a/02b plus outdoor-kidnap a/b table and GLIL-only GIFs will replace
+this measurement notice after the pinned image completes the acceptance matrix.
 
 ### Legacy split prior-map baseline (2026-07-19)
 
