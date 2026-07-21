@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -23,10 +25,115 @@ EXPECTED_IMAGE_IDS = {
         "sha256:b1c945ea0a1df5c7922e67d5648d35c24b605fe54559cff521e8d94a7d18b8c4",
 }
 
+SIZE_MULTIPLIERS = {
+    "B": 1.0,
+    "KB": 1000.0,
+    "MB": 1000.0 ** 2,
+    "GB": 1000.0 ** 3,
+    "KIB": 1024.0,
+    "MIB": 1024.0 ** 2,
+    "GIB": 1024.0 ** 3,
+}
+
 
 def run_checked(command):
     print("+", " ".join(str(value) for value in command), flush=True)
     subprocess.run(command, check=True)
+
+
+def parse_size_bytes(value: str) -> int:
+    """Parse the used-memory half of a Docker stats MemUsage value."""
+    used = value.split("/", 1)[0].strip()
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]+)", used)
+    if match is None:
+        raise ValueError(f"unsupported Docker memory value: {value!r}")
+    unit = match.group(2).upper()
+    if unit not in SIZE_MULTIPLIERS:
+        raise ValueError(f"unsupported Docker memory unit: {unit}")
+    return int(float(match.group(1)) * SIZE_MULTIPLIERS[unit])
+
+
+def percentile(values: list[float], fraction: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, int(round(fraction * (len(ordered) - 1)))))
+    return ordered[index]
+
+
+def container_rss_bytes(container_name: str) -> int:
+    """Sum VmRSS for every host PID currently belonging to the container."""
+    output = subprocess.check_output(
+        ["docker", "top", container_name, "-eo", "pid"],
+        text=True,
+        stderr=subprocess.DEVNULL,
+        timeout=5.0,
+    )
+    total_kib = 0
+    for value in output.splitlines()[1:]:
+        value = value.strip()
+        if not value.isdigit():
+            continue
+        try:
+            status = Path(f"/proc/{value}/status").read_text(encoding="utf-8")
+        except (FileNotFoundError, PermissionError):
+            continue
+        match = re.search(r"^VmRSS:\s+([0-9]+)\s+kB$", status, re.MULTILINE)
+        if match is not None:
+            total_kib += int(match.group(1))
+    return total_kib * 1024
+
+
+def sample_container_resources(container_name: str, started: float):
+    try:
+        output = subprocess.check_output(
+            [
+                "docker", "stats", "--no-stream", "--format", "{{json .}}",
+                container_name,
+            ],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=5.0,
+        ).strip()
+        if not output:
+            return None
+        stats = json.loads(output.splitlines()[-1])
+        return {
+            "elapsed_sec": time.monotonic() - started,
+            "cpu_percent": float(stats["CPUPerc"].rstrip("%")),
+            "memory_bytes": parse_size_bytes(stats["MemUsage"]),
+            "rss_bytes": container_rss_bytes(container_name),
+        }
+    except (subprocess.SubprocessError, KeyError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def write_resource_evidence(output: Path, samples: list[dict]) -> dict:
+    trace_path = output / "resource_trace.csv"
+    with trace_path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(
+            stream,
+            fieldnames=("elapsed_sec", "cpu_percent", "memory_bytes", "rss_bytes"),
+        )
+        writer.writeheader()
+        writer.writerows(samples)
+
+    cpu = [sample["cpu_percent"] for sample in samples]
+    memory = [sample["memory_bytes"] for sample in samples]
+    rss = [sample["rss_bytes"] for sample in samples]
+    summary = {
+        "sample_count": len(samples),
+        "sampling_source": "docker stats --no-stream",
+        "cpu_percent_mean": sum(cpu) / len(cpu) if cpu else 0.0,
+        "cpu_percent_p95": percentile(cpu, 0.95),
+        "cpu_percent_max": max(cpu, default=0.0),
+        "memory_peak_bytes": max(memory, default=0),
+        "rss_peak_bytes": max(rss, default=0),
+        "trace_csv": str(trace_path),
+    }
+    (output / "resource_summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return summary
 
 
 def main() -> int:
@@ -172,8 +279,10 @@ def main() -> int:
             "--allow-image-mismatch and archive the new ID")
 
     container_bag = f"/data/{bag.name}"
+    container_name = f"glil-koide-{os.getpid()}-{args.ros_domain_id}"
     docker_command = [
         "docker", "run", "--rm", "--network=host", "--ipc=host",
+        "--name", container_name,
         "-e", f"ROS_DOMAIN_ID={args.ros_domain_id}",
         "-v", f"{bag.parent}:/data:ro",
         "-v", f"{config}:/glim/config:ro",
@@ -237,17 +346,26 @@ def main() -> int:
         f"{run_command}",
     ])
     started = time.monotonic()
+    resource_samples = []
     with (output / "glim.log").open("w", encoding="utf-8") as log:
-        process = subprocess.run(
+        process = subprocess.Popen(
             docker_command, stdout=log, stderr=subprocess.STDOUT, text=True)
+        while process.poll() is None:
+            sample = sample_container_resources(container_name, started)
+            if sample is not None:
+                resource_samples.append(sample)
+            if process.poll() is None:
+                time.sleep(1.0)
+        return_code = process.wait()
     wall_duration = time.monotonic() - started
-    process_result = {"return_code": process.returncode, "wall_duration_sec": wall_duration}
+    resource_summary = write_resource_evidence(output, resource_samples)
+    process_result = {"return_code": return_code, "wall_duration_sec": wall_duration}
     (output / "run_process.json").write_text(
         json.dumps(process_result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     summary = {
-        "target_process_died_during_run": process.returncode != 0,
+        "target_process_died_during_run": return_code != 0,
         "bag_stopped_by_runner": False,
-        "return_codes": {"bag_play": process.returncode},
+        "return_codes": {"bag_play": return_code},
         "wall_duration_sec": wall_duration,
         "playback_duration_sec": args.playback_duration_sec,
         "image": args.image,
@@ -257,13 +375,14 @@ def main() -> int:
         "tightly_coupled_num_threads": args.tightly_coupled_num_threads,
         "injected_initial_pose": args.inject_initial_pose,
         "initial_pose_delay_sec": args.initial_pose_delay_sec,
+        "resource_summary": resource_summary,
         "config": str(config),
     }
     (output / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    if process.returncode:
+    if return_code:
         print(f"GLIM failed; inspect {output / 'glim.log'}", file=sys.stderr)
-        return process.returncode
+        return return_code
 
     python = sys.executable
     conversion_command = [

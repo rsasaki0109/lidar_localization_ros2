@@ -159,6 +159,21 @@ python3 scripts/run_koide_glim_odometry_benchmark.py \
 Do not combine `--prior-map-vertical-gain` with tightly coupled mode. Sparse verified
 graph epochs already use the configured horizontal gain and full vertical observation.
 
+For the complete pinned-image acceptance matrix, run:
+
+```bash
+python3 scripts/run_koide_glil_tightly_coupled_matrix.py \
+  --data-dir "$DATA" \
+  --output-root /tmp/glil_tightly_coupled_final \
+  --threads 8
+```
+
+The matrix continues after an individual metric-gate failure so all four sequences
+produce evidence, then returns nonzero if any run failed. Each run records the normal
+trajectory and runtime checks plus `resource_trace.csv` and `resource_summary.json`.
+The latter contains whole-container CPU mean/p95/max, Docker memory usage, and the peak
+sum of `VmRSS` across all container processes.
+
 ### Reproduce the startup recovery integration test
 
 Append the following options to the 01a command above. The pose is an independently

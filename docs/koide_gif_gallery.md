@@ -1,18 +1,35 @@
 # Koide GLIL-Style Prior-Map Localization Gallery
 
-This page presents full-sequence measurements of the current GLIL-style architecture on the
-[Hard Point Cloud Localization Dataset](https://zenodo.org/records/10122133).
-GLIM provides continuous LiDAR/IMU odometry, while prior-map VGICP provides sparse
-map-frame corrections and KISS-Matcher is reserved for acquisition or recovery. NDT is
-not launched in these replays. Ground truth appears only as a dashed evaluation overlay;
-standalone animated ground-truth routes are intentionally omitted because they do not
-demonstrate localization accuracy or recovery behavior.
+This page tracks GLIL-only localization on the
+[Hard Point Cloud Localization Dataset](https://zenodo.org/records/10122133). The main
+configuration jointly optimizes IMU preintegration, exact-coreset scan-to-scan GICP,
+and exact-coreset scan-to-prior-map GICP in one GLIM fixed-lag graph. It follows the
+[sliding-window estimator structure of Koide et al. ICRA 2024](https://arxiv.org/abs/2402.05540)
+and the [deferred exact point-cloud downsampling method of Koide et al. ICRA 2025](https://arxiv.org/abs/2505.01017).
+NDT is not launched.
+
+Ground truth appears only as a dashed evaluation overlay. Standalone animated
+ground-truth routes are intentionally omitted because they do not demonstrate
+localization accuracy or recovery behavior.
 
 ## Measured localization replays
 
-### GLIL-style prior-map localization — NDT-free (2026-07-19)
+### Tightly coupled GLIL — NDT-free
 
-This is the first full live replay of the GLIL-style split: GLIM supplies continuous
+The tightly coupled implementation is under final four-sequence and kidnap measurement.
+Unlike the earlier split, scan-to-map results are not solved independently and converted
+to smoothed corrections. Each accepted map observation constrains the same active pose
+states as scan-to-scan and IMU factors. Loss of map overlap omits only map factors;
+continuous range-inertial odometry and the last bounded `map -> odom` remain available.
+Verified recovery creates a new graph map-state epoch after three consistent frames,
+without resetting raw odometry or adding a second TF authority.
+
+The final 01a/01b/02a/02b table and GLIL-only GIFs will replace this measurement notice
+after the pinned image completes the acceptance matrix.
+
+### Legacy split prior-map baseline (2026-07-19)
+
+These retained results are the first full live replay of the GLIL-style split: GLIM supplies continuous
 LiDAR/IMU `odom -> base_link`, while sparse prior-map VGICP registrations update only a
 smoothed `map -> odom`. It does **not** run NDT alongside GLIM. Direct VGICP is the
 normal submap-rate tracker; KISS-Matcher runs only as an acquisition or recovery
@@ -134,7 +151,7 @@ initialization inputs, not evaluator ground truth:
 | `outdoor_hard_02a` | -104.343538 | -10.324673 | -11.620099 | 163.3613 deg |
 | `outdoor_hard_02b` | 103.616685 | -1.693832 | -11.022091 | 4.4813 deg |
 
-This example reproduces and renders 01a. Substitute the sequence, duration, output,
+This example runs tightly coupled 01a. Substitute the sequence, duration, output,
 reference, seed, and metric label for the other rows:
 
 ```bash
@@ -147,8 +164,9 @@ python3 scripts/run_koide_glim_odometry_benchmark.py \
   --prior-map "$DATA/map_outdoor_hard.ply" \
   --prior-map-bootstrap-center -86.040205 -8.857126 -11.043077 \
   --prior-map-bootstrap-yaw-deg -82.0063 \
-  --config param/odometry/glim_koide_outdoor_gicp6500_coreset \
-  --image lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom \
+  --prior-map-tightly-coupled \
+  --tightly-coupled-num-threads 8 \
+  --image lidarloc/glim-ros2:jazzy-v1.2.2-tightly-coupled \
   --output "$RUN"
 
 python3 scripts/render_koide_localization_gif.py \
@@ -156,18 +174,17 @@ python3 scripts/render_koide_localization_gif.py \
   --estimated-csv "$RUN/pose_trace.csv" \
   --reference-csv \
     "$DATA/generated/localization_gif_benchmarks/assets/outdoor_hard_01a_reference.csv" \
-  --output-gif images/koide/measured/glil/outdoor_hard_01a_live_map_odom.gif \
+  --output-gif images/koide/measured/glil/outdoor_hard_01a_tightly_coupled.gif \
   --frames 72 --fps 9 \
   --sequence-label "Koide outdoor_hard_01a (full 380 s)" \
   --estimate-label "GLIL map-frame pose" \
-  --title "GLIL: GLIM coreset odometry + prior-map VGICP" \
+  --title "GLIL: tightly coupled exact-coreset range-inertial localization" \
   --metrics-label \
-    "Full run: ATE 1.142 m | coverage 99.2% | RPE10 0.157 m | p95 28.3 ms"
+    "Pending final pinned-image measurement"
 ```
 
-For the measured 02a Z-bridge repeats, add
-`--prior-map-vertical-gain 1.0`; this follows Z during a global-consensus pending
-candidate without accepting its XY or yaw correction.
+`--prior-map-vertical-gain` belongs to the legacy split mode and must not be combined
+with `--prior-map-tightly-coupled`.
 
 All full-sequence GLIL GIFs use 72 frames and are 648 x 450. The red arrow is derived
 from trajectory motion, including a minimum spatial baseline at stops and trajectory
