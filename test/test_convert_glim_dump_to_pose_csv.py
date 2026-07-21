@@ -47,6 +47,19 @@ class ConvertGlimDumpTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "conflicting poses"):
                 MODULE.convert(root, root / "poses.csv", "map")
 
+    def test_accepts_submillimeter_duplicate_solver_noise(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "000000").mkdir()
+            (root / "000000" / "imu_rate.txt").write_text(
+                "1.0 40000 -12000 8000 0 0 0 1\n"
+                "1.0 40000.0006 -12000.0002 8000.0001 0 0 0.0002 0.99999998\n",
+                encoding="utf-8",
+            )
+            summary = MODULE.convert(root, root / "poses.csv", "map")
+        self.assertEqual(summary["pose_count"], 1)
+        self.assertEqual(summary["duplicate_source_row_count"], 1)
+
     def test_applies_global_anchor_and_planar_constraint(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

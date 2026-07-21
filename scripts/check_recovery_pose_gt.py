@@ -103,6 +103,22 @@ def load_pose_trace(path: Path, min_stamp_sec: float = 1e9) -> List[PoseSample]:
 
 def load_ground_truth(path: Path) -> List[GroundTruthSample]:
     samples: List[GroundTruthSample] = []
+    with path.open(newline="", encoding="utf-8") as handle:
+        first_data_line = next(
+            (line for line in handle if line.strip() and not line.lstrip().startswith("#")),
+            "",
+        )
+    if "," in first_data_line:
+        with path.open(newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                stamp = _as_float(row.get("stamp_sec"))
+                x = _as_float(row.get("position_x"))
+                y = _as_float(row.get("position_y"))
+                if stamp is None or x is None or y is None:
+                    continue
+                samples.append(GroundTruthSample(stamp_sec=stamp, x=x, y=y))
+        samples.sort(key=lambda sample: sample.stamp_sec)
+        return samples
     with path.open(encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
@@ -350,7 +366,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument(
         "--gt",
         required=True,
-        help="TUM-format ground truth (stamp x y z qx qy qz qw).",
+        help=(
+            "TUM ground truth (stamp x y z qx qy qz qw) or benchmark CSV "
+            "(stamp_sec, position_x, position_y)."
+        ),
     )
     parser.add_argument(
         "--output-json",

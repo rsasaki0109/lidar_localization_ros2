@@ -1,6 +1,7 @@
 #include "glim_prior_map_localizer/prior_map_factor_policy.hpp"
 #include "glim_prior_map_localizer/map_odom_policy.hpp"
 #include "glim_prior_map_localizer/map_odom_transition_policy.hpp"
+#include "glim_prior_map_localizer/map_state_prior.hpp"
 #include "glim_prior_map_localizer/ply_loader.hpp"
 #include "glim_prior_map_localizer/vgicp_refiner.hpp"
 #include "glim_prior_map_localizer/prior_map_overlap_policy.hpp"
@@ -17,6 +18,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -43,6 +45,7 @@
 #include <glim/util/logging.hpp>
 
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <geometry_msgs/msg/pose_array.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/msg/point_field.hpp>
@@ -127,6 +130,30 @@ gtsam_points::PointCloudCPU::Ptr makeTightlyCoupledPriorMap(
   return sampled;
 }
 
+gtsam_points::PointCloudCPU::Ptr makeRecoveryLidarFrame(
+  const glim::PreprocessedFrame & raw_frame,
+  int covariance_neighbors,
+  int num_threads)
+{
+  if (raw_frame.points.empty()) {
+    return nullptr;
+  }
+  auto source = std::make_shared<gtsam_points::PointCloudCPU>(
+    raw_frame.points);
+  source->add_covs(gtsam_points::estimate_covariances(
+    *source, covariance_neighbors, num_threads));
+  return source;
+}
+
+gtsam_points::PointCloudCPU::Ptr makeRecoveryLidarFrame(
+  const glim::EstimationFrame & frame,
+  int covariance_neighbors,
+  int num_threads)
+{
+  return frame.raw_frame ? makeRecoveryLidarFrame(
+    *frame.raw_frame, covariance_neighbors, num_threads) : nullptr;
+}
+
 std::vector<Eigen::Vector3f> submapPoints(const glim::SubMap & submap)
 {
   std::vector<Eigen::Vector3f> points;
@@ -188,7 +215,9 @@ public:
     vgicp_max_normalized_error_ =
       environmentDouble("GLIM_PRIOR_MAP_VGICP_MAX_NORMALIZED_ERROR", 5.0);
     recovery_max_normalized_error_ = environmentDouble(
-      "GLIM_PRIOR_MAP_RECOVERY_MAX_NORMALIZED_ERROR", 6.5);
+      "GLIM_PRIOR_MAP_RECOVERY_MAX_NORMALIZED_ERROR", 12.0);
+    recovery_min_inlier_fraction_ = environmentDouble(
+      "GLIM_PRIOR_MAP_RECOVERY_MIN_INLIER_FRACTION", 0.75);
     vgicp_max_coarse_delta_translation_m_ =
       environmentDouble("GLIM_PRIOR_MAP_VGICP_MAX_COARSE_DELTA_M", 2.0);
     vgicp_max_coarse_delta_rotation_deg_ =
@@ -209,6 +238,8 @@ public:
       environmentDouble("GLIM_PRIOR_MAP_VERTICAL_GAIN", translation_gain_), 0.0, 1.0);
     full_global_search_ =
       environmentBool("GLIM_PRIOR_MAP_FULL_GLOBAL_SEARCH", false);
+    rerank_bbs_candidates_ =
+      environmentBool("GLIM_PRIOR_MAP_RERANK_BBS_CANDIDATES", false);
     odom_bridge_recovery_enabled_ =
       environmentBool("GLIM_PRIOR_MAP_ODOM_BRIDGE_RECOVERY", false);
     odom_bridge_recovery_crop_radius_m_ = environmentDouble(
@@ -245,6 +276,11 @@ public:
       0.0, 1.0);
     map_factor_min_overlap_inliers_ = environmentSize(
       "GLIM_PRIOR_MAP_FACTOR_MIN_OVERLAP_INLIERS", 32);
+    map_state_prior_precision_ = environmentDouble(
+      "GLIM_PRIOR_MAP_STATE_PRIOR_PRECISION", 1.0);
+    if (map_state_prior_precision_ <= 0.0) {
+      throw std::invalid_argument("GLIM prior-map state prior precision must be positive");
+    }
     recovery_confirmation_frames_ = std::max<std::size_t>(
       2, environmentSize("GLIM_PRIOR_MAP_RECOVERY_CONFIRMATION_FRAMES", 3));
     recovery_rejection_frames_ = std::max<std::size_t>(
@@ -347,6 +383,10 @@ public:
       std::make_shared<glim::TopicSubscription<Message>>(
         "/initialpose",
         std::bind(&PriorMapLocalizer::onRelocalizationCandidate, this,
+          std::placeholders::_1)),
+      std::make_shared<glim::TopicSubscription<geometry_msgs::msg::PoseArray>>(
+        "/global_localization_node/candidates",
+        std::bind(&PriorMapLocalizer::onGlobalCandidates, this,
           std::placeholders::_1))};
   }
 
@@ -376,14 +416,34 @@ private:
     {
       std::lock_guard<std::mutex> lock(frame_mutex_);
       latest_odometry_frame_ = frame;
-      odometry_history_.emplace_back(frame->stamp, frame->T_world_imu);
+      // Recovery queries are published from raw_frame in the LiDAR frame, so
+      // timestamp alignment must store the matching LiDAR pose rather than
+      // the graph's IMU pose.  This is a no-op for identity extrinsics and is
+      // essential for general sensor rigs.
+      odometry_history_.emplace_back(frame->stamp, frame->T_world_lidar);
       while (!odometry_history_.empty() &&
         frame->stamp - odometry_history_.front().first > 120.0)
       {
         odometry_history_.pop_front();
       }
+      if (tightly_coupled_ && map_lock_lost_.load() && frame->raw_frame &&
+        (recovery_frame_history_.empty() ||
+        frame->stamp - recovery_frame_history_.back().first >= 0.5))
+      {
+        recovery_frame_history_.emplace_back(frame->stamp, frame->raw_frame);
+      }
+      while (!recovery_frame_history_.empty() &&
+        frame->stamp - recovery_frame_history_.front().first > 30.0)
+      {
+        recovery_frame_history_.pop_front();
+      }
     }
     if (tightly_coupled_ && map_lock_lost_.load()) {
+      // Keep the recovery request latched on the wire while localization is
+      // lost.  A single transition message can be missed when the supervisor
+      // is starting or DDS endpoints are still matching, whereas recovery
+      // clouds already provide a natural, bounded retry cadence.
+      publishRecoveryRequested(true);
       publishRecoveryCloud(*frame);
     }
     if (tightly_coupled_) {
@@ -443,8 +503,23 @@ private:
     const Eigen::Isometry3d odom_from_imu(
       new_values.at<gtsam::Pose3>(pose_key).matrix());
     activatePendingSparseAnchor(*frame, new_values, new_stamps);
+    const Eigen::Isometry3d odom_from_lidar =
+      odom_from_imu * frame->T_lidar_imu.inverse();
     evaluatePendingRecovery(
-      *frame, odom_from_imu, new_values, new_stamps);
+      *frame, odom_from_lidar, new_values, new_stamps);
+    // A map state is refreshed in the fixed-lag timestamp map even while
+    // overlap is lost.  Without a unary factor, all old scan-to-map factors
+    // can age out and leave that value disconnected.  The smoother fallback
+    // then removes mN, while this extension still references it on the next
+    // frame.  Add one weak persistent prior whenever a new map-state epoch is
+    // inserted; it keeps the map gauge connected without competing with the
+    // much stronger scan-to-map Hessians.
+    if (new_values.exists(map_state_key_)) {
+      addMapStateKeepAlivePrior(
+        new_factors, map_state_key_,
+        new_values.at<gtsam::Pose3>(map_state_key_),
+        map_state_prior_precision_);
+    }
     new_stamps[map_state_key_] = frame->stamp;
     latest_tightly_coupled_stamp_ = frame->stamp;
 
@@ -466,6 +541,14 @@ private:
           "continuing with scan-to-scan and IMU factors",
           frame->id, overlap.inliers, overlap.samples, overlap.fraction);
         if (!map_lock_lost_.exchange(true)) {
+          {
+            std::lock_guard<std::mutex> lock(public_transform_mutex_);
+            const Eigen::Isometry3d current_map_from_odom =
+              public_map_odom_initialized_ ? public_map_from_odom_ : odom_from_map.inverse();
+            frozen_public_map_from_lidar_ =
+              current_map_from_odom * odom_from_lidar;
+            public_pose_hold_initialized_ = true;
+          }
           publishRecoveryRequested(true);
         }
       }
@@ -496,6 +579,14 @@ private:
   void onRelocalizationCandidate(
     const std::shared_ptr<const geometry_msgs::msg::PoseWithCovarianceStamped> & message)
   {
+    {
+      std::lock_guard<std::mutex> lock(recovery_mutex_);
+      if (rerank_bbs_candidates_ && map_lock_lost_.load()) {
+        logger_->info(
+          "ignored rank-1 /initialpose because GLIL BBS batch reranking is enabled");
+        return;
+      }
+    }
     const auto & pose = message->pose.pose;
     Eigen::Quaterniond orientation(
       pose.orientation.w, pose.orientation.x, pose.orientation.y,
@@ -555,6 +646,122 @@ private:
       "received time-aligned /initialpose recovery candidate generation={} "
       "stamp={:.6f} odom_delta={:.3f}s",
       pending_recovery_generation_, candidate_stamp, best_delta);
+  }
+
+  void onGlobalCandidates(
+    const std::shared_ptr<const geometry_msgs::msg::PoseArray> & message)
+  {
+    if (!rerank_bbs_candidates_ || !map_lock_lost_.load() || message->poses.empty()) {
+      return;
+    }
+    const double candidate_stamp =
+      static_cast<double>(message->header.stamp.sec) +
+      static_cast<double>(message->header.stamp.nanosec) * 1.0e-9;
+    glim::PreprocessedFrame::ConstPtr raw_frame;
+    Eigen::Isometry3d odom_from_sensor_at_candidate = Eigen::Isometry3d::Identity();
+    bool odometry_found = false;
+    double best_stamp_delta = 0.55;
+    {
+      std::lock_guard<std::mutex> lock(frame_mutex_);
+      for (const auto & sample : recovery_frame_history_) {
+        const double delta = std::abs(sample.first - candidate_stamp);
+        if (delta <= best_stamp_delta) {
+          best_stamp_delta = delta;
+          raw_frame = sample.second;
+        }
+      }
+      double best_odom_delta = 0.55;
+      for (const auto & sample : odometry_history_) {
+        const double delta = std::abs(sample.first - candidate_stamp);
+        if (delta <= best_odom_delta) {
+          best_odom_delta = delta;
+          odom_from_sensor_at_candidate = sample.second;
+          odometry_found = true;
+        }
+      }
+    }
+    if (!raw_frame || !odometry_found) {
+      logger_->warn(
+        "ignored BBS candidate batch: no time-aligned raw/odometry frame near stamp={:.6f}",
+        candidate_stamp);
+      return;
+    }
+    const auto source = makeRecoveryLidarFrame(
+      *raw_frame, map_factor_covariance_neighbors_, map_factor_num_threads_);
+    if (!source) {
+      return;
+    }
+
+    bool selected = false;
+    double selected_metric = std::numeric_limits<double>::infinity();
+    Eigen::Isometry3d selected_pose = Eigen::Isometry3d::Identity();
+    std::size_t selected_index = 0;
+    for (std::size_t index = 0; index < message->poses.size(); ++index) {
+      const auto & pose = message->poses[index];
+      Eigen::Quaterniond orientation(
+        pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
+      if (!orientation.coeffs().allFinite() || orientation.norm() < 1.0e-6) {
+        continue;
+      }
+      orientation.normalize();
+      Eigen::Isometry3d seed = Eigen::Isometry3d::Identity();
+      seed.linear() = orientation.toRotationMatrix();
+      seed.translation() = Eigen::Vector3d(
+        pose.position.x, pose.position.y, pose.position.z);
+      if (!finiteTransform(seed)) {
+        continue;
+      }
+      const auto target = cropMap(
+        prior_map_, seed.translation(), tracking_crop_radius_m_);
+      if (target.empty()) {
+        continue;
+      }
+      const auto refinement = refineWithVgicp(
+        target, source, seed, vgicp_voxel_resolution_m_, vgicp_max_iterations_);
+      const Eigen::Isometry3d correction = recoveryPoseCorrection(seed, refinement.pose);
+      const bool admissible = refinement.valid &&
+        refinement.inlier_fraction >= 0.30 &&
+        refinement.normalized_error <= recovery_max_normalized_error_ &&
+        correction.translation().norm() <= 2.0 &&
+        rotationDegrees(correction) <= 10.0;
+      const double metric = refinement.normalized_error /
+        std::max(0.10, refinement.inlier_fraction);
+      logger_->info(
+        "BBS/VGICP rank={} valid={} overlap={:.3f} error={:.3f} "
+        "correction={:.3f}m/{:.2f}deg metric={:.3f} admissible={}",
+        index + 1, refinement.valid, refinement.inlier_fraction,
+        refinement.normalized_error, correction.translation().norm(),
+        rotationDegrees(correction), metric, admissible);
+      if (admissible && metric < selected_metric) {
+        selected = true;
+        selected_metric = metric;
+        selected_pose = refinement.pose;
+        selected_index = index;
+      }
+    }
+    if (!selected) {
+      logger_->warn("BBS/VGICP rejected all {} global candidates", message->poses.size());
+      return;
+    }
+    {
+      std::lock_guard<std::mutex> lock(recovery_mutex_);
+      pending_recovery_map_from_sensor_ = selected_pose;
+      pending_recovery_odom_from_map_ =
+        odom_from_sensor_at_candidate * selected_pose.inverse();
+      pending_recovery_anchor_initialized_ = true;
+      pending_recovery_confirmations_ = 0;
+      pending_recovery_failures_ = 0;
+      pending_recovery_ = true;
+      bbs_batch_candidate_active_ = true;
+      ++pending_recovery_generation_;
+      logger_->info(
+        "received time-aligned GLIL-ranked BBS/VGICP recovery candidate "
+        "generation={} stamp={:.6f}",
+        pending_recovery_generation_, candidate_stamp);
+    }
+    logger_->warn(
+      "selected BBS candidate rank={} of {} after GLIL 3D reranking (metric={:.3f})",
+      selected_index + 1, message->poses.size(), selected_metric);
   }
 
   void publishRecoveryRequested(bool requested)
@@ -667,7 +874,7 @@ private:
 
   void evaluatePendingRecovery(
     const glim::EstimationFrame & frame,
-    const Eigen::Isometry3d & odom_from_imu,
+    const Eigen::Isometry3d & odom_from_lidar,
     gtsam::Values & new_values,
     std::map<std::uint64_t, double> & new_stamps)
   {
@@ -681,33 +888,40 @@ private:
       generation = pending_recovery_generation_;
       if (!pending_recovery_anchor_initialized_) {
         pending_recovery_odom_from_map_ =
-          odom_from_imu * pending_recovery_map_from_sensor_.inverse();
+          odom_from_lidar * pending_recovery_map_from_sensor_.inverse();
         pending_recovery_anchor_initialized_ = true;
       }
       candidate_odom_from_map = pending_recovery_odom_from_map_;
     }
 
-    const Eigen::Isometry3d predicted_map_from_imu =
-      candidate_odom_from_map.inverse() * odom_from_imu;
+    // The candidate belongs to the query scan timestamp. Ranking dozens of
+    // hypotheses can take several seconds while LiDAR processing continues,
+    // so advance it with post-query odometry before verifying it. Candidate
+    // callbacks form this anchor from time-aligned odometry; un-stamped manual
+    // candidates initialize it above at their first verification frame.
+    const Eigen::Isometry3d predicted_map_from_lidar = propagateRecoveryPose(
+      candidate_odom_from_map, odom_from_lidar);
     const auto target = cropMap(
-      prior_map_, predicted_map_from_imu.translation(), tracking_crop_radius_m_);
+      prior_map_, predicted_map_from_lidar.translation(), tracking_crop_radius_m_);
+    const auto recovery_source = makeRecoveryLidarFrame(
+      frame, map_factor_covariance_neighbors_, map_factor_num_threads_);
     VgicpRefinementResult refinement;
-    if (!target.empty()) {
+    if (!target.empty() && recovery_source) {
       refinement = refineWithVgicp(
-        target, frame.frame, predicted_map_from_imu,
+        target, recovery_source, predicted_map_from_lidar,
         vgicp_voxel_resolution_m_, vgicp_max_iterations_);
     }
     // Measure the candidate correction in the sensor-local tangent frame.
     // The opposite product rotates the map-frame origin and turns a small
     // angular correction into a large apparent translation far from (0, 0).
     const Eigen::Isometry3d correction =
-      recoveryPoseCorrection(predicted_map_from_imu, refinement.pose);
+      recoveryPoseCorrection(predicted_map_from_lidar, refinement.pose);
     const Eigen::Isometry3d observed_odom_from_map =
-      odom_from_imu * refinement.pose.inverse();
+      odom_from_lidar * refinement.pose.inverse();
     const Eigen::Isometry3d disagreement = correction;
     const bool accepted =
       refinement.valid &&
-      refinement.inlier_fraction >= vgicp_min_inlier_fraction_ &&
+      refinement.inlier_fraction >= recovery_min_inlier_fraction_ &&
       refinement.normalized_error <= recovery_max_normalized_error_ &&
       correction.translation().norm() <= recovery_max_correction_translation_m_ &&
       rotationDegrees(correction) <= recovery_max_correction_rotation_deg_ &&
@@ -729,6 +943,7 @@ private:
       }
       if (accepted) {
         pending_recovery_odom_from_map_ = observed_odom_from_map;
+        pending_recovery_map_from_sensor_ = refinement.pose;
       }
       RecoveryConsensusState state{
         pending_recovery_confirmations_, pending_recovery_failures_};
@@ -738,11 +953,13 @@ private:
       pending_recovery_failures_ = state.failures;
       if (consensus_action == RecoveryConsensusAction::kReject) {
         pending_recovery_ = false;
+        bbs_batch_candidate_active_ = false;
         logger_->warn(
           "rejected recovery candidate generation={} after {} inconsistent frames",
           generation, pending_recovery_failures_);
       } else if (consensus_action == RecoveryConsensusAction::kActivate) {
         pending_recovery_ = false;
+        bbs_batch_candidate_active_ = false;
       }
     }
     if (consensus_action != RecoveryConsensusAction::kActivate) {
@@ -755,6 +972,11 @@ private:
       map_state_key_, gtsam::Pose3(observed_odom_from_map.matrix()));
     new_stamps[map_state_key_] = frame.stamp;
     map_factor_active_ = false;
+    {
+      std::lock_guard<std::mutex> lock(public_transform_mutex_);
+      verified_recovery_snap_pending_ = true;
+      public_pose_hold_initialized_ = false;
+    }
     map_lock_lost_.store(false);
     publishRecoveryRequested(false);
     logger_->warn(
@@ -776,18 +998,39 @@ private:
       logger_->error("refusing non-finite tightly coupled map-to-odom estimate");
       return;
     }
-    BoundedMapOdomStep public_step;
-    if (!public_map_odom_initialized_) {
-      public_step.transform = target_map_from_odom;
-      public_map_odom_initialized_ = true;
-    } else {
-      public_step = boundMapOdomStep(
-        public_map_from_odom_, target_map_from_odom,
-        public_max_translation_step_m_, public_max_rotation_step_deg_);
+    glim::EstimationFrame::ConstPtr latest_frame;
+    {
+      std::lock_guard<std::mutex> lock(frame_mutex_);
+      latest_frame = latest_odometry_frame_;
     }
-    public_map_from_odom_ = public_step.transform;
+    BoundedMapOdomStep public_step;
+    bool verified_recovery_snap = false;
+    Eigen::Isometry3d published_map_from_odom = Eigen::Isometry3d::Identity();
+    {
+      std::lock_guard<std::mutex> lock(public_transform_mutex_);
+      if (map_lock_lost_.load() && public_pose_hold_initialized_ && latest_frame) {
+        public_step.transform = mapFromOdomHoldingSensorPose(
+          frozen_public_map_from_lidar_, latest_frame->T_world_lidar);
+        public_map_odom_initialized_ = true;
+      } else if (!public_map_odom_initialized_ || verified_recovery_snap_pending_) {
+        public_step.transform = target_map_from_odom;
+        verified_recovery_snap = verified_recovery_snap_pending_;
+        verified_recovery_snap_pending_ = false;
+        public_map_odom_initialized_ = true;
+      } else {
+        public_step = boundMapOdomStep(
+          public_map_from_odom_, target_map_from_odom,
+          public_max_translation_step_m_, public_max_rotation_step_deg_);
+      }
+      public_map_from_odom_ = public_step.transform;
+      published_map_from_odom = public_map_from_odom_;
+    }
     glim::GlobalMappingCallbacks::on_external_map_odom_update(
-      latest_tightly_coupled_stamp_, public_map_from_odom_, true);
+      latest_tightly_coupled_stamp_, published_map_from_odom, true);
+    if (verified_recovery_snap) {
+      logger_->warn(
+        "published independently verified recovery transition after lost-pose hold");
+    }
     if (public_step.translation_limited || public_step.rotation_limited) {
       logger_->warn(
         "bounded public map-to-odom transition (translation_limited={}, rotation_limited={})",
@@ -967,14 +1210,14 @@ private:
           submap->id);
         return;
       }
-      const Eigen::Isometry3d map_from_latest_imu =
-        registration_anchor * latest_frame->T_world_imu;
-      if (!finiteTransform(map_from_latest_imu)) {
+      const Eigen::Isometry3d map_from_latest_lidar =
+        registration_anchor * latest_frame->T_world_lidar;
+      if (!finiteTransform(map_from_latest_lidar)) {
         logger_->warn(
           "rejected non-finite odom-bridge candidate for submap={}", submap->id);
         return;
       }
-      queueRecoveryCandidate(map_from_latest_imu, "odom-bridge");
+      queueRecoveryCandidate(map_from_latest_lidar, "odom-bridge");
       return;
     }
     Eigen::Isometry3d map_odom_observation = registration_anchor;
@@ -1118,7 +1361,11 @@ private:
   // through IMU deskewing.  Its verifier therefore needs a slightly wider
   // residual gate than normal tracking, while retaining the 50% overlap,
   // bounded correction, and three-consecutive-frame consensus gates.
-  double recovery_max_normalized_error_{6.5};
+  double recovery_max_normalized_error_{12.0};
+  // Repetitive road geometry can produce locally consistent aliases around
+  // 0.5--0.6 overlap. A global recovery must satisfy a stronger overlap gate
+  // than ordinary tracking before it is allowed to move the public map frame.
+  double recovery_min_inlier_fraction_{0.75};
   double vgicp_max_coarse_delta_translation_m_{2.0};
   double vgicp_max_coarse_delta_rotation_deg_{5.0};
   double tracking_crop_radius_m_{35.0};
@@ -1148,6 +1395,7 @@ private:
   std::size_t map_factor_overlap_stride_{10};
   double map_factor_min_overlap_fraction_{0.05};
   std::size_t map_factor_min_overlap_inliers_{32};
+  double map_state_prior_precision_{1.0};
   bool map_factor_active_{false};
   std::atomic_bool map_lock_lost_{false};
   gtsam::Key map_state_key_{gtsam::Symbol('m', 0)};
@@ -1160,6 +1408,8 @@ private:
 
   std::mutex recovery_mutex_;
   bool pending_recovery_{false};
+  bool rerank_bbs_candidates_{false};
+  bool bbs_batch_candidate_active_{false};
   bool pending_recovery_anchor_initialized_{false};
   std::size_t pending_recovery_generation_{0};
   std::size_t pending_recovery_confirmations_{0};
@@ -1175,7 +1425,11 @@ private:
   double public_max_translation_step_m_{0.25};
   double public_max_rotation_step_deg_{2.0};
   bool public_map_odom_initialized_{false};
+  std::mutex public_transform_mutex_;
   Eigen::Isometry3d public_map_from_odom_{Eigen::Isometry3d::Identity()};
+  bool public_pose_hold_initialized_{false};
+  bool verified_recovery_snap_pending_{false};
+  Eigen::Isometry3d frozen_public_map_from_lidar_{Eigen::Isometry3d::Identity()};
   bool map_frame_initialized_{false};
   bool bootstrap_anchor_available_{false};
   Eigen::Isometry3d bootstrap_anchor_{Eigen::Isometry3d::Identity()};
@@ -1183,6 +1437,8 @@ private:
   std::mutex frame_mutex_;
   glim::EstimationFrame::ConstPtr latest_odometry_frame_;
   std::deque<std::pair<double, Eigen::Isometry3d>> odometry_history_;
+  std::deque<std::pair<double, glim::PreprocessedFrame::ConstPtr>>
+  recovery_frame_history_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr recovery_requested_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr recovery_cloud_pub_;
   bool tracking_anchor_available_{false};

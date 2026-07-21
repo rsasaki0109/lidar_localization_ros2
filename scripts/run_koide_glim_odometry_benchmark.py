@@ -45,10 +45,29 @@ INDOOR_AZURE_KINECT_T_LIDAR_IMU = [
     0.5247377168171308,
 ]
 
+RECOVERY_SAFETY_GATES = (
+    "bag_completed",
+    "bounded_pose_jump",
+    "bounded_queue",
+    "final_arrival",
+    "finite_poses",
+    "monotonic_timestamps",
+    "no_tf_jump",
+    "no_unauthorized_reset",
+    "pose_gap",
+    "process_survived",
+    "trajectory_samples_present",
+)
+
 
 def run_checked(command):
     print("+", " ".join(str(value) for value in command), flush=True)
     subprocess.run(command, check=True)
+
+
+def failed_recovery_safety_gates(completion: dict) -> list[str]:
+    gates = completion.get("gates", {})
+    return [name for name in RECOVERY_SAFETY_GATES if gates.get(name) is not True]
 
 
 def parse_size_bytes(value: str) -> int:
@@ -203,6 +222,7 @@ def recovery_sidecar_command(
         "/usr/bin/python3 /recovery_scripts/global_localization_node.py --ros-args "
         "-p occupancy_yaml:=/recovery_map/occupancy.yaml "
         "-p cloud_topic:=/glil/recovery_points -p use_cpp_backend:=true "
+        f"-p seed_z_m:={float(reset_z_m)!r} "
         f"-p max_scan_points:={max_scan_points} "
         f"-p angular_resolution_deg:={float(angular_resolution_deg)!r} "
         f"-p max_candidates:={max_candidates}"
@@ -290,7 +310,7 @@ def main() -> int:
     )
     parser.add_argument("--recovery-max-scan-points", type=int, default=256)
     parser.add_argument("--recovery-angular-resolution-deg", type=float, default=10.0)
-    parser.add_argument("--recovery-max-candidates", type=int, default=8)
+    parser.add_argument("--recovery-max-candidates", type=int, default=32)
     parser.add_argument("--recovery-max-attempts", type=int, default=3)
     parser.add_argument("--recovery-max-walk-candidates", type=int, default=1)
     parser.add_argument(
@@ -351,6 +371,8 @@ def main() -> int:
                 odometry = config_odometry["odometry_estimation"]
                 odometry["use_gicp_coreset"] = True
                 odometry["use_tightly_coupled_coreset"] = True
+                odometry["use_isam2_qr"] = True
+                odometry["max_imu_prediction_translation_m"] = 20.0
                 odometry["full_connection_window_size"] = 3
                 odometry["num_threads"] = args.tightly_coupled_num_threads
                 odometry["coreset_reuse_tolerance_trans"] = 0.25
@@ -466,6 +488,7 @@ def main() -> int:
             ])
     if recovery_occupancy is not None:
         docker_command.extend([
+            "-e", "GLIM_PRIOR_MAP_RERANK_BBS_CANDIDATES=true",
             "-v", f"{repo / 'scripts'}:/recovery_scripts:ro",
             "-v", f"{recovery_occupancy.parent}:/recovery_map:ro",
             "-v", f"{recovery_bbs_extension.parent}:/recovery_modules:ro",
@@ -593,7 +616,7 @@ def main() -> int:
         "--pose-csv", str(output / "pose_trace.csv"),
         "--output-json", str(output / "runtime.json"),
     ])
-    run_checked([
+    completion_command = [
         python, str(repo / "scripts/check_koide_odometry_completion.py"),
         "--estimated-csv", str(output / "pose_trace.csv"),
         "--reference-csv", str(reference),
@@ -601,8 +624,36 @@ def main() -> int:
         "--run-summary-json", str(output / "summary.json"),
         "--output-json", str(output / "odometry_completion.json"),
         "--requested-duration-sec", str(args.requested_duration_sec),
+    ]
+    if recovery_occupancy is None:
+        run_checked(completion_command)
+        print(f"PASS: {output / 'odometry_completion.json'}")
+        return 0
+
+    # A real kidnap deliberately contains a large GT discontinuity and a lost
+    # interval, so whole-run ATE/RPE and coverage are not the recovery verdict.
+    # Still generate the ordinary report and enforce its continuity/runtime
+    # safety subset, then require a sustained GT-verified terminal recovery.
+    print("+", " ".join(str(value) for value in completion_command), flush=True)
+    completion_result = subprocess.run(completion_command, check=False)
+    if completion_result.returncode not in (0, 1):
+        return completion_result.returncode
+    completion = json.loads(
+        (output / "odometry_completion.json").read_text(encoding="utf-8"))
+    failed_safety = failed_recovery_safety_gates(completion)
+    if failed_safety:
+        print(
+            "recovery run failed safety gates: " + ", ".join(failed_safety),
+            file=sys.stderr,
+        )
+        return 1
+    run_checked([
+        python, str(repo / "scripts/check_recovery_pose_gt.py"),
+        "--pose-trace", str(output / "pose_trace.csv"),
+        "--gt", str(reference),
+        "--output-json", str(output / "recovery_pose_gt.json"),
     ])
-    print(f"PASS: {output / 'odometry_completion.json'}")
+    print(f"PASS: {output / 'recovery_pose_gt.json'}")
     return 0
 
 

@@ -24,10 +24,12 @@ submap VGICP observations start a new graph epoch to anchor map-degenerate direc
 they do not publish a second correction. The inverse graph state is the sole public
 `map -> odom` transform and is bounded to 0.25 m and 2 degrees per update by default.
 
-When map overlap is lost, only map factors are omitted. Range-inertial odometry and
-re-stamping of the last valid `map -> odom` continue. `/initialpose` candidates are
-independently checked by VGICP over three consecutive frames before a recovery epoch
-can enter the graph. Rejected candidates do not reset odometry or TF.
+When map overlap is lost, only map factors are omitted. Range-inertial odometry
+continues while `map -> odom` is recomputed to hold the last trusted public sensor pose.
+The recovery sidecar returns 32 BBS hypotheses by default; GLIL re-ranks their raw 3D
+scans, time-aligns the winner with post-query odometry, and independently checks it by
+VGICP over three consecutive frames before a recovery epoch can enter the graph.
+Rejected candidates do not reset odometry or TF.
 
 No ground truth is used at runtime. Ground truth is used only by the evaluator and GIF
 renderer. Full-map KISS search remains experimental and is disabled by default because
@@ -35,7 +37,7 @@ the unseeded outdoor replay found a repeatable structural ambiguity.
 
 The exact-coreset GLIM core and ROS consumer are pinned to published fork revisions:
 
-- [GLIL unofficial tightly coupled exact-coreset core](https://github.com/rsasaki0109/glil_unofficial/commit/0b414a701e95d1d464fc4aebf4c5e6835386c033)
+- [GLIL unofficial tightly coupled exact-coreset core](https://github.com/rsasaki0109/glil_unofficial/commit/e02ffecbe9bf98156f1b3d25da4520f3bd76d976)
 - [GLIM ROS external map-to-odom consumer](https://github.com/rsasaki0109/glim_ros2/commit/cd4b2c9eb37a5c12c93d7339ce10167ebaa55288)
 
 The Dockerfile pins the published fork revisions. The design follows the
@@ -64,10 +66,13 @@ The benchmark runner adds `libglim_prior_map_localizer.so` to GLIM's
 | `GLIM_PRIOR_MAP_PATH` | required | ASCII or little-endian binary PLY prior map |
 | `GLIM_PRIOR_MAP_TIGHTLY_COUPLED` | false | insert scan-to-map factors into GLIM's fixed-lag graph |
 | `GLIM_PRIOR_MAP_FACTOR_CORESET_SIZE` | 32 | exact quadratic coreset target size |
+| `GLIM_PRIOR_MAP_STATE_PRIOR_PRECISION` | 1.0 | weak keep-alive prior for each map-state epoch |
 | `GLIM_PRIOR_MAP_FACTOR_MAX_CORRESPONDENCE_M` | 2.0 | map-factor correspondence gate |
 | `GLIM_PRIOR_MAP_FACTOR_MIN_OVERLAP_FRACTION` | 0.05 | minimum per-scan map overlap |
 | `GLIM_PRIOR_MAP_FACTOR_NUM_THREADS` | 1 | prior-map factor worker count |
 | `GLIM_PRIOR_MAP_RECOVERY_CONFIRMATION_FRAMES` | 3 | consistent frames required for recovery |
+| `GLIM_PRIOR_MAP_RECOVERY_MIN_INLIER_FRACTION` | 0.75 | strict overlap gate that rejects repetitive-road aliases |
+| `GLIM_PRIOR_MAP_RECOVERY_MAX_NORMALIZED_ERROR` | 12.0 | raw-scan VGICP recovery ceiling; overlap, correction, rotation, and multi-frame consensus gates remain active |
 | `GLIM_PRIOR_MAP_PUBLIC_MAX_TRANSLATION_STEP_M` | 0.25 | public TF translation bound per update |
 | `GLIM_PRIOR_MAP_PUBLIC_MAX_ROTATION_STEP_DEG` | 2.0 | public TF rotation bound per update |
 | `GLIM_PRIOR_MAP_VOXEL_SIZE_M` | 0.75 | KISS-Matcher resolution |
@@ -93,6 +98,21 @@ The benchmark runner adds `libglim_prior_map_localizer.so` to GLIM's
 
 In legacy split mode only, GLIM ROS parameter
 `glim_ros.external_map_odom_time_constant` controls smoothing and defaults to 2.0 s.
+
+## Tightly coupled kidnap recovery measurement
+
+The 90 s `outdoor_kidnap_b` replay was repeated after adding time-aligned BBS/GLIL
+candidate propagation and the 0.75 recovery-overlap gate. The standard 32-candidate
+configuration selected rank 5, verified three frames at 0.916, 0.955, and 0.954
+overlap, then reacquired the prior-map factor at 0.997 overlap. The GT-only evaluator
+reported `recovered_true`, a 29.90 s terminal recovered window, and 0.113 m final XY
+error. The process completed with finite monotonic poses, zero TF jumps, zero
+unauthorized resets, bounded queue growth, and a drained final queue.
+
+An 8-candidate comparison selected a repetitive-road alias with about 0.60 overlap;
+the safety evaluator rejected the run, and that alias is below the new 0.75 gate. This
+is why 32 candidates are the recovery default; the smaller set is not accepted as a
+low-CPU production profile.
 
 ## Legacy split-mode measurements
 
@@ -199,8 +219,8 @@ and throughput are measured separately on the kidnap bags.
 
 ## Remaining acceptance work
 
-1. Record the clean six-run outdoor-hard/outdoor-kidnap matrix after competing CPU jobs
-   finish, including CPU/RSS, non-planar metrics, and recovery behavior.
+1. Record `outdoor_kidnap_a`, then the clean 01a/01b/02a/02b tightly coupled matrix,
+   including CPU/RSS, non-planar metrics, and recovery behavior.
 2. Resolve the indoor RGB-D scan-to-map correspondence ambiguity exposed by the Azure
    Kinect profile before claiming indoor kidnap acceptance.
 3. Regenerate the GLIL-only gallery GIFs from the accepted runs.

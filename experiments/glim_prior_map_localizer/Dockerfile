@@ -9,7 +9,7 @@ RUN git clone https://github.com/MIT-SPARK/KISS-Matcher.git /tmp/KISS-Matcher \
       CMAKE_EXTRA_ARGS=-DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     && rm -rf /tmp/KISS-Matcher
 
-ARG GLIL_REVISION=0b414a701e95d1d464fc4aebf4c5e6835386c033
+ARG GLIL_REVISION=e02ffecbe9bf98156f1b3d25da4520f3bd76d976
 ARG GLIM_ROS2_REVISION=cd4b2c9eb37a5c12c93d7339ce10167ebaa55288
 
 LABEL org.opencontainers.image.revision.glil="${GLIL_REVISION}" \
@@ -25,6 +25,10 @@ RUN git clone https://github.com/rsasaki0109/glil_unofficial.git /tmp/glil \
       /root/ros2_ws/src/glim/include/glim/mapping/callbacks.hpp \
     && cp /tmp/glil/src/glim/mapping/callbacks.cpp \
       /root/ros2_ws/src/glim/src/glim/mapping/callbacks.cpp \
+    && cp /tmp/glil/include/glim/mapping/global_mapping.hpp \
+      /root/ros2_ws/src/glim/include/glim/mapping/global_mapping.hpp \
+    && cp /tmp/glil/src/glim/mapping/global_mapping.cpp \
+      /root/ros2_ws/src/glim/src/glim/mapping/global_mapping.cpp \
     && cp /tmp/glil/include/glim/odometry/exact_quadratic_coreset.hpp \
       /root/ros2_ws/src/glim/include/glim/odometry/exact_quadratic_coreset.hpp \
     && cp /tmp/glil/include/glim/odometry/integrated_gicp_factor_coreset.hpp \
@@ -33,6 +37,10 @@ RUN git clone https://github.com/rsasaki0109/glil_unofficial.git /tmp/glil \
       /root/ros2_ws/src/glim/include/glim/odometry/tightly_coupled_window.hpp \
     && cp /tmp/glil/include/glim/odometry/odometry_estimation_cpu.hpp \
       /root/ros2_ws/src/glim/include/glim/odometry/odometry_estimation_cpu.hpp \
+    && cp /tmp/glil/include/glim/odometry/odometry_estimation_imu.hpp \
+      /root/ros2_ws/src/glim/include/glim/odometry/odometry_estimation_imu.hpp \
+    && cp /tmp/glil/include/glim/odometry/imu_prediction_guard.hpp \
+      /root/ros2_ws/src/glim/include/glim/odometry/imu_prediction_guard.hpp \
     && cp /tmp/glil/src/glim/odometry/odometry_estimation_cpu.cpp \
       /root/ros2_ws/src/glim/src/glim/odometry/odometry_estimation_cpu.cpp \
     && cp /tmp/glil/src/glim/odometry/odometry_estimation_imu.cpp \

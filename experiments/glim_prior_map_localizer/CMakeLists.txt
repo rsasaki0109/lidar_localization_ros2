@@ -52,7 +52,9 @@ if(BUILD_TESTING)
   add_executable(test_prior_map_overlap_policy
     test/test_prior_map_overlap_policy.cpp)
   target_include_directories(test_prior_map_overlap_policy PRIVATE include)
-  target_link_libraries(test_prior_map_overlap_policy PRIVATE Eigen3::Eigen)
+  target_link_libraries(test_prior_map_overlap_policy PRIVATE
+    Eigen3::Eigen
+    gtsam)
   add_test(NAME prior_map_overlap_policy COMMAND test_prior_map_overlap_policy)
 endif()
 

@@ -28,6 +28,14 @@ def test_percentile_uses_nearest_ordered_sample():
     assert percentile([4.0, 1.0, 3.0, 2.0], 0.95) == 4.0
 
 
+def test_recovery_safety_gate_subset_ignores_expected_accuracy_failures():
+    gates = {name: True for name in RUNNER["RECOVERY_SAFETY_GATES"]}
+    gates.update({"coverage": False, "translation_ate": False, "rpe_translation": False})
+    assert RUNNER["failed_recovery_safety_gates"]({"gates": gates}) == []
+    gates["bounded_queue"] = False
+    assert RUNNER["failed_recovery_safety_gates"]({"gates": gates}) == ["bounded_queue"]
+
+
 def test_resource_evidence_records_cpu_memory_and_rss(tmp_path):
     samples = [
         {"elapsed_sec": 1.0, "cpu_percent": 75.0,
