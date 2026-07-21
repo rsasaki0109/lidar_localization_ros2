@@ -1,37 +1,48 @@
 # GLIL-style GLIM prior-map localizer
 
-This experiment keeps GLIM LiDAR/IMU odometry continuous and applies prior-map
-localization only through a smoothed `map -> odom` transform. It replaces continuously
-running NDT; it does not deform GLIM's factor graph or rewrite the raw odometry.
+This experiment provides a GLIL-style tightly coupled localizer that keeps GLIM
+LiDAR/IMU odometry continuous while adding prior-map constraints to the same fixed-lag
+factor graph. It replaces continuously running NDT. The implementation combines the
+sliding-window range-inertial localization formulation from Koide et al. (ICRA 2024)
+with exact quadratic point-cloud downsampling from Koide et al. (ICRA 2025).
+
+The older split `map -> odom` experiment is retained as an opt-in comparison mode.
+New measurements and publication artifacts use the tightly coupled mode.
 
 ## Architecture
 
-GLIM produces `odom -> base_link` at scan rate. At a sparse submap interval, this
-extension crops the prior PLY map around the current prediction and runs CPU VGICP.
-Normal tracking uses direct VGICP; KISS-Matcher is invoked only for initial acquisition
-or after direct VGICP rejects the candidate. A large recovery correction requires two
-independent submaps to agree before it is accepted.
+GLIM produces continuous `odom -> base_link` poses at scan rate. Each fixed-lag update
+jointly optimizes IMU preintegration, scan-to-scan GICP to the preceding three frames,
+and scan-to-prior-map GICP where overlap is sufficient. Scan factors use the ICRA 2025
+deferred exact-coreset state machine: a full linearization is reduced to a weighted
+subset that preserves all independent entries of the relative-pose `H`, `b`, and `c`,
+then reused only inside an explicit linearization bound.
 
-An accepted registration is converted into a `map -> odom` observation. The output:
+The graph owns a persistent `odom_from_map` state. Prior-map factors connect it directly
+to the same pose states constrained by IMU and scan-to-scan factors. Verified sparse
+submap VGICP observations start a new graph epoch to anchor map-degenerate directions;
+they do not publish a second correction. The inverse graph state is the sole public
+`map -> odom` transform and is bounded to 0.25 m and 2 degrees per update by default.
 
-- keeps the configured startup rotation fixed;
-- defines its translation reference from the first accepted observation;
-- applies 20% of each later translation displacement from that reference by default;
-- optionally uses a separate vertical gain and, during global-consensus pending, updates
-  only Z while keeping the last accepted XY and rotation;
-- transitions with a 2 s first-order smoother in GLIM ROS; and
-- freezes and re-stamps the last valid transform while map matching is rejected.
+When map overlap is lost, only map factors are omitted. Range-inertial odometry and
+re-stamping of the last valid `map -> odom` continue. `/initialpose` candidates are
+independently checked by VGICP over three consecutive frames before a recovery epoch
+can enter the graph. Rejected candidates do not reset odometry or TF.
 
 No ground truth is used at runtime. Ground truth is used only by the evaluator and GIF
 renderer. Full-map KISS search remains experimental and is disabled by default because
 the unseeded outdoor replay found a repeatable structural ambiguity.
 
-The callback and ROS consumer are maintained in two forks:
+The previously published callback and ROS consumer are maintained in these forks;
+the exact-coreset GLIM update will be pinned here when the tightly coupled branch is
+published:
 
 - [GLIL unofficial core callback](https://github.com/rsasaki0109/glil_unofficial/commit/dd29667938cb56ef59de7f90290ad2dbc613f00c)
 - [GLIM ROS external map-to-odom consumer](https://github.com/rsasaki0109/glim_ros2/commit/cd4b2c9eb37a5c12c93d7339ce10167ebaa55288)
 
-The Dockerfile pins both commits. The design follows the
+The Dockerfile pins the published fork revisions. The design follows the
+[ICRA 2024 localization paper](https://arxiv.org/abs/2402.05540),
+[ICRA 2025 exact-downsampling paper](https://arxiv.org/abs/2505.01017),
 [GLIM paper](https://arxiv.org/abs/2407.10344),
 [GLIM extension API](https://github.com/koide3/glim/blob/master/docs/extend.md), and
 [KISS-Matcher paper](https://arxiv.org/abs/2409.15615).
@@ -39,7 +50,7 @@ The Dockerfile pins both commits. The design follows the
 ## Build
 
 ```bash
-docker build -t lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom \
+docker build -t lidarloc/glim-ros2:jazzy-v1.2.2-tightly-coupled \
   experiments/glim_prior_map_localizer
 ```
 
@@ -53,6 +64,14 @@ The benchmark runner adds `libglim_prior_map_localizer.so` to GLIM's
 | Variable | Default | Meaning |
 | --- | ---: | --- |
 | `GLIM_PRIOR_MAP_PATH` | required | ASCII or little-endian binary PLY prior map |
+| `GLIM_PRIOR_MAP_TIGHTLY_COUPLED` | false | insert scan-to-map factors into GLIM's fixed-lag graph |
+| `GLIM_PRIOR_MAP_FACTOR_CORESET_SIZE` | 32 | exact quadratic coreset target size |
+| `GLIM_PRIOR_MAP_FACTOR_MAX_CORRESPONDENCE_M` | 2.0 | map-factor correspondence gate |
+| `GLIM_PRIOR_MAP_FACTOR_MIN_OVERLAP_FRACTION` | 0.05 | minimum per-scan map overlap |
+| `GLIM_PRIOR_MAP_FACTOR_NUM_THREADS` | 1 | prior-map factor worker count |
+| `GLIM_PRIOR_MAP_RECOVERY_CONFIRMATION_FRAMES` | 3 | consistent frames required for recovery |
+| `GLIM_PRIOR_MAP_PUBLIC_MAX_TRANSLATION_STEP_M` | 0.25 | public TF translation bound per update |
+| `GLIM_PRIOR_MAP_PUBLIC_MAX_ROTATION_STEP_DEG` | 2.0 | public TF rotation bound per update |
 | `GLIM_PRIOR_MAP_VOXEL_SIZE_M` | 0.75 | KISS-Matcher resolution |
 | `GLIM_PRIOR_MAP_MIN_INLIERS` | 10 | minimum KISS inliers for coarse fallback |
 | `GLIM_PRIOR_MAP_BOOTSTRAP_CENTER_X/Y/Z` | unset | approximate startup position in map frame |
@@ -74,12 +93,14 @@ The benchmark runner adds `libglim_prior_map_localizer.so` to GLIM's
 | `GLIM_PRIOR_MAP_VGICP_MIN_INLIER_FRACTION` | 0.50 | minimum overlap |
 | `GLIM_PRIOR_MAP_VGICP_MAX_NORMALIZED_ERROR` | 5.0 | maximum error per inlier |
 
-GLIM ROS parameter `glim_ros.external_map_odom_time_constant` controls smoothing and
-defaults to 2.0 s.
+In legacy split mode only, GLIM ROS parameter
+`glim_ros.external_map_odom_time_constant` controls smoothing and defaults to 2.0 s.
 
-## Measured full replays
+## Legacy split-mode measurements
 
-All four outdoor-hard bags were replayed with the exact quadratic coreset (size 32).
+The results below predate the tightly coupled graph and are retained as the split-mode
+baseline. All four outdoor-hard bags were replayed with the exact quadratic coreset
+(size 32).
 The original policy passed three bags, while `outdoor_hard_02a` exceeded the 2.0 m ATE
 limit in both repeats. A targeted 02a variant with vertical gain 1.0 then passed two
 independent full repeats without changing the horizontal gain or acceptance gates.
@@ -131,19 +152,20 @@ python3 scripts/run_koide_glim_odometry_benchmark.py \
   --prior-map "$DATA/map_outdoor_hard.ply" \
   --prior-map-bootstrap-center -86.040205 -8.857126 -11.043077 \
   --prior-map-bootstrap-yaw-deg -82.0063 \
-  --config param/odometry/glim_koide_outdoor_gicp6500_coreset \
-  --image lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom \
+  --prior-map-tightly-coupled \
+  --tightly-coupled-num-threads 8 \
+  --image lidarloc/glim-ros2:jazzy-v1.2.2-tightly-coupled \
+  --allow-image-mismatch \
   --output /tmp/glil_outdoor_hard_01a
 ```
 
-Add `--prior-map-vertical-gain 1.0` for the measured 02a Z-bridge policy.
+Do not combine `--prior-map-vertical-gain` with tightly coupled mode. Sparse verified
+graph epochs already use the configured horizontal gain and full vertical observation.
 
 ## Remaining acceptance work
 
-1. Replay the deterministic one-thread profile on 01a/02a/02b and resolve the remaining
-   non-planar Z drift before making the vertical policy the default.
-2. Measure seeded and unseeded false-match and kidnapped-pose recovery cases.
-3. Confirm that two-submap recovery reacquires a deliberately displaced pose without
-   discontinuity or a false map anchor.
-4. Compare whole-process CPU and accuracy with the validated GLIM+NDT bridge before
-   changing the default localizer.
+1. Record clean full 01a/01b/02a/02b tightly coupled replays after competing CPU jobs
+   finish, including CPU/RSS and non-planar metrics.
+2. Run the indoor and outdoor kidnap bags plus an injected-displacement recovery case.
+3. Pin and publish the updated GLIM/GLIM ROS forks and benchmark image.
+4. Regenerate the GLIL-only gallery GIFs from the accepted runs.
