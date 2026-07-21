@@ -15,6 +15,8 @@ find_package(kiss_matcher REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 add_library(glim_prior_map_localizer SHARED
   src/prior_map_localizer.cpp
@@ -30,6 +32,10 @@ target_link_libraries(glim_prior_map_localizer PRIVATE
   rclcpp::rclcpp
   geometry_msgs::geometry_msgs__rosidl_generator_cpp
   geometry_msgs::geometry_msgs__rosidl_typesupport_cpp
+  std_msgs::std_msgs__rosidl_generator_cpp
+  std_msgs::std_msgs__rosidl_typesupport_cpp
+  sensor_msgs::sensor_msgs__rosidl_generator_cpp
+  sensor_msgs::sensor_msgs__rosidl_typesupport_cpp
   ${GTSAM_LIBRARIES})
 
 add_executable(glim_prior_map_offline_match

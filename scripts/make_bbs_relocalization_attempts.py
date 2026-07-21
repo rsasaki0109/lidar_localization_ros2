@@ -28,7 +28,10 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import yaml
-from PIL import Image
+try:
+    from PIL import Image
+except ImportError:  # Minimal GLIL runtime images only need PGM occupancy maps.
+    Image = None
 
 _SCRIPT_DIR = str(Path(__file__).resolve().parent)
 if _SCRIPT_DIR not in sys.path:
@@ -437,8 +440,35 @@ def load_occupancy_map(yaml_path: Path) -> OccupancyMap:
     if not image_path.is_absolute():
         image_path = yaml_path.parent / image_path
 
-    image = Image.open(image_path).convert("L")
-    pixels = np.asarray(image, dtype=np.float32)
+    if Image is not None:
+        image = Image.open(image_path).convert("L")
+        pixels = np.asarray(image, dtype=np.float32)
+    elif image_path.suffix.lower() == ".pgm":
+        tokens = []
+        with image_path.open("rb") as stream:
+            magic = stream.readline().strip()
+            while len(tokens) < 3:
+                line = stream.readline()
+                if not line:
+                    raise ValueError(f"truncated PGM header: {image_path}")
+                line = line.split(b"#", 1)[0]
+                tokens.extend(line.split())
+            width, height, max_value = map(int, tokens[:3])
+            if magic == b"P5":
+                dtype = np.uint8 if max_value < 256 else ">u2"
+                pixels = np.frombuffer(stream.read(), dtype=dtype, count=width * height)
+            elif magic == b"P2":
+                pixels = np.fromstring(stream.read().decode("ascii"), sep=" ")
+            else:
+                raise ValueError(f"unsupported PGM magic {magic!r}: {image_path}")
+        if pixels.size != width * height:
+            raise ValueError(f"truncated PGM pixels: {image_path}")
+        pixels = pixels.reshape(height, width).astype(np.float32)
+        if max_value != 255:
+            pixels *= 255.0 / float(max_value)
+    else:
+        raise RuntimeError(
+            f"Pillow is unavailable and occupancy image is not PGM: {image_path}")
 
     occupied_thresh = float(metadata.get("occupied_thresh", 0.65))
     negate = int(metadata.get("negate", 0))

@@ -209,6 +209,10 @@ class SupervisorObservation:
     # is ready this tick. When present it supersedes ``best_candidate_score`` and
     # enables the ranked-candidate walk. None while no fresh reply is available.
     candidate_scores: Optional[Tuple[float, ...]] = None
+    # A service reply arrived before G2 had received its first scan. This is a
+    # readiness condition rather than a localization attempt: retry without
+    # spending the hard candidate-query budget.
+    retryable_empty_reply: bool = False
     # Current alignment fitness, if known (lower is better).
     best_fitness: Optional[float] = None
     # Optional unique timestamp for the fitness observation. When supplied, the
@@ -390,6 +394,10 @@ def decide(
                     active_source="bbs"))
 
     if name == STATE_AWAIT_CANDIDATES:
+        if obs.retryable_empty_reply:
+            return SupervisorDecision(
+                ACTION_NONE, "scan_not_ready",
+                replace(state, name=STATE_AWAIT_QUERY, query_issued_sec=None))
         reply_scores = _resolve_candidate_scores(obs)
         if reply_scores is not None:
             if reply_scores and reply_scores[0] >= params.min_candidate_score:

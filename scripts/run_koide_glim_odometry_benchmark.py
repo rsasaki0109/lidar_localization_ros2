@@ -239,6 +239,11 @@ def main() -> int:
         "graph instead of producing an external map-to-odom correction.",
     )
     parser.add_argument(
+        "--prior-map-full-global-search", action="store_true",
+        help="Run protected full-map KISS acquisition at sparse submap rate. "
+        "Intended for autonomous kidnap-recovery experiments.",
+    )
+    parser.add_argument(
         "--tightly-coupled-num-threads", type=int, default=8,
         help="CPU threads for tightly coupled scan and prior-map factors (default: 8).",
     )
@@ -311,6 +316,8 @@ def main() -> int:
         parser.error("bootstrap center and bootstrap yaw must be provided together")
     if args.prior_map_tightly_coupled and prior_map is None:
         parser.error("--prior-map-tightly-coupled requires --prior-map")
+    if args.prior_map_full_global_search and prior_map is None:
+        parser.error("--prior-map-full-global-search requires --prior-map")
     if args.prior_map_tightly_coupled and args.prior_map_bootstrap_center is None:
         parser.error(
             "--prior-map-tightly-coupled currently requires the bootstrap center and yaw")
@@ -379,6 +386,10 @@ def main() -> int:
                     f"{args.tightly_coupled_num_threads}"
                 ),
             ])
+        if args.prior_map_full_global_search:
+            docker_command.extend([
+                "-e", "GLIM_PRIOR_MAP_FULL_GLOBAL_SEARCH=true",
+            ])
     playback_duration_parameter = (
         f" -p playback_duration:={args.playback_duration_sec}"
         if args.playback_duration_sec is not None else ""
@@ -438,6 +449,7 @@ def main() -> int:
         "image_id": image_id,
         "prior_map": str(prior_map) if prior_map is not None else None,
         "prior_map_tightly_coupled": args.prior_map_tightly_coupled,
+        "prior_map_full_global_search": args.prior_map_full_global_search,
         "tightly_coupled_num_threads": args.tightly_coupled_num_threads,
         "injected_initial_pose": args.inject_initial_pose,
         "initial_pose_delay_sec": args.initial_pose_delay_sec,
