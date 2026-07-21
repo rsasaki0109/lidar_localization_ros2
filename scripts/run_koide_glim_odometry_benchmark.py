@@ -22,7 +22,7 @@ EXPECTED_IMAGE_IDS = {
     "lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom":
         "sha256:70d056317a475e8ce5a029e5b6d83d0b5e8f4e1587acd069d708eb00cd1b134a",
     "lidarloc/glim-ros2:jazzy-v1.2.2-tightly-coupled":
-        "sha256:b1c945ea0a1df5c7922e67d5648d35c24b605fe54559cff521e8d94a7d18b8c4",
+        "sha256:4ef3f3451c3226e3d619ca57db6805b5cc79dc4fe84c043fe854d8d9fc0e79b7",
 }
 
 SIZE_MULTIPLIERS = {

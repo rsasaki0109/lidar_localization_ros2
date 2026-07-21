@@ -35,7 +35,7 @@ the unseeded outdoor replay found a repeatable structural ambiguity.
 
 The exact-coreset GLIM core and ROS consumer are pinned to published fork revisions:
 
-- [GLIL unofficial tightly coupled exact-coreset core](https://github.com/rsasaki0109/glil_unofficial/commit/9e0d5c65430a30a4df88fa2af1736bca92b11d1e)
+- [GLIL unofficial tightly coupled exact-coreset core](https://github.com/rsasaki0109/glil_unofficial/commit/0b414a701e95d1d464fc4aebf4c5e6835386c033)
 - [GLIM ROS external map-to-odom consumer](https://github.com/rsasaki0109/glim_ros2/commit/cd4b2c9eb37a5c12c93d7339ce10167ebaa55288)
 
 The Dockerfile pins the published fork revisions. The design follows the
