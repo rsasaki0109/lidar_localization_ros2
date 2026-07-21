@@ -72,3 +72,22 @@ def test_indoor_sensor_profile_sets_topics_extrinsic_and_voxels(tmp_path):
     odometry = json.loads(
         (tmp_path / "config_odometry_cpu.json").read_text())["odometry_estimation"]
     assert odometry["ivox_resolution"] == 0.5
+
+
+def test_recovery_sidecar_command_is_gt_free_bounded_and_self_cleaning():
+    command = RUNNER["recovery_sidecar_command"](
+        reset_z_m=-11.3,
+        max_scan_points=256,
+        angular_resolution_deg=10.0,
+        max_candidates=8,
+        max_attempts=3,
+        max_walk_candidates=1,
+    )
+    assert "/glil/recovery_points" in command
+    assert "request_clear_confirms_recovery:=true" in command
+    assert "max_attempts:=3" in command
+    assert "max_walk_candidates:=1" in command
+    assert "angular_resolution_deg:=10.0" in command
+    assert "reset_default_z_m:=-11.3" in command
+    assert "recovery_g2_pid=$!" in command
+    assert "recovery_supervisor_pid=$!" in command

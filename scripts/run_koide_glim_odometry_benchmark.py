@@ -194,6 +194,43 @@ def apply_sensor_profile(config_dir: Path, profile: str) -> None:
         json.dumps(odometry_config, indent=2) + "\n", encoding="utf-8")
 
 
+def recovery_sidecar_command(
+        *, reset_z_m: float, max_scan_points: int,
+        angular_resolution_deg: float, max_candidates: int,
+        max_attempts: int, max_walk_candidates: int) -> str:
+    """Build the in-container G2 + guarded supervisor lifecycle command."""
+    g2 = (
+        "/usr/bin/python3 /recovery_scripts/global_localization_node.py --ros-args "
+        "-p occupancy_yaml:=/recovery_map/occupancy.yaml "
+        "-p cloud_topic:=/glil/recovery_points -p use_cpp_backend:=true "
+        f"-p max_scan_points:={max_scan_points} "
+        f"-p angular_resolution_deg:={float(angular_resolution_deg)!r} "
+        f"-p max_candidates:={max_candidates}"
+    )
+    supervisor = (
+        "/usr/bin/python3 /recovery_scripts/reinitialization_supervisor_node.py "
+        "--ros-args -p request_debounce_sec:=0.5 "
+        "-p min_seconds_between_attempts:=1.0 "
+        f"-p max_attempts:={max_attempts} -p query_timeout_sec:=20.0 "
+        "-p settle_timeout_sec:=1.0 -p recovery_confirmation_samples:=1 "
+        "-p request_clear_confirms_recovery:=true "
+        f"-p max_walk_candidates:={max_walk_candidates} "
+        "-p confirm_cross_check:=false "
+        f"-p reset_default_z_m:={float(reset_z_m)!r} "
+        "-p prefer_reset_default_z_m:=true "
+        "-p enable_seed_motion_compensation:=true "
+        "-p max_seed_speed_mps:=30.0 -p max_seed_latency_sec:=30.0 "
+        "-p seed_motion_wall_fallback:=false "
+        "-p event_log_csv:=/tmp/sidecar_supervisor_events.csv"
+    )
+    return (
+        "export PYTHONPATH=/recovery_modules:/recovery_scripts:$PYTHONPATH; "
+        f"({g2}) > /tmp/sidecar_g2.log 2>&1 & recovery_g2_pid=$!; "
+        f"({supervisor}) > /tmp/sidecar_supervisor.log 2>&1 & "
+        "recovery_supervisor_pid=$!; "
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bag", required=True, help="outdoor_hard rosbag2 directory")
@@ -243,6 +280,19 @@ def main() -> int:
         help="Run protected full-map KISS acquisition at sparse submap rate. "
         "Intended for autonomous kidnap-recovery experiments.",
     )
+    parser.add_argument(
+        "--recovery-occupancy-yaml",
+        help="Start the GT-free G2 BBS + guarded /initialpose supervisor using this map.",
+    )
+    parser.add_argument(
+        "--recovery-bbs-extension",
+        help="Path to bbs_cpp*.so (default: workspace build/lidar_localization_ros2).",
+    )
+    parser.add_argument("--recovery-max-scan-points", type=int, default=256)
+    parser.add_argument("--recovery-angular-resolution-deg", type=float, default=10.0)
+    parser.add_argument("--recovery-max-candidates", type=int, default=8)
+    parser.add_argument("--recovery-max-attempts", type=int, default=3)
+    parser.add_argument("--recovery-max-walk-candidates", type=int, default=1)
     parser.add_argument(
         "--tightly-coupled-num-threads", type=int, default=8,
         help="CPU threads for tightly coupled scan and prior-map factors (default: 8).",
@@ -332,6 +382,30 @@ def main() -> int:
         parser.error("--inject-initial-pose requires --prior-map")
     if args.playback_duration_sec is not None and args.playback_duration_sec <= 0.0:
         parser.error("--playback-duration-sec must be positive")
+    recovery_occupancy = (
+        Path(args.recovery_occupancy_yaml).resolve()
+        if args.recovery_occupancy_yaml else None)
+    recovery_bbs_extension = None
+    if recovery_occupancy is not None:
+        if not recovery_occupancy.is_file():
+            parser.error(f"recovery occupancy YAML does not exist: {recovery_occupancy}")
+        if not args.prior_map_tightly_coupled:
+            parser.error("--recovery-occupancy-yaml requires --prior-map-tightly-coupled")
+        if args.recovery_bbs_extension:
+            recovery_bbs_extension = Path(args.recovery_bbs_extension).resolve()
+        else:
+            candidates = sorted(
+                (repo.parents[1] / "build/lidar_localization_ros2").glob("bbs_cpp*.so"))
+            recovery_bbs_extension = candidates[0] if candidates else None
+        if recovery_bbs_extension is None or not recovery_bbs_extension.is_file():
+            parser.error(
+                "GT-free recovery requires bbs_cpp*.so; build the package or pass "
+                "--recovery-bbs-extension")
+        if (args.recovery_max_scan_points < 1 or
+                args.recovery_angular_resolution_deg <= 0.0 or
+                args.recovery_max_candidates < 1 or args.recovery_max_attempts < 1 or
+                args.recovery_max_walk_candidates < 1):
+            parser.error("recovery BBS and supervisor limits must be positive")
     if (args.prior_map_vertical_gain is not None and not (
             0.0 <= args.prior_map_vertical_gain <= 1.0)):
         parser.error("--prior-map-vertical-gain must be in [0, 1]")
@@ -390,6 +464,12 @@ def main() -> int:
             docker_command.extend([
                 "-e", "GLIM_PRIOR_MAP_FULL_GLOBAL_SEARCH=true",
             ])
+    if recovery_occupancy is not None:
+        docker_command.extend([
+            "-v", f"{repo / 'scripts'}:/recovery_scripts:ro",
+            "-v", f"{recovery_occupancy.parent}:/recovery_map:ro",
+            "-v", f"{recovery_bbs_extension.parent}:/recovery_modules:ro",
+        ])
     playback_duration_parameter = (
         f" -p playback_duration:={args.playback_duration_sec}"
         if args.playback_duration_sec is not None else ""
@@ -414,7 +494,27 @@ def main() -> int:
             f"({publisher_command}) > /tmp/injected_initial_pose.log 2>&1 & "
             "injection_pid=$!; "
             f"{run_command}; run_rc=$?; "
-            "wait \"$injection_pid\" || true; exit \"$run_rc\""
+            "wait \"$injection_pid\" || true; (exit \"$run_rc\")"
+        )
+    if recovery_occupancy is not None:
+        # Give the mounted YAML a stable name while preserving its relative PGM
+        # lookup: the mount contains both files and the node receives this path.
+        occupancy_name = recovery_occupancy.name
+        reset_z_m = args.prior_map_bootstrap_center[2]
+        sidecars = recovery_sidecar_command(
+            reset_z_m=reset_z_m,
+            max_scan_points=args.recovery_max_scan_points,
+            angular_resolution_deg=args.recovery_angular_resolution_deg,
+            max_candidates=args.recovery_max_candidates,
+            max_attempts=args.recovery_max_attempts,
+            max_walk_candidates=args.recovery_max_walk_candidates,
+        ).replace("/recovery_map/occupancy.yaml", f"/recovery_map/{occupancy_name}")
+        run_command = (
+            f"{sidecars}{run_command}; run_rc=$?; "
+            "kill \"$recovery_g2_pid\" \"$recovery_supervisor_pid\" "
+            "2>/dev/null || true; "
+            "wait \"$recovery_g2_pid\" \"$recovery_supervisor_pid\" "
+            "2>/dev/null || true; exit \"$run_rc\""
         )
     docker_command.extend([
         args.image,
@@ -450,6 +550,10 @@ def main() -> int:
         "prior_map": str(prior_map) if prior_map is not None else None,
         "prior_map_tightly_coupled": args.prior_map_tightly_coupled,
         "prior_map_full_global_search": args.prior_map_full_global_search,
+        "recovery_occupancy_yaml": (
+            str(recovery_occupancy) if recovery_occupancy is not None else None),
+        "recovery_bbs_extension": (
+            str(recovery_bbs_extension) if recovery_bbs_extension is not None else None),
         "tightly_coupled_num_threads": args.tightly_coupled_num_threads,
         "injected_initial_pose": args.inject_initial_pose,
         "initial_pose_delay_sec": args.initial_pose_delay_sec,

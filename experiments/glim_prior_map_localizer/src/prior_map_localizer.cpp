@@ -250,13 +250,13 @@ public:
     recovery_rejection_frames_ = std::max<std::size_t>(
       1, environmentSize("GLIM_PRIOR_MAP_RECOVERY_REJECTION_FRAMES", 3));
     recovery_max_correction_translation_m_ = environmentDouble(
-      "GLIM_PRIOR_MAP_RECOVERY_MAX_CORRECTION_M", 1.0);
+      "GLIM_PRIOR_MAP_RECOVERY_MAX_CORRECTION_M", 1.5);
     recovery_max_correction_rotation_deg_ = environmentDouble(
-      "GLIM_PRIOR_MAP_RECOVERY_MAX_CORRECTION_DEG", 3.0);
+      "GLIM_PRIOR_MAP_RECOVERY_MAX_CORRECTION_DEG", 6.0);
     recovery_max_consensus_translation_m_ = environmentDouble(
-      "GLIM_PRIOR_MAP_RECOVERY_MAX_CONSENSUS_M", 1.0);
+      "GLIM_PRIOR_MAP_RECOVERY_MAX_CONSENSUS_M", 1.5);
     recovery_max_consensus_rotation_deg_ = environmentDouble(
-      "GLIM_PRIOR_MAP_RECOVERY_MAX_CONSENSUS_DEG", 3.0);
+      "GLIM_PRIOR_MAP_RECOVERY_MAX_CONSENSUS_DEG", 6.0);
     public_max_translation_step_m_ = environmentDouble(
       "GLIM_PRIOR_MAP_PUBLIC_MAX_TRANSLATION_STEP_M", 0.25);
     public_max_rotation_step_deg_ = environmentDouble(
@@ -1168,10 +1168,10 @@ private:
   Eigen::Isometry3d pending_recovery_odom_from_map_{Eigen::Isometry3d::Identity()};
   std::size_t recovery_confirmation_frames_{3};
   std::size_t recovery_rejection_frames_{3};
-  double recovery_max_correction_translation_m_{1.0};
-  double recovery_max_correction_rotation_deg_{3.0};
-  double recovery_max_consensus_translation_m_{1.0};
-  double recovery_max_consensus_rotation_deg_{3.0};
+  double recovery_max_correction_translation_m_{1.5};
+  double recovery_max_correction_rotation_deg_{6.0};
+  double recovery_max_consensus_translation_m_{1.5};
+  double recovery_max_consensus_rotation_deg_{6.0};
   double public_max_translation_step_m_{0.25};
   double public_max_rotation_step_deg_{2.0};
   bool public_map_odom_initialized_{false};
