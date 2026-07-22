@@ -9,6 +9,7 @@ moving files into subdirectories.
 
 | Task | Entry point |
 | --- | --- |
+| One-command guarded bringup | `quickstart.py` |
 | Generate a site preset | `create_lidar_localization_config.py` |
 | Check generic bringup | `check_lidar_localization_bringup.py` |
 | Check MID-360 bringup | `check_mid360_legged_bringup.py` |
@@ -39,6 +40,8 @@ moving files into subdirectories.
   localization and relocalization planning stages.
 - `global_localization_*`, `reinitialization_supervisor_*`: runtime G2/G3
   localization and recovery components.
+- `quickstart.py`, `quickstart_model.py`, `startup_initialization_node.py`:
+  first-bringup orchestration, ROS-free startup policy/persistence, and its ROS I/O node.
 - `render_*`: GIF and gallery rendering.
 - `setup_local_env.sh`, `bootstrap_colcon_workspace.sh`: local developer
   environment setup; source or run these from the repository checkout.

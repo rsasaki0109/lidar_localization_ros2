@@ -33,6 +33,14 @@ comparison_tool = importlib.util.module_from_spec(comparison_spec)
 assert comparison_spec.loader is not None
 comparison_spec.loader.exec_module(comparison_tool)
 
+QUICKSTART_SCRIPT_PATH = SCRIPTS_DIR / "quickstart.py"
+quickstart_spec = importlib.util.spec_from_file_location(
+    "quickstart", QUICKSTART_SCRIPT_PATH)
+quickstart_tool = importlib.util.module_from_spec(quickstart_spec)
+assert quickstart_spec.loader is not None
+sys.modules[quickstart_spec.name] = quickstart_tool
+quickstart_spec.loader.exec_module(quickstart_tool)
+
 
 LAUNCH_ARG_RE = re.compile(r"DeclareLaunchArgument\(\s*['\"]([^'\"]+)['\"]")
 
@@ -118,6 +126,24 @@ def assert_command_args_declared(testcase: unittest.TestCase, command: str) -> N
 
 
 class TestLaunchArgumentContract(unittest.TestCase):
+    def test_quickstart_command_uses_declared_launch_arguments(self):
+        args = quickstart_tool.build_arg_parser().parse_args([
+            "--map", "/maps/site.pcd",
+            "--occupancy-map", "/maps/site.yaml",
+            "--profile", "mid360",
+            "--no-discover-topics",
+        ])
+        generated_config_args = quickstart_tool._config_args(
+            args, "/livox/points", "/livox/imu")
+        command = shlex.join(quickstart_tool.launch_parts(
+            args,
+            generated_config_args,
+            Path("/tmp/quickstart.yaml"),
+            Path("/tmp/quickstart-pose.json"),
+        ))
+
+        assert_command_args_declared(self, command)
+
     def test_config_generator_commands_use_declared_launch_arguments(self):
         for profile in ("standalone", "nav2", "mid360"):
             with self.subTest(profile=profile):

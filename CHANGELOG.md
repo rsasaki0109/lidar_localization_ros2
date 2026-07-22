@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- Added `quickstart.py` and `quickstart.launch.py` for one-command configuration,
+  sensor-topic discovery, localization, RViz, and actionable bringup output.
+- Added map-content-bound pose persistence and guarded startup initialization. A saved
+  pose must pass pre-publication NDT scoring, while a BBS_2D candidate requires active
+  3D NDT scoring and distinct-scan consensus. Stale, weak, ambiguous, inconsistent, or
+  exhausted candidates fall back to RViz without publishing an identity pose.
+
 ## 1.2.0 - 2026-07-22
 
 Tightly coupled GLIL, exact point-cloud downsampling, and guarded kidnapped-pose

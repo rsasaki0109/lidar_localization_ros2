@@ -134,9 +134,12 @@ set(LIDAR_LOCALIZATION_CONFIG_SCRIPTS
   scripts/check_lidar_localization_bringup.py
   scripts/check_mid360_legged_bringup.py
   scripts/create_lidar_localization_config.py
+  scripts/quickstart.py
+  scripts/quickstart_model.py
   scripts/run_nav2_demo_smoke
   scripts/run_nav2_replay_smoke
-  scripts/send_nav2_goal.py)
+  scripts/send_nav2_goal.py
+  scripts/startup_initialization_node.py)
 
 set(LIDAR_LOCALIZATION_BENCHMARK_SCRIPTS
   scripts/benchmark_analyze_drift_window
@@ -838,6 +841,18 @@ if(BUILD_TESTING)
   add_test(
     NAME create_lidar_localization_config
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_create_lidar_localization_config.py
+  )
+  add_test(
+    NAME quickstart_model
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_quickstart_model.py
+  )
+  add_test(
+    NAME quickstart_cli
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_quickstart_cli.py
+  )
+  add_test(
+    NAME quickstart_ros_integration
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_quickstart_ros_integration.py
   )
   add_test(
     NAME imu_runtime_validation_model
