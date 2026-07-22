@@ -207,7 +207,7 @@ if [[ "${resume}" != "1" || ! -f "${istanbul_run_dir}/summary.json" ]]; then
     --record-topic /pcl_pose \
     --record-qos-durability volatile \
     --diagnostic-topic /alignment_status \
-    --system-command "ros2 launch lidar_localization_ros2 lidar_localization.launch.py localization_param_dir:=${istanbul_param_yaml} cloud_topic:=${istanbul_cloud_topic} twist_topic:=${istanbul_twist_topic}"
+    --system-command "ros2 launch lidar_localization_ros2 lidar_localization.launch.py use_sim_time:=true localization_param_dir:=${istanbul_param_yaml} cloud_topic:=${istanbul_cloud_topic} twist_topic:=${istanbul_twist_topic}"
 fi
 
 if [[ "${resume}" != "1" || ! -f "${istanbul_run_dir}/trajectory_eval.json" ]]; then
@@ -241,7 +241,7 @@ for ((repeat_index=1; repeat_index<=hdl_repeat_count; repeat_index++)); do
       --target-process-pattern lidar_localization_node \
       --record-topic /pcl_pose \
       --diagnostic-topic /alignment_status \
-      --system-command "ros2 launch lidar_localization_ros2 lidar_localization.launch.py localization_param_dir:=${hdl_no_imu_yaml} cloud_topic:=${hdl_cloud_topic} imu_topic:=${hdl_imu_topic}"
+      --system-command "ros2 launch lidar_localization_ros2 lidar_localization.launch.py use_sim_time:=true use_imu_preintegration:=false localization_param_dir:=${hdl_no_imu_yaml} cloud_topic:=${hdl_cloud_topic} imu_topic:=${hdl_imu_topic}"
   fi
 
   if [[ "${resume}" != "1" || ! -f "${hdl_true_run_dir}/summary.json" ]]; then
@@ -255,7 +255,7 @@ for ((repeat_index=1; repeat_index<=hdl_repeat_count; repeat_index++)); do
       --target-process-pattern lidar_localization_node \
       --record-topic /pcl_pose \
       --diagnostic-topic /alignment_status \
-      --system-command "ros2 launch lidar_localization_ros2 lidar_localization.launch.py localization_param_dir:=${hdl_imu_yaml} cloud_topic:=${hdl_cloud_topic} imu_topic:=${hdl_imu_topic}"
+      --system-command "ros2 launch lidar_localization_ros2 lidar_localization.launch.py use_sim_time:=true use_imu_preintegration:=true localization_param_dir:=${hdl_imu_yaml} cloud_topic:=${hdl_cloud_topic} imu_topic:=${hdl_imu_topic}"
   fi
 done
 

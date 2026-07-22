@@ -30,7 +30,9 @@ What is true right now:
 
 - The Koide corner motion-compensation track has a bounded result. Current start-to-end,
   point-time IMU pose-history, and LiDAR constant-velocity deskew variants all failed the
-  repeated adoption gate, so continuous-time deskew remains default-off. The accepted IMU
+  repeated adoption gate, so continuous-time deskew was kept default-off at that checkpoint.
+  As of 2026-07-22 it is operationally default-on behind readiness fallback; this is not a
+  new accuracy claim. The accepted IMU
   improvement is instead the scan-bounded dual queue with explicit acceleration scaling,
   initialization, coverage guards, and a seed-consistency gate. It passed all nine runs
   across two windows and two Koide sequences with worst coverage at least `96.7%` and no
@@ -107,7 +109,7 @@ by the maintainer; this table is the triage record.
 | 52 | different results (degrades each restart, worse after reboot) | Needs investigation — restart-to-restart degradation suggests state/seed leak, not documented run variance; keep open |
 | 68 | MGRS map not displayed in Rviz | Needs investigation — large-coordinate PCD likely hits float32 precision in the map path; reporter offered to implement, give a hint and keep open |
 | 77 | IMU angular velocity + estimator | Implemented with guarded seed use and dual-queue validation; keep open only for broader public accuracy ranking |
-| 36 | imu preintegration | Implemented and multi-window validated; continuous-time deskew remains default-off after a negative gate |
+| 36 | imu preintegration | Implemented and multi-window validated; deskew is default-on behind readiness fallback as of 2026-07-22, while the earlier negative accuracy gate remains documented |
 
 The two cheap code wins (#55, #54) were investigated on 2026-06-14: both turned out
 to be non-bugs under the shipped configuration (#55 already wired; #54 protected by the
@@ -683,7 +685,9 @@ Koide IMUのacceleration単位、noise densityの離散化、初期速度、scan
 `imu_dual_queue_enabled=true`へ昇格した。
 
 一方、relative-motion deskewとの組み合わせは`outdoor_hard_02a`でtranslation RMSE medianが
-`0.095 m`から`0.146 m`へ悪化したため、continuous-time deskewはdefault-offを維持する。
+`0.095 m`から`0.146 m`へ悪化したため、この時点ではcontinuous-time deskewをdefault-offとした。
+2026-07-22からはreadiness不成立時に元scanを維持するfallback付きでdefault-onへ変更したが、
+この過去のaccuracy gateを通過したという意味ではない。
 IMU runtime候補は「適用率を上げること」ではなく、open-loop seed accuracy gateを通過することを
 引き続き必須条件とする。
 
@@ -721,7 +725,7 @@ variantは`experiments/`へ結果を残してruntimeへ昇格させない。
 
 実行中は次の制約を固定する。
 
-- `continuous_time_deskew`はdefault-off、`NDT_OMP`は推奨backendのままとし、R3と無関係な
+- `continuous_time_deskew`はreadiness fallback付きdefault-on、`NDT_OMP`は推奨backendのままとし、R3と無関係な
   parameter tuningを混ぜない。
 - 新しいsearch method/thread設定はWP3完了まで公開parameterにしない。
 - 性能値は実行前loadが5未満のrunだけをclaimに用いる。現在のような高負荷時はbuild、unit test、

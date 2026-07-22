@@ -1,13 +1,15 @@
-# Global Localization (experimental)
+# Global Localization
 
-Operations guide for the opt-in global-localization stack: recovering a usable
+Operations guide for the guarded global-localization stack: recovering a usable
 pose with **no** (or a lost) initial pose, and optionally re-seeding tracking
 automatically when it diverges. This is the *how to run it* companion to the
 design/status document, [global_localization_roadmap.md](global_localization_roadmap.md).
 
-Everything here is **opt-in**. None of these nodes are part of the default launch,
-and none of them publish or change anything until you explicitly run them and (for
-the supervisor) the safety guards pass. The core localization node is unchanged.
+Quickstart enables guarded cold-start global initialization by default whenever a
+matching occupancy map is supplied. Without that required asset it remains inactive;
+`--no-auto-initialize` disables it explicitly. The continuous G3 lost-tracking recovery
+supervisor still uses the dedicated `global_localization_recovery.launch.py` bringup,
+and never publishes a reset unless its safety guards pass.
 
 ## The three pieces
 

@@ -8,7 +8,7 @@ from launch.actions import (
     DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, TimerAction)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -79,6 +79,10 @@ def _bringup_check(context):
 
 def generate_launch_description():
     package_share = get_package_share_directory("lidar_localization_ros2")
+    global_initialization_ready = PythonExpression([
+        "'", LaunchConfiguration("enable_global_initialization"), "' == 'true' and '",
+        LaunchConfiguration("occupancy_yaml"), "' != ''",
+    ])
     declarations = [
         DeclareLaunchArgument("profile", default_value="standalone"),
         DeclareLaunchArgument("localization_param_dir"),
@@ -98,7 +102,10 @@ def generate_launch_description():
         DeclareLaunchArgument("publish_imu_tf", default_value="false"),
         DeclareLaunchArgument("restore_saved_pose", default_value="true"),
         DeclareLaunchArgument("initial_pose_preconfigured", default_value="false"),
-        DeclareLaunchArgument("enable_global_initialization", default_value="false"),
+        DeclareLaunchArgument(
+            "enable_global_initialization",
+            default_value="true",
+            description="Run guarded global initialization when occupancy_yaml is provided."),
         DeclareLaunchArgument("start_rviz", default_value="true"),
         DeclareLaunchArgument("run_bringup_check", default_value="true"),
         DeclareLaunchArgument("saved_pose_max_age_sec", default_value="0.0"),
@@ -129,7 +136,7 @@ def generate_launch_description():
         executable="global_localization_node.py",
         name="global_localization_node",
         output="screen",
-        condition=IfCondition(LaunchConfiguration("enable_global_initialization")),
+        condition=IfCondition(global_initialization_ready),
         parameters=[{
             "occupancy_yaml": LaunchConfiguration("occupancy_yaml"),
             "map_path": LaunchConfiguration("map_path"),
@@ -172,7 +179,7 @@ def generate_launch_description():
             "initial_pose_preconfigured": ParameterValue(
                 LaunchConfiguration("initial_pose_preconfigured"), value_type=bool),
             "enable_global_initialization": ParameterValue(
-                LaunchConfiguration("enable_global_initialization"), value_type=bool),
+                global_initialization_ready, value_type=bool),
             "require_global_registration_scoring": ParameterValue(
                 LaunchConfiguration("require_global_registration_scoring"),
                 value_type=bool),

@@ -209,7 +209,7 @@ public:
   bool use_imu_preintegration_{false};
   bool imu_preintegration_use_base_frame_transform_{false};
   double imu_accel_scale_{1.0};
-  bool use_continuous_time_deskew_{false};
+  bool use_continuous_time_deskew_{true};
   std::string continuous_time_deskew_mode_{"relative_motion"};
   std::string continuous_time_cloud_stamp_reference_{"start"};
   double continuous_time_deskew_reference_time_sec_{0.0};

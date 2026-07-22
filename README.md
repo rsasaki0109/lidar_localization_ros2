@@ -23,12 +23,14 @@
 
 - NDT/GICP localization against `.pcd` and `.ply` maps
 - standalone, Nav2, and Livox MID-360 launch configurations
-- optional odometry/IMU prediction, diagnostics, and recovery signals
+- odometry/IMU prediction, scan deskew, diagnostics, and guarded recovery
 - rosbag demo and regression tools
 
-ROS 2 Jazzy with NDT_OMP is the recommended starting point. Experimental deskew and
-global-localization features are disabled by default. See
-[v1 status](docs/v1_status.md) for validated scope and limitations.
+ROS 2 Jazzy with NDT_OMP is the recommended starting point. Continuous-time deskew is
+enabled by default and safely leaves scans unchanged until point timing and motion data
+are ready. Guarded global initialization is enabled automatically when quickstart is
+given a matching occupancy map. See [v1 status](docs/v1_status.md) for validated scope
+and limitations.
 
 ## Install
 
@@ -54,8 +56,8 @@ ros2 run lidar_localization_ros2 quickstart.py \
 ```
 
 Quickstart detects unambiguous sensor topics, generates a reusable configuration,
-restores only a pose saved against the same map, and verifies tracking. Add an occupancy
-map to enable guarded global initialization with 3D NDT scoring:
+restores only a pose saved against the same map, and verifies tracking. Add the matching
+occupancy map to use the default guarded global initialization with 3D NDT scoring:
 
 ```bash
 ros2 run lidar_localization_ros2 quickstart.py \
@@ -66,6 +68,8 @@ ros2 run lidar_localization_ros2 quickstart.py \
 
 If no safe candidate is available, it asks for **2D Pose Estimate** in RViz; it never
 guesses the origin. See [quickstart and automatic initialization](docs/quickstart.md).
+Use `--no-auto-initialize` to disable saved-pose restoration and global initialization,
+or launch with `use_continuous_time_deskew:=false` to disable deskew.
 
 Common launches:
 

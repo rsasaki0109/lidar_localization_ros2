@@ -47,8 +47,8 @@
       imu_seed_consistency_max_rotation_error_deg: 5.0
       imu_seed_consistency_required_consecutive_passes: 5
 
-      # Continuous-time deskew is experimental and default-off
-      use_continuous_time_deskew: false
+      # Falls back to the original scan until point timing and motion are ready.
+      use_continuous_time_deskew: true
       enable_reinitialization_request_output: true
       enable_reinitialization_request_latch: true
       reinitialization_trigger_threshold: 0.95

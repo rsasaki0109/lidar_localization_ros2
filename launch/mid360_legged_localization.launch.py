@@ -47,7 +47,7 @@ def generate_launch_description():
     imu_preintegration_use_base_frame_transform = LaunchConfiguration(
         'imu_preintegration_use_base_frame_transform', default='true')
     use_continuous_time_deskew = LaunchConfiguration(
-        'use_continuous_time_deskew', default='false')
+        'use_continuous_time_deskew', default='true')
     continuous_time_deskew_reference_time_sec = LaunchConfiguration(
         'continuous_time_deskew_reference_time_sec', default='0.0')
 
@@ -197,7 +197,10 @@ def generate_launch_description():
         DeclareLaunchArgument('use_imu_preintegration', default_value='true'),
         DeclareLaunchArgument(
             'imu_preintegration_use_base_frame_transform', default_value='true'),
-        DeclareLaunchArgument('use_continuous_time_deskew', default_value='false'),
+        DeclareLaunchArgument(
+            'use_continuous_time_deskew', default_value='true',
+            description='Deskew scans when point timing and motion data are ready; '
+                        'otherwise keep the input scan unchanged.'),
         DeclareLaunchArgument(
             'continuous_time_deskew_reference_time_sec', default_value='0.0'),
         DeclareLaunchArgument('set_initial_pose', default_value='false'),

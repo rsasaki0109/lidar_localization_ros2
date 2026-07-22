@@ -120,7 +120,7 @@ component that feeds itself must not be able to diverge unbounded.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `use_continuous_time_deskew` | `false` | Experimental default-off hook that deskews the pre-voxel scan using per-point timing and IMU-predicted relative motion |
+| `use_continuous_time_deskew` | `true` | Deskew the pre-voxel scan when per-point timing and a motion estimate are ready; otherwise preserve the input scan |
 | `continuous_time_deskew_mode` | `relative_motion` | Experimental motion source: `relative_motion`, `imu_pose_history`, or `lidar_constant_velocity` |
 | `continuous_time_cloud_stamp_reference` | `start` | Whether the cloud header is the scan `start` or `end`; Koide Livox uses `start` |
 | `continuous_time_deskew_reference_time_sec` | `0.0` | Scan-relative reference time for the deskewed cloud; `0.0` means earliest point |
@@ -206,8 +206,9 @@ filtering.
 `continuous_time_deskew_policy.hpp` adds the pure geometry primitive for that
 stage: given a scan-start-to-scan-end relative motion and per-point relative
 times, it interpolates translation/rotation and rewrites points into a chosen
-scan reference time. The runtime hook is default-off. For generated bringup,
-enable it explicitly:
+scan reference time. The runtime hook is enabled by default on IMU-preintegration
+profiles. To force it on for another generated profile, enable IMU preintegration
+explicitly:
 
 ```bash
 ros2 run lidar_localization_ros2 create_lidar_localization_config.py \
@@ -236,12 +237,13 @@ rotation-only IMU history and applies only with full scan-interval coverage.
 `lidar_constant_velocity` scales the last accepted LiDAR relative motion to the
 current scan span and rejects interval ratios above 1.5.
 
-These modes are comparison variants, not recommended defaults. On 2026-07-13,
+These modes remain input-sensitive. On 2026-07-13,
 all were run three times on the public Koide `outdoor_hard_01a` 85--112 s corner
 window. None passed the shared accuracy, coverage, reject-streak, and latency
-gate; `imu_pose_history` failed even with median history coverage 1.0. Keep
-`use_continuous_time_deskew: false` outside controlled experiments. The full
-negative result is in
+gate; `imu_pose_history` failed even with median history coverage 1.0. The default
+therefore keeps the existing guarded fallback: scans are only modified when readiness
+checks pass, and deployments that regress can set `use_continuous_time_deskew: false`.
+The full negative result is in
 [`research_driven_development_plan.md`](research_driven_development_plan.md).
 
 ## Runtime diagnostics
@@ -270,7 +272,7 @@ result:
 | `scan_time_valid_point_count` / `scan_time_invalid_point_count` | points with readable vs unreadable per-point timing |
 | `deskew_ready` | `true` only when per-point scan timing and IMU preintegration are both usable |
 | `deskew_readiness_status` | first blocker for future deskew work, or `deskew_ready` |
-| `continuous_time_deskew_enabled` / `continuous_time_deskew_applied` | whether the default-off runtime hook is enabled and used for the latest scan |
+| `continuous_time_deskew_enabled` / `continuous_time_deskew_applied` | whether the runtime hook is enabled and used for the latest scan |
 | `continuous_time_deskew_status` | applied/skip reason for the runtime hook |
 | `continuous_time_deskew_point_count` | points deskewed before optional voxel filtering |
 | `continuous_time_deskew_skipped_invalid_time_count` / `continuous_time_deskew_clamped_time_count` | invalid or out-of-range per-point times handled by the hook |

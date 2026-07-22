@@ -69,7 +69,7 @@ def generate_launch_description():
     imu_preintegration_use_base_frame_transform = LaunchConfiguration(
         'imu_preintegration_use_base_frame_transform', default='false')
     use_continuous_time_deskew = LaunchConfiguration(
-        'use_continuous_time_deskew', default='false')
+        'use_continuous_time_deskew', default='true')
     continuous_time_deskew_reference_time_sec = LaunchConfiguration(
         'continuous_time_deskew_reference_time_sec', default='0.0')
 
@@ -100,7 +100,10 @@ def generate_launch_description():
     ld.add_action(DeclareLaunchArgument('imu_tf_yaw', default_value='0.0'))
     ld.add_action(DeclareLaunchArgument('use_imu_preintegration', default_value='false'))
     ld.add_action(DeclareLaunchArgument('imu_preintegration_use_base_frame_transform', default_value='false'))
-    ld.add_action(DeclareLaunchArgument('use_continuous_time_deskew', default_value='false'))
+    ld.add_action(DeclareLaunchArgument(
+        'use_continuous_time_deskew', default_value='true',
+        description='Deskew scans when point timing and motion data are ready; '
+                    'otherwise keep the input scan unchanged.'))
     ld.add_action(DeclareLaunchArgument('continuous_time_deskew_reference_time_sec', default_value='0.0'))
 
     # Static TF: base_link → velodyne (adjust per robot)

@@ -199,7 +199,7 @@ def generate_launch_description():
         DeclareLaunchArgument('use_imu_preintegration', default_value='true'),
         DeclareLaunchArgument(
             'imu_preintegration_use_base_frame_transform', default_value='false'),
-        DeclareLaunchArgument('use_continuous_time_deskew', default_value='false'),
+        DeclareLaunchArgument('use_continuous_time_deskew', default_value='true'),
         DeclareLaunchArgument(
             'continuous_time_deskew_reference_time_sec', default_value='0.0'),
         DeclareLaunchArgument(
