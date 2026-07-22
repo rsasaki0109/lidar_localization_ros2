@@ -15,6 +15,8 @@
 
 <img src="./images/path.png" alt="LiDAR localization path over pointcloud map" width="720">
 
+<p><a href="./docs/koide_gif_gallery.md">Explore the complete Koide indoor/outdoor GIF gallery →</a></p>
+
 </div>
 
 ## Features
