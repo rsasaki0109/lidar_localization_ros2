@@ -110,6 +110,7 @@ class ReinitializationSupervisorNode(Node):
         self.declare_parameter("settle_timeout_sec", 8.0)
         self.declare_parameter("recovery_fitness_threshold", 1.5)
         self.declare_parameter("recovery_confirmation_samples", 3)
+        self.declare_parameter("request_clear_confirms_recovery", False)
         self.declare_parameter("max_walk_candidates", 4)
         self.declare_parameter("confirm_cross_check", True)
         self.declare_parameter("cross_check_mismatch_m", 5.0)
@@ -203,6 +204,8 @@ class ReinitializationSupervisorNode(Node):
             self.bbs_shadow_max_translation_mismatch,
             self.bbs_shadow_max_yaw_mismatch_deg)
         self.position_std = float(self.get_parameter("reset_position_std_m").value)
+        self.request_clear_confirms_recovery = bool(
+            self.get_parameter("request_clear_confirms_recovery").value)
         self.yaw_std = float(self.get_parameter("reset_yaw_std_rad").value)
         self.reset_default_z = float(self.get_parameter("reset_default_z_m").value)
         self.prefer_reset_default_z = bool(
@@ -250,6 +253,7 @@ class ReinitializationSupervisorNode(Node):
         # candidate scores (high-to-low), or () for a reply that carried no usable
         # candidate. None means no reply is pending this tick.
         self._pending_reply = None
+        self._pending_reply_retryable = False
         self._query_in_flight = False
         # Ranked candidate poses from the most recent query reply, indexed by the
         # policy's candidate_index when it asks for a publish (the ranked-candidate
@@ -273,6 +277,7 @@ class ReinitializationSupervisorNode(Node):
         self._current_query_pose_delta = None
         self._current_query_issue_time = None
         self._current_query_candidate_age_sec = None
+        self._current_query_scan_stamp_sec = None
         self._current_query_response_sec = None
         self._last_seed_motion_status = "disabled"
         # Bag-clock pose history for post-confirm cross-check mismatch (pruned in
@@ -464,14 +469,26 @@ class ReinitializationSupervisorNode(Node):
     def _tick(self) -> None:
         now = self._wall_now_sec()
         candidate_scores = None
+        retryable_empty_reply = False
         cross_check_mismatch_m = None
         if self._pending_reply is not None:
             candidate_scores = self._pending_reply
+            retryable_empty_reply = self._pending_reply_retryable
             cross_check_mismatch_m = self._pending_cross_check_mismatch
             self._pending_reply = None
+            self._pending_reply_retryable = False
             self._pending_cross_check_mismatch = None
         best_fitness = self._fitness
         stable_tracking = self._stable_tracking
+        if (self.request_clear_confirms_recovery
+                and self.state.name == rsp.STATE_SETTLING
+                and not self._requested):
+            # GLIL only clears its latched request after its own independent
+            # three-frame scan-to-prior-map verification has activated a new
+            # map-state epoch. Treat that stronger signal as recovery evidence.
+            best_fitness = 0.0
+            stable_tracking = True
+            self._fitness_observed_sec = now
         if (self.state.name == rsp.STATE_SETTLING
                 and self.state.last_reset_sec is not None
                 and (self._fitness_observed_sec is None
@@ -489,6 +506,7 @@ class ReinitializationSupervisorNode(Node):
             now_sec=now,
             reinitialization_requested=self._requested,
             candidate_scores=candidate_scores,
+            retryable_empty_reply=retryable_empty_reply,
             best_fitness=best_fitness,
             fitness_observed_sec=self._fitness_observed_sec,
             stable_tracking=stable_tracking,
@@ -579,9 +597,10 @@ class ReinitializationSupervisorNode(Node):
         self._current_query_pose_delta = None
         self._current_query_issue_time = None
         self._current_query_candidate_age_sec = None
+        self._current_query_scan_stamp_sec = None
         self._current_query_response_sec = None
 
-    def _reset_failed_query_state(self) -> None:
+    def _reset_failed_query_state(self, *, retryable: bool = False) -> None:
         """Shared reset for an empty or unparseable query reply.
 
         The empty tuple in _pending_reply still reaches the policy so the
@@ -590,9 +609,11 @@ class ReinitializationSupervisorNode(Node):
         """
         self._candidates = []
         self._current_query_candidate_age_sec = None
+        self._current_query_scan_stamp_sec = None
         self._current_query_response_sec = None
         self._sim_fix_velocity = rsp.SeedVelocity()
         self._pending_reply = ()
+        self._pending_reply_retryable = retryable
 
     def _issue_query(self) -> None:
         if not self.query_client.service_is_ready():
@@ -625,8 +646,17 @@ class ReinitializationSupervisorNode(Node):
             return
         if not response.success:
             self.get_logger().info("query returned no candidate: %s" % response.message)
-            # Empty reply -> the policy counts a failed attempt.
-            self._reset_failed_query_state()
+            try:
+                failure = json.loads(response.message)
+            except (json.JSONDecodeError, TypeError):
+                failure = {}
+            # G2 can be ready before its cloud subscription has delivered the
+            # first (large) PointCloud2. That is not a failed localization query
+            # and must not consume max_attempts.
+            retryable = (
+                failure.get("error") == "no_scan_received" or
+                failure.get("scan_point_count") == 0)
+            self._reset_failed_query_state(retryable=retryable)
             return
         try:
             summary = json.loads(response.message)
@@ -637,6 +667,8 @@ class ReinitializationSupervisorNode(Node):
             scores = tuple(float(c["score"]) for c in candidates)
             candidate_age_sec = self._parse_nonnegative_float(
                 summary.get("candidate_age_sec"))
+            scan_stamp_sec = self._parse_nonnegative_float(
+                summary.get("scan_stamp_sec"))
         except (ValueError, KeyError, TypeError) as exc:
             self.get_logger().warn("could not parse query reply: %s" % exc)
             self._reset_failed_query_state()
@@ -646,9 +678,11 @@ class ReinitializationSupervisorNode(Node):
                 summary, candidates, scores)
         self._candidates = candidates
         self._pending_reply = scores
+        self._pending_reply_retryable = False
         self._current_query_velocity = rsp.SeedVelocity()
         self._current_query_issue_time = self._query_issue_time
         self._current_query_candidate_age_sec = candidate_age_sec
+        self._current_query_scan_stamp_sec = scan_stamp_sec
         self._current_query_response_sec = self._wall_now_sec()
         self._update_sim_fix_velocity_from_query(candidates, summary)
         if self.state.name == rsp.STATE_VERIFYING:
@@ -824,7 +858,17 @@ class ReinitializationSupervisorNode(Node):
         qx, qy, qz, qw = _quat_from_rpy(
             self._last_pose_roll, self._last_pose_pitch, yaw)
         msg = PoseWithCovarianceStamped()
-        msg.header.stamp = self.get_clock().now().to_msg()
+        if self._current_query_scan_stamp_sec is not None:
+            stamp_sec = int(self._current_query_scan_stamp_sec)
+            stamp_nanosec = int(round(
+                (self._current_query_scan_stamp_sec - stamp_sec) * 1.0e9))
+            if stamp_nanosec >= 1_000_000_000:
+                stamp_sec += 1
+                stamp_nanosec -= 1_000_000_000
+            msg.header.stamp.sec = stamp_sec
+            msg.header.stamp.nanosec = stamp_nanosec
+        else:
+            msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self.global_frame_id
         msg.pose.pose.position.x = seed_x
         msg.pose.pose.position.y = seed_y

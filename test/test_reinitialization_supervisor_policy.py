@@ -310,6 +310,21 @@ def test_query_count_is_bounded_by_max_attempts_when_candidates_weak():
     assert actions(events).count(rsp.ACTION_QUERY) <= params.max_attempts
 
 
+def test_scan_not_ready_reply_retries_without_spending_attempt_budget():
+    params = rsp.SupervisorParams(max_attempts=1)
+    waiting = rsp.SupervisorState(
+        name=rsp.STATE_AWAIT_CANDIDATES, attempts=0, query_issued_sec=10.0)
+    decision = rsp.decide(params, waiting, rsp.SupervisorObservation(
+        now_sec=10.5,
+        reinitialization_requested=True,
+        candidate_scores=(),
+        retryable_empty_reply=True,
+    ))
+    assert decision.reason == "scan_not_ready"
+    assert decision.state.name == rsp.STATE_AWAIT_QUERY
+    assert decision.state.attempts == 0
+
+
 # --- Gate: a confidently-wrong candidate cannot loop forever -----------------
 
 def test_false_acceptance_does_not_loop_forever():

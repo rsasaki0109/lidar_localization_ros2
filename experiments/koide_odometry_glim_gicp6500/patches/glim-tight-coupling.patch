@@ -1,0 +1,66 @@
+diff --git a/include/glim/odometry/odometry_estimation_cpu.hpp b/include/glim/odometry/odometry_estimation_cpu.hpp
+--- a/include/glim/odometry/odometry_estimation_cpu.hpp
++++ b/include/glim/odometry/odometry_estimation_cpu.hpp
+@@ -41,6 +41,8 @@ public:
+   int coreset_size;                          ///< Target size of the exact coreset (for GICP, if use_gicp_coreset)
+   double coreset_reuse_tolerance_trans;      ///< Coreset reuse translation tolerance [m] (for GICP, if use_gicp_coreset)
+   double coreset_reuse_tolerance_rot;        ///< Coreset reuse rotation tolerance [rad] (for GICP, if use_gicp_coreset)
++  bool use_tightly_coupled_coreset;          ///< Insert binary GICP factors directly into the fixed-lag graph
++  int full_connection_window_size;           ///< Number of preceding frames connected to the latest frame
+ };
+ 
+ /**
+diff --git a/src/glim/odometry/odometry_estimation_cpu.cpp b/src/glim/odometry/odometry_estimation_cpu.cpp
+--- a/src/glim/odometry/odometry_estimation_cpu.cpp
++++ b/src/glim/odometry/odometry_estimation_cpu.cpp
+@@ -54,6 +54,8 @@ OdometryEstimationCPUParams::OdometryEstimationCPUParams() : OdometryEstimation
+   coreset_size = config.param<int>("odometry_estimation", "coreset_size", 32);
+   coreset_reuse_tolerance_trans = config.param<double>("odometry_estimation", "coreset_reuse_tolerance_trans", 0.1);
+   coreset_reuse_tolerance_rot = config.param<double>("odometry_estimation", "coreset_reuse_tolerance_rot", 0.0175);
++  use_tightly_coupled_coreset = config.param<bool>("odometry_estimation", "use_tightly_coupled_coreset", false);
++  full_connection_window_size = config.param<int>("odometry_estimation", "full_connection_window_size", 3);
+ }
+ 
+ OdometryEstimationCPUParams::~OdometryEstimationCPUParams() {}
+@@ -87,6 +89,28 @@ gtsam::NonlinearFactorGraph OdometryEstimationCPU::create_factors(const int curr
+     return gtsam::NonlinearFactorGraph();
+   }
+ 
++  if (params->use_tightly_coupled_coreset) {
++    gtsam::NonlinearFactorGraph factors;
++    const int first_target = std::max(0, current - params->full_connection_window_size);
++    for (int target = first_target; target < current; ++target) {
++      auto factor = gtsam::make_shared<glim::IntegratedGICPFactorCoreset>(
++        X(target), X(current), frames[target]->frame, frames[current]->frame);
++      factor->set_max_correspondence_distance(params->ivox_resolution * 2.0);
++      factor->set_num_threads(params->num_threads);
++      factor->set_coreset_size(params->coreset_size);
++      factor->set_coreset_reuse_tolerance(
++        params->coreset_reuse_tolerance_rot,
++        params->coreset_reuse_tolerance_trans);
++      factors.add(factor);
++    }
++
++    // These nonlinear registration factors are optimized together with the
++    // preintegrated IMU factor that OdometryEstimationIMU inserted for the
++    // same X(current)/V(current)/B(current) update. Do not pre-solve a pose or
++    // summarize registration as a Between/Prior factor in this mode.
++    return factors;
++  }
++
+   const Eigen::Isometry3d pred_T_last_current = frames[last]->T_world_imu.inverse() * frames[current]->T_world_imu;
+   const Eigen::Isometry3d pred_T_target_imu = last_T_target_imu * pred_T_last_current;
+ 
+diff --git a/src/glim/odometry/odometry_estimation_imu.cpp b/src/glim/odometry/odometry_estimation_imu.cpp
+--- a/src/glim/odometry/odometry_estimation_imu.cpp
++++ b/src/glim/odometry/odometry_estimation_imu.cpp
+@@ -219,8 +219,10 @@ EstimationFrame::ConstPtr OdometryEstimationIMU::insert_frame(const Preprocessed
+     new_factors.emplace_shared<gtsam_points::LinearDampingFactor>(B(0), 6, 1e6);
+     new_factors.add(create_factors(current, nullptr, new_values));
+ 
++    Callbacks::on_smoother_update(*smoother, new_factors, new_values, new_stamps);
+     update_smoother(new_factors, new_values, new_stamps);
++    Callbacks::on_smoother_update_finish(*smoother);
+     update_frames(current, new_factors);
+ 
+     return frames.back();

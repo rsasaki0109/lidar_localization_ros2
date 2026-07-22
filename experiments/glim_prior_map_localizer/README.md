@@ -1,37 +1,55 @@
 # GLIL-style GLIM prior-map localizer
 
-This experiment keeps GLIM LiDAR/IMU odometry continuous and applies prior-map
-localization only through a smoothed `map -> odom` transform. It replaces continuously
-running NDT; it does not deform GLIM's factor graph or rewrite the raw odometry.
+This experiment provides a GLIL-style tightly coupled localizer that keeps GLIM
+LiDAR/IMU odometry continuous while adding prior-map constraints to the same fixed-lag
+factor graph. It replaces continuously running NDT. The implementation combines the
+sliding-window range-inertial localization formulation from Koide et al. (ICRA 2024)
+with exact quadratic point-cloud downsampling from Koide et al. (ICRA 2025).
+
+The older split `map -> odom` experiment is retained as an opt-in comparison mode.
+New measurements and publication artifacts use the tightly coupled mode.
 
 ## Architecture
 
-GLIM produces `odom -> base_link` at scan rate. At a sparse submap interval, this
-extension crops the prior PLY map around the current prediction and runs CPU VGICP.
-Normal tracking uses direct VGICP; KISS-Matcher is invoked only for initial acquisition
-or after direct VGICP rejects the candidate. A large recovery correction requires two
-independent submaps to agree before it is accepted.
+GLIM produces continuous `odom -> base_link` poses at scan rate. Each fixed-lag update
+jointly optimizes IMU preintegration, scan-to-scan GICP to the preceding six frames,
+and scan-to-prior-map GICP where overlap is sufficient. Scan factors use the ICRA 2025
+deferred exact-coreset state machine: a full linearization is reduced to a weighted
+subset that preserves all independent entries of the relative-pose `H`, `b`, and `c`,
+then reused only inside explicit nearby-state bounds. The adjacent scan factor uses
+0.10 m / 0.035 rad; older factors in the six-frame window use 0.25 m / 0.035 rad to
+avoid simultaneous full refreshes while keeping the newest motion constraint tight.
 
-An accepted registration is converted into a `map -> odom` observation. The output:
+The graph owns a persistent `odom_from_map` state. Prior-map factors connect it directly
+to the same pose states constrained by IMU and scan-to-scan factors. Verified sparse
+submap VGICP observations start a new graph epoch to anchor map-degenerate directions;
+they do not publish a second correction. The inverse graph state is the sole public
+`map -> odom` transform and is bounded to 0.25 m and 2 degrees per update by default.
 
-- keeps the configured startup rotation fixed;
-- defines its translation reference from the first accepted observation;
-- applies 20% of each later translation displacement from that reference by default;
-- optionally uses a separate vertical gain and, during global-consensus pending, updates
-  only Z while keeping the last accepted XY and rotation;
-- transitions with a 2 s first-order smoother in GLIM ROS; and
-- freezes and re-stamps the last valid transform while map matching is rejected.
+Low overlap first arms global search while the public transform remains graph-driven.
+A sparse GLIL-ranked BBS hypothesis is only a proposal: the first full-resolution
+verification frame above the strict 0.75 overlap gate confirms lock loss, after which
+the last trusted public `map -> odom` anchor is re-stamped for the remaining consensus
+frames. This candidate-backed split prevents sparse normal roads and low-overlap aliases
+from freezing the public frame merely because the search threshold was crossed.
+Local map factors remain active only while they pass their independent ordinary gate.
+The recovery sidecar returns 32 BBS hypotheses by default; GLIL re-ranks their raw 3D
+scans, time-aligns the winner with post-query odometry, and independently checks it by
+VGICP over three consecutive frames before a recovery epoch can enter the graph.
+Rejected candidates do not reset odometry or TF.
 
 No ground truth is used at runtime. Ground truth is used only by the evaluator and GIF
 renderer. Full-map KISS search remains experimental and is disabled by default because
 the unseeded outdoor replay found a repeatable structural ambiguity.
 
-The callback and ROS consumer are maintained in two forks:
+The exact-coreset GLIM core and ROS consumer are pinned to published fork revisions:
 
-- [GLIL unofficial core callback](https://github.com/rsasaki0109/glil_unofficial/commit/dd29667938cb56ef59de7f90290ad2dbc613f00c)
+- [GLIL unofficial tightly coupled exact-coreset core](https://github.com/rsasaki0109/glil_unofficial/commit/e704bf85b6582b05e0611872463b04d5dfcb413b)
 - [GLIM ROS external map-to-odom consumer](https://github.com/rsasaki0109/glim_ros2/commit/cd4b2c9eb37a5c12c93d7339ce10167ebaa55288)
 
-The Dockerfile pins both commits. The design follows the
+The Dockerfile pins the published fork revisions. The design follows the
+[ICRA 2024 localization paper](https://arxiv.org/abs/2402.05540),
+[ICRA 2025 exact-downsampling paper](https://arxiv.org/abs/2505.01017),
 [GLIM paper](https://arxiv.org/abs/2407.10344),
 [GLIM extension API](https://github.com/koide3/glim/blob/master/docs/extend.md), and
 [KISS-Matcher paper](https://arxiv.org/abs/2409.15615).
@@ -39,7 +57,7 @@ The Dockerfile pins both commits. The design follows the
 ## Build
 
 ```bash
-docker build -t lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom \
+docker build -t lidarloc/glim-ros2:jazzy-v1.2.2-tightly-coupled \
   experiments/glim_prior_map_localizer
 ```
 
@@ -53,6 +71,26 @@ The benchmark runner adds `libglim_prior_map_localizer.so` to GLIM's
 | Variable | Default | Meaning |
 | --- | ---: | --- |
 | `GLIM_PRIOR_MAP_PATH` | required | ASCII or little-endian binary PLY prior map |
+| `GLIM_PRIOR_MAP_TIGHTLY_COUPLED` | false | insert scan-to-map factors into GLIM's fixed-lag graph |
+| `GLIM_PRIOR_MAP_FACTOR_CORESET_SIZE` | 32 | exact quadratic coreset target size |
+| `GLIM_PRIOR_MAP_STATE_PRIOR_PRECISION` | 1.0 | weak keep-alive prior for each map-state epoch |
+| `GLIM_PRIOR_MAP_FACTOR_MAX_CORRESPONDENCE_M` | 2.0 | map-factor correspondence gate |
+| `GLIM_PRIOR_MAP_FACTOR_MIN_OVERLAP_FRACTION` | 0.05 | minimum per-scan map overlap |
+| `GLIM_PRIOR_MAP_FACTOR_MIN_TRACKING_CROP_POINTS` | 50000 | pause suspect-mode prior factors below this local-map density; IMU/scan-to-scan continue |
+| `GLIM_PRIOR_MAP_FACTOR_NUM_THREADS` | 1 | prior-map factor worker count |
+| `GLIM_PRIOR_MAP_FACTOR_FRAME_STRIDE` | 2 | add a prior-map coreset factor every N LiDAR keyframes; IMU/scan-to-scan remain every frame |
+| `GLIM_PRIOR_MAP_RECOVERY_CONFIRMATION_FRAMES` | 3 | consistent frames required for recovery |
+| `GLIM_PRIOR_MAP_RECOVERY_LOSS_OVERLAP_FRACTION` | 0.75 | recovery-search observability gate; two populated frames below either this fraction or the ordinary absolute-inlier floor request search, while public TF remains graph-driven until candidate verification |
+| `GLIM_PRIOR_MAP_RECOVERY_LOSS_CONFIRMATION_FRAMES` | 2 | consecutive loss-evidence frames required to request recovery |
+| `GLIM_PRIOR_MAP_RECOVERY_MIN_INLIER_FRACTION` | 0.75 | strict overlap gate that rejects repetitive-road aliases |
+| `GLIM_PRIOR_MAP_RECOVERY_MAX_NORMALIZED_ERROR` | 12.0 | raw-scan VGICP recovery ceiling; overlap, correction, rotation, and multi-frame consensus gates remain active |
+| `GLIM_PRIOR_MAP_RECOVERY_REARM_COOLDOWN_SEC` | 30.0 | suppress transient sparse-scan rearming after verified recovery |
+| `GLIM_PRIOR_MAP_RECOVERY_RERANK_VOXEL_RESOLUTION_M` | 1.0 | sparse first-stage cloud used only to rank BBS candidates |
+| `GLIM_PRIOR_MAP_RECOVERY_RERANK_MAX_ITERATIONS` | 5 | first-stage VGICP iteration cap; winner verification remains full-resolution |
+| `GLIM_PRIOR_MAP_PUBLIC_MAX_TRANSLATION_STEP_M` | 0.25 | public TF translation bound per update |
+| `GLIM_PRIOR_MAP_PUBLIC_MAX_ROTATION_STEP_DEG` | 2.0 | public TF rotation bound per update |
+| `GLIM_PRIOR_MAP_RECOVERY_PUBLIC_MAX_TRANSLATION_STEP_M` | 1.0 | verified-recovery translation step bound |
+| `GLIM_PRIOR_MAP_RECOVERY_PUBLIC_MAX_ROTATION_STEP_DEG` | 5.0 | verified-recovery rotation step bound |
 | `GLIM_PRIOR_MAP_VOXEL_SIZE_M` | 0.75 | KISS-Matcher resolution |
 | `GLIM_PRIOR_MAP_MIN_INLIERS` | 10 | minimum KISS inliers for coarse fallback |
 | `GLIM_PRIOR_MAP_BOOTSTRAP_CENTER_X/Y/Z` | unset | approximate startup position in map frame |
@@ -61,7 +99,7 @@ The benchmark runner adds `libglim_prior_map_localizer.so` to GLIM's
 | `GLIM_PRIOR_MAP_TRACKING_CROP_RADIUS_M` | 35.0 | tracking crop radius |
 | `GLIM_PRIOR_MAP_BOOTSTRAP_SUBMAP_STRIDE` | 2 | acquisition match interval |
 | `GLIM_PRIOR_MAP_TRACKING_SUBMAP_STRIDE` | 10 | tracking match interval |
-| `GLIM_PRIOR_MAP_TRANSLATION_GAIN` | 0.2 | accepted displacement gain from first anchor |
+| `GLIM_PRIOR_MAP_TRANSLATION_GAIN` | 0.2 | robust XY gain for sparse submap anchors; tightly coupled per-frame map factors remain undamped and Z uses 1.0 |
 | `GLIM_PRIOR_MAP_VERTICAL_GAIN` | translation gain | separate accepted/pending Z gain |
 | `GLIM_PRIOR_MAP_MAX_LOCAL_TRANSLATION_M` | 1.5 | tracking correction bound |
 | `GLIM_PRIOR_MAP_MAX_LOCAL_YAW_DEG` | 10.0 | full 3D rotation bound (legacy name) |
@@ -74,12 +112,39 @@ The benchmark runner adds `libglim_prior_map_localizer.so` to GLIM's
 | `GLIM_PRIOR_MAP_VGICP_MIN_INLIER_FRACTION` | 0.50 | minimum overlap |
 | `GLIM_PRIOR_MAP_VGICP_MAX_NORMALIZED_ERROR` | 5.0 | maximum error per inlier |
 
-GLIM ROS parameter `glim_ros.external_map_odom_time_constant` controls smoothing and
-defaults to 2.0 s.
+In legacy split mode only, GLIM ROS parameter
+`glim_ros.external_map_odom_time_constant` controls smoothing and defaults to 2.0 s.
 
-## Measured full replays
+## Tightly coupled kidnap recovery measurement
 
-All four outdoor-hard bags were replayed with the exact quadratic coreset (size 32).
+The final 90 s `outdoor_kidnap_b` replay uses time-aligned BBS/GLIL candidate
+propagation plus the fractional and absolute-inlier loss gates. The standard
+32-candidate configuration selected rank 26, verified three full-resolution frames at
+0.933, 0.950, and 0.943 overlap, and activated a new map-state epoch. The GT-only
+evaluator reported `recovered_true`, a 16.05 s terminal recovered window, and 0.041 m
+final XY error. The process completed at playback p10 1.000 with finite monotonic poses,
+zero TF jumps, zero unauthorized resets, bounded queue growth, and a drained final
+queue.
+
+On the final-image `outdoor_kidnap_a` replay, caching one global prior-map Gaussian
+voxel map for all 32 first-stage candidates keeps re-ranking bounded. The evaluator
+reported `recovered_true`, a 46.474 m maximum loss, an 18.07 s terminal recovered
+window, 0.074 m final XY error, zero TF jumps, zero unauthorized resets, and a drained
+final queue. Two unrelated single-core jobs reduced playback p10 to 0.486, so this run
+is recovery evidence rather than a clean throughput result. Rank-1 compatibility
+messages and duplicate candidate batches are ignored while PoseArray re-ranking is
+authoritative.
+
+An 8-candidate comparison selected a repetitive-road alias with about 0.60 overlap;
+the safety evaluator rejected the run, and that alias is below the new 0.75 gate. This
+is why 32 candidates are the recovery default; the smaller set is not accepted as a
+low-CPU production profile.
+
+## Legacy split-mode measurements
+
+The results below predate the tightly coupled graph and are retained as the split-mode
+baseline. All four outdoor-hard bags were replayed with the exact quadratic coreset
+(size 32).
 The original policy passed three bags, while `outdoor_hard_02a` exceeded the 2.0 m ATE
 limit in both repeats. A targeted 02a variant with vertical gain 1.0 then passed two
 independent full repeats without changing the horizontal gain or acceptance gates.
@@ -131,19 +196,57 @@ python3 scripts/run_koide_glim_odometry_benchmark.py \
   --prior-map "$DATA/map_outdoor_hard.ply" \
   --prior-map-bootstrap-center -86.040205 -8.857126 -11.043077 \
   --prior-map-bootstrap-yaw-deg -82.0063 \
-  --config param/odometry/glim_koide_outdoor_gicp6500_coreset \
-  --image lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom \
+  --prior-map-tightly-coupled \
+  --tightly-coupled-num-threads 8 \
+  --image lidarloc/glim-ros2:jazzy-v1.2.2-tightly-coupled \
   --output /tmp/glil_outdoor_hard_01a
 ```
 
-Add `--prior-map-vertical-gain 1.0` for the measured 02a Z-bridge policy.
+Do not combine `--prior-map-vertical-gain` with tightly coupled mode. Sparse verified
+graph epochs already use the configured horizontal gain and full vertical observation.
+
+For the complete pinned-image acceptance matrix, run:
+
+```bash
+python3 scripts/run_koide_glil_tightly_coupled_matrix.py \
+  --data-dir "$DATA" \
+  --output-root /tmp/glil_tightly_coupled_final \
+  --threads 8
+```
+
+The matrix continues after an individual metric-gate failure so the four outdoor-hard
+and two outdoor-kidnap sequences all produce evidence, then returns nonzero if any run
+failed. Each run records the normal
+trajectory and runtime checks plus `resource_trace.csv` and `resource_summary.json`.
+The latter contains whole-container CPU mean/p95/max, Docker memory usage, and the peak
+sum of `VmRSS` across all container processes.
+
+### Reproduce the startup recovery integration test
+
+Append the following options to the 01a command above. The pose is an independently
+generated map-frame candidate for the first stabilized fixed-lag window. The delay is
+wall-clock time and is specific to the measured one-thread container profile.
+
+```bash
+  --tightly-coupled-num-threads 1 \
+  --playback-duration-sec 15 \
+  --requested-duration-sec 15 \
+  --inject-initial-pose \
+    -86.775441 -8.903109 -11.123637 \
+    -0.006297 -0.009488 -0.716092 0.697913 \
+  --initial-pose-delay-sec 6.5
+```
+
+The accepted smoke run validated frames 28--30 consecutively and logged
+`activated independently verified recovery generation=1 as map state m1`. An
+inconsistent candidate was rejected after three frames without creating a map state.
+Both cases retained zero TF jumps and zero unauthorized resets. Full recovery latency
+and throughput are measured separately on the kidnap bags.
 
 ## Remaining acceptance work
 
-1. Replay the deterministic one-thread profile on 01a/02a/02b and resolve the remaining
-   non-planar Z drift before making the vertical policy the default.
-2. Measure seeded and unseeded false-match and kidnapped-pose recovery cases.
-3. Confirm that two-submap recovery reacquires a deliberately displaced pose without
-   discontinuity or a false map anchor.
-4. Compare whole-process CPU and accuracy with the validated GLIM+NDT bridge before
-   changing the default localizer.
+1. Record `outdoor_kidnap_a`, then the clean 01a/01b/02a/02b tightly coupled matrix,
+   including CPU/RSS, non-planar metrics, and recovery behavior.
+2. Resolve the indoor RGB-D scan-to-map correspondence ambiguity exposed by the Azure
+   Kinect profile before claiming indoor kidnap acceptance.
+3. Regenerate the GLIL-only gallery GIFs from the accepted runs.

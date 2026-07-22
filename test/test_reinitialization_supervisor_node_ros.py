@@ -273,6 +273,78 @@ def test_seed_motion_uses_candidate_age_from_query_reply(monkeypatch):
         rclpy.shutdown()
 
 
+def test_bbs_reset_preserves_source_scan_stamp():
+    """GLIL uses this stamp to compose the delayed fix with matching odometry."""
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    published = []
+
+    class Publisher:
+        def publish(self, message):
+            published.append(message)
+
+    try:
+        sup.initialpose_pub = Publisher()
+        sup._candidates = [
+            {"x": -110.0, "y": 46.0, "yaw_deg": -170.0, "score": 0.7}]
+        sup._current_query_scan_stamp_sec = 1693922514.4998405
+        sup._publish_reset()
+
+        assert len(published) == 1
+        stamp = published[0].header.stamp
+        assert stamp.sec == 1693922514
+        assert abs(stamp.nanosec - 499840498) <= 1
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
+def test_verified_glil_request_clear_confirms_recovery(monkeypatch):
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    try:
+        sup.request_clear_confirms_recovery = True
+        sup.params = replace(
+            sup.params, recovery_confirmation_samples=1,
+            enable_confirm_cross_check=False)
+        sup._requested = False
+        sup.state = replace(
+            sup.state, name=rsn.rsp.STATE_SETTLING, attempts=1,
+            last_reset_sec=100.0, candidate_scores=(0.9,), candidate_index=0)
+        monkeypatch.setattr(rsn.time, "monotonic", lambda: 101.0)
+
+        sup._tick()
+
+        assert sup.state.name == rsn.rsp.STATE_STANDDOWN
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
+def test_no_scan_reply_is_marked_retryable_without_spending_budget():
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+
+    class Response:
+        success = False
+        message = json.dumps({"error": "no_scan_received", "scan_point_count": 0})
+
+    class Future:
+        @staticmethod
+        def result():
+            return Response()
+
+    try:
+        sup._query_in_flight = True
+        sup._on_query_response(Future())
+
+        assert sup._pending_reply == ()
+        assert sup._pending_reply_retryable is True
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
 def test_first_query_seed_motion_uses_local_pose_delta(monkeypatch):
     # The first query has no previous BBS fix, but the localizer still publishes
     # /pcl_pose. Use that local pose delta to compensate query latency.

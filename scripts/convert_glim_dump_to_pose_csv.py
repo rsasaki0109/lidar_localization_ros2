@@ -41,6 +41,21 @@ def _quat_rotate(q, vector):
     return rotated[:3]
 
 
+def _poses_equivalent(a, b, translation_tolerance_m=1.0e-3,
+                      rotation_tolerance_rad=1.0e-3):
+    translation_delta = math.sqrt(sum(
+        (left - right) ** 2 for left, right in zip(a[1:4], b[1:4])))
+    if translation_delta > translation_tolerance_m:
+        return False
+    qa = a[4:8]
+    qb = b[4:8]
+    norm_a = math.sqrt(sum(value * value for value in qa))
+    norm_b = math.sqrt(sum(value * value for value in qb))
+    cosine = abs(sum(left * right for left, right in zip(qa, qb)) / (norm_a * norm_b))
+    rotation_delta = 2.0 * math.acos(min(1.0, max(0.0, cosine)))
+    return rotation_delta <= rotation_tolerance_rad
+
+
 def _load_tum(path: Path):
     poses = []
     with path.open(encoding="utf-8") as stream:
@@ -103,8 +118,7 @@ def load_imu_rate_trajectory(
     for item in rows:
         if unique and item[0][0] == unique[-1][0][0]:
             duplicate_rows += 1
-            delta = max(abs(a - b) for a, b in zip(item[0][1:], unique[-1][0][1:]))
-            if delta > 1e-5 and not apply_global_correction:
+            if not _poses_equivalent(item[0], unique[-1][0]) and not apply_global_correction:
                 conflicting_duplicates += 1
             unique[-1] = item
         else:

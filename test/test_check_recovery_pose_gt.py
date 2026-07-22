@@ -148,6 +148,23 @@ def test_cli_json_output():
         assert payload["verdict"] == "never_lost"
 
 
+def test_load_benchmark_csv_as_ground_truth():
+    with tempfile.TemporaryDirectory() as tmp:
+        gt_csv = Path(tmp) / "reference.csv"
+        _write_pose_csv(
+            gt_csv,
+            [
+                {"stamp_sec": "1000.0", "position_x": "1.0", "position_y": "2.0"},
+                {"stamp_sec": "1001.0", "position_x": "3.0", "position_y": "4.0"},
+            ],
+        )
+        samples = pose_gt.load_ground_truth(gt_csv)
+        assert samples == [
+            _gt(1000.0, 1.0, 2.0),
+            _gt(1001.0, 3.0, 4.0),
+        ]
+
+
 if __name__ == "__main__":
     test_never_lost()
     test_loss_then_genuine_recovery_window()
@@ -156,4 +173,5 @@ if __name__ == "__main__":
     test_gap_breaks_recovered_window()
     test_gt_nearest_stamp_rejection()
     test_cli_json_output()
+    test_load_benchmark_csv_as_ground_truth()
     print("test_check_recovery_pose_gt: all tests passed")

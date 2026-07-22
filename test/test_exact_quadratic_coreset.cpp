@@ -173,6 +173,34 @@ void test_duplicated_blocks_stay_exact()
     coresetCoefficients(jacobian, residual, rows_per_block, coreset));
 }
 
+void test_relative_pose_coreset_reproduces_binary_blocks_exactly()
+{
+  std::mt19937 rng(19);
+  const int blocks = 500;
+  const int rows_per_block = 3;
+  const Eigen::MatrixXd source_jacobian =
+    randomJacobian(blocks * rows_per_block, 6, rng);
+  const Eigen::VectorXd residual =
+    randomResidual(blocks * rows_per_block, rng);
+
+  // A binary registration residual depends only on the relative pose. At one
+  // linearization point its target-pose Jacobian is the source-pose Jacobian
+  // multiplied by one common adjoint matrix. Thus a six-DoF coreset must also
+  // preserve the complete 12-DoF binary quadratic.
+  const Eigen::Matrix<double, 6, 6> common_adjoint =
+    randomJacobian(6, 6, rng);
+  Eigen::MatrixXd binary_jacobian(blocks * rows_per_block, 12);
+  binary_jacobian.leftCols(6) = source_jacobian * common_adjoint;
+  binary_jacobian.rightCols(6) = source_jacobian;
+
+  const auto coreset = ll::extractQuadraticCoreset(
+    source_jacobian, residual, rows_per_block);
+  assert(static_cast<int>(coreset.block_indices.size()) <= 29);
+  expectExact(
+    fullCoefficients(binary_jacobian, residual),
+    coresetCoefficients(binary_jacobian, residual, rows_per_block, coreset));
+}
+
 void report_runtime_for_benchmark_scale()
 {
   std::mt19937 rng(1);
@@ -203,6 +231,7 @@ int main()
   test_small_input_is_returned_unchanged();
   test_single_row_blocks_are_supported();
   test_duplicated_blocks_stay_exact();
+  test_relative_pose_coreset_reproduces_binary_blocks_exactly();
   report_runtime_for_benchmark_scale();
   std::printf("test_exact_quadratic_coreset: all tests passed\n");
   return 0;

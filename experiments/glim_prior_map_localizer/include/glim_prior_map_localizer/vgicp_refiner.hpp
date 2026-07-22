@@ -32,4 +32,14 @@ VgicpRefinementResult refineWithVgicp(
   double voxel_resolution_m,
   int max_iterations);
 
+std::shared_ptr<const gtsam_points::GaussianVoxelMapCPU> makeVgicpTarget(
+  const std::shared_ptr<const gtsam_points::PointCloud> & target,
+  double voxel_resolution_m);
+
+VgicpRefinementResult refineWithVgicp(
+  const std::shared_ptr<const gtsam_points::GaussianVoxelMapCPU> & target_voxels,
+  const std::shared_ptr<const gtsam_points::PointCloud> & source,
+  const Eigen::Isometry3d & initial_pose,
+  int max_iterations);
+
 }  // namespace glim_prior_map_localizer

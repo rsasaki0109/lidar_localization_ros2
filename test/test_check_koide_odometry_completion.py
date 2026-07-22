@@ -109,6 +109,22 @@ def test_gap_non_finite_and_deadline_are_independent_failures():
     assert "runtime_deadline" in result["failed_gates"]
 
 
+def test_sustained_realtime_playback_can_recover_isolated_p95_overruns():
+    runtime = {
+        "processing_p95_sec": 0.112,
+        "scan_period_sec": 0.100,
+        "queue_growth_unbounded": False,
+        "evidence": {
+            "playback_speed_p10": 0.998,
+            "playback_speed_min": 0.75,
+            "final_queue_depth": 0,
+        },
+    }
+    assert completion._runtime_deadline_met(0.112, 0.100, runtime, 0.95)
+    runtime["evidence"]["playback_speed_p10"] = 0.80
+    assert not completion._runtime_deadline_met(0.112, 0.100, runtime, 0.95)
+
+
 def test_scale_drift_fails_rpe_even_with_full_coverage():
     with tempfile.TemporaryDirectory() as tmp:
         result = _evaluate(Path(tmp), scale=1.05)

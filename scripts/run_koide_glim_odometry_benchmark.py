@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,12 +21,234 @@ EXPECTED_IMAGE_IDS = {
         "sha256:1002a7bc67d26f5605173f33784e08690c0c45f2c332853db18013d3967e6f17",
     "lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom":
         "sha256:70d056317a475e8ce5a029e5b6d83d0b5e8f4e1587acd069d708eb00cd1b134a",
+    "lidarloc/glim-ros2:jazzy-v1.2.2-tightly-coupled":
+        "sha256:9048ddcd963d94f809737d843b60ae961de53ff8189a0f20c8e2742bd00d5e5b",
 }
+
+SIZE_MULTIPLIERS = {
+    "B": 1.0,
+    "KB": 1000.0,
+    "MB": 1000.0 ** 2,
+    "GB": 1000.0 ** 3,
+    "KIB": 1024.0,
+    "MIB": 1024.0 ** 2,
+    "GIB": 1024.0 ** 3,
+}
+
+INDOOR_AZURE_KINECT_T_LIDAR_IMU = [
+    0.003463566434548747,
+    0.0041740033449125195,
+    -0.05071645628165228,
+    -0.47551890747667463,
+    0.4736570557695826,
+    0.5236230425615598,
+    0.5247377168171308,
+]
+
+RECOVERY_SAFETY_GATES = (
+    "bag_completed",
+    "bounded_pose_jump",
+    "bounded_queue",
+    "final_arrival",
+    "finite_poses",
+    "monotonic_timestamps",
+    "no_tf_jump",
+    "no_unauthorized_reset",
+    "pose_gap",
+    "process_survived",
+    "trajectory_samples_present",
+)
 
 
 def run_checked(command):
     print("+", " ".join(str(value) for value in command), flush=True)
     subprocess.run(command, check=True)
+
+
+def failed_recovery_safety_gates(completion: dict) -> list[str]:
+    gates = completion.get("gates", {})
+    return [name for name in RECOVERY_SAFETY_GATES if gates.get(name) is not True]
+
+
+def parse_size_bytes(value: str) -> int:
+    """Parse the used-memory half of a Docker stats MemUsage value."""
+    used = value.split("/", 1)[0].strip()
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]+)", used)
+    if match is None:
+        raise ValueError(f"unsupported Docker memory value: {value!r}")
+    unit = match.group(2).upper()
+    if unit not in SIZE_MULTIPLIERS:
+        raise ValueError(f"unsupported Docker memory unit: {unit}")
+    return int(float(match.group(1)) * SIZE_MULTIPLIERS[unit])
+
+
+def percentile(values: list[float], fraction: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, int(round(fraction * (len(ordered) - 1)))))
+    return ordered[index]
+
+
+def container_rss_bytes(container_name: str) -> int:
+    """Sum VmRSS for every host PID currently belonging to the container."""
+    output = subprocess.check_output(
+        ["docker", "top", container_name, "-eo", "pid"],
+        text=True,
+        stderr=subprocess.DEVNULL,
+        timeout=5.0,
+    )
+    total_kib = 0
+    for value in output.splitlines()[1:]:
+        value = value.strip()
+        if not value.isdigit():
+            continue
+        try:
+            status = Path(f"/proc/{value}/status").read_text(encoding="utf-8")
+        except (FileNotFoundError, PermissionError):
+            continue
+        match = re.search(r"^VmRSS:\s+([0-9]+)\s+kB$", status, re.MULTILINE)
+        if match is not None:
+            total_kib += int(match.group(1))
+    return total_kib * 1024
+
+
+def sample_container_resources(container_name: str, started: float):
+    try:
+        output = subprocess.check_output(
+            [
+                "docker", "stats", "--no-stream", "--format", "{{json .}}",
+                container_name,
+            ],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=5.0,
+        ).strip()
+        if not output:
+            return None
+        stats = json.loads(output.splitlines()[-1])
+        return {
+            "elapsed_sec": time.monotonic() - started,
+            "cpu_percent": float(stats["CPUPerc"].rstrip("%")),
+            "memory_bytes": parse_size_bytes(stats["MemUsage"]),
+            "rss_bytes": container_rss_bytes(container_name),
+        }
+    except (subprocess.SubprocessError, KeyError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def write_resource_evidence(output: Path, samples: list[dict]) -> dict:
+    trace_path = output / "resource_trace.csv"
+    with trace_path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(
+            stream,
+            fieldnames=("elapsed_sec", "cpu_percent", "memory_bytes", "rss_bytes"),
+        )
+        writer.writeheader()
+        writer.writerows(samples)
+
+    cpu = [sample["cpu_percent"] for sample in samples]
+    memory = [sample["memory_bytes"] for sample in samples]
+    rss = [sample["rss_bytes"] for sample in samples]
+    summary = {
+        "sample_count": len(samples),
+        "sampling_source": "docker stats --no-stream",
+        "cpu_percent_mean": sum(cpu) / len(cpu) if cpu else 0.0,
+        "cpu_percent_p95": percentile(cpu, 0.95),
+        "cpu_percent_max": max(cpu, default=0.0),
+        "memory_peak_bytes": max(memory, default=0),
+        "rss_peak_bytes": max(rss, default=0),
+        "trace_csv": str(trace_path),
+    }
+    (output / "resource_summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return summary
+
+
+def apply_sensor_profile(config_dir: Path, profile: str) -> None:
+    if profile == "outdoor_livox":
+        return
+    if profile != "indoor_azure_kinect":
+        raise ValueError(f"unsupported sensor profile: {profile}")
+
+    ros_path = config_dir / "config_ros.json"
+    ros_config = json.loads(ros_path.read_text(encoding="utf-8"))
+    ros = ros_config["glim_ros"]
+    ros.update({
+        "imu_topic": "/imu",
+        "points_topic": "/points2/decompressed",
+        "acc_scale": 0.0,
+        "base_frame_id": "depth_camera_link",
+        "publish_imu2lidar": True,
+    })
+    ros_path.write_text(json.dumps(ros_config, indent=2) + "\n", encoding="utf-8")
+
+    sensors_path = config_dir / "config_sensors.json"
+    sensors_config = json.loads(sensors_path.read_text(encoding="utf-8"))
+    sensors = sensors_config["sensors"]
+    sensors.update({
+        "global_shutter_lidar": True,
+        "T_lidar_imu": INDOOR_AZURE_KINECT_T_LIDAR_IMU,
+        "intensity_field": "",
+        "ring_field": "",
+        "autoconf_perpoint_times": False,
+    })
+    sensors_path.write_text(
+        json.dumps(sensors_config, indent=2) + "\n", encoding="utf-8")
+
+    preprocess_path = config_dir / "config_preprocess.json"
+    preprocess_config = json.loads(preprocess_path.read_text(encoding="utf-8"))
+    preprocess_config["preprocess"].update({
+        "distance_near_thresh": 0.2,
+        "distance_far_thresh": 30.0,
+        "downsample_resolution": 0.25,
+    })
+    preprocess_path.write_text(
+        json.dumps(preprocess_config, indent=2) + "\n", encoding="utf-8")
+
+    odometry_path = config_dir / "config_odometry_cpu.json"
+    odometry_config = json.loads(odometry_path.read_text(encoding="utf-8"))
+    odometry_config["odometry_estimation"]["ivox_resolution"] = 0.5
+    odometry_path.write_text(
+        json.dumps(odometry_config, indent=2) + "\n", encoding="utf-8")
+
+
+def recovery_sidecar_command(
+        *, reset_z_m: float, max_scan_points: int,
+        angular_resolution_deg: float, max_candidates: int,
+        max_attempts: int, max_walk_candidates: int) -> str:
+    """Build the in-container G2 + guarded supervisor lifecycle command."""
+    g2 = (
+        "/usr/bin/python3 /recovery_scripts/global_localization_node.py --ros-args "
+        "-p occupancy_yaml:=/recovery_map/occupancy.yaml "
+        "-p cloud_topic:=/glil/recovery_points -p use_cpp_backend:=true "
+        f"-p seed_z_m:={float(reset_z_m)!r} "
+        f"-p max_scan_points:={max_scan_points} "
+        f"-p angular_resolution_deg:={float(angular_resolution_deg)!r} "
+        f"-p max_candidates:={max_candidates}"
+    )
+    supervisor = (
+        "/usr/bin/python3 /recovery_scripts/reinitialization_supervisor_node.py "
+        "--ros-args -p request_debounce_sec:=0.5 "
+        "-p min_seconds_between_attempts:=1.0 "
+        f"-p max_attempts:={max_attempts} -p query_timeout_sec:=20.0 "
+        "-p settle_timeout_sec:=1.0 -p recovery_confirmation_samples:=1 "
+        "-p request_clear_confirms_recovery:=true "
+        f"-p max_walk_candidates:={max_walk_candidates} "
+        "-p confirm_cross_check:=false "
+        f"-p reset_default_z_m:={float(reset_z_m)!r} "
+        "-p prefer_reset_default_z_m:=true "
+        "-p enable_seed_motion_compensation:=true "
+        "-p max_seed_speed_mps:=30.0 -p max_seed_latency_sec:=30.0 "
+        "-p seed_motion_wall_fallback:=false "
+        "-p event_log_csv:=/tmp/sidecar_supervisor_events.csv"
+    )
+    return (
+        "export PYTHONPATH=/recovery_modules:/recovery_scripts:$PYTHONPATH; "
+        f"({g2}) > /tmp/sidecar_g2.log 2>&1 & recovery_g2_pid=$!; "
+        f"({supervisor}) > /tmp/sidecar_supervisor.log 2>&1 & "
+        "recovery_supervisor_pid=$!; "
+    )
 
 
 def main() -> int:
@@ -36,10 +260,19 @@ def main() -> int:
         "--requested-duration-sec", type=float, default=380.0,
         help="Expected covered duration forwarded to the completion checker "
         "(reference start to bag end; default keeps the outdoor_hard_01a gate).")
+    parser.add_argument(
+        "--playback-duration-sec", type=float,
+        help="Stop rosbag playback after this many seconds (for focused smoke runs).",
+    )
     parser.add_argument("--image", default=os.environ.get("GLIM_IMAGE", DEFAULT_IMAGE))
     parser.add_argument(
         "--config",
         help="GLIM config directory (default: param/odometry/glim_koide_outdoor_gicp6500).",
+    )
+    parser.add_argument(
+        "--sensor-profile", choices=("outdoor_livox", "indoor_azure_kinect"),
+        default="outdoor_livox",
+        help="Dataset sensor topics, extrinsic, and preprocessing profile.",
     )
     parser.add_argument(
         "--prior-map",
@@ -56,6 +289,47 @@ def main() -> int:
     parser.add_argument(
         "--prior-map-vertical-gain", type=float,
         help="Optional map-to-odom Z correction gain in [0, 1].",
+    )
+    parser.add_argument(
+        "--prior-map-tightly-coupled", action="store_true",
+        help="Insert exact-coreset scan-to-prior-map factors into GLIM's fixed-lag "
+        "graph instead of producing an external map-to-odom correction.",
+    )
+    parser.add_argument(
+        "--prior-map-full-global-search", action="store_true",
+        help="Run protected full-map KISS acquisition at sparse submap rate. "
+        "Intended for autonomous kidnap-recovery experiments.",
+    )
+    parser.add_argument(
+        "--recovery-occupancy-yaml",
+        help="Start the GT-free G2 BBS + guarded /initialpose supervisor using this map.",
+    )
+    parser.add_argument(
+        "--recovery-bbs-extension",
+        help="Path to bbs_cpp*.so (default: workspace build/lidar_localization_ros2).",
+    )
+    parser.add_argument(
+        "--evaluate-kidnap-recovery", action="store_true",
+        help="Use the terminal recovery verdict instead of normal whole-run accuracy gates.",
+    )
+    parser.add_argument("--recovery-max-scan-points", type=int, default=256)
+    parser.add_argument("--recovery-angular-resolution-deg", type=float, default=10.0)
+    parser.add_argument("--recovery-max-candidates", type=int, default=32)
+    parser.add_argument("--recovery-max-attempts", type=int, default=3)
+    parser.add_argument("--recovery-max-walk-candidates", type=int, default=1)
+    parser.add_argument(
+        "--tightly-coupled-num-threads", type=int, default=8,
+        help="CPU threads for tightly coupled scan and prior-map factors (default: 8).",
+    )
+    parser.add_argument(
+        "--inject-initial-pose", type=float, nargs=7,
+        metavar=("X", "Y", "Z", "QX", "QY", "QZ", "QW"),
+        help="Publish one reliable /initialpose candidate after the extension subscribes; "
+        "intended for repeatable recovery integration tests.",
+    )
+    parser.add_argument(
+        "--initial-pose-delay-sec", type=float, default=0.0,
+        help="Wall-clock delay before waiting for the /initialpose subscriber (default: 0).",
     )
     parser.add_argument("--ros-domain-id", type=int, default=91)
     parser.add_argument(
@@ -82,22 +356,92 @@ def main() -> int:
     if prior_map is not None:
         if prior_map.suffix.lower() != ".ply" or not prior_map.is_file():
             parser.error(f"prior map must be an existing PLY file: {prior_map}")
+    if prior_map is not None or args.sensor_profile != "outdoor_livox":
         generated_config = output / "glim_config"
         shutil.copytree(config, generated_config)
-        config_ros_path = generated_config / "config_ros.json"
-        config_ros = json.loads(config_ros_path.read_text(encoding="utf-8"))
-        modules = config_ros["glim_ros"].setdefault("extension_modules", [])
-        if "libglim_prior_map_localizer.so" not in modules:
-            modules.append("libglim_prior_map_localizer.so")
-        config_ros_path.write_text(
-            json.dumps(config_ros, indent=2) + "\n", encoding="utf-8")
+        apply_sensor_profile(generated_config, args.sensor_profile)
+        if prior_map is not None:
+            config_ros_path = generated_config / "config_ros.json"
+            config_ros = json.loads(config_ros_path.read_text(encoding="utf-8"))
+            modules = config_ros["glim_ros"].setdefault("extension_modules", [])
+            if "libglim_prior_map_localizer.so" not in modules:
+                modules.append("libglim_prior_map_localizer.so")
+            config_ros_path.write_text(
+                json.dumps(config_ros, indent=2) + "\n", encoding="utf-8")
+            if args.prior_map_tightly_coupled:
+                config_odometry_path = generated_config / "config_odometry_cpu.json"
+                config_odometry = json.loads(
+                    config_odometry_path.read_text(encoding="utf-8"))
+                odometry = config_odometry["odometry_estimation"]
+                odometry["use_gicp_coreset"] = True
+                odometry["use_tightly_coupled_coreset"] = True
+                odometry["use_isam2_qr"] = True
+                odometry["max_imu_prediction_translation_m"] = 20.0
+                # Exact quadratic coresets keep a wider directly connected
+                # range-inertial window affordable and reduce long map-exit
+                # rotation drift on outdoor_hard_02a.
+                odometry["full_connection_window_size"] = 6
+                odometry["num_threads"] = args.tightly_coupled_num_threads
+                odometry["coreset_reuse_tolerance_trans"] = 0.10
+                odometry["coreset_reuse_tolerance_rot"] = 0.035
+                # Refresh the adjacent scan factor tightly for local accuracy,
+                # while older window factors reuse their still-exact quadratic
+                # over a wider nearby-state region to bound CPU bursts.
+                odometry["coreset_history_reuse_tolerance_trans"] = 0.25
+                odometry["coreset_history_reuse_tolerance_rot"] = 0.035
+                config_odometry_path.write_text(
+                    json.dumps(config_odometry, indent=2) + "\n", encoding="utf-8")
         config = generated_config
-    elif (args.prior_map_bootstrap_center is not None or
-          args.prior_map_bootstrap_yaw_deg is not None):
+    if prior_map is None and (args.prior_map_bootstrap_center is not None or
+                              args.prior_map_bootstrap_yaw_deg is not None):
         parser.error("--prior-map-bootstrap-center requires --prior-map")
     if ((args.prior_map_bootstrap_center is None) !=
             (args.prior_map_bootstrap_yaw_deg is None)):
         parser.error("bootstrap center and bootstrap yaw must be provided together")
+    if args.prior_map_tightly_coupled and prior_map is None:
+        parser.error("--prior-map-tightly-coupled requires --prior-map")
+    if args.prior_map_full_global_search and prior_map is None:
+        parser.error("--prior-map-full-global-search requires --prior-map")
+    if args.prior_map_tightly_coupled and args.prior_map_bootstrap_center is None:
+        parser.error(
+            "--prior-map-tightly-coupled currently requires the bootstrap center and yaw")
+    if args.prior_map_tightly_coupled and args.prior_map_vertical_gain is not None:
+        parser.error(
+            "--prior-map-vertical-gain applies only to external map-to-odom mode")
+    if args.tightly_coupled_num_threads < 1:
+        parser.error("--tightly-coupled-num-threads must be positive")
+    if args.initial_pose_delay_sec < 0.0:
+        parser.error("--initial-pose-delay-sec must be non-negative")
+    if args.inject_initial_pose is not None and prior_map is None:
+        parser.error("--inject-initial-pose requires --prior-map")
+    if args.playback_duration_sec is not None and args.playback_duration_sec <= 0.0:
+        parser.error("--playback-duration-sec must be positive")
+    recovery_occupancy = (
+        Path(args.recovery_occupancy_yaml).resolve()
+        if args.recovery_occupancy_yaml else None)
+    recovery_bbs_extension = None
+    if recovery_occupancy is not None:
+        if not recovery_occupancy.is_file():
+            parser.error(f"recovery occupancy YAML does not exist: {recovery_occupancy}")
+        if not args.prior_map_tightly_coupled:
+            parser.error("--recovery-occupancy-yaml requires --prior-map-tightly-coupled")
+        if args.recovery_bbs_extension:
+            recovery_bbs_extension = Path(args.recovery_bbs_extension).resolve()
+        else:
+            candidates = sorted(
+                (repo.parents[1] / "build/lidar_localization_ros2").glob("bbs_cpp*.so"))
+            recovery_bbs_extension = candidates[0] if candidates else None
+        if recovery_bbs_extension is None or not recovery_bbs_extension.is_file():
+            parser.error(
+                "GT-free recovery requires bbs_cpp*.so; build the package or pass "
+                "--recovery-bbs-extension")
+        if (args.recovery_max_scan_points < 1 or
+                args.recovery_angular_resolution_deg <= 0.0 or
+                args.recovery_max_candidates < 1 or args.recovery_max_attempts < 1 or
+                args.recovery_max_walk_candidates < 1):
+            parser.error("recovery BBS and supervisor limits must be positive")
+    if args.evaluate_kidnap_recovery and recovery_occupancy is None:
+        parser.error("--evaluate-kidnap-recovery requires --recovery-occupancy-yaml")
     if (args.prior_map_vertical_gain is not None and not (
             0.0 <= args.prior_map_vertical_gain <= 1.0)):
         parser.error("--prior-map-vertical-gain must be in [0, 1]")
@@ -118,8 +462,10 @@ def main() -> int:
             "--allow-image-mismatch and archive the new ID")
 
     container_bag = f"/data/{bag.name}"
+    container_name = f"glil-koide-{os.getpid()}-{args.ros_domain_id}"
     docker_command = [
         "docker", "run", "--rm", "--network=host", "--ipc=host",
+        "--name", container_name,
         "-e", f"ROS_DOMAIN_ID={args.ros_domain_id}",
         "-v", f"{bag.parent}:/data:ro",
         "-v", f"{config}:/glim/config:ro",
@@ -142,36 +488,121 @@ def main() -> int:
             docker_command.extend([
                 "-e", f"GLIM_PRIOR_MAP_VERTICAL_GAIN={args.prior_map_vertical_gain}",
             ])
+        if args.prior_map_tightly_coupled:
+            docker_command.extend([
+                "-e", "GLIM_PRIOR_MAP_TIGHTLY_COUPLED=true",
+                "-e", (
+                    "GLIM_PRIOR_MAP_FACTOR_NUM_THREADS="
+                    f"{args.tightly_coupled_num_threads}"
+                ),
+            ])
+        if args.prior_map_full_global_search:
+            docker_command.extend([
+                "-e", "GLIM_PRIOR_MAP_FULL_GLOBAL_SEARCH=true",
+            ])
+    if recovery_occupancy is not None:
+        docker_command.extend([
+            "-e", "GLIM_PRIOR_MAP_RERANK_BBS_CANDIDATES=true",
+            "-v", f"{repo / 'scripts'}:/recovery_scripts:ro",
+            "-v", f"{recovery_occupancy.parent}:/recovery_map:ro",
+            "-v", f"{recovery_bbs_extension.parent}:/recovery_modules:ro",
+        ])
+    playback_duration_parameter = (
+        f" -p playback_duration:={args.playback_duration_sec}"
+        if args.playback_duration_sec is not None else ""
+    )
+    run_command = (
+        f"ros2 run glim_ros glim_rosbag {container_bag} --ros-args "
+        f"-p config_path:=/glim/config -p auto_quit:=true{playback_duration_parameter}"
+    )
+    if args.inject_initial_pose is not None:
+        x, y, z, qx, qy, qz, qw = args.inject_initial_pose
+        pose_message = (
+            "{header: {frame_id: map}, pose: {pose: {position: "
+            f"{{x: {x:.17g}, y: {y:.17g}, z: {z:.17g}}}, orientation: "
+            f"{{x: {qx:.17g}, y: {qy:.17g}, z: {qz:.17g}, w: {qw:.17g}}}}}}}}}"
+        )
+        publisher_command = (
+            f"sleep {args.initial_pose_delay_sec:.17g}; "
+            "ros2 topic pub --once --wait-matching-subscriptions 1 /initialpose "
+            f"geometry_msgs/msg/PoseWithCovarianceStamped '{pose_message}'"
+        )
+        run_command = (
+            f"({publisher_command}) > /tmp/injected_initial_pose.log 2>&1 & "
+            "injection_pid=$!; "
+            f"{run_command}; run_rc=$?; "
+            "wait \"$injection_pid\" || true; (exit \"$run_rc\")"
+        )
+    if recovery_occupancy is not None:
+        # Give the mounted YAML a stable name while preserving its relative PGM
+        # lookup: the mount contains both files and the node receives this path.
+        occupancy_name = recovery_occupancy.name
+        reset_z_m = args.prior_map_bootstrap_center[2]
+        sidecars = recovery_sidecar_command(
+            reset_z_m=reset_z_m,
+            max_scan_points=args.recovery_max_scan_points,
+            angular_resolution_deg=args.recovery_angular_resolution_deg,
+            max_candidates=args.recovery_max_candidates,
+            max_attempts=args.recovery_max_attempts,
+            max_walk_candidates=args.recovery_max_walk_candidates,
+        ).replace("/recovery_map/occupancy.yaml", f"/recovery_map/{occupancy_name}")
+        run_command = (
+            f"{sidecars}{run_command}; run_rc=$?; "
+            "kill \"$recovery_g2_pid\" \"$recovery_supervisor_pid\" "
+            "2>/dev/null || true; "
+            "wait \"$recovery_g2_pid\" \"$recovery_supervisor_pid\" "
+            "2>/dev/null || true; exit \"$run_rc\""
+        )
     docker_command.extend([
         args.image,
         "bash", "-lc",
         ". /opt/ros/jazzy/setup.bash && . /root/ros2_ws/install/setup.bash && "
-        f"ros2 run glim_ros glim_rosbag {container_bag} --ros-args "
-        "-p config_path:=/glim/config -p auto_quit:=true",
+        f"{run_command}",
     ])
     started = time.monotonic()
+    resource_samples = []
     with (output / "glim.log").open("w", encoding="utf-8") as log:
-        process = subprocess.run(
+        process = subprocess.Popen(
             docker_command, stdout=log, stderr=subprocess.STDOUT, text=True)
+        while process.poll() is None:
+            sample = sample_container_resources(container_name, started)
+            if sample is not None:
+                resource_samples.append(sample)
+            if process.poll() is None:
+                time.sleep(1.0)
+        return_code = process.wait()
     wall_duration = time.monotonic() - started
-    process_result = {"return_code": process.returncode, "wall_duration_sec": wall_duration}
+    resource_summary = write_resource_evidence(output, resource_samples)
+    process_result = {"return_code": return_code, "wall_duration_sec": wall_duration}
     (output / "run_process.json").write_text(
         json.dumps(process_result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     summary = {
-        "target_process_died_during_run": process.returncode != 0,
+        "target_process_died_during_run": return_code != 0,
         "bag_stopped_by_runner": False,
-        "return_codes": {"bag_play": process.returncode},
+        "return_codes": {"bag_play": return_code},
         "wall_duration_sec": wall_duration,
+        "playback_duration_sec": args.playback_duration_sec,
         "image": args.image,
         "image_id": image_id,
         "prior_map": str(prior_map) if prior_map is not None else None,
+        "prior_map_tightly_coupled": args.prior_map_tightly_coupled,
+        "prior_map_full_global_search": args.prior_map_full_global_search,
+        "recovery_occupancy_yaml": (
+            str(recovery_occupancy) if recovery_occupancy is not None else None),
+        "recovery_bbs_extension": (
+            str(recovery_bbs_extension) if recovery_bbs_extension is not None else None),
+        "tightly_coupled_num_threads": args.tightly_coupled_num_threads,
+        "injected_initial_pose": args.inject_initial_pose,
+        "initial_pose_delay_sec": args.initial_pose_delay_sec,
+        "sensor_profile": args.sensor_profile,
+        "resource_summary": resource_summary,
         "config": str(config),
     }
     (output / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    if process.returncode:
+    if return_code:
         print(f"GLIM failed; inspect {output / 'glim.log'}", file=sys.stderr)
-        return process.returncode
+        return return_code
 
     python = sys.executable
     conversion_command = [
@@ -199,7 +630,7 @@ def main() -> int:
         "--pose-csv", str(output / "pose_trace.csv"),
         "--output-json", str(output / "runtime.json"),
     ])
-    run_checked([
+    completion_command = [
         python, str(repo / "scripts/check_koide_odometry_completion.py"),
         "--estimated-csv", str(output / "pose_trace.csv"),
         "--reference-csv", str(reference),
@@ -207,8 +638,36 @@ def main() -> int:
         "--run-summary-json", str(output / "summary.json"),
         "--output-json", str(output / "odometry_completion.json"),
         "--requested-duration-sec", str(args.requested_duration_sec),
+    ]
+    if not args.evaluate_kidnap_recovery:
+        run_checked(completion_command)
+        print(f"PASS: {output / 'odometry_completion.json'}")
+        return 0
+
+    # A real kidnap deliberately contains a large GT discontinuity and a lost
+    # interval, so whole-run ATE/RPE and coverage are not the recovery verdict.
+    # Still generate the ordinary report and enforce its continuity/runtime
+    # safety subset, then require a sustained GT-verified terminal recovery.
+    print("+", " ".join(str(value) for value in completion_command), flush=True)
+    completion_result = subprocess.run(completion_command, check=False)
+    if completion_result.returncode not in (0, 1):
+        return completion_result.returncode
+    completion = json.loads(
+        (output / "odometry_completion.json").read_text(encoding="utf-8"))
+    failed_safety = failed_recovery_safety_gates(completion)
+    if failed_safety:
+        print(
+            "recovery run failed safety gates: " + ", ".join(failed_safety),
+            file=sys.stderr,
+        )
+        return 1
+    run_checked([
+        python, str(repo / "scripts/check_recovery_pose_gt.py"),
+        "--pose-trace", str(output / "pose_trace.csv"),
+        "--gt", str(reference),
+        "--output-json", str(output / "recovery_pose_gt.json"),
     ])
-    print(f"PASS: {output / 'odometry_completion.json'}")
+    print(f"PASS: {output / 'recovery_pose_gt.json'}")
     return 0
 
 
