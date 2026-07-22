@@ -206,6 +206,7 @@ class GlobalLocalizationNode(Node):
             entry = {
                 "x": round(candidate.x_m, 3),
                 "y": round(candidate.y_m, 3),
+                "z": round(candidate.z_m, 3),
                 "yaw_deg": round(math.degrees(candidate.yaw_rad), 1),
                 "score": round(candidate.score, 4),
                 "bbs_score": round(candidate.bbs_score, 4),

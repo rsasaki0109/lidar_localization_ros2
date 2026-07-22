@@ -45,18 +45,27 @@ For manual builds and no-sudo setup, see [local build](docs/local_build.md).
 
 ## Quick Start
 
-Create a configuration for your map:
+Start localization and RViz with one command:
 
 ```bash
-ros2 run lidar_localization_ros2 create_lidar_localization_config.py \
+ros2 run lidar_localization_ros2 quickstart.py \
   --profile standalone \
-  --map-path /absolute/path/to/map.pcd \
-  --output /tmp/lidar_localization.yaml
+  --map /absolute/path/to/map.pcd
 ```
 
-The command prints the matching launch and bringup-check commands. Add
-`--use-sim-time` for rosbag replay or `--initial-pose X Y Z QX QY QZ QW` when the
-map pose is known.
+Quickstart detects unambiguous sensor topics, generates a reusable configuration,
+restores only a pose saved against the same map, and verifies tracking. Add an occupancy
+map to enable guarded global initialization with 3D NDT scoring:
+
+```bash
+ros2 run lidar_localization_ros2 quickstart.py \
+  --profile mid360 \
+  --map /absolute/path/to/map.pcd \
+  --occupancy-map /absolute/path/to/map.yaml
+```
+
+If no safe candidate is available, it asks for **2D Pose Estimate** in RViz; it never
+guesses the origin. See [quickstart and automatic initialization](docs/quickstart.md).
 
 Common launches:
 
@@ -119,6 +128,7 @@ commands, see [benchmarking](docs/benchmarking.md).
 - [MID-360 bringup](docs/mid360_legged_jetson.md)
 - [IMU estimation](docs/imu_estimation.md) and [pose covariance](docs/pose_covariance.md)
 - [Global localization](docs/global_localization.md)
+- [Quickstart and automatic initialization](docs/quickstart.md)
 - [Koide demo gallery](docs/koide_gif_gallery.md)
 - [Release notes](CHANGELOG.md)
 
