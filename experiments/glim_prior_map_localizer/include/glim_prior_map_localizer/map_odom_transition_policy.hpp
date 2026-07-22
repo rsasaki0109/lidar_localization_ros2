@@ -15,13 +15,6 @@ struct BoundedMapOdomStep
   bool rotation_limited{false};
 };
 
-inline Eigen::Isometry3d mapFromOdomHoldingSensorPose(
-  const Eigen::Isometry3d & frozen_map_from_sensor,
-  const Eigen::Isometry3d & odom_from_sensor)
-{
-  return frozen_map_from_sensor * odom_from_sensor.inverse();
-}
-
 inline BoundedMapOdomStep boundMapOdomStep(
   const Eigen::Isometry3d & current,
   const Eigen::Isometry3d & target,

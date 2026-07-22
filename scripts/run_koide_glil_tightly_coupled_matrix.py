@@ -57,6 +57,14 @@ def main() -> int:
         "--image", default="lidarloc/glim-ros2:jazzy-v1.2.2-tightly-coupled")
     parser.add_argument("--threads", type=int, default=8)
     parser.add_argument("--ros-domain-id", type=int, default=100)
+    parser.add_argument(
+        "--recovery-occupancy-yaml", type=Path,
+        help="Enable the GT-free BBS recovery sidecars for every sequence.",
+    )
+    parser.add_argument(
+        "--recovery-bbs-extension", type=Path,
+        help="Optional bbs_cpp shared library passed to the benchmark runner.",
+    )
     parser.add_argument("--fail-fast", action="store_true")
     args = parser.parse_args()
 
@@ -66,6 +74,20 @@ def main() -> int:
         parser.error("ROS domain range would exceed Fast DDS's safe domain limit")
     data_dir = args.data_dir.resolve()
     output_root = args.output_root.resolve()
+    recovery_occupancy = (
+        args.recovery_occupancy_yaml.resolve()
+        if args.recovery_occupancy_yaml is not None else None
+    )
+    recovery_bbs_extension = (
+        args.recovery_bbs_extension.resolve()
+        if args.recovery_bbs_extension is not None else None
+    )
+    if recovery_occupancy is not None and not recovery_occupancy.is_file():
+        parser.error(f"recovery occupancy YAML does not exist: {recovery_occupancy}")
+    if recovery_bbs_extension is not None and not recovery_bbs_extension.is_file():
+        parser.error(f"recovery BBS extension does not exist: {recovery_bbs_extension}")
+    if recovery_bbs_extension is not None and recovery_occupancy is None:
+        parser.error("--recovery-bbs-extension requires --recovery-occupancy-yaml")
     if output_root.exists() and any(output_root.iterdir()):
         parser.error(f"output root must be new or empty: {output_root}")
     output_root.mkdir(parents=True, exist_ok=True)
@@ -77,6 +99,10 @@ def main() -> int:
         "threads": args.threads,
         "data_dir": str(data_dir),
         "output_root": str(output_root),
+        "recovery_occupancy_yaml": (
+            str(recovery_occupancy) if recovery_occupancy is not None else None),
+        "recovery_bbs_extension": (
+            str(recovery_bbs_extension) if recovery_bbs_extension is not None else None),
         "runs": [],
     }
     failed = False
@@ -97,6 +123,12 @@ def main() -> int:
             "--tightly-coupled-num-threads", str(args.threads),
             "--ros-domain-id", str(args.ros_domain_id + offset),
         ]
+        if recovery_occupancy is not None:
+            command.extend(["--recovery-occupancy-yaml", str(recovery_occupancy)])
+        if recovery_bbs_extension is not None:
+            command.extend(["--recovery-bbs-extension", str(recovery_bbs_extension)])
+        if name.startswith("outdoor_kidnap_"):
+            command.append("--evaluate-kidnap-recovery")
         print("+", " ".join(command), flush=True)
         started = time.time()
         result = subprocess.run(command)

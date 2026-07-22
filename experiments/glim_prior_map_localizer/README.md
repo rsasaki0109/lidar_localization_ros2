@@ -12,11 +12,13 @@ New measurements and publication artifacts use the tightly coupled mode.
 ## Architecture
 
 GLIM produces continuous `odom -> base_link` poses at scan rate. Each fixed-lag update
-jointly optimizes IMU preintegration, scan-to-scan GICP to the preceding three frames,
+jointly optimizes IMU preintegration, scan-to-scan GICP to the preceding six frames,
 and scan-to-prior-map GICP where overlap is sufficient. Scan factors use the ICRA 2025
 deferred exact-coreset state machine: a full linearization is reduced to a weighted
 subset that preserves all independent entries of the relative-pose `H`, `b`, and `c`,
-then reused only inside an explicit linearization bound.
+then reused only inside explicit nearby-state bounds. The adjacent scan factor uses
+0.10 m / 0.035 rad; older factors in the six-frame window use 0.25 m / 0.035 rad to
+avoid simultaneous full refreshes while keeping the newest motion constraint tight.
 
 The graph owns a persistent `odom_from_map` state. Prior-map factors connect it directly
 to the same pose states constrained by IMU and scan-to-scan factors. Verified sparse
@@ -24,8 +26,13 @@ submap VGICP observations start a new graph epoch to anchor map-degenerate direc
 they do not publish a second correction. The inverse graph state is the sole public
 `map -> odom` transform and is bounded to 0.25 m and 2 degrees per update by default.
 
-When map overlap is lost, only map factors are omitted. Range-inertial odometry
-continues while `map -> odom` is recomputed to hold the last trusted public sensor pose.
+Low overlap first arms global search while the public transform remains graph-driven.
+A sparse GLIL-ranked BBS hypothesis is only a proposal: the first full-resolution
+verification frame above the strict 0.75 overlap gate confirms lock loss, after which
+the last trusted public `map -> odom` anchor is re-stamped for the remaining consensus
+frames. This candidate-backed split prevents sparse normal roads and low-overlap aliases
+from freezing the public frame merely because the search threshold was crossed.
+Local map factors remain active only while they pass their independent ordinary gate.
 The recovery sidecar returns 32 BBS hypotheses by default; GLIL re-ranks their raw 3D
 scans, time-aligns the winner with post-query odometry, and independently checks it by
 VGICP over three consecutive frames before a recovery epoch can enter the graph.
@@ -37,7 +44,7 @@ the unseeded outdoor replay found a repeatable structural ambiguity.
 
 The exact-coreset GLIM core and ROS consumer are pinned to published fork revisions:
 
-- [GLIL unofficial tightly coupled exact-coreset core](https://github.com/rsasaki0109/glil_unofficial/commit/e02ffecbe9bf98156f1b3d25da4520f3bd76d976)
+- [GLIL unofficial tightly coupled exact-coreset core](https://github.com/rsasaki0109/glil_unofficial/commit/e704bf85b6582b05e0611872463b04d5dfcb413b)
 - [GLIM ROS external map-to-odom consumer](https://github.com/rsasaki0109/glim_ros2/commit/cd4b2c9eb37a5c12c93d7339ce10167ebaa55288)
 
 The Dockerfile pins the published fork revisions. The design follows the
@@ -69,8 +76,12 @@ The benchmark runner adds `libglim_prior_map_localizer.so` to GLIM's
 | `GLIM_PRIOR_MAP_STATE_PRIOR_PRECISION` | 1.0 | weak keep-alive prior for each map-state epoch |
 | `GLIM_PRIOR_MAP_FACTOR_MAX_CORRESPONDENCE_M` | 2.0 | map-factor correspondence gate |
 | `GLIM_PRIOR_MAP_FACTOR_MIN_OVERLAP_FRACTION` | 0.05 | minimum per-scan map overlap |
+| `GLIM_PRIOR_MAP_FACTOR_MIN_TRACKING_CROP_POINTS` | 50000 | pause suspect-mode prior factors below this local-map density; IMU/scan-to-scan continue |
 | `GLIM_PRIOR_MAP_FACTOR_NUM_THREADS` | 1 | prior-map factor worker count |
+| `GLIM_PRIOR_MAP_FACTOR_FRAME_STRIDE` | 2 | add a prior-map coreset factor every N LiDAR keyframes; IMU/scan-to-scan remain every frame |
 | `GLIM_PRIOR_MAP_RECOVERY_CONFIRMATION_FRAMES` | 3 | consistent frames required for recovery |
+| `GLIM_PRIOR_MAP_RECOVERY_LOSS_OVERLAP_FRACTION` | 0.75 | overlap below which a sufficiently populated scan is loss evidence; keeps normal 01b's observed 0.848 overlap locked while detecting kidnap A's 0.667 overlap |
+| `GLIM_PRIOR_MAP_RECOVERY_LOSS_CONFIRMATION_FRAMES` | 2 | consecutive loss-evidence frames required to request recovery |
 | `GLIM_PRIOR_MAP_RECOVERY_MIN_INLIER_FRACTION` | 0.75 | strict overlap gate that rejects repetitive-road aliases |
 | `GLIM_PRIOR_MAP_RECOVERY_MAX_NORMALIZED_ERROR` | 12.0 | raw-scan VGICP recovery ceiling; overlap, correction, rotation, and multi-frame consensus gates remain active |
 | `GLIM_PRIOR_MAP_RECOVERY_REARM_COOLDOWN_SEC` | 30.0 | suppress transient sparse-scan rearming after verified recovery |
@@ -78,6 +89,8 @@ The benchmark runner adds `libglim_prior_map_localizer.so` to GLIM's
 | `GLIM_PRIOR_MAP_RECOVERY_RERANK_MAX_ITERATIONS` | 5 | first-stage VGICP iteration cap; winner verification remains full-resolution |
 | `GLIM_PRIOR_MAP_PUBLIC_MAX_TRANSLATION_STEP_M` | 0.25 | public TF translation bound per update |
 | `GLIM_PRIOR_MAP_PUBLIC_MAX_ROTATION_STEP_DEG` | 2.0 | public TF rotation bound per update |
+| `GLIM_PRIOR_MAP_RECOVERY_PUBLIC_MAX_TRANSLATION_STEP_M` | 1.0 | verified-recovery translation step bound |
+| `GLIM_PRIOR_MAP_RECOVERY_PUBLIC_MAX_ROTATION_STEP_DEG` | 5.0 | verified-recovery rotation step bound |
 | `GLIM_PRIOR_MAP_VOXEL_SIZE_M` | 0.75 | KISS-Matcher resolution |
 | `GLIM_PRIOR_MAP_MIN_INLIERS` | 10 | minimum KISS inliers for coarse fallback |
 | `GLIM_PRIOR_MAP_BOOTSTRAP_CENTER_X/Y/Z` | unset | approximate startup position in map frame |
@@ -86,7 +99,7 @@ The benchmark runner adds `libglim_prior_map_localizer.so` to GLIM's
 | `GLIM_PRIOR_MAP_TRACKING_CROP_RADIUS_M` | 35.0 | tracking crop radius |
 | `GLIM_PRIOR_MAP_BOOTSTRAP_SUBMAP_STRIDE` | 2 | acquisition match interval |
 | `GLIM_PRIOR_MAP_TRACKING_SUBMAP_STRIDE` | 10 | tracking match interval |
-| `GLIM_PRIOR_MAP_TRANSLATION_GAIN` | 0.2 | accepted displacement gain from first anchor |
+| `GLIM_PRIOR_MAP_TRANSLATION_GAIN` | 0.2 | robust XY gain for sparse submap anchors; tightly coupled per-frame map factors remain undamped and Z uses 1.0 |
 | `GLIM_PRIOR_MAP_VERTICAL_GAIN` | translation gain | separate accepted/pending Z gain |
 | `GLIM_PRIOR_MAP_MAX_LOCAL_TRANSLATION_M` | 1.5 | tracking correction bound |
 | `GLIM_PRIOR_MAP_MAX_LOCAL_YAW_DEG` | 10.0 | full 3D rotation bound (legacy name) |

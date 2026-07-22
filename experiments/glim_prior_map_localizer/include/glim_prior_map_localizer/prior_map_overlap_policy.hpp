@@ -28,4 +28,12 @@ inline PriorMapOverlapDecision decidePriorMapOverlap(
     samples != 0 && inliers >= minimum_inliers && fraction >= minimum_fraction};
 }
 
+inline bool isRecoveryLossEvidence(
+  const PriorMapOverlapDecision & overlap,
+  std::size_t minimum_samples,
+  double loss_fraction)
+{
+  return overlap.samples >= minimum_samples && overlap.fraction < loss_fraction;
+}
+
 }  // namespace glim_prior_map_localizer

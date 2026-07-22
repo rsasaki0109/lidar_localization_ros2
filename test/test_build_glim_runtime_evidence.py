@@ -37,7 +37,7 @@ class GlimRuntimeEvidenceTest(unittest.TestCase):
                     f"LIDARLOC_PREPROCESS_RUNTIME stamp={stamp:.6f} processing_sec=0.02 workload=1")
                 lines.append(
                     f"LIDARLOC_ODOMETRY_RUNTIME stamp={stamp:.6f} processing_sec=0.05 queue_after=0")
-            lines.append("playback speed: 1.000x")
+            lines.extend(["playback speed: 0.750x"] + ["playback speed: 1.000x"] * 19)
             log.write_text("\n".join(lines), encoding="utf-8")
             self.write_poses(poses)
             result = MODULE.build_evidence(log, poses)
@@ -45,6 +45,8 @@ class GlimRuntimeEvidenceTest(unittest.TestCase):
         self.assertAlmostEqual(result["scan_period_sec"], 0.1)
         self.assertFalse(result["queue_growth_unbounded"])
         self.assertEqual(result["tf_jump_count"], 0)
+        self.assertEqual(result["evidence"]["playback_speed_min"], 0.75)
+        self.assertEqual(result["evidence"]["playback_speed_p10"], 1.0)
 
     def test_nonempty_final_queue_and_reset_fail_safety(self):
         with tempfile.TemporaryDirectory() as tmp:

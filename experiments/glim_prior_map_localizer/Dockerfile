@@ -9,7 +9,7 @@ RUN git clone https://github.com/MIT-SPARK/KISS-Matcher.git /tmp/KISS-Matcher \
       CMAKE_EXTRA_ARGS=-DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     && rm -rf /tmp/KISS-Matcher
 
-ARG GLIL_REVISION=e02ffecbe9bf98156f1b3d25da4520f3bd76d976
+ARG GLIL_REVISION=e704bf85b6582b05e0611872463b04d5dfcb413b
 ARG GLIM_ROS2_REVISION=cd4b2c9eb37a5c12c93d7339ce10167ebaa55288
 
 LABEL org.opencontainers.image.revision.glil="${GLIL_REVISION}" \

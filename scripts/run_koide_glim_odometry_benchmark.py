@@ -22,7 +22,7 @@ EXPECTED_IMAGE_IDS = {
     "lidarloc/glim-ros2:jazzy-v1.2.2-live-map-odom":
         "sha256:70d056317a475e8ce5a029e5b6d83d0b5e8f4e1587acd069d708eb00cd1b134a",
     "lidarloc/glim-ros2:jazzy-v1.2.2-tightly-coupled":
-        "sha256:4ef3f3451c3226e3d619ca57db6805b5cc79dc4fe84c043fe854d8d9fc0e79b7",
+        "sha256:e04efab14b01d22eaef14329a4b610a7909b43f90922bcd94ff08aa7f5e65e82",
 }
 
 SIZE_MULTIPLIERS = {
@@ -308,6 +308,10 @@ def main() -> int:
         "--recovery-bbs-extension",
         help="Path to bbs_cpp*.so (default: workspace build/lidar_localization_ros2).",
     )
+    parser.add_argument(
+        "--evaluate-kidnap-recovery", action="store_true",
+        help="Use the terminal recovery verdict instead of normal whole-run accuracy gates.",
+    )
     parser.add_argument("--recovery-max-scan-points", type=int, default=256)
     parser.add_argument("--recovery-angular-resolution-deg", type=float, default=10.0)
     parser.add_argument("--recovery-max-candidates", type=int, default=32)
@@ -373,10 +377,18 @@ def main() -> int:
                 odometry["use_tightly_coupled_coreset"] = True
                 odometry["use_isam2_qr"] = True
                 odometry["max_imu_prediction_translation_m"] = 20.0
-                odometry["full_connection_window_size"] = 3
+                # Exact quadratic coresets keep a wider directly connected
+                # range-inertial window affordable and reduce long map-exit
+                # rotation drift on outdoor_hard_02a.
+                odometry["full_connection_window_size"] = 6
                 odometry["num_threads"] = args.tightly_coupled_num_threads
-                odometry["coreset_reuse_tolerance_trans"] = 0.25
+                odometry["coreset_reuse_tolerance_trans"] = 0.10
                 odometry["coreset_reuse_tolerance_rot"] = 0.035
+                # Refresh the adjacent scan factor tightly for local accuracy,
+                # while older window factors reuse their still-exact quadratic
+                # over a wider nearby-state region to bound CPU bursts.
+                odometry["coreset_history_reuse_tolerance_trans"] = 0.25
+                odometry["coreset_history_reuse_tolerance_rot"] = 0.035
                 config_odometry_path.write_text(
                     json.dumps(config_odometry, indent=2) + "\n", encoding="utf-8")
         config = generated_config
@@ -428,6 +440,8 @@ def main() -> int:
                 args.recovery_max_candidates < 1 or args.recovery_max_attempts < 1 or
                 args.recovery_max_walk_candidates < 1):
             parser.error("recovery BBS and supervisor limits must be positive")
+    if args.evaluate_kidnap_recovery and recovery_occupancy is None:
+        parser.error("--evaluate-kidnap-recovery requires --recovery-occupancy-yaml")
     if (args.prior_map_vertical_gain is not None and not (
             0.0 <= args.prior_map_vertical_gain <= 1.0)):
         parser.error("--prior-map-vertical-gain must be in [0, 1]")
@@ -625,7 +639,7 @@ def main() -> int:
         "--output-json", str(output / "odometry_completion.json"),
         "--requested-duration-sec", str(args.requested_duration_sec),
     ]
-    if recovery_occupancy is None:
+    if not args.evaluate_kidnap_recovery:
         run_checked(completion_command)
         print(f"PASS: {output / 'odometry_completion.json'}")
         return 0

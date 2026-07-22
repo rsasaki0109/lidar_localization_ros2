@@ -239,6 +239,10 @@ public:
       1, environmentSize("GLIM_PRIOR_MAP_BOOTSTRAP_SUBMAP_STRIDE", 2));
     tracking_submap_stride_ = std::max<std::size_t>(
       1, environmentSize("GLIM_PRIOR_MAP_TRACKING_SUBMAP_STRIDE", 10));
+    // Sparse submap anchors stabilize map-degenerate directions but their XY
+    // registration still contains noise. Keep the robust horizontal gain;
+    // tightly coupled per-frame factors provide the undamped graph constraint
+    // and Z is injected fully below.
     translation_gain_ = std::clamp(
       environmentDouble("GLIM_PRIOR_MAP_TRANSLATION_GAIN", 0.2), 0.0, 1.0);
     pending_vertical_update_enabled_ =
@@ -280,11 +284,15 @@ public:
       environmentSize("GLIM_PRIOR_MAP_FACTOR_NUM_THREADS", 1));
     map_factor_overlap_stride_ = std::max<std::size_t>(
       1, environmentSize("GLIM_PRIOR_MAP_FACTOR_OVERLAP_STRIDE", 10));
+    map_factor_frame_stride_ = std::max<std::size_t>(
+      1, environmentSize("GLIM_PRIOR_MAP_FACTOR_FRAME_STRIDE", 2));
     map_factor_min_overlap_fraction_ = std::clamp(
       environmentDouble("GLIM_PRIOR_MAP_FACTOR_MIN_OVERLAP_FRACTION", 0.05),
       0.0, 1.0);
     map_factor_min_overlap_inliers_ = environmentSize(
       "GLIM_PRIOR_MAP_FACTOR_MIN_OVERLAP_INLIERS", 32);
+    map_factor_min_tracking_crop_points_ = environmentSize(
+      "GLIM_PRIOR_MAP_FACTOR_MIN_TRACKING_CROP_POINTS", 50000);
     map_state_prior_precision_ = environmentDouble(
       "GLIM_PRIOR_MAP_STATE_PRIOR_PRECISION", 1.0);
     if (map_state_prior_precision_ <= 0.0) {
@@ -302,11 +310,22 @@ public:
       "GLIM_PRIOR_MAP_RECOVERY_MAX_CONSENSUS_M", 1.5);
     recovery_max_consensus_rotation_deg_ = environmentDouble(
       "GLIM_PRIOR_MAP_RECOVERY_MAX_CONSENSUS_DEG", 6.0);
+    recovery_loss_overlap_fraction_ = std::clamp(environmentDouble(
+      "GLIM_PRIOR_MAP_RECOVERY_LOSS_OVERLAP_FRACTION", 0.75), 0.0, 1.0);
+    recovery_loss_confirmation_frames_ = std::max<std::size_t>(
+      1, environmentSize("GLIM_PRIOR_MAP_RECOVERY_LOSS_CONFIRMATION_FRAMES", 2));
     public_max_translation_step_m_ = environmentDouble(
       "GLIM_PRIOR_MAP_PUBLIC_MAX_TRANSLATION_STEP_M", 0.25);
     public_max_rotation_step_deg_ = environmentDouble(
       "GLIM_PRIOR_MAP_PUBLIC_MAX_ROTATION_STEP_DEG", 2.0);
-    if (public_max_translation_step_m_ <= 0.0 || public_max_rotation_step_deg_ <= 0.0) {
+    recovery_public_max_translation_step_m_ = environmentDouble(
+      "GLIM_PRIOR_MAP_RECOVERY_PUBLIC_MAX_TRANSLATION_STEP_M", 1.0);
+    recovery_public_max_rotation_step_deg_ = environmentDouble(
+      "GLIM_PRIOR_MAP_RECOVERY_PUBLIC_MAX_ROTATION_STEP_DEG", 5.0);
+    if (public_max_translation_step_m_ <= 0.0 || public_max_rotation_step_deg_ <= 0.0 ||
+      recovery_public_max_translation_step_m_ <= 0.0 ||
+      recovery_public_max_rotation_step_deg_ <= 0.0)
+    {
       throw std::invalid_argument(
               "GLIM prior-map public transition bounds must be positive");
     }
@@ -437,7 +456,7 @@ private:
       {
         odometry_history_.pop_front();
       }
-      if (tightly_coupled_ && map_lock_lost_.load() && frame->raw_frame &&
+      if (tightly_coupled_ && recovery_search_requested_.load() && frame->raw_frame &&
         (recovery_frame_history_.empty() ||
         frame->stamp - recovery_frame_history_.back().first >= 0.5))
       {
@@ -449,7 +468,7 @@ private:
         recovery_frame_history_.pop_front();
       }
     }
-    if (tightly_coupled_ && map_lock_lost_.load()) {
+    if (tightly_coupled_ && recovery_search_requested_.load()) {
       // Keep the recovery request latched on the wire while localization is
       // lost.  A single transition message can be missed when the supervisor
       // is starting or DDS endpoints are still matching, whereas recovery
@@ -545,29 +564,51 @@ private:
     const auto overlap = decidePriorMapOverlap(
       overlap_inliers, overlap_samples, map_factor_min_overlap_inliers_,
       map_factor_min_overlap_fraction_);
+    const bool recovery_loss_evidence = isRecoveryLossEvidence(
+      overlap, map_factor_min_overlap_inliers_, recovery_loss_overlap_fraction_);
+    recovery_loss_evidence_frames_ = recovery_loss_evidence ?
+      recovery_loss_evidence_frames_ + 1 : 0;
+    if (recovery_loss_evidence_frames_ >= recovery_loss_confirmation_frames_ &&
+      !recovery_search_requested_.load())
+    {
+      const bool recovery_rearm_allowed = recoveryRearmAllowed(
+        last_verified_recovery_stamp_, frame->stamp, recovery_rearm_cooldown_sec_);
+      if (recovery_rearm_allowed && !recovery_search_requested_.exchange(true)) {
+        logger_->warn(
+          "prior-map recovery search requested at X({}) after {} frames below "
+          "{:.3f} overlap; public map-to-odom remains graph-driven until a "
+          "strong global candidate confirms lock loss",
+          frame->id, recovery_loss_evidence_frames_, recovery_loss_overlap_fraction_);
+        publishRecoveryRequested(true);
+      } else if (!recovery_rearm_allowed) {
+        logger_->info(
+          "suppressed recovery rearm {:.1f}s after verified recovery",
+          frame->stamp - last_verified_recovery_stamp_);
+      }
+    }
+    // The recovery threshold is deliberately stricter than the ordinary map
+    // factor gate. Entering global search must freeze the public map frame, but
+    // it must not discard still-valid local map correspondences. Those factors
+    // remain in the same fixed-lag graph until the ordinary overlap gate fails;
+    // a true kidnap naturally falls through that lower gate, while a sparse
+    // normal road keeps its available absolute constraints.
     if (!overlap.sufficient) {
       if (map_factor_active_) {
         logger_->warn(
           "prior-map overlap lost at X({}): {}/{} ({:.3f}); "
           "continuing with scan-to-scan and IMU factors",
           frame->id, overlap.inliers, overlap.samples, overlap.fraction);
-        const bool recovery_rearm_allowed = recoveryRearmAllowed(
-          last_verified_recovery_stamp_, frame->stamp, recovery_rearm_cooldown_sec_);
-        if (recovery_rearm_allowed && !map_lock_lost_.exchange(true)) {
-          {
-            std::lock_guard<std::mutex> lock(public_transform_mutex_);
-            const Eigen::Isometry3d current_map_from_odom =
-              public_map_odom_initialized_ ? public_map_from_odom_ : odom_from_map.inverse();
-            frozen_public_map_from_lidar_ =
-              current_map_from_odom * odom_from_lidar;
-            public_pose_hold_initialized_ = true;
-          }
-          publishRecoveryRequested(true);
-        } else if (!recovery_rearm_allowed) {
-          logger_->info(
-            "suppressed recovery rearm {:.1f}s after verified recovery",
-            frame->stamp - last_verified_recovery_stamp_);
-        }
+      }
+      map_factor_active_ = false;
+      return;
+    }
+    if (recovery_search_requested_.load() &&
+      !map_factor_region_observable_.load())
+    {
+      if (map_factor_active_) {
+        logger_->warn(
+          "pausing prior-map factors in low-density tracking crop during "
+          "global search");
       }
       map_factor_active_ = false;
       return;
@@ -579,6 +620,13 @@ private:
         frame->id, overlap.inliers, overlap.samples, overlap.fraction);
     }
     map_factor_active_ = true;
+
+    // IMU and scan-to-scan factors remain at every LiDAR frame. Prior-map
+    // factors are keyframe constraints; inserting the nearly identical map
+    // Hessian at 10 Hz adds CPU pressure without useful independent geometry.
+    if (frame->id % map_factor_frame_stride_ != 0) {
+      return;
+    }
 
     auto factor = gtsam::make_shared<glim::IntegratedGICPFactorCoreset>(
       map_state_key_, pose_key, prior_map_frame_, frame->frame,
@@ -620,6 +668,9 @@ private:
     if (!finiteTransform(map_from_sensor)) {
       logger_->warn("rejected invalid /initialpose recovery candidate");
       return;
+    }
+    if (recovery_search_requested_.load()) {
+      map_lock_lost_.store(true);
     }
 
     const double candidate_stamp =
@@ -668,7 +719,9 @@ private:
   void onGlobalCandidates(
     const std::shared_ptr<const geometry_msgs::msg::PoseArray> & message)
   {
-    if (!rerank_bbs_candidates_ || !map_lock_lost_.load() || message->poses.empty()) {
+    if (!rerank_bbs_candidates_ || !recovery_search_requested_.load() ||
+      message->poses.empty())
+    {
       return;
     }
     const double candidate_stamp =
@@ -720,6 +773,7 @@ private:
 
     bool selected = false;
     double selected_metric = std::numeric_limits<double>::infinity();
+    double selected_overlap = 0.0;
     Eigen::Isometry3d selected_pose = Eigen::Isometry3d::Identity();
     std::size_t selected_index = 0;
     for (std::size_t index = 0; index < message->poses.size(); ++index) {
@@ -759,6 +813,7 @@ private:
       if (admissible && metric < selected_metric) {
         selected = true;
         selected_metric = metric;
+        selected_overlap = refinement.inlier_fraction;
         selected_pose = refinement.pose;
         selected_index = index;
       }
@@ -788,8 +843,10 @@ private:
         pending_recovery_generation_, candidate_stamp);
     }
     logger_->warn(
-      "selected BBS candidate rank={} of {} after GLIL 3D reranking (metric={:.3f})",
-      selected_index + 1, message->poses.size(), selected_metric);
+      "selected BBS candidate rank={} of {} after GLIL 3D reranking "
+      "(metric={:.3f}, sparse_overlap={:.3f}); public map-to-odom remains "
+      "graph-driven until full-resolution verification",
+      selected_index + 1, message->poses.size(), selected_metric, selected_overlap);
   }
 
   void publishRecoveryRequested(bool requested)
@@ -962,6 +1019,12 @@ private:
       refinement.inlier_fraction, refinement.normalized_error,
       correction.translation().norm(), rotationDegrees(correction),
       disagreement.translation().norm(), rotationDegrees(disagreement), accepted);
+    if (accepted && !map_lock_lost_.exchange(true)) {
+      logger_->warn(
+        "confirmed map lock loss from full-resolution recovery overlap {:.3f}; "
+        "holding public map-to-odom during remaining consensus frames",
+        refinement.inlier_fraction);
+    }
 
     RecoveryConsensusAction consensus_action = RecoveryConsensusAction::kPending;
     {
@@ -982,6 +1045,7 @@ private:
       if (consensus_action == RecoveryConsensusAction::kReject) {
         pending_recovery_ = false;
         bbs_batch_candidate_active_ = false;
+        map_lock_lost_.store(false);
         logger_->warn(
           "rejected recovery candidate generation={} after {} inconsistent frames",
           generation, pending_recovery_failures_);
@@ -1002,10 +1066,12 @@ private:
     map_factor_active_ = false;
     {
       std::lock_guard<std::mutex> lock(public_transform_mutex_);
-      verified_recovery_snap_pending_ = true;
-      public_pose_hold_initialized_ = false;
+      verified_recovery_transition_pending_ = true;
+      verified_recovery_transition_active_ = true;
     }
     map_lock_lost_.store(false);
+    recovery_search_requested_.store(false);
+    recovery_loss_evidence_frames_ = 0;
     last_verified_recovery_stamp_ = frame.stamp;
     publishRecoveryRequested(false);
     logger_->warn(
@@ -1027,38 +1093,44 @@ private:
       logger_->error("refusing non-finite tightly coupled map-to-odom estimate");
       return;
     }
-    glim::EstimationFrame::ConstPtr latest_frame;
-    {
-      std::lock_guard<std::mutex> lock(frame_mutex_);
-      latest_frame = latest_odometry_frame_;
-    }
     BoundedMapOdomStep public_step;
-    bool verified_recovery_snap = false;
+    bool verified_recovery_transition_started = false;
     Eigen::Isometry3d published_map_from_odom = Eigen::Isometry3d::Identity();
     {
       std::lock_guard<std::mutex> lock(public_transform_mutex_);
-      if (map_lock_lost_.load() && public_pose_hold_initialized_ && latest_frame) {
-        public_step.transform = mapFromOdomHoldingSensorPose(
-          frozen_public_map_from_lidar_, latest_frame->T_world_lidar);
+      if (map_lock_lost_.load() && public_map_odom_initialized_) {
+        // Outside the prior map, preserve the last trusted map->odom anchor
+        // and let continuous GLIL odometry carry the vehicle. Freezing the
+        // composed sensor pose would incorrectly pin ordinary map exits.
+        public_step.transform = public_map_from_odom_;
         public_map_odom_initialized_ = true;
-      } else if (!public_map_odom_initialized_ || verified_recovery_snap_pending_) {
+      } else if (!public_map_odom_initialized_) {
         public_step.transform = target_map_from_odom;
-        verified_recovery_snap = verified_recovery_snap_pending_;
-        verified_recovery_snap_pending_ = false;
         public_map_odom_initialized_ = true;
       } else {
+        const double max_translation_step = verified_recovery_transition_active_ ?
+          recovery_public_max_translation_step_m_ : public_max_translation_step_m_;
+        const double max_rotation_step = verified_recovery_transition_active_ ?
+          recovery_public_max_rotation_step_deg_ : public_max_rotation_step_deg_;
         public_step = boundMapOdomStep(
           public_map_from_odom_, target_map_from_odom,
-          public_max_translation_step_m_, public_max_rotation_step_deg_);
+          max_translation_step, max_rotation_step);
+        if (verified_recovery_transition_active_) {
+          verified_recovery_transition_started = verified_recovery_transition_pending_;
+          verified_recovery_transition_pending_ = false;
+          if (!public_step.translation_limited && !public_step.rotation_limited) {
+            verified_recovery_transition_active_ = false;
+          }
+        }
       }
       public_map_from_odom_ = public_step.transform;
       published_map_from_odom = public_map_from_odom_;
     }
     glim::GlobalMappingCallbacks::on_external_map_odom_update(
       latest_tightly_coupled_stamp_, published_map_from_odom, true);
-    if (verified_recovery_snap) {
+    if (verified_recovery_transition_started) {
       logger_->warn(
-        "published independently verified recovery transition after lost-pose hold");
+        "started bounded independently verified recovery transition");
     }
     if (public_step.translation_limited || public_step.rotation_limited) {
       logger_->warn(
@@ -1121,7 +1193,8 @@ private:
       anchor_available ? anchor_snapshot * odom_from_submap : odom_from_submap;
     const Eigen::Vector3d predicted_map_center = predicted_in_map.translation();
     const bool odom_bridge_recovery =
-      tightly_coupled_ && odom_bridge_recovery_enabled_ && map_lock_lost_.load();
+      tightly_coupled_ && odom_bridge_recovery_enabled_ &&
+      recovery_search_requested_.load();
     const double crop_radius_m = odom_bridge_recovery ?
       odom_bridge_recovery_crop_radius_m_ :
       (map_frame_initialized_ ? tracking_crop_radius_m_ : bootstrap_crop_radius_m_);
@@ -1129,6 +1202,10 @@ private:
       std::vector<Eigen::Vector3f>{} :
       cropMap(prior_map_, predicted_map_center, crop_radius_m);
     const auto & target = full_global_search_ ? prior_map_ : cropped_map;
+    if (tightly_coupled_ && !full_global_search_) {
+      map_factor_region_observable_.store(
+        target.size() >= map_factor_min_tracking_crop_points_);
+    }
     if (target.empty()) {
       logger_->warn("submap {} has no prior-map points in its tracking crop", submap->id);
       return;
@@ -1427,11 +1504,15 @@ private:
   double map_factor_coreset_reuse_rotation_rad_{0.035};
   int map_factor_num_threads_{1};
   std::size_t map_factor_overlap_stride_{10};
+  std::size_t map_factor_frame_stride_{2};
   double map_factor_min_overlap_fraction_{0.05};
   std::size_t map_factor_min_overlap_inliers_{32};
+  std::size_t map_factor_min_tracking_crop_points_{50000};
   double map_state_prior_precision_{1.0};
   bool map_factor_active_{false};
+  std::atomic_bool map_factor_region_observable_{true};
   std::atomic_bool map_lock_lost_{false};
+  std::atomic_bool recovery_search_requested_{false};
   gtsam::Key map_state_key_{gtsam::Symbol('m', 0)};
   std::uint64_t map_state_epoch_{0};
   double latest_tightly_coupled_stamp_{0.0};
@@ -1456,14 +1537,18 @@ private:
   double recovery_max_correction_rotation_deg_{6.0};
   double recovery_max_consensus_translation_m_{1.5};
   double recovery_max_consensus_rotation_deg_{6.0};
+  double recovery_loss_overlap_fraction_{0.75};
+  std::size_t recovery_loss_confirmation_frames_{2};
+  std::size_t recovery_loss_evidence_frames_{0};
   double public_max_translation_step_m_{0.25};
   double public_max_rotation_step_deg_{2.0};
+  double recovery_public_max_translation_step_m_{1.0};
+  double recovery_public_max_rotation_step_deg_{5.0};
   bool public_map_odom_initialized_{false};
   std::mutex public_transform_mutex_;
   Eigen::Isometry3d public_map_from_odom_{Eigen::Isometry3d::Identity()};
-  bool public_pose_hold_initialized_{false};
-  bool verified_recovery_snap_pending_{false};
-  Eigen::Isometry3d frozen_public_map_from_lidar_{Eigen::Isometry3d::Identity()};
+  bool verified_recovery_transition_pending_{false};
+  bool verified_recovery_transition_active_{false};
   bool map_frame_initialized_{false};
   bool bootstrap_anchor_available_{false};
   Eigen::Isometry3d bootstrap_anchor_{Eigen::Isometry3d::Identity()};

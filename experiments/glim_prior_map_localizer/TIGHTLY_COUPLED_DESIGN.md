@@ -73,9 +73,11 @@ The factor follows the ICRA 2025 deferred-sampling state machine:
 4. otherwise perform another full linearization and refresh the cache.
 
 The prior-map factor uses a 1.0 m / 2 deg nearby-state reuse bound, within its 2 m
-correspondence gate. Binary odometry factors use the tighter 0.25 m / 2 deg profile.
-Exceeding either bound forces an exact full refresh; these bounds are not registration
-acceptance thresholds.
+correspondence gate. The adjacent binary odometry factor uses a tight 0.10 m / 2 deg
+profile for high-frequency motion accuracy; older factors in the six-frame history use
+0.25 m / 2 deg so the entire window does not trigger simultaneous full point-set
+refreshes. Exceeding the applicable bound forces an exact full refresh; these bounds are
+not registration acceptance thresholds.
 
 Correspondences are exact nearest-neighbor queries. The coreset accelerates
 linearization only; nonlinear error evaluation used for optimizer acceptance remains a

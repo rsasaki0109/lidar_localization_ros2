@@ -114,6 +114,7 @@ def build_evidence(log_path: Path, pose_csv: Path):
             "tail_queue_p95": tail_queue_p95,
             "skipped_sparse_frame_count": skipped,
             "playback_speed_median": percentile(playback, 0.5),
+            "playback_speed_p10": percentile(playback, 0.1),
             "playback_speed_min": min(playback, default=None),
             "invalid_pose_row_count": invalid_poses,
         },

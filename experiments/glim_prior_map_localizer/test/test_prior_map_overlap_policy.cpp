@@ -30,6 +30,12 @@ int main()
 
   const auto reentered = localizer::decidePriorMapOverlap(32, 320, 32, 0.05);
   assert(reentered.sufficient);
+  const auto sparse_but_well_aligned = localizer::decidePriorMapOverlap(20, 20, 32, 0.05);
+  assert(!localizer::isRecoveryLossEvidence(sparse_but_well_aligned, 32, 0.75));
+  const auto populated_normal_overlap = localizer::decidePriorMapOverlap(216, 255, 32, 0.05);
+  assert(!localizer::isRecoveryLossEvidence(populated_normal_overlap, 32, 0.75));
+  const auto populated_kidnap_overlap = localizer::decidePriorMapOverlap(170, 255, 32, 0.05);
+  assert(localizer::isRecoveryLossEvidence(populated_kidnap_overlap, 32, 0.75));
 
   localizer::RecoveryConsensusState recovery;
   assert(localizer::updateRecoveryConsensus(recovery, true, 3, 2) ==
@@ -67,20 +73,6 @@ int main()
   assert(!unchanged.translation_limited);
   assert(!unchanged.rotation_limited);
   assert(unchanged.transform.matrix().isApprox(target.matrix(), 1.0e-12));
-
-  Eigen::Isometry3d frozen_map_from_sensor = Eigen::Isometry3d::Identity();
-  frozen_map_from_sensor.translation() = Eigen::Vector3d(12.0, -7.0, 2.0);
-  frozen_map_from_sensor.linear() = Eigen::AngleAxisd(
-    0.4, Eigen::Vector3d::UnitZ()).toRotationMatrix();
-  Eigen::Isometry3d divergent_odom_from_sensor = Eigen::Isometry3d::Identity();
-  divergent_odom_from_sensor.translation() = Eigen::Vector3d(40000.0, -12000.0, 8000.0);
-  divergent_odom_from_sensor.linear() = Eigen::AngleAxisd(
-    -1.2, Eigen::Vector3d::UnitZ()).toRotationMatrix();
-  const Eigen::Isometry3d holding_map_from_odom =
-    localizer::mapFromOdomHoldingSensorPose(
-    frozen_map_from_sensor, divergent_odom_from_sensor);
-  assert((holding_map_from_odom * divergent_odom_from_sensor).matrix().isApprox(
-    frozen_map_from_sensor.matrix(), 1.0e-9));
 
   Eigen::Isometry3d far_from_origin = Eigen::Isometry3d::Identity();
   far_from_origin.translation() = Eigen::Vector3d(-87.0, -9.0, -11.0);
