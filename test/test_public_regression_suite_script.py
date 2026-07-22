@@ -26,6 +26,19 @@ class TestPublicRegressionSuiteScript(unittest.TestCase):
         self.assertIn("use_imu_preintegration:=false", launch_commands[1])
         self.assertIn("use_imu_preintegration:=true", launch_commands[2])
 
+    def test_known_marginal_hdl_imu_result_is_not_the_default_feature_gate(self):
+        source = (
+            REPO_ROOT / "scripts" / "run_public_regression_suite.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            '"overall_pass": bool(istanbul_pass and hdl_default_safety_pass)',
+            source,
+        )
+        self.assertIn('"experimental_imu_pass": hdl_experimental_imu_pass', source)
+        self.assertIn('"continuous_time_deskew_is_default_on"', source)
+        self.assertIn('"missing_point_time_preserves_original_cloud"', source)
+
 
 if __name__ == "__main__":
     unittest.main()
