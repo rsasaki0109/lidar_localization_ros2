@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(lidar_localization_ros2 VERSION 1.0.0)
+project(lidar_localization_ros2 VERSION 1.2.0)
 
 if(POLICY CMP0074)
   cmake_policy(SET CMP0074 NEW)
