@@ -102,6 +102,13 @@ active map-frame state without resetting raw continuous odometry, creating a sec
 parent, or publishing an unbounded pose discontinuity. The last valid public transform
 remains available while a candidate is pending or rejected.
 
+Recovery search is armed only by populated frames, after consecutive observations fall
+below either the strict overlap fraction or the ordinary absolute-inlier floor. The
+absolute gate is required because a small sample such as 12/12 correspondences has a
+perfect fraction but does not establish map observability. Empty startup or transport
+frames are ignored. Crossing this loss gate requests a search; it does not freeze the
+public transform until a full-resolution global candidate independently confirms loss.
+
 An accepted recovery starts a new persistent `odom_from_map` graph epoch. The raw
 odometry states are not reset, while old map epochs age out through normal fixed-lag
 marginalization. The sole public `map -> odom` transform approaches the graph estimate

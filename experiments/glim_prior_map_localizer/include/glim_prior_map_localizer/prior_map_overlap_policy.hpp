@@ -30,10 +30,16 @@ inline PriorMapOverlapDecision decidePriorMapOverlap(
 
 inline bool isRecoveryLossEvidence(
   const PriorMapOverlapDecision & overlap,
-  std::size_t minimum_samples,
+  std::size_t minimum_inliers,
   double loss_fraction)
 {
-  return overlap.samples >= minimum_samples && overlap.fraction < loss_fraction;
+  // A populated scan can lose the map either through a low overlap fraction
+  // or because the absolute correspondence count collapses.  The latter is
+  // important immediately after a sensor discontinuity: 12/12 is a perfect
+  // fraction but is still far below the map-factor observability floor. Empty
+  // preprocessing frames carry no geometric evidence and are ignored.
+  return overlap.samples != 0 &&
+    (overlap.inliers < minimum_inliers || overlap.fraction < loss_fraction);
 }
 
 }  // namespace glim_prior_map_localizer

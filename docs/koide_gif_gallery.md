@@ -16,12 +16,13 @@ localization accuracy or recovery behavior.
 
 ### Tightly coupled GLIL — NDT-free
 
-The pinned age-aware exact-coreset image has completed the final 02a/02b replays. Clean
-01a/01b repeats and the two outdoor-kidnap replays remain queued because unrelated
-host-wide CPU jobs invalidated the first 01 repeat; those contaminated throughput
-results are not reported here. An indoor Azure Kinect profile is also available, but
-its dense RGB-D scan-to-map ambiguity remains under investigation and is not counted
-as an accepted run.
+The pinned age-aware exact-coreset image was replayed from start to finish on all four
+outdoor-hard bags. Full 01a, 01b, and 02a runs passed every gate. The final 02b run
+passed its accuracy, continuity, and TF gates while two unrelated single-core jobs were
+active, but its playback p10 fell below the real-time gate; this contention is reported
+rather than hidden or relabeled as a clean throughput result. An indoor Azure Kinect
+profile is also available, but its dense RGB-D scan-to-map ambiguity remains under
+investigation and is not counted as an accepted run.
 Unlike the earlier split, scan-to-map results are not solved independently and converted
 to smoothed corrections. Each accepted map observation constrains the same active pose
 states as scan-to-scan and IMU factors. Loss of map overlap omits only map factors;
@@ -31,14 +32,26 @@ without resetting raw odometry or adding a second TF authority.
 
 | Bag | Coverage | Translation ATE | Final error | Median 10 m RPE | RPE rotation | Processing p95 | Playback p10 | Max/final queue | TF jumps | Gate |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| `outdoor_hard_02a` | 99.15% | 1.756 m | 0.362 m | 0.185 m | 0.735 deg | 171.1 ms | 0.997x | 33 / 0 | 0 | Pass |
-| `outdoor_hard_02b` | 99.03% | 0.627 m | 0.970 m | 0.186 m | 0.892 deg | 194.4 ms | 0.986x | 26 / 0 | 0 | Pass |
+| `outdoor_hard_01a` | 99.21% | 1.179 m | 0.446 m | 0.175 m | 0.681 deg | 192.6 ms | 0.982x | 35 / 0 | 0 | Pass |
+| `outdoor_hard_01b` | 99.04% | 1.016 m | 1.178 m | 0.185 m | 0.764 deg | 194.2 ms | 0.997x | 26 / 0 | 0 | Pass |
+| `outdoor_hard_02a` | 99.15% | 1.777 m | 0.553 m | 0.168 m | 0.608 deg | 157.2 ms | 0.999x | 26 / 0 | 0 | Pass |
+| `outdoor_hard_02b` | 99.03% | 0.653 m | 0.935 m | 0.196 m | 0.953 deg | 274.1 ms | 0.819x | 38 / 0 | 0 | Accuracy/TF pass; CPU contended |
 
 The adjacent scan factor refreshes at a 0.10 m / 2 deg nearby-state bound. Older
-factors in the six-frame window use 0.25 m / 2 deg; this retained 02b accuracy while
-raising 02a sustained playback from 0.284x to 0.997x and reducing its maximum queue
-from 93 to 33. Both accepted runs ended with an empty queue, zero TF jumps, and zero
-unauthorized resets.
+factors in the six-frame window use 0.25 m / 2 deg; this retained accuracy while
+raising 02a sustained playback from the initial 0.284x to 0.999x and reducing its
+maximum queue from 93 to 26. All four final runs ended with an empty queue, zero TF
+jumps, and zero unauthorized resets. A second deliberately contended 02b repeat showed
+why the playback qualifier matters: p10 fell to 0.304 and RPE exceeded its gates even
+though output remained continuous and the queue eventually drained.
+
+#### Outdoor hard 01a
+
+![Koide outdoor_hard_01a tightly coupled GLIL replay](../images/koide/measured/glil/outdoor_hard_01a_tightly_coupled.gif)
+
+#### Outdoor hard 01b
+
+![Koide outdoor_hard_01b tightly coupled GLIL replay](../images/koide/measured/glil/outdoor_hard_01b_tightly_coupled.gif)
 
 #### Outdoor hard 02a — map-exit/re-entry
 
@@ -47,6 +60,27 @@ unauthorized resets.
 #### Outdoor hard 02b
 
 ![Koide outdoor_hard_02b tightly coupled GLIL replay](../images/koide/measured/glil/outdoor_hard_02b_tightly_coupled.gif)
+
+### Tightly coupled outdoor kidnap recovery
+
+The same GLIL image uses BBS only as a recovery candidate generator. Thirty-two
+hypotheses are re-ranked against the GLIL raw scan, time-aligned with continuous
+odometry, and verified at full resolution for three frames before a new graph map-state
+epoch is activated. Ground truth remains evaluator-only. Both accepted runs end in the
+correct map basin without resetting odometry or adding another TF authority.
+
+| Bag | Verdict | Maximum loss | Terminal recovered window | Final error | Playback p10 | Max/final queue | TF jumps | Resets |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `outdoor_kidnap_a` | `recovered_true` | 46.474 m | 18.07 s | 0.074 m | 0.486x (CPU contended) | 46 / 0 | 0 | 0 |
+| `outdoor_kidnap_b` | `recovered_true` | 36.374 m | 16.05 s | 0.041 m | 1.000x | 22 / 0 | 0 | 0 |
+
+#### Outdoor kidnap A
+
+![Koide outdoor_kidnap_a tightly coupled GLIL recovery](../images/koide/measured/glil/outdoor_kidnap_a_tightly_coupled.gif)
+
+#### Outdoor kidnap B
+
+![Koide outdoor_kidnap_b tightly coupled GLIL recovery](../images/koide/measured/glil/outdoor_kidnap_b_tightly_coupled.gif)
 
 ### Legacy split prior-map baseline (2026-07-19)
 
@@ -201,7 +235,7 @@ python3 scripts/render_koide_localization_gif.py \
   --estimate-label "GLIL map-frame pose" \
   --title "GLIL: tightly coupled exact-coreset range-inertial localization" \
   --metrics-label \
-    "Pending final pinned-image measurement"
+    "ATE 1.179 m | final 0.446 m | 10 m RPE 0.175 m / 0.681 deg | Pass"
 ```
 
 `--prior-map-vertical-gain` belongs to the legacy split mode and must not be combined

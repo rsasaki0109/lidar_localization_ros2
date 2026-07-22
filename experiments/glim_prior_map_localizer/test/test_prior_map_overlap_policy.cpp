@@ -30,8 +30,9 @@ int main()
 
   const auto reentered = localizer::decidePriorMapOverlap(32, 320, 32, 0.05);
   assert(reentered.sufficient);
+  assert(!localizer::isRecoveryLossEvidence(empty, 32, 0.75));
   const auto sparse_but_well_aligned = localizer::decidePriorMapOverlap(20, 20, 32, 0.05);
-  assert(!localizer::isRecoveryLossEvidence(sparse_but_well_aligned, 32, 0.75));
+  assert(localizer::isRecoveryLossEvidence(sparse_but_well_aligned, 32, 0.75));
   const auto populated_normal_overlap = localizer::decidePriorMapOverlap(216, 255, 32, 0.05);
   assert(!localizer::isRecoveryLossEvidence(populated_normal_overlap, 32, 0.75));
   const auto populated_kidnap_overlap = localizer::decidePriorMapOverlap(170, 255, 32, 0.05);

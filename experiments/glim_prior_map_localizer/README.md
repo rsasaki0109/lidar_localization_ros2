@@ -80,7 +80,7 @@ The benchmark runner adds `libglim_prior_map_localizer.so` to GLIM's
 | `GLIM_PRIOR_MAP_FACTOR_NUM_THREADS` | 1 | prior-map factor worker count |
 | `GLIM_PRIOR_MAP_FACTOR_FRAME_STRIDE` | 2 | add a prior-map coreset factor every N LiDAR keyframes; IMU/scan-to-scan remain every frame |
 | `GLIM_PRIOR_MAP_RECOVERY_CONFIRMATION_FRAMES` | 3 | consistent frames required for recovery |
-| `GLIM_PRIOR_MAP_RECOVERY_LOSS_OVERLAP_FRACTION` | 0.75 | overlap below which a sufficiently populated scan is loss evidence; keeps normal 01b's observed 0.848 overlap locked while detecting kidnap A's 0.667 overlap |
+| `GLIM_PRIOR_MAP_RECOVERY_LOSS_OVERLAP_FRACTION` | 0.75 | recovery-search observability gate; two populated frames below either this fraction or the ordinary absolute-inlier floor request search, while public TF remains graph-driven until candidate verification |
 | `GLIM_PRIOR_MAP_RECOVERY_LOSS_CONFIRMATION_FRAMES` | 2 | consecutive loss-evidence frames required to request recovery |
 | `GLIM_PRIOR_MAP_RECOVERY_MIN_INLIER_FRACTION` | 0.75 | strict overlap gate that rejects repetitive-road aliases |
 | `GLIM_PRIOR_MAP_RECOVERY_MAX_NORMALIZED_ERROR` | 12.0 | raw-scan VGICP recovery ceiling; overlap, correction, rotation, and multi-frame consensus gates remain active |
@@ -117,20 +117,23 @@ In legacy split mode only, GLIM ROS parameter
 
 ## Tightly coupled kidnap recovery measurement
 
-The 90 s `outdoor_kidnap_b` replay was repeated after adding time-aligned BBS/GLIL
-candidate propagation and the 0.75 recovery-overlap gate. The standard 32-candidate
-configuration selected rank 5, verified three frames at 0.916, 0.955, and 0.954
-overlap, then reacquired the prior-map factor at 0.997 overlap. The GT-only evaluator
-reported `recovered_true`, a 29.90 s terminal recovered window, and 0.113 m final XY
-error. The process completed with finite monotonic poses, zero TF jumps, zero
-unauthorized resets, bounded queue growth, and a drained final queue.
+The final 90 s `outdoor_kidnap_b` replay uses time-aligned BBS/GLIL candidate
+propagation plus the fractional and absolute-inlier loss gates. The standard
+32-candidate configuration selected rank 26, verified three full-resolution frames at
+0.933, 0.950, and 0.943 overlap, and activated a new map-state epoch. The GT-only
+evaluator reported `recovered_true`, a 16.05 s terminal recovered window, and 0.041 m
+final XY error. The process completed at playback p10 1.000 with finite monotonic poses,
+zero TF jumps, zero unauthorized resets, bounded queue growth, and a drained final
+queue.
 
-On `outdoor_kidnap_a`, caching one global prior-map Gaussian voxel map for all 32
-first-stage candidates reduced re-ranking from about 3.1 s to 0.325 s. The full-scan
-verifier then passed at 0.903, 0.906, and 0.909 overlap. The evaluator reported
-`recovered_true`, a 25.71 s terminal recovered window, 0.064 m final XY error, zero TF
-jumps, and a drained final queue. Rank-1 compatibility messages and duplicate candidate
-batches are ignored while PoseArray re-ranking is authoritative.
+On the final-image `outdoor_kidnap_a` replay, caching one global prior-map Gaussian
+voxel map for all 32 first-stage candidates keeps re-ranking bounded. The evaluator
+reported `recovered_true`, a 46.474 m maximum loss, an 18.07 s terminal recovered
+window, 0.074 m final XY error, zero TF jumps, zero unauthorized resets, and a drained
+final queue. Two unrelated single-core jobs reduced playback p10 to 0.486, so this run
+is recovery evidence rather than a clean throughput result. Rank-1 compatibility
+messages and duplicate candidate batches are ignored while PoseArray re-ranking is
+authoritative.
 
 An 8-candidate comparison selected a repetitive-road alias with about 0.60 overlap;
 the safety evaluator rejected the run, and that alias is below the new 0.75 gate. This

@@ -576,9 +576,11 @@ private:
       if (recovery_rearm_allowed && !recovery_search_requested_.exchange(true)) {
         logger_->warn(
           "prior-map recovery search requested at X({}) after {} frames below "
-          "{:.3f} overlap; public map-to-odom remains graph-driven until a "
+          "the {}-inlier/{:.3f}-overlap observability gate; public map-to-odom "
+          "remains graph-driven until a "
           "strong global candidate confirms lock loss",
-          frame->id, recovery_loss_evidence_frames_, recovery_loss_overlap_fraction_);
+          frame->id, recovery_loss_evidence_frames_, map_factor_min_overlap_inliers_,
+          recovery_loss_overlap_fraction_);
         publishRecoveryRequested(true);
       } else if (!recovery_rearm_allowed) {
         logger_->info(
