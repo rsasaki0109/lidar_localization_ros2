@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+## 1.2.0 - 2026-07-22
+
+Tightly coupled GLIL, exact point-cloud downsampling, and guarded kidnapped-pose
+recovery. Release boundary: PR #128 merged at `04bc8c7`; Humble and Jazzy CI passed,
+the Python suite reported 314 tests plus 140 subtests passed, and the pinned GLIL
+container passed its embedded CTest suite.
+
+### Tightly Coupled GLIL
+
+- Combined IMU preintegration, exact-coreset scan-to-scan GICP, and exact-coreset
+  scan-to-prior-map GICP in one GLIM fixed-lag factor graph, following the estimator
+  structure of Koide et al. ICRA 2024 and deferred exact downsampling of Koide et al.
+  ICRA 2025.
+- Added continuous `odom -> base_link` output through map loss and one bounded
+  `map -> odom` authority; map-factor loss, rejected candidates, and recovery never
+  reset raw odometry or introduce a second TF parent.
+- Added verified map-state epochs, time-aligned 32-candidate BBS/GLIL re-ranking, and
+  three-frame full-resolution consensus for kidnapped-pose recovery.
+- Recovery loss now checks both overlap fraction and the absolute map-factor inlier
+  floor, closing the misleading 12/12-style sparse-overlap case while ignoring empty
+  transport frames.
+- Published reproducible 01a/01b/02a/02b and outdoor-kidnap A/B runners, measurements,
+  and six GLIL-only replay GIFs in `docs/koide_gif_gallery.md`.
+
+### Validation Boundary
+
+- Full 01a, 01b, and 02a runs passed accuracy, continuity, real-time playback, queue,
+  and TF/reset gates. The final 02b run passed accuracy and TF gates; its CPU-contended
+  playback result is explicitly labeled rather than claimed as clean throughput.
+- Outdoor kidnap A and B both ended `recovered_true`, at 0.074 m and 0.041 m final
+  error respectively, with zero TF jumps, zero unauthorized resets, and drained final
+  queues.
+- The tightly coupled GLIL path is the measured main configuration; NDT is not launched
+  alongside it. Legacy split prior-map localization remains available for comparison.
+
 ### Added
 
 - `failure_category` key on `/alignment_status` distinguishing
