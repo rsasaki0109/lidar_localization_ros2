@@ -16,9 +16,12 @@ localization accuracy or recovery behavior.
 
 ### Tightly coupled GLIL — NDT-free
 
-The tightly coupled implementation is under final six-run outdoor-hard/outdoor-kidnap
-measurement. An indoor Azure Kinect profile is also available, but its dense RGB-D
-scan-to-map ambiguity remains under investigation and is not counted as an accepted run.
+The pinned age-aware exact-coreset image has completed the final 02a/02b replays. Clean
+01a/01b repeats and the two outdoor-kidnap replays remain queued because unrelated
+host-wide CPU jobs invalidated the first 01 repeat; those contaminated throughput
+results are not reported here. An indoor Azure Kinect profile is also available, but
+its dense RGB-D scan-to-map ambiguity remains under investigation and is not counted
+as an accepted run.
 Unlike the earlier split, scan-to-map results are not solved independently and converted
 to smoothed corrections. Each accepted map observation constrains the same active pose
 states as scan-to-scan and IMU factors. Loss of map overlap omits only map factors;
@@ -26,8 +29,24 @@ continuous range-inertial odometry and the last bounded `map -> odom` remain ava
 Verified recovery creates a new graph map-state epoch after three consistent frames,
 without resetting raw odometry or adding a second TF authority.
 
-The final 01a/01b/02a/02b plus outdoor-kidnap a/b table and GLIL-only GIFs will replace
-this measurement notice after the pinned image completes the acceptance matrix.
+| Bag | Coverage | Translation ATE | Final error | Median 10 m RPE | RPE rotation | Processing p95 | Playback p10 | Max/final queue | TF jumps | Gate |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `outdoor_hard_02a` | 99.15% | 1.756 m | 0.362 m | 0.185 m | 0.735 deg | 171.1 ms | 0.997x | 33 / 0 | 0 | Pass |
+| `outdoor_hard_02b` | 99.03% | 0.627 m | 0.970 m | 0.186 m | 0.892 deg | 194.4 ms | 0.986x | 26 / 0 | 0 | Pass |
+
+The adjacent scan factor refreshes at a 0.10 m / 2 deg nearby-state bound. Older
+factors in the six-frame window use 0.25 m / 2 deg; this retained 02b accuracy while
+raising 02a sustained playback from 0.284x to 0.997x and reducing its maximum queue
+from 93 to 33. Both accepted runs ended with an empty queue, zero TF jumps, and zero
+unauthorized resets.
+
+#### Outdoor hard 02a — map-exit/re-entry
+
+![Koide outdoor_hard_02a tightly coupled GLIL replay](../images/koide/measured/glil/outdoor_hard_02a_tightly_coupled.gif)
+
+#### Outdoor hard 02b
+
+![Koide outdoor_hard_02b tightly coupled GLIL replay](../images/koide/measured/glil/outdoor_hard_02b_tightly_coupled.gif)
 
 ### Legacy split prior-map baseline (2026-07-19)
 
