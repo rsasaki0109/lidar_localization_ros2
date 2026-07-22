@@ -564,8 +564,9 @@ void PCLLocalization::declareImuPreintegrationParameters()
   declare_parameter("imu_bias_prior_sigma_gyro", 0.01);
   declare_parameter("imu_bias_prior_sigma_accel", 0.1);
 
-  // Experimental deskew and localizability diagnostics.
-  declare_parameter("use_continuous_time_deskew", false);
+  // Deskew is enabled by default and falls back to the unmodified scan until
+  // per-point timing and a usable motion estimate are available.
+  declare_parameter("use_continuous_time_deskew", true);
   declare_parameter("continuous_time_deskew_mode", "relative_motion");
   declare_parameter("continuous_time_cloud_stamp_reference", "start");
   declare_parameter("continuous_time_deskew_reference_time_sec", 0.0);

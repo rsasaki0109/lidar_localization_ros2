@@ -129,7 +129,12 @@ def use_imu_preintegration_base_frame_transform(args: argparse.Namespace) -> boo
 
 
 def use_continuous_time_deskew(args: argparse.Namespace) -> bool:
-    return bool(getattr(args, "enable_continuous_time_deskew", False))
+    configured = getattr(args, "enable_continuous_time_deskew", None)
+    if configured is not None:
+        return bool(configured)
+    # Profiles with IMU preintegration already have the required motion source.
+    # No-IMU profiles remain usable and can opt in after selecting an IMU mode.
+    return effective_imu_mode(args) in {"preintegration", "both"}
 
 
 def continuous_time_deskew_requires_imu(args: argparse.Namespace) -> bool:
@@ -459,10 +464,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--enable-continuous-time-deskew",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help=(
-            "Enable the experimental default-off continuous-time deskew hook. "
-            "Requires IMU preintegration and per-point PointCloud2 timing."
+            "Enable continuous-time deskew (default for IMU preintegration profiles). "
+            "It requires per-point PointCloud2 timing and falls back safely until "
+            "the required motion data is ready."
         ),
     )
     parser.add_argument(

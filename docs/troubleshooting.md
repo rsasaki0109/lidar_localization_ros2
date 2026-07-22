@@ -110,11 +110,11 @@ default registration path remains scan-to-map NDT/GICP.
 | `continuous_time_deskew_skipped_invalid_time_count` / `continuous_time_deskew_clamped_time_count` | invalid or out-of-range per-point times kept safe by the hook |
 
 Run the bringup doctor with `--require-cloud-time-field` when you want this to
-be a hard gate. If you use `create_lidar_localization_config.py`, pass
-`--enable-continuous-time-deskew` to write the default-off deskew parameters and
-print a doctor command that requires IMU data plus per-point cloud timing.
-Without that flag, LiDAR-only localization can keep running and the doctor
-reports invalid or oversized timing as a warning.
+be a hard gate. `create_lidar_localization_config.py` enables deskew by default for
+profiles that use IMU preintegration and prints a doctor command that requires IMU
+data plus per-point cloud timing. Use `--no-enable-continuous-time-deskew` to opt out.
+LiDAR-only profiles keep running without deskew, and the doctor reports invalid or
+oversized timing as a warning.
 
 During bag replay, `validate_lidar_localization_imu.py` summarizes these same
 diagnostics over a time window and fails if IMU preintegration is not active

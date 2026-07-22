@@ -899,6 +899,10 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_launch_argument_contract.py
   )
   add_test(
+    NAME public_regression_suite_script
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_public_regression_suite_script.py
+  )
+  add_test(
     NAME glim_frontend_harness
     COMMAND ${Python3_EXECUTABLE} test/test_glim_frontend_harness.py
   )

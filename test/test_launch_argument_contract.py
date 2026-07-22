@@ -126,6 +126,31 @@ def assert_command_args_declared(testcase: unittest.TestCase, command: str) -> N
 
 
 class TestLaunchArgumentContract(unittest.TestCase):
+    def test_user_facing_launches_enable_deskew_by_default(self):
+        for launch_file in (
+            "lidar_localization.launch.py",
+            "nav2_lidar_localization.launch.py",
+            "mid360_legged_localization.launch.py",
+            "global_localization_recovery.launch.py",
+        ):
+            source = (REPO_ROOT / "launch" / launch_file).read_text(encoding="utf-8")
+            self.assertRegex(
+                source,
+                r"DeclareLaunchArgument\(\s*['\"]use_continuous_time_deskew['\"]"
+                r"[^)]*default_value=['\"]true['\"]",
+                launch_file,
+            )
+
+    def test_quickstart_defaults_to_asset_gated_global_initialization(self):
+        source = (REPO_ROOT / "launch" / "quickstart.launch.py").read_text(
+            encoding="utf-8")
+        self.assertRegex(
+            source,
+            r"DeclareLaunchArgument\(\s*['\"]enable_global_initialization['\"]"
+            r"[^)]*default_value=['\"]true['\"]",
+        )
+        self.assertIn("global_initialization_ready", source)
+
     def test_quickstart_command_uses_declared_launch_arguments(self):
         args = quickstart_tool.build_arg_parser().parse_args([
             "--map", "/maps/site.pcd",

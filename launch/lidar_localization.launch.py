@@ -67,7 +67,7 @@ def generate_launch_description():
     publish_bridge_pose_when_lost = LaunchConfiguration(
         'publish_bridge_pose_when_lost', default='false')
     use_continuous_time_deskew = LaunchConfiguration(
-        'use_continuous_time_deskew', default='false')
+        'use_continuous_time_deskew', default='true')
     continuous_time_deskew_reference_time_sec = LaunchConfiguration(
         'continuous_time_deskew_reference_time_sec', default='0.0')
     imu_tf_x = LaunchConfiguration('imu_tf_x', default='0.0')
@@ -290,7 +290,11 @@ def generate_launch_description():
                         'odom-bridge composed pose as the pose output so the '
                         'estimate stays continuous through dropouts; requires '
                         'enable_map_odom_tf.'),
-        DeclareLaunchArgument('use_continuous_time_deskew', default_value='false'),
+        DeclareLaunchArgument(
+            'use_continuous_time_deskew',
+            default_value='true',
+            description='Deskew scans when point timing and motion data are ready; '
+                        'otherwise keep the input scan unchanged.'),
         DeclareLaunchArgument(
             'continuous_time_deskew_reference_time_sec',
             default_value='0.0'),

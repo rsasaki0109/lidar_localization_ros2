@@ -65,6 +65,18 @@ def args(**overrides):
 
 
 class TestCreateLidarLocalizationConfig(unittest.TestCase):
+    def test_mid360_parser_enables_deskew_by_default_and_allows_opt_out(self):
+        parser = config_tool.build_arg_parser()
+        defaults = parser.parse_args([
+            "--map-path", "/maps/site.pcd", "--profile", "mid360"])
+        disabled = parser.parse_args([
+            "--map-path", "/maps/site.pcd", "--profile", "mid360",
+            "--no-enable-continuous-time-deskew",
+        ])
+
+        self.assertTrue(config_tool.use_continuous_time_deskew(defaults))
+        self.assertFalse(config_tool.use_continuous_time_deskew(disabled))
+
     def test_standalone_defaults_do_not_require_odom_tf_or_imu(self):
         tool_args = args()
         params = config_tool.make_params(tool_args)

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Changed
+
+- Continuous-time deskew now defaults on in the component, launch files, and shipped
+  presets. Readiness guards preserve the original scan when point timing or motion data
+  is unavailable; `use_continuous_time_deskew:=false` remains the rollback switch.
+- Quickstart global initialization now defaults on when a matching occupancy map is
+  supplied. It remains inactive without that required asset and can be disabled with
+  `--no-auto-initialize`.
+- Public rosbag regression launches now use simulated time and explicitly preserve the
+  HDL no-IMU/IMU comparison conditions instead of inheriting launch defaults.
+
 ### Added
 
 - Added `quickstart.py` and `quickstart.launch.py` for one-command configuration,

@@ -67,8 +67,8 @@
     imu_ndt_sigma_roll: 0.05
     imu_ndt_sigma_pitch: 0.05
 
-    # Continuous-time deskew is experimental and default-off
-    use_continuous_time_deskew: false
+    # Falls back to the original scan until point timing and motion are ready.
+    use_continuous_time_deskew: true
 
     gtsam_ndt_sigma_x: 0.1
     gtsam_ndt_sigma_y: 0.1
