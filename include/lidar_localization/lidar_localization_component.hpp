@@ -75,6 +75,7 @@
 #include "lidar_localization/pose_backend_result_policy.hpp"
 #include "lidar_localization/pose_covariance_policy.hpp"
 #include "lidar_localization/pose_backend_selection_policy.hpp"
+#include "lidar_localization/pose_publish_policy.hpp"
 #include "lidar_localization/registration_cloud_keep_alive_policy.hpp"
 #include "lidar_localization/registration_observation_policy.hpp"
 #include "lidar_localization/registration_seed_policy.hpp"
@@ -175,6 +176,7 @@ public:
   lidar_localization::CallbackStateCoordinator callback_state_coordinator_;
   geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr corrent_pose_with_cov_stamped_ptr_;
   nav_msgs::msg::Path::SharedPtr path_ptr_;
+  std::size_t path_max_poses_{lidar_localization::kDefaultPathMaxPoses};
   sensor_msgs::msg::PointCloud2::ConstSharedPtr last_scan_ptr_;
 
   bool map_recieved_{false};
