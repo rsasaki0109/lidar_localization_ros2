@@ -2,6 +2,7 @@
 #define LIDAR_LOCALIZATION_POSE_PUBLISH_POLICY_HPP_
 
 #include <cmath>
+#include <cstddef>
 #include <optional>
 #include <string>
 
@@ -175,11 +176,39 @@ inline geometry_msgs::msg::PoseWithCovarianceStamped stampPoseWithCovariance(
   return stamped_pose;
 }
 
+// 2000 poses is roughly 100 s at 20 Hz and 200 s at a 10 Hz scan rate, which
+// keeps the RViz trail useful while bounding the per-publish cost.
+inline constexpr std::size_t kDefaultPathMaxPoses = 2000;
+
+struct PathMaxPoses
+{
+  std::size_t value;
+  bool was_adjusted;
+};
+
+// A value of 0 disables the bound and keeps the full path history.
+inline PathMaxPoses normalizePathMaxPoses(int requested, std::size_t fallback)
+{
+  if (requested < 0) {
+    return {fallback, true};
+  }
+  return {static_cast<std::size_t>(requested), false};
+}
+
+// Appends a pose to the visualization path, dropping the oldest entries once
+// the history exceeds max_poses. This bounds both the per-publish
+// serialization cost and the retained transient-local sample.
 inline void appendPoseToPath(
   nav_msgs::msg::Path & path,
-  const geometry_msgs::msg::PoseStamped & pose_stamped)
+  const geometry_msgs::msg::PoseStamped & pose_stamped,
+  std::size_t max_poses = kDefaultPathMaxPoses)
 {
   path.poses.push_back(pose_stamped);
+  if (max_poses > 0 && path.poses.size() > max_poses) {
+    path.poses.erase(
+      path.poses.begin(),
+      path.poses.end() - static_cast<std::ptrdiff_t>(max_poses));
+  }
 }
 
 inline geometry_msgs::msg::TransformStamped makeMapToBaseTransform(
