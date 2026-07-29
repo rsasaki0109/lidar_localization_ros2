@@ -60,7 +60,8 @@ void PCLLocalization::appendCurrentPoseToPath(
 {
   lidar_localization::appendPoseToPath(
     *path_ptr_,
-    lidar_localization::makePoseStamped(stamp, global_frame_id_, pose));
+    lidar_localization::makePoseStamped(stamp, global_frame_id_, pose),
+    path_max_poses_);
 }
 
 void PCLLocalization::publishPathMessage()
@@ -413,8 +414,6 @@ void PCLLocalization::timerPublishPose()
 
   appendCurrentPoseToPath(pose_copy.header.stamp, pose_copy.pose.pose);
 
-  nav_msgs::msg::Path path_copy = *path_ptr_;
-
   publishPoseMessage(pose_copy);
   if (published_odom_bridge_pose && odom_bridge_pose_pub_) {
     // Keep the supervisor candidate as fresh as the public bridge output.
@@ -423,7 +422,7 @@ void PCLLocalization::timerPublishPose()
     // through upstream TF pauses.
     odom_bridge_pose_pub_->publish(pose_copy);
   }
-  path_pub_->publish(path_copy);
+  publishPathMessage();
 
   // The timer republishes whatever pose was last set, which may already be
   // stale (held by prediction, not a fresh accept); do not re-freeze it as the
