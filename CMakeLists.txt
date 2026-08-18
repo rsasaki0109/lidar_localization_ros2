@@ -281,14 +281,24 @@ if(pybind11_FOUND AND Python3_Development.Module_FOUND)
   message(STATUS "lidar_localization: building optional bbs_cpp pybind11 backend")
 
   pybind11_add_module(g2_ndt_score src/g2_ndt_score_pybind.cpp)
-  target_include_directories(g2_ndt_score PRIVATE
-    include
-    ${PCL_INCLUDE_DIRS}
-    ${ndt_omp_ros2_INCLUDE_DIRS})
   target_compile_features(g2_ndt_score PRIVATE cxx_std_17)
-  target_link_libraries(g2_ndt_score PRIVATE
-    ${ndt_omp_ros2_LIBRARIES}
-    ${PCL_LIBRARIES})
+  # ndt_omp_ros2 switched from ament_export_include_directories to exported
+  # targets (buildfarm-ready humble HEAD), so ndt_omp_ros2_INCLUDE_DIRS is no
+  # longer populated. Link the exported ndt_omp target when available so the
+  # pclomp headers propagate under both export styles. pybind11_add_module uses
+  # the keyword target_link_libraries signature, so ament_target_dependencies
+  # (plain signature) must not be used here.
+  if(TARGET ndt_omp_ros2::ndt_omp)
+    target_link_libraries(g2_ndt_score PRIVATE ndt_omp_ros2::ndt_omp ${PCL_LIBRARIES})
+  else()
+    target_include_directories(g2_ndt_score PRIVATE
+      include
+      ${PCL_INCLUDE_DIRS}
+      ${ndt_omp_ros2_INCLUDE_DIRS})
+    target_link_libraries(g2_ndt_score PRIVATE
+      ${ndt_omp_ros2_LIBRARIES}
+      ${PCL_LIBRARIES})
+  endif()
   install(TARGETS g2_ndt_score
     LIBRARY DESTINATION lib/${PROJECT_NAME})
   set(G2_NDT_SCORE_BUILT TRUE)
