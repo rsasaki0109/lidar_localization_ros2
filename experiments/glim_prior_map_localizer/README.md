@@ -250,3 +250,37 @@ and throughput are measured separately on the kidnap bags.
 2. Resolve the indoor RGB-D scan-to-map correspondence ambiguity exposed by the Azure
    Kinect profile before claiming indoor kidnap acceptance.
 3. Regenerate the GLIL-only gallery GIFs from the accepted runs.
+
+## Maintenance and promotion policy
+
+The GLIM software used by this experiment is mainlined through the pinned fork
+revisions, not through this repository. The vendored `src/glim` and `src/glim_ros2`
+copies under the workspace are upstream snapshots (`faa264a` v1.2.2 and `4a9e7a4`)
+plus only-local working-tree tweaks for CPU builds (CPU config defaults,
+Koide `acc_scale=9.80665`, downsample 6500, sparse-frame guard and preprocessing
+runtime logging). Those working-tree tweaks are dev tooling for local colcon builds
+and are not part of the validated runtime; the validated images receive every change
+exclusively through the pinned patches and fork revisions below.
+
+- **Source of truth.** The Dockerfile pins `glil_unofficial@e704bf85` (tightly-coupled
+  exact-coreset core, including `on_external_map_odom_update`) and
+  `glim_ros2@cd4b2c9` (external map-to-odom smoother plus history recording and its
+  CTest). The older split-mode `results.json` pins `glil_unofficial@dd29667`.
+- **Reusable locally, discardable upstream.** The upstream dev branches that produced
+  these changes (`agent/external-map-odom-callback` on glim,
+  `agent/smoothed-map-odom` / `agent/record-map-odom-history` on glim_ros2) are fully
+  contained in the pinned fork commits; verified identical against them. They are
+  local workspace state and are not rebuilt from here.
+- **Image chain.** `koide3/glim_ros2:jazzy` (official) ->
+  `jazzy-v1.2.2-instrumented-guarded` (patches in
+  `experiments/koide_odometry_glim_gicp6500/patches/`) ->
+  `jazzy-v1.2.2-coreset` ->
+  `jazzy-v1.2.2-tightly-coupled` (this experiment's Dockerfile). Never rebuild a
+  runtime image from an unreviewed fork HEAD; always pin a commit that has recorded
+  artifact evidence in `results.json`.
+- **Upstream PR policy.** No pull requests are open to `koide3/glim*` for this work
+  and none should be opened on an ad hoc basis: the fork carries experimental and
+  dataset-specific changes (coreset, tight coupling, recovery gates) that have not
+  passed the project's default-change decision gate. Revisit only if a change is
+  (a) independently useful to upstream, (b) covered by the BSD-2-Clause dependency
+  policy, and (c) reproducible with public data.
