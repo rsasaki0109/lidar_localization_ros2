@@ -313,6 +313,7 @@ install(DIRECTORY
   docs
   experiments
   param
+  rviz
   DESTINATION share/${PROJECT_NAME}/
 )
 
@@ -984,6 +985,12 @@ if(BUILD_TESTING)
     NAME global_localization_query
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_global_localization_query.py
   )
+  add_test(
+    NAME rviz_config
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_rviz_config.py
+  )
+  set_tests_properties(rviz_config PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
   add_test(
     NAME g2_candidate_registration_rank_policy
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_g2_candidate_registration_rank_policy.py
