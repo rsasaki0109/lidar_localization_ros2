@@ -735,6 +735,24 @@ Koide mount / Boreas mountが無い間も、開発計画の規則に従いdata-i
   (A)/(C)分類)と組み合わせて、mount復帰後にdataset contract固定→cliff分類へ進む。
 - 全部品をJazzyでbuildし、ctest 95/95。
 
+### 2026-08-18: WP5部分実行 — 公開regression suite pass(main @ 1ee8a71)
+
+idle machine(開始 load ~0.36、実行中も low)で `scripts/run_public_regression_suite.sh`
+を実行し **overall_pass=true** を確認。実行は2回のHDL replays含む一発で完走し、
+`artifacts/public/public_regression_suite/summary.json` に保存。
+
+- Istanbul 60 s: translation RMSE 1.430 m(gate ≤6.0)、rotation 2.379 deg。deskewは
+  default-on(363/363行 enabled)だが適用0 = point timing/IMU不成立時は元scan維持。
+  no-IMU datasetで `imu_prediction_active_rows=0` を維持。
+- HDL default-safety: deskew enabled かつ applied 0(元scan維持)、baseline process生存、
+  pose rows floor 通過。
+- HDL experimental IMU比較は `imu_prediction_was_used=false` のため `experimental_imu_pass`
+  はfalseのまま(既知marginal datasetとして #133 で既定gateから分離済み。overall_passに
+  は影響しない)。
+- この結果はPR #133(deskew/global-init既定ON)とPR #135(WP1/WP2/WP4準備)を含むmainの
+  公開スイートを検証する。Koide/Boreasを含む完全なWP5 release判断はマウント復帰後に
+  継続する。
+
 ### Current execution order
 
 Phase 0、Phase 1、Phase 3、G1、BBS speedup、G2、およびG3のKoide/HDL evidence gateは完了した。
