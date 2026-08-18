@@ -232,10 +232,32 @@ def test_score_with_registration_keeps_raw_pose_by_default():
         assert ranked[0].registration_fitness == 0.042
 
 
+def test_resolve_pclomp_search_method_mapping():
+    assert glq.resolve_pclomp_search_method("kdtree") == 0
+    assert glq.resolve_pclomp_search_method("direct26") == 1
+    assert glq.resolve_pclomp_search_method("direct7") == 2
+    assert glq.resolve_pclomp_search_method("DIRECT7") == 2
+    assert glq.resolve_pclomp_search_method(" direct1 ") == 3
+
+    try:
+        glq.resolve_pclomp_search_method("octree")
+        assert False, "expected ValueError for an unknown search method"
+    except ValueError:
+        pass
+
+
+def test_default_ndt_search_method_preserves_direct7_behavior():
+    # The runtime default stays DIRECT7 so the G2 scorer behavior is unchanged
+    # until the WP1 A/B explicitly selects KDTREE.
+    assert glq.GlobalLocalizationConfig().ndt_search_method == "direct7"
+
+
 if __name__ == "__main__":
     test_query_recovers_known_pose()
     test_query_handles_empty_scan()
     test_bbs_cpp_search_path_includes_installed_lib_dir()
     test_score_with_registration_rewrites_converged_candidate_pose()
     test_score_with_registration_keeps_raw_pose_by_default()
+    test_resolve_pclomp_search_method_mapping()
+    test_default_ndt_search_method_preserves_direct7_behavior()
     print("test_global_localization_query: all tests passed")

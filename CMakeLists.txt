@@ -144,6 +144,7 @@ set(LIDAR_LOCALIZATION_CONFIG_SCRIPTS
 set(LIDAR_LOCALIZATION_BENCHMARK_SCRIPTS
   scripts/benchmark_analyze_drift_window
   scripts/benchmark_bbs_backends.py
+  scripts/benchmark_g2_ndt_search_method.py
   scripts/benchmark_compare_runs
   scripts/benchmark_diagnostic_recorder
   scripts/benchmark_eval_evo_ape
@@ -160,6 +161,7 @@ set(LIDAR_LOCALIZATION_BENCHMARK_SCRIPTS
   scripts/build_odometry_runtime_evidence.py
   scripts/build_glim_runtime_evidence.py
   scripts/check_koide_odometry_completion.py
+  scripts/check_boreas_dataset_contract.py
   scripts/convert_glim_dump_to_pose_csv.py
   scripts/compare_nav2_reinit_supervisor_runs.py
   scripts/compare_registration_relocalization_score_summaries.py
@@ -656,6 +658,14 @@ if(BUILD_TESTING)
     ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
 
   add_test(
+    NAME corridor_structure_gate_experiment
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/test/test_corridor_structure_gate_experiment.py
+  )
+  set_tests_properties(corridor_structure_gate_experiment PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
+
+  add_test(
     NAME startup_integrity_experiment
     COMMAND ${Python3_EXECUTABLE}
       -m pytest -q ${CMAKE_CURRENT_SOURCE_DIR}/test/test_startup_integrity_experiment.py
@@ -976,6 +986,12 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_check_koide_odometry_completion.py
   )
   add_test(
+    NAME check_boreas_dataset_contract
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_check_boreas_dataset_contract.py
+  )
+  set_tests_properties(check_boreas_dataset_contract PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
+  add_test(
     NAME convert_glim_dump_to_pose_csv
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_convert_glim_dump_to_pose_csv.py
   )
@@ -1001,6 +1017,14 @@ if(BUILD_TESTING)
     )
     set_tests_properties(bbs_cpp_backend_parity PROPERTIES
       ENVIRONMENT "BBS_CPP_MODULE_DIR=$<TARGET_FILE_DIR:bbs_cpp>")
+  endif()
+  if(G2_NDT_SCORE_BUILT)
+    add_test(
+      NAME g2_ndt_search_method_smoke
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_benchmark_g2_ndt_search_method.py
+    )
+    set_tests_properties(g2_ndt_search_method_smoke PROPERTIES
+      ENVIRONMENT "G2_NDT_SCORE_MODULE_DIR=$<TARGET_FILE_DIR:g2_ndt_score>")
   endif()
 endif()
 
