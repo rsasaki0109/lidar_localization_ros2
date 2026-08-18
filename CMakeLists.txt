@@ -167,6 +167,7 @@ set(LIDAR_LOCALIZATION_BENCHMARK_SCRIPTS
   scripts/compare_registration_relocalization_score_summaries.py
   scripts/make_localization_comparison_report.py
   scripts/run_koide_glim_odometry_benchmark.py
+  scripts/run_wp2_route_crop_ab.py
   scripts/summarize_koide_odometry_completion.py)
 
 set(LIDAR_LOCALIZATION_DATA_SCRIPTS

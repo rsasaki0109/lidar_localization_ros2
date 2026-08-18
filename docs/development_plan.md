@@ -772,6 +772,14 @@ idle machine(開始 load ~0.36、実行中も low)で `scripts/run_public_regres
   **受理され、軽量ヒストグラムgateは実マップでは不十分**。都市部の垂直構造が均質なため。
   → 計画どおり **route-cropをWP2の主方式**とし、3D gateはscan-to-map registration等の
   強い方式へ限定。実データroute-crop A/Bを次に進める。
+- **WP2実データ route-crop A/B**(`scripts/run_wp2_route_crop_ab.py`,
+  outdoor_hard_01a、10クエリ、bbs_cpp backend):
+  - BBS map-wide top-8: 9/10クエリで>50 mの遠方aliasを1--8個含み、recallは0.35--235 m。
+    corridor alias問題を再現。
+  - route-crop: recall 0.002--0.57 m(**10/10が5 m以内**)、alias **10/10で0**。
+  → **route-cropがWP2で勝利**。recall@K 100%を維持しつつ遠方aliasを完全排除。
+    下流のregistration scoringでroute-local候補から選択する構成はWP3へ
+    (artifact: `artifacts/public/wp2_route_crop_ab_20260818/`)。
 
 ### Current execution order
 
