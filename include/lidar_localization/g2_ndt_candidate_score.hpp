@@ -37,6 +37,9 @@ struct G2NdtScoreParams
   double transform_epsilon{0.01};
   int max_iterations{30};
   int num_threads{1};
+  // pclomp::NeighborSearchMethod (KDTREE=0, DIRECT26=1, DIRECT7=2, DIRECT1=3).
+  // Defaults to DIRECT7 to preserve the pre-A/B runtime behavior.
+  int search_method{2};
   double scan_voxel_leaf_size{1.0};
   double target_voxel_leaf_size{1.0};
   double local_map_radius{150.0};
@@ -212,6 +215,8 @@ public:
     ndt.setTransformationEpsilon(params_.transform_epsilon);
     ndt.setMaximumIterations(params_.max_iterations);
     ndt.setNumThreads(std::max(1, params_.num_threads));
+    ndt.setNeighborhoodSearchMethod(
+      static_cast<pclomp::NeighborSearchMethod>(params_.search_method));
     ndt.setInputTarget(target);
     ndt.setInputSource(source);
 

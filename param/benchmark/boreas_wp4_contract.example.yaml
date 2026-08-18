@@ -1,0 +1,9 @@
+name: boreas_wp4_contract
+
+dataset:
+  bag_path: /absolute/path/to/boreas-2021-09-02-11-42_rosbag2
+  map_path: /absolute/path/to/boreas_map.pcd
+  reference_csv: /absolute/path/to/boreas_reference.csv
+  initial_pose_yaml: /absolute/path/to/boreas_initial_pose.yaml
+
+evaluation_window_sec: [0.0, 60.0]

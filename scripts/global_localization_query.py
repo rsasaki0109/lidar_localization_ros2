@@ -72,10 +72,34 @@ class GlobalLocalizationConfig:
     ndt_transform_epsilon: float = 0.01
     ndt_max_iterations: int = 30
     ndt_num_threads: int = 1
+    # pclomp neighbor search method used by the G2 NDT scorer. "direct7" is the
+    # runtime default; "kdtree" is the WP1 A/B baseline. Accepted: kdtree,
+    # direct7, direct26, direct1.
+    ndt_search_method: str = "direct7"
     ndt_scan_voxel_leaf_size: float = 1.0
     ndt_target_voxel_leaf_size: float = 0.2
     ndt_local_map_radius: float = 150.0
     ndt_min_target_points: int = 100
+
+
+# pclomp::NeighborSearchMethod values used by g2_ndt_score.MapNdtScorer.
+PCLOMP_SEARCH_METHOD_VALUES = {
+    "kdtree": 0,
+    "direct26": 1,
+    "direct7": 2,
+    "direct1": 3,
+}
+
+
+def resolve_pclomp_search_method(value: str) -> int:
+    key = str(value).strip().lower()
+    try:
+        return PCLOMP_SEARCH_METHOD_VALUES[key]
+    except KeyError:
+        raise ValueError(
+            "ndt_search_method must be one of " +
+            ", ".join(sorted(PCLOMP_SEARCH_METHOD_VALUES)) +
+            "; got " + key)
 
 
 @dataclass(frozen=True)
@@ -159,6 +183,7 @@ class GlobalLocalizationEngine:
                         config.ndt_transform_epsilon,
                         config.ndt_max_iterations,
                         config.ndt_num_threads,
+                        resolve_pclomp_search_method(config.ndt_search_method),
                         config.ndt_scan_voxel_leaf_size,
                         config.ndt_target_voxel_leaf_size,
                         config.ndt_local_map_radius,

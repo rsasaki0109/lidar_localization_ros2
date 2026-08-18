@@ -691,6 +691,50 @@ Koide IMUのacceleration単位、noise densityの離散化、初期速度、scan
 IMU runtime候補は「適用率を上げること」ではなく、open-loop seed accuracy gateを通過することを
 引き続き必須条件とする。
 
+### 2026-08-18: odom bridge機能は既定ONに昇格しない(decision gate適用)
+
+GLIM前端構成で4系列(01a/01b/02a/02b)を全長完走させたodom bridge系機能
+(`enable_map_odom_tf` / `use_odom_tf_prediction` / `publish_bridge_pose_when_lost` /
+supervisor `use_odom_bridge_candidate` / anchor fitness gate)について、default-onへの
+昇格は行わないことを確認した。理由はdefault-change decision gate未達のため。
+
+- 有効な証拠がKoide outdoor hard 4系列の1 dataset familyのみで、第2の公開datasetの
+  非劣化が無い。
+- 最良構成がsequence依存の固定値(`planar`/`height_only`、anchor gate有効/無効)であり、
+  個別sequenceだけに効くparameter setをdefault候補にしない規則(`global_localization_lio_development_plan.md`)に抵触する。
+- 4系列のデータポイントは`docs/handover_glim_frontend_codex.md`に固定済み。
+- 既定値は既に保守的(全てopt-in)で、`test_create_lidar_localization_config.py`、
+  `test_registration_seed_policy.cpp`、`test_reinitialization_supervisor_policy.py`、
+  `test_glim_frontend_harness.py`が既定`false`を回帰固定している。verified: ctest 92/92。
+
+第2の公開dataset(HVL/NDET等)で2分布以上の連続追跡・非劣化を確認できるまではこの決定を
+維持する。
+
+### 2026-08-18: WP1/WP2/WP4のdata-independent準備(データラン保留)
+
+Koide mount / Boreas mountが無い間も、開発計画の規則に従いdata-independentな
+準備を進めた。本物のデータランはmount復帰とidle gate(load<5)後に実施する。
+
+- **WP1 G2 latency A/B**: G2スコアラ(`g2_ndt_score`)に `search_method`(pclomp
+  KDTREE/DIRECT7/DIRECT26/DIRECT1)を実験用パラメータとして追加。既定は `direct7`+1
+  threadでruntime挙動は不変(`test_global_localization_query.py`が既定を固定)。
+  `scripts/benchmark_g2_ndt_search_method.py`(candidate-level CSV + load gate付き
+  runner、install対象)と `test_benchmark_g2_ndt_search_method.py`(pybindありなら
+  end-to-end smoke)を追加。合成マップでのsmokeはkdtree/direct7 × 1/4threadを正常に
+  計測。KDTREE/1 vs DIRECT7/1・4の実データA/Bと採否はmount復帰後のWP1完了条件。
+- **WP2 north-corridor alias棄却**: `experiments/corridor_structure_gate/` に3D構造
+  gateのvariant比較を追加。`height_histogram`(elevatedなmap-crop高さヒストグラム交差、
+  ground共有部を除外、scanに上部構造が無ければabstain)が、2D footprintが同一で約150 m
+  離れたsouth/north合成corridorでnorth aliasを棄却し真のsouth候補を維持すること、
+  baseline `z_score_only`が全受理(alias再現)することを単体テストで確認。実Koideでの
+  route-crop A/Bと全repeat alias棄却はmount復帰後。
+- **WP4 Boreas cause isolation準備**: `scripts/check_boreas_dataset_contract.py`(bag/
+  map/GT/初期姿勢の存在・map SHA-256・GT window coverage・quaternion正規性を
+  machine-readable JSONで検証、rosbags不要)と `param/benchmark/boreas_wp4_contract.example.yaml`
+  を追加。単体テストgreen。既存の `diagnose_local_map_crop_coverage.py`(GT oracle cropで
+  (A)/(C)分類)と組み合わせて、mount復帰後にdataset contract固定→cliff分類へ進む。
+- 全部品をJazzyでbuildし、ctest 95/95。
+
 ### Current execution order
 
 Phase 0、Phase 1、Phase 3、G1、BBS speedup、G2、およびG3のKoide/HDL evidence gateは完了した。

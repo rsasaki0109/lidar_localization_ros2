@@ -77,6 +77,7 @@ class GlobalLocalizationNode(Node):
         self.declare_parameter("ndt_transform_epsilon", 0.01)
         self.declare_parameter("ndt_max_iterations", 30)
         self.declare_parameter("ndt_num_threads", 1)
+        self.declare_parameter("ndt_search_method", "direct7")
         self.declare_parameter("ndt_scan_voxel_leaf_size", 1.0)
         self.declare_parameter("ndt_target_voxel_leaf_size", 0.2)
         self.declare_parameter("ndt_local_map_radius", 150.0)
@@ -118,6 +119,8 @@ class GlobalLocalizationNode(Node):
                 self.get_parameter("ndt_transform_epsilon").value),
             ndt_max_iterations=int(self.get_parameter("ndt_max_iterations").value),
             ndt_num_threads=int(self.get_parameter("ndt_num_threads").value),
+            ndt_search_method=str(
+                self.get_parameter("ndt_search_method").value),
             ndt_scan_voxel_leaf_size=float(
                 self.get_parameter("ndt_scan_voxel_leaf_size").value),
             ndt_target_voxel_leaf_size=float(

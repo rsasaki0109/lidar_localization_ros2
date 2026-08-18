@@ -1,0 +1,20 @@
+{
+  "experiment": "corridor_structure_gate",
+  "purpose": "R3/WP2 Koide north-corridor alias rejection: lightweight 3D structure gate over BBS top-K candidates",
+  "evidence_kind": "synthetic fixture only; real Koide runs pending mount",
+  "fixture": "two parallel corridors, identical 2D footprint, north corridor ~150 m away with no overhead deck",
+  "variants": [
+    {
+      "name": "z_score_only",
+      "design": "baseline, no 3D structure evidence",
+      "result": "accepts all candidates including the alias (reproduces the documented failure)"
+    },
+    {
+      "name": "height_histogram",
+      "design": "elevated map-crop height-histogram intersection re-rank",
+      "result": "rejects the north alias while keeping the true south candidate; abstains (accepts) when the scan has no elevated structure"
+    }
+  ],
+  "unit_tests": "test/test_corridor_structure_gate_experiment.py (data-independent, green)",
+  "status": "variant scaffold complete; Koide real-data repeat and route-crop A/B pending"
+}
