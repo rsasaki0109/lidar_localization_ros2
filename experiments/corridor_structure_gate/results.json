@@ -1,7 +1,7 @@
 {
   "experiment": "corridor_structure_gate",
   "purpose": "R3/WP2 Koide north-corridor alias rejection: lightweight 3D structure gate over BBS top-K candidates",
-  "evidence_kind": "synthetic fixture only; real Koide runs pending mount",
+  "evidence_kind": "synthetic fixture + real Koide outdoor_hard_01a scan (2026-08-18)",
   "fixture": "two parallel corridors, identical 2D footprint, north corridor ~150 m away with no overhead deck",
   "variants": [
     {
@@ -12,9 +12,23 @@
     {
       "name": "height_histogram",
       "design": "elevated map-crop height-histogram intersection re-rank",
-      "result": "rejects the north alias while keeping the true south candidate; abstains (accepts) when the scan has no elevated structure"
+      "synthetic_result": "rejects the synthetic north alias, keeps the true candidate, abstains without elevated structure",
+      "real_data_result": {
+        "scan": "outdoor_hard_01a t=50 s, 60000 points, true pose (-109.27, 35.63, -11.60)",
+        "true_candidate_sim": 0.826,
+        "accepted": true,
+        "alias_150m_east_sim": 0.650,
+        "alias_150m_east_accepted": true,
+        "alias_150m_south_sim": 0.626,
+        "alias_150m_south_accepted": true,
+        "alias_150m_west_sim": 0.000,
+        "alias_150m_north_sim": 0.000,
+        "verdict": "insufficient on the real Koide outdoor map: vertical structure is homogeneous across the route area, so 150 m aliases with similar elevated structure pass the gate. Lightweight height-histogram re-ranking is a negative result here."
+      }
     }
   ],
+  "decision": "route-crop first",
+  "reason": "Per the research plan, route-crop (make_route_grid_relocalization_attempts.py, roi_type=route_corridor) is the primary WP2 approach; the 3D structure gate is only a fallback. The real-data height-histogram result does not reject footprint-similar aliases, so route-crop (or a stronger scan-to-map registration gate, not a histogram) is required.",
   "unit_tests": "test/test_corridor_structure_gate_experiment.py (data-independent, green)",
-  "status": "variant scaffold complete; Koide real-data repeat and route-crop A/B pending"
+  "status": "synthetic fixture positive; real-data lightweight gate negative; route-crop real-data A/B pending"
 }

@@ -753,6 +753,26 @@ idle machine(開始 load ~0.36、実行中も low)で `scripts/run_public_regres
   公開スイートを検証する。Koide/Boreasを含む完全なWP5 release判断はマウント復帰後に
   継続する。
 
+### 2026-08-18: WP1/WP2実データ結果(Koide mount復帰)
+
+外付けSSDマウント復帰(`/media/sasaki/aiueo1` → `/media/sasaki/aiueo` シンボリック
+リンク)でKoide Hard datasetを利用可能にし、WP1/WP2の実データ評価を実行した。
+
+- **WP1 G2 latency A/B**(`scripts/benchmark_g2_ndt_search_method.py`,
+  Koide map + occupancy、32候補、load 1.16--2.00で全run valid):
+  KDTREE/1=761 ms、KDTREE/4=780 ms、DIRECT7/1=784 ms、DIRECT7/4=754 ms
+  (per candidate)。差はrun-to-runロードノイズ内で有意でなく、converged 96/96で
+  結果は同一。→ **search method/thread数ではG2遅延は改善しない**。32候補で
+  ~24 s/queryとなりstale-seed予算を大幅超過。判定: **KDTREE/1基準を維持**、
+  遅延改善は候補数削減・粗いfirst-stage再ランク・C++ first-stage等が対象
+  (artifact: `artifacts/public/wp1_g2_ndt_search_method_ab_20260818/`)。
+- **WP2 corridor alias**: `experiments/corridor_structure_gate/` のheight-histogram
+  gateをoutdoor_hard_01a t=50 sの実スキャン(60000点、真の姿勢は(-109.27, 35.63,
+  -11.60))で評価。真の候補sim=0.826で維持。しかし東/南150 mのaliasもsim 0.65/0.63で
+  **受理され、軽量ヒストグラムgateは実マップでは不十分**。都市部の垂直構造が均質なため。
+  → 計画どおり **route-cropをWP2の主方式**とし、3D gateはscan-to-map registration等の
+  強い方式へ限定。実データroute-crop A/Bを次に進める。
+
 ### Current execution order
 
 Phase 0、Phase 1、Phase 3、G1、BBS speedup、G2、およびG3のKoide/HDL evidence gateは完了した。
