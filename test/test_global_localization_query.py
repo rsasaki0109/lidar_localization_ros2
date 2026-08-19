@@ -68,7 +68,7 @@ def test_query_recovers_known_pose():
             max_candidates=8,
             min_range_m=1.0,
         )
-        engine = glq.GlobalLocalizationEngine(yaml_path, config)
+        engine = glq.GlobalLocalizationEngine(config, occupancy_yaml=yaml_path)
         result = engine.query(make_scan(yaml_path, true_x, true_y, true_yaw))
 
         assert result.candidates, "expected at least one candidate"
@@ -87,7 +87,7 @@ def test_query_handles_empty_scan():
     with tempfile.TemporaryDirectory() as tmp:
         yaml_path = write_occupancy_map(Path(tmp))
         engine = glq.GlobalLocalizationEngine(
-            yaml_path, glq.GlobalLocalizationConfig())
+            glq.GlobalLocalizationConfig(), occupancy_yaml=yaml_path)
         result = engine.query(np.empty((0, 3), dtype=np.float64))
         assert result.candidates == []
         assert result.scan_point_count == 0
@@ -136,8 +136,8 @@ def test_score_with_registration_rewrites_converged_candidate_pose():
     with tempfile.TemporaryDirectory() as tmp:
         yaml_path = write_occupancy_map(Path(tmp))
         engine = glq.GlobalLocalizationEngine(
-            yaml_path,
-            glq.GlobalLocalizationConfig(registration_refine_candidates=True))
+            glq.GlobalLocalizationConfig(registration_refine_candidates=True),
+            occupancy_yaml=yaml_path)
         engine.registration_scorer = _FakeRegistrationScorer({
             (-13.5, 29.7, 0.0, math.radians(10.0)): _FakeScoreResult(
                 fitness=0.042,
@@ -200,7 +200,7 @@ def test_score_with_registration_keeps_raw_pose_by_default():
     with tempfile.TemporaryDirectory() as tmp:
         yaml_path = write_occupancy_map(Path(tmp))
         engine = glq.GlobalLocalizationEngine(
-            yaml_path, glq.GlobalLocalizationConfig())
+            glq.GlobalLocalizationConfig(), occupancy_yaml=yaml_path)
         engine.registration_scorer = _FakeRegistrationScorer({
             (-13.5, 29.7, 0.0, math.radians(10.0)): _FakeScoreResult(
                 fitness=0.042,
@@ -252,6 +252,109 @@ def test_default_ndt_search_method_preserves_direct7_behavior():
     assert glq.GlobalLocalizationConfig().ndt_search_method == "direct7"
 
 
+def _write_reference_csv(path: Path, rows):
+    import csv
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(
+            stream,
+            fieldnames=[
+                "stamp_sec",
+                "position_x",
+                "position_y",
+                "position_z",
+                "orientation_x",
+                "orientation_y",
+                "orientation_z",
+                "orientation_w",
+            ])
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def test_route_crop_generates_local_candidates():
+    with tempfile.TemporaryDirectory() as tmp:
+        reference_csv = Path(tmp) / "reference.csv"
+        _write_reference_csv(
+            reference_csv,
+            [
+                {
+                    "stamp_sec": "100.0",
+                    "position_x": "1.0",
+                    "position_y": "2.0",
+                    "position_z": "0.5",
+                    "orientation_x": "0.0",
+                    "orientation_y": "0.0",
+                    "orientation_z": "0.0",
+                    "orientation_w": "1.0",
+                },
+                {
+                    "stamp_sec": "110.0",
+                    "position_x": "11.0",
+                    "position_y": "2.0",
+                    "position_z": "0.5",
+                    "orientation_x": "0.0",
+                    "orientation_y": "0.0",
+                    "orientation_z": "0.0",
+                    "orientation_w": "1.0",
+                },
+            ],
+        )
+        config = glq.GlobalLocalizationConfig(
+            candidate_source=glq.CANDIDATE_SOURCE_ROUTE_CROP,
+            reference_csv=str(reference_csv),
+            route_time_radius_sec=20.0,
+            route_min_spacing_m=1.0,
+            route_max_poses=8,
+            route_yaw_offsets_deg="0",
+            route_lateral_offsets_m="0",
+            route_longitudinal_offsets_m="0",
+            max_candidates=8,
+        )
+        engine = glq.GlobalLocalizationEngine(config)
+        scan = np.array([[1.0, 0.0, 1.0], [2.0, 0.5, 1.0]], dtype=np.float64)
+        result = engine.query(scan, scan_stamp_sec=105.0)
+
+        assert result.candidate_source == glq.CANDIDATE_SOURCE_ROUTE_CROP
+        assert result.candidates
+        assert len(result.candidates) <= 8
+        for candidate in result.candidates:
+            assert math.hypot(candidate.x_m - 1.0, candidate.y_m - 2.0) <= 12.0
+            assert math.hypot(candidate.x_m - 11.0, candidate.y_m - 2.0) <= 12.0
+
+
+def test_route_crop_requires_scan_stamp():
+    with tempfile.TemporaryDirectory() as tmp:
+        reference_csv = Path(tmp) / "reference.csv"
+        _write_reference_csv(
+            reference_csv,
+            [{
+                "stamp_sec": "100.0",
+                "position_x": "1.0",
+                "position_y": "2.0",
+                "position_z": "0.5",
+                "orientation_x": "0.0",
+                "orientation_y": "0.0",
+                "orientation_z": "0.0",
+                "orientation_w": "1.0",
+            }],
+        )
+        config = glq.GlobalLocalizationConfig(
+            candidate_source=glq.CANDIDATE_SOURCE_ROUTE_CROP,
+            reference_csv=str(reference_csv),
+        )
+        engine = glq.GlobalLocalizationEngine(config)
+        scan = np.array([[1.0, 0.0, 1.0]], dtype=np.float64)
+        result = engine.query(scan)
+
+        assert result.candidates == []
+        assert result.route_crop_error == "scan_stamp_sec required for route_crop"
+
+
+def test_default_candidate_source_is_bbs():
+    assert glq.GlobalLocalizationConfig().candidate_source == glq.CANDIDATE_SOURCE_BBS
+
+
 if __name__ == "__main__":
     test_query_recovers_known_pose()
     test_query_handles_empty_scan()
@@ -260,4 +363,7 @@ if __name__ == "__main__":
     test_score_with_registration_keeps_raw_pose_by_default()
     test_resolve_pclomp_search_method_mapping()
     test_default_ndt_search_method_preserves_direct7_behavior()
+    test_route_crop_generates_local_candidates()
+    test_route_crop_requires_scan_stamp()
+    test_default_candidate_source_is_bbs()
     print("test_global_localization_query: all tests passed")

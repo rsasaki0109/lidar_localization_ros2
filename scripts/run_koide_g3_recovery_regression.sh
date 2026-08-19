@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Run the Koide G3 recovery regression (120 s bag, kidnap injection, health rubric).
+Run the Koide G3 recovery regression (60 s bag at real-time rate, kidnap injection, health rubric).
 
 Writes regression_result.json with overall_pass when the supervisor reports both
 recovery_confirmed and at least one stable_recovered_request_window.
@@ -15,8 +15,8 @@ Usage:
 Options:
   --output-dir DIR       Artifact directory. Default: artifacts/public/koide_g3_recovery_regression
   --ros-domain-id N      ROS domain id. Default: 220
-  --duration-sec N       Bag replay duration. Default: 120
-  --rate X               Bag replay rate. Default: 0.4
+  --duration-sec N       Bag replay duration. Default: 60
+  --rate X               Bag replay rate. Default: 1.0
   --max-load N           Warn when 1-min load average exceeds N. Default: 5
   --skip-prepare         Skip Koide asset regeneration.
   --resume               Skip replay when recovery_health.json already passes.
@@ -36,8 +36,8 @@ fi
 
 output_dir="${ws_root}/artifacts/public/koide_g3_recovery_regression"
 ros_domain_id="220"
-duration_sec="120"
-play_rate="0.4"
+duration_sec="60"
+play_rate="1.0"
 max_load="5"
 skip_prepare=0
 resume=0

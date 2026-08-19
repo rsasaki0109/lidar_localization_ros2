@@ -72,6 +72,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--map", "--map-path", dest="map_path", required=True)
     parser.add_argument("--occupancy-map", dest="occupancy_yaml")
     parser.add_argument(
+        "--reference-csv",
+        dest="reference_csv",
+        help="Mapping-run reference trajectory CSV for route-crop G2 candidates "
+             "(same format as make_route_grid_relocalization_attempts.py). "
+             "Use with --occupancy-map or alone when the route is known.",
+    )
+    parser.add_argument("--route-time-radius-sec", type=float, default=20.0)
+    parser.add_argument("--route-min-spacing-m", type=float, default=8.0)
+    parser.add_argument("--route-max-poses", type=int, default=32)
+    parser.add_argument("--route-yaw-offsets-deg", default="-15,0,15")
+    parser.add_argument("--route-lateral-offsets-m", default="-2,0,2")
+    parser.add_argument("--route-longitudinal-offsets-m", default="-1,0,1")
+    parser.add_argument(
         "--profile", choices=sorted(config_tool.PROFILE_DEFAULTS), default="standalone")
     parser.add_argument("--output", type=Path, default=default_config_path())
     parser.add_argument("--state-file", type=Path)
@@ -135,6 +148,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--global-angular-resolution-deg", type=float, default=10.0)
     parser.add_argument("--global-max-candidates", type=int, default=8)
     parser.add_argument("--global-nms-radius-m", type=float, default=3.0)
+    parser.add_argument(
+        "--g3-recovery",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Launch guarded G3 reinitialization when global search is configured.",
+    )
+    parser.add_argument("--supervisor-query-timeout-sec", type=float, default=45.0)
+    parser.add_argument("--supervisor-max-walk-candidates", type=int, default=4)
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
@@ -173,14 +194,27 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         if args.profile in {"nav2", "mid360"} else "/pcl_pose")
     explicit_pose = args.initial_pose is not None
     restore = args.auto_initialize and args.restore_saved_pose and not explicit_pose
+    route_crop = bool(args.reference_csv)
     global_enabled = (
-        args.auto_initialize and bool(args.occupancy_yaml) and not explicit_pose)
+        args.auto_initialize
+        and (args.occupancy_yaml or args.reference_csv)
+        and not explicit_pose)
+    g2_candidate_source = "route_crop" if route_crop else "bbs"
+    g2_max_candidates = args.global_max_candidates
+    if route_crop and g2_max_candidates == 8:
+        g2_max_candidates = 16
+    g3_enabled = global_enabled and args.g3_recovery
+    supervisor_min_score = (
+        0.15 if args.global_registration_scoring else args.min_candidate_score)
     values = {
         "profile": args.profile,
         "localization_param_dir": str(config_path),
         "map_path": str(Path(args.map_path).expanduser().resolve()),
         "occupancy_yaml": str(Path(args.occupancy_yaml).expanduser().resolve())
         if args.occupancy_yaml else "",
+        "reference_csv": str(Path(args.reference_csv).expanduser().resolve())
+        if args.reference_csv else "",
+        "g2_candidate_source": g2_candidate_source,
         "pose_state_path": str(state_path),
         "cloud_topic": cloud_topic,
         "imu_topic": imu_topic,
@@ -196,6 +230,7 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         "restore_saved_pose": str(restore).lower(),
         "initial_pose_preconfigured": str(explicit_pose).lower(),
         "enable_global_initialization": str(global_enabled).lower(),
+        "enable_g3_recovery": str(g3_enabled).lower(),
         "start_rviz": str(args.rviz).lower(),
         "run_bringup_check": str(args.bringup_check).lower(),
         "saved_pose_max_age_sec": args.saved_pose_max_age_sec,
@@ -220,14 +255,25 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         "g2_registration_seed_z_m": args.global_seed_z,
         "g2_max_scan_points": args.global_max_scan_points,
         "g2_angular_resolution_deg": args.global_angular_resolution_deg,
-        "g2_max_candidates": args.global_max_candidates,
+        "g2_max_candidates": g2_max_candidates,
         "g2_nms_radius_m": args.global_nms_radius_m,
+        "g2_route_time_radius_sec": args.route_time_radius_sec,
+        "g2_route_min_spacing_m": args.route_min_spacing_m,
+        "g2_route_max_poses": args.route_max_poses,
+        "g2_route_yaw_offsets_deg": args.route_yaw_offsets_deg,
+        "g2_route_lateral_offsets_m": args.route_lateral_offsets_m,
+        "g2_route_longitudinal_offsets_m": args.route_longitudinal_offsets_m,
+        "supervisor_min_candidate_score": supervisor_min_score,
+        "supervisor_query_timeout_sec": args.supervisor_query_timeout_sec,
+        "supervisor_max_walk_candidates": args.supervisor_max_walk_candidates,
+        "supervisor_recovery_fitness_threshold": args.verification_fitness_threshold,
+        "supervisor_prefer_reset_default_z_m": str(abs(args.global_seed_z) > 1.0e-9).lower(),
     }
     parts = ["ros2", "launch", "lidar_localization_ros2", "quickstart.launch.py"]
     parts.extend(
         f"{key}:={value}"
         for key, value in values.items()
-        if not (key == "occupancy_yaml" and value == "")
+        if not (key in {"occupancy_yaml", "reference_csv"} and value == "")
     )
     return parts
 
@@ -244,6 +290,18 @@ def _validate(args) -> Optional[str]:
             return f"Occupancy map YAML does not exist: {occupancy}"
         if occupancy.suffix.lower() not in {".yaml", ".yml"}:
             return "Occupancy map must be a YAML file."
+    if args.reference_csv:
+        reference = Path(args.reference_csv).expanduser()
+        if not reference.is_file():
+            return f"Reference CSV does not exist: {reference}"
+    if (
+        not math.isfinite(args.route_time_radius_sec)
+        or args.route_time_radius_sec <= 0.0
+        or not math.isfinite(args.route_min_spacing_m)
+        or args.route_min_spacing_m < 0.0
+        or args.route_max_poses < 1
+    ):
+        return "Route-crop radius, spacing, and max poses must be valid."
     if (
         args.verification_samples < 1
         or args.max_global_attempts < 1
@@ -327,12 +385,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("Discovery:     " + ", ".join(discovery_notes))
     if args.initial_pose:
         print("Initialization: explicit pose")
+    elif args.auto_initialize and args.reference_csv:
+        suffix = " + guarded G3 recovery" if args.g3_recovery else ""
+        print(f"Initialization: verified saved pose -> guarded route-crop search{suffix} -> RViz")
     elif args.auto_initialize and args.occupancy_yaml:
-        print("Initialization: verified saved pose -> guarded global search -> RViz")
+        suffix = " + guarded G3 recovery" if args.g3_recovery else ""
+        print(f"Initialization: verified saved pose -> guarded global search{suffix} -> RViz")
     elif args.auto_initialize:
         print(
             "Initialization: verified saved pose -> RViz "
-            "(add --occupancy-map for global search)"
+            "(add --occupancy-map or --reference-csv for automatic global search)"
         )
     else:
         print("Initialization: explicit pose or RViz")

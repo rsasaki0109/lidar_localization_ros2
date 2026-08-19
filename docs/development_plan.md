@@ -781,6 +781,17 @@ idle machine(開始 load ~0.36、実行中も low)で `scripts/run_public_regres
     下流のregistration scoringでroute-local候補から選択する構成はWP3へ
     (artifact: `artifacts/public/wp2_route_crop_ab_20260818/`)。
 
+### 2026-08-20: WP3 route-crop live integration (opt-in G2)
+
+WP2 の勝者 route-crop を G2 runtime に opt-in 接続した。`candidate_source=route_crop`
+と `reference_csv` で map-wide BBS をスキップし、query scan stamp 近傍の reference
+pose から候補を生成する。NDT registration scoring で rank する構成は従来どおり。
+`global_localization_node.py` / `global_localization_recovery.launch.py`
+(`g2_candidate_source`, `g2_reference_csv`, …) と
+`param/benchmark/koide_g3_recovery_route_crop.yaml` を追加。default は
+`candidate_source=bbs` のまま。Koide 3-repeat / HDL kidnapped-start の live
+evidence gate は未実施。
+
 ### Current execution order
 
 Phase 0、Phase 1、Phase 3、G1、BBS speedup、G2、およびG3のKoide/HDL evidence gateは完了した。

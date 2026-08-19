@@ -5,6 +5,10 @@ Wraps the BBS_2D engine from make_bbs_relocalization_attempts with occupancy
 map loading, scan preparation, and candidate-to-world-pose conversion, so the
 runtime node and offline tooling share one code path and the logic stays unit
 testable without rclpy.
+
+When ``candidate_source=route_crop`` (opt-in, WP3), candidates come from a
+reference trajectory window around the query scan stamp instead of a map-wide
+BBS search. Registration scoring ranks the route-local hypotheses.
 """
 
 import math
@@ -18,6 +22,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import g2_candidate_registration_rank_policy as g2_rank  # noqa: E402
 import make_bbs_relocalization_attempts as bbs_engine  # noqa: E402
+import make_route_grid_relocalization_attempts as route_grid  # noqa: E402
+
+CANDIDATE_SOURCE_BBS = "bbs"
+CANDIDATE_SOURCE_ROUTE_CROP = "route_crop"
+SUPPORTED_CANDIDATE_SOURCES = frozenset({
+    CANDIDATE_SOURCE_BBS,
+    CANDIDATE_SOURCE_ROUTE_CROP,
+})
 
 
 def _candidate_module_dirs(module_name: str) -> List[Path]:
@@ -80,6 +92,17 @@ class GlobalLocalizationConfig:
     ndt_target_voxel_leaf_size: float = 0.2
     ndt_local_map_radius: float = 150.0
     ndt_min_target_points: int = 100
+    # Opt-in (WP3): seed candidates from a reference trajectory near the query
+    # stamp instead of map-wide BBS. Requires reference_csv and scan_stamp_sec
+    # on each query; pair with registration scoring for ranking.
+    candidate_source: str = CANDIDATE_SOURCE_BBS
+    reference_csv: Optional[str] = None
+    route_time_radius_sec: float = 20.0
+    route_min_spacing_m: float = 8.0
+    route_max_poses: int = 32
+    route_yaw_offsets_deg: str = "-15,0,15"
+    route_lateral_offsets_m: str = "-2,0,2"
+    route_longitudinal_offsets_m: str = "-1,0,1"
 
 
 # pclomp::NeighborSearchMethod values used by g2_ndt_score.MapNdtScorer.
@@ -89,6 +112,20 @@ PCLOMP_SEARCH_METHOD_VALUES = {
     "direct7": 2,
     "direct1": 3,
 }
+
+
+def normalize_candidate_source(value: str) -> str:
+    key = str(value).strip().lower()
+    if key not in SUPPORTED_CANDIDATE_SOURCES:
+        raise ValueError(
+            "candidate_source must be one of " +
+            ", ".join(sorted(SUPPORTED_CANDIDATE_SOURCES)) +
+            "; got " + key)
+    return key
+
+
+def parse_float_list(raw: str) -> List[float]:
+    return route_grid._parse_float_list(raw)
 
 
 def resolve_pclomp_search_method(value: str) -> int:
@@ -123,6 +160,8 @@ class GlobalLocalizationResult:
     registration_scoring_enabled: bool = False
     registration_scoring_backend: Optional[str] = None
     registration_scoring_error: Optional[str] = None
+    candidate_source: str = CANDIDATE_SOURCE_BBS
+    route_crop_error: Optional[str] = None
 
 
 def _candidate_from_ranked(ranked: g2_rank.RankedG2Candidate) -> GlobalLocalizationCandidate:
@@ -141,30 +180,52 @@ def _candidate_from_ranked(ranked: g2_rank.RankedG2Candidate) -> GlobalLocalizat
 
 
 class GlobalLocalizationEngine:
-    """Loads the occupancy map once and answers repeated scan queries."""
+    """Loads map assets once and answers repeated scan queries."""
 
-    def __init__(self, occupancy_yaml, config):
+    def __init__(self, config, occupancy_yaml=None):
         self.config = config
-        self.occupancy_map = bbs_engine.load_occupancy_map(Path(occupancy_yaml))
-        matching_grid = self.occupancy_map.occupied
-        for _ in range(max(0, config.dilate_cells)):
-            matching_grid = bbs_engine._dilate_one_cell(matching_grid)
-        self.matching_grid = matching_grid
+        self.candidate_source = normalize_candidate_source(config.candidate_source)
+        self.occupancy_map = None
+        self.matching_grid = None
+        self.reference_rows = None
+        self.route_yaw_offsets_deg = parse_float_list(config.route_yaw_offsets_deg)
+        self.route_lateral_offsets_m = parse_float_list(config.route_lateral_offsets_m)
+        self.route_longitudinal_offsets_m = parse_float_list(
+            config.route_longitudinal_offsets_m)
 
-        # Resolve the search backend once. The C++ module (bbs_cpp) is bit-exact
-        # to bbs_engine.branch_and_bound_candidates and exposes the same call
-        # signature and candidate attributes, so query() is backend-agnostic.
-        self.backend = "python"
-        self.backend_error = None
-        self._search = bbs_engine.branch_and_bound_candidates
-        if config.use_cpp_backend:
-            try:
-                _append_module_dirs("bbs_cpp")
-                import bbs_cpp  # noqa: E402
-                self._search = bbs_cpp.branch_and_bound_candidates
-                self.backend = "cpp"
-            except ImportError as exc:  # pragma: no cover - depends on build
-                self.backend_error = str(exc)
+        if self.candidate_source == CANDIDATE_SOURCE_ROUTE_CROP:
+            if not config.reference_csv:
+                raise ValueError(
+                    "reference_csv is required when candidate_source=route_crop")
+            self.reference_rows = route_grid.load_reference_rows(
+                Path(config.reference_csv))
+            self.backend = CANDIDATE_SOURCE_ROUTE_CROP
+            self.backend_error = None
+            self._search = None
+        else:
+            if occupancy_yaml is None:
+                raise ValueError(
+                    "occupancy_yaml is required when candidate_source=bbs")
+            self.occupancy_map = bbs_engine.load_occupancy_map(Path(occupancy_yaml))
+            matching_grid = self.occupancy_map.occupied
+            for _ in range(max(0, config.dilate_cells)):
+                matching_grid = bbs_engine._dilate_one_cell(matching_grid)
+            self.matching_grid = matching_grid
+
+            # Resolve the search backend once. The C++ module (bbs_cpp) is bit-exact
+            # to bbs_engine.branch_and_bound_candidates and exposes the same call
+            # signature and candidate attributes, so query() is backend-agnostic.
+            self.backend = "python"
+            self.backend_error = None
+            self._search = bbs_engine.branch_and_bound_candidates
+            if config.use_cpp_backend:
+                try:
+                    _append_module_dirs("bbs_cpp")
+                    import bbs_cpp  # noqa: E402
+                    self._search = bbs_cpp.branch_and_bound_candidates
+                    self.backend = "cpp"
+                except ImportError as exc:  # pragma: no cover - depends on build
+                    self.backend_error = str(exc)
 
         self.registration_scorer = None
         self.registration_scoring_error = None
@@ -176,7 +237,7 @@ class GlobalLocalizationEngine:
                 try:
                     _append_module_dirs("g2_ndt_score")
                     import g2_ndt_score  # noqa: E402
-                    self.registration_scorer = g2_ndt_score.MapNdtScorer(
+                    scorer_args = (
                         config.map_path,
                         config.ndt_resolution,
                         config.ndt_step_size,
@@ -189,7 +250,26 @@ class GlobalLocalizationEngine:
                         config.ndt_local_map_radius,
                         config.ndt_min_target_points,
                     )
+                    try:
+                        self.registration_scorer = g2_ndt_score.MapNdtScorer(
+                            *scorer_args)
+                    except TypeError:
+                        # Older g2_ndt_score builds omit ndt_search_method.
+                        self.registration_scorer = g2_ndt_score.MapNdtScorer(
+                            config.map_path,
+                            config.ndt_resolution,
+                            config.ndt_step_size,
+                            config.ndt_transform_epsilon,
+                            config.ndt_max_iterations,
+                            config.ndt_num_threads,
+                            config.ndt_scan_voxel_leaf_size,
+                            config.ndt_target_voxel_leaf_size,
+                            config.ndt_local_map_radius,
+                            config.ndt_min_target_points,
+                        )
                 except ImportError as exc:  # pragma: no cover - depends on build
+                    self.registration_scoring_error = str(exc)
+                except TypeError as exc:
                     self.registration_scoring_error = str(exc)
 
     def _score_with_registration(
@@ -258,7 +338,63 @@ class GlobalLocalizationEngine:
             ranked, score_gate=self.config.registration_score_gate)
         return [_candidate_from_ranked(item) for item in reranked]
 
-    def query(self, points_xyz):
+    def _query_route_crop(self, points_xyz, scan_stamp_sec):
+        config = self.config
+        scan_point_count = int(points_xyz.shape[0]) if points_xyz.size else 0
+        base_result = {
+            "scan_point_count": scan_point_count,
+            "registration_scoring_enabled": self.registration_scorer is not None,
+            "registration_scoring_backend": (
+                "g2_ndt_score" if self.registration_scorer is not None else None),
+            "registration_scoring_error": self.registration_scoring_error,
+            "candidate_source": self.candidate_source,
+        }
+        if scan_point_count == 0:
+            return GlobalLocalizationResult(candidates=[], **base_result)
+        if scan_stamp_sec is None or not math.isfinite(scan_stamp_sec):
+            return GlobalLocalizationResult(
+                candidates=[],
+                route_crop_error="scan_stamp_sec required for route_crop",
+                **base_result)
+
+        route_rows, _nearest = route_grid.select_route_rows(
+            self.reference_rows,
+            trigger_stamp_sec=float(scan_stamp_sec),
+            time_radius_sec=config.route_time_radius_sec,
+            min_spacing_m=config.route_min_spacing_m,
+            max_route_poses=config.route_max_poses,
+        )
+        built = route_grid.build_candidates(
+            attempt_id="g2_route_crop",
+            route_rows=route_rows,
+            trigger_stamp_sec=float(scan_stamp_sec),
+            source="route_crop",
+            longitudinal_offsets_m=self.route_longitudinal_offsets_m,
+            lateral_offsets_m=self.route_lateral_offsets_m,
+            yaw_offsets_deg=self.route_yaw_offsets_deg,
+            max_candidates=config.max_candidates,
+        )
+        candidates = []
+        for row in built:
+            candidates.append(
+                GlobalLocalizationCandidate(
+                    x_m=float(row["pose_x"]),
+                    y_m=float(row["pose_y"]),
+                    z_m=float(row["pose_z"]),
+                    yaw_rad=float(row["yaw_rad"]),
+                    score=1.0,
+                    hit_count=0,
+                    point_count=scan_point_count,
+                    bbs_score=1.0,
+                ))
+        if self.registration_scorer is not None:
+            candidates = self._score_with_registration(points_xyz, candidates)
+        return GlobalLocalizationResult(candidates=candidates, **base_result)
+
+    def query(self, points_xyz, scan_stamp_sec=None):
+        if self.candidate_source == CANDIDATE_SOURCE_ROUTE_CROP:
+            return self._query_route_crop(points_xyz, scan_stamp_sec)
+
         config = self.config
         resolution_m = self.occupancy_map.resolution_m
         scan_xy = bbs_engine.prepare_scan_xy(
@@ -277,6 +413,7 @@ class GlobalLocalizationEngine:
                 registration_scoring_backend=(
                     "g2_ndt_score" if self.registration_scorer is not None else None),
                 registration_scoring_error=self.registration_scoring_error,
+                candidate_source=self.candidate_source,
             )
 
         grid_candidates = self._search(
@@ -318,4 +455,5 @@ class GlobalLocalizationEngine:
             registration_scoring_backend=(
                 "g2_ndt_score" if self.registration_scorer is not None else None),
             registration_scoring_error=self.registration_scoring_error,
+            candidate_source=self.candidate_source,
         )

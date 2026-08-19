@@ -83,15 +83,27 @@ class GlobalLocalizationNode(Node):
         self.declare_parameter("ndt_local_map_radius", 150.0)
         self.declare_parameter("ndt_min_target_points", 100)
         self.declare_parameter("registration_seed_z_m", 0.0)
+        self.declare_parameter("candidate_source", "bbs")
+        self.declare_parameter("reference_csv", "")
+        self.declare_parameter("route_time_radius_sec", 20.0)
+        self.declare_parameter("route_min_spacing_m", 8.0)
+        self.declare_parameter("route_max_poses", 32)
+        self.declare_parameter("route_yaw_offsets_deg", "-15,0,15")
+        self.declare_parameter("route_lateral_offsets_m", "-2,0,2")
+        self.declare_parameter("route_longitudinal_offsets_m", "-1,0,1")
 
+        candidate_source = str(
+            self.get_parameter("candidate_source").get_parameter_value().string_value)
         occupancy_yaml = (
             self.get_parameter("occupancy_yaml").get_parameter_value().string_value)
-        if not occupancy_yaml:
+        if candidate_source.strip().lower() == "bbs" and not occupancy_yaml:
             raise RuntimeError(
-                "occupancy_yaml parameter is required (output of "
-                "generate_occupancy_map_from_pcd.py)")
+                "occupancy_yaml parameter is required when candidate_source=bbs "
+                "(output of generate_occupancy_map_from_pcd.py)")
 
         map_path = self.get_parameter("map_path").get_parameter_value().string_value
+        reference_csv = (
+            self.get_parameter("reference_csv").get_parameter_value().string_value)
         enable_registration_scoring = bool(
             self.get_parameter("enable_registration_scoring").value)
         config = GlobalLocalizationConfig(
@@ -131,8 +143,23 @@ class GlobalLocalizationNode(Node):
                 self.get_parameter("ndt_min_target_points").value),
             registration_seed_z_m=float(
                 self.get_parameter("registration_seed_z_m").value),
+            candidate_source=candidate_source,
+            reference_csv=reference_csv or None,
+            route_time_radius_sec=float(
+                self.get_parameter("route_time_radius_sec").value),
+            route_min_spacing_m=float(
+                self.get_parameter("route_min_spacing_m").value),
+            route_max_poses=int(self.get_parameter("route_max_poses").value),
+            route_yaw_offsets_deg=str(
+                self.get_parameter("route_yaw_offsets_deg").value),
+            route_lateral_offsets_m=str(
+                self.get_parameter("route_lateral_offsets_m").value),
+            route_longitudinal_offsets_m=str(
+                self.get_parameter("route_longitudinal_offsets_m").value),
         )
-        self.engine = GlobalLocalizationEngine(Path(occupancy_yaml), config)
+        self.engine = GlobalLocalizationEngine(
+            config,
+            occupancy_yaml=Path(occupancy_yaml) if occupancy_yaml else None)
         if config.use_cpp_backend and self.engine.backend != "cpp":
             self.get_logger().warn(
                 "use_cpp_backend requested but bbs_cpp is unavailable (%s); "
@@ -148,6 +175,10 @@ class GlobalLocalizationNode(Node):
                 self.get_logger().info(
                     "registration scoring enabled: map=%s gate=%.2f"
                     % (map_path, config.registration_score_gate))
+        if self.engine.candidate_source == "route_crop":
+            self.get_logger().info(
+                "route-crop candidate source enabled: reference=%s radius=%.1fs"
+                % (reference_csv, config.route_time_radius_sec))
         self.global_frame_id = (
             self.get_parameter("global_frame_id").get_parameter_value().string_value)
         self.latest_cloud = None
@@ -165,8 +196,13 @@ class GlobalLocalizationNode(Node):
             PoseArray, "~/candidates", candidate_qos)
         self.query_srv = self.create_service(Trigger, "~/query", self.handle_query)
         self.get_logger().info(
-            "global localization service ready: map=%s scan=%s backend=%s"
-            % (occupancy_yaml, cloud_topic, self.engine.backend))
+            "global localization service ready: source=%s map=%s scan=%s backend=%s"
+            % (
+                self.engine.candidate_source,
+                occupancy_yaml or reference_csv,
+                cloud_topic,
+                self.engine.backend,
+            ))
 
     def cloud_received(self, msg: PointCloud2) -> None:
         self.latest_cloud = msg
@@ -183,7 +219,7 @@ class GlobalLocalizationNode(Node):
         scan_age_at_start_sec = _scan_age_sec(query_start_ros_sec, scan_stamp_sec)
         points_xyz = bbs_engine.pointcloud2_xyz_array(cloud)
         started = time.monotonic()
-        result = self.engine.query(points_xyz)
+        result = self.engine.query(points_xyz, scan_stamp_sec=scan_stamp_sec)
         runtime_sec = time.monotonic() - started
         query_end_ros_sec = _stamp_to_sec(self.get_clock().now().to_msg())
         scan_age_at_end_sec = _scan_age_sec(query_end_ros_sec, scan_stamp_sec)
@@ -231,6 +267,7 @@ class GlobalLocalizationNode(Node):
             "scan_age_at_response_sec": _round_optional(scan_age_at_end_sec, 3),
             "candidate_age_sec": _round_optional(candidate_age_sec, 3),
             "backend": self.engine.backend,
+            "candidate_source": result.candidate_source,
             "registration_scoring_enabled": result.registration_scoring_enabled,
             # Full ranked list (high-to-low) so a consumer can walk past an
             # aliased top candidate; "top" kept for back-compat.
@@ -240,6 +277,8 @@ class GlobalLocalizationNode(Node):
             summary["registration_scoring_backend"] = result.registration_scoring_backend
         if result.registration_scoring_error:
             summary["registration_scoring_error"] = result.registration_scoring_error
+        if result.route_crop_error:
+            summary["route_crop_error"] = result.route_crop_error
         if ranked:
             summary["top"] = ranked[0]
         response.success = bool(result.candidates)

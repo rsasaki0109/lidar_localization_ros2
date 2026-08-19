@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Run Koide G3 recovery replay (120 s default) with kidnap injection.
+Run Koide G3 recovery replay (60 s default, real-time rate) with kidnap injection.
 
 Usage:
   scripts/run_koide_g3_recovery_replay.sh [options]
@@ -12,8 +12,8 @@ Usage:
 Options:
   --data-dir DIR         Koide dataset root.
   --output-dir DIR       Artifact output directory.
-  --duration-sec N       Bag replay duration. Default: 120.
-  --rate X               Bag replay rate. Default: 0.4.
+  --duration-sec N       Bag replay duration. Default: 60.
+  --rate X               Bag replay rate. Default: 1.0.
   --ros-domain-id N      ROS domain id. Default: 181.
   --recovery-fitness-threshold X
                          Supervisor post-reset confirm threshold. Default: 1.5.
@@ -21,6 +21,8 @@ Options:
                          Candidates walked per query before re-query. Default: 4.
                          With g2_nms_radius_m 0.5 the walk candidates are near-
                          duplicates, so each walk step mostly adds seed staleness.
+  --route-crop           Use route-crop G2 candidates from the benchmark
+                         reference CSV instead of map-wide BBS (WP3).
   --skip-prepare         Skip asset regeneration.
   --print-only           Print commands without running.
   -h, --help             Show this help.
@@ -31,11 +33,12 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 data_dir="${repo_root}/data/public/koide_hard_localization"
 output_dir=""
-duration_sec="120"
-play_rate="0.4"
+duration_sec="60"
+play_rate="1.0"
 ros_domain_id="181"
 recovery_fitness_threshold="1.5"
 max_walk_candidates="4"
+route_crop=0
 skip_prepare=0
 print_only=0
 
@@ -48,6 +51,7 @@ while [[ $# -gt 0 ]]; do
     --ros-domain-id) shift; ros_domain_id="$1" ;;
     --recovery-fitness-threshold) shift; recovery_fitness_threshold="$1" ;;
     --max-walk-candidates) shift; max_walk_candidates="$1" ;;
+    --route-crop) route_crop=1 ;;
     --skip-prepare) skip_prepare=1 ;;
     --print-only) print_only=1 ;;
     -h|--help) usage; exit 0 ;;
@@ -57,7 +61,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${output_dir}" ]]; then
-  output_dir="/tmp/lidarloc_koide_g3_recovery_regscore_$(date +%Y%m%d_%H%M%S)"
+  suffix="regscore"
+  if [[ "${route_crop}" -eq 1 ]]; then
+    suffix="route_crop"
+  fi
+  output_dir="/tmp/lidarloc_koide_g3_recovery_${suffix}_$(date +%Y%m%d_%H%M%S)"
 fi
 mkdir -p "${output_dir}"
 
@@ -92,6 +100,7 @@ injector_log="${output_dir}/kidnap_injector.log"
 health_json="${output_dir}/recovery_health.json"
 pose_gt_json="${output_dir}/pose_gt_check.json"
 gt_traj="${data_dir}/gt/traj_lidar_outdoor_hard_01.txt"
+reference_csv="${data_dir}/benchmark/outdoor_hard_01a/reference.csv"
 
 for required in "${localization_yaml}" "${occupancy_yaml}" "${map_path}" "${bag_path}/metadata.yaml"; do
   if [[ ! -e "${required}" ]]; then
@@ -120,11 +129,8 @@ launch_cmd=(
   "use_imu_preintegration:=true"
   "imu_preintegration_use_base_frame_transform:=false"
   "g2_use_cpp_backend:=true"
-  # Fix staleness at reset-publish time is the dominant seed error term: 16
-  # candidates scored single-threaded ran 17-21 wall-s (~7-8 bag-s at rate 0.4),
-  # putting seeds 2.4-5.8 m off and into along-corridor alias capture. Scoring 8
-  # candidates roughly halves that. (G2's ndt_num_threads param stays 1:
-  # pclomp NDT_OMP scoring is not thread-safe with its default KDTREE search.)
+  # Fix staleness at reset-publish time: registration-scoring latency dominates
+  # stale seed error on a moving bag. Fewer candidates roughly halves query time.
   "g2_max_candidates:=8"
   "g2_nms_radius_m:=0.5"
   "g2_registration_seed_z_m:=-11.046818"
@@ -136,6 +142,24 @@ launch_cmd=(
   "supervisor_max_walk_candidates:=${max_walk_candidates}"
   "supervisor_event_log_csv:=${supervisor_events_csv}"
 )
+
+if [[ "${route_crop}" -eq 1 ]]; then
+  if [[ ! -f "${reference_csv}" ]]; then
+    echo "Missing reference CSV for route-crop: ${reference_csv}" >&2
+    exit 2
+  fi
+  launch_cmd+=(
+    "g2_candidate_source:=route_crop"
+    "g2_reference_csv:=${reference_csv}"
+    "g2_route_time_radius_sec:=20.0"
+    "g2_route_min_spacing_m:=8.0"
+    "g2_route_max_poses:=32"
+    "g2_route_yaw_offsets_deg:=-15,0,15"
+    "g2_route_lateral_offsets_m:=-2,0,2"
+    "g2_route_longitudinal_offsets_m:=-1,0,1"
+    "g2_max_candidates:=16"
+  )
+fi
 
 injector_cmd=(
   python3 "${script_dir}/inject_koide_kidnap_initialpose.py"
@@ -189,9 +213,17 @@ fi
 set +u
 # shellcheck source=/dev/null
 source "${script_dir}/setup_local_env.sh"
-# shellcheck source=/dev/null
-source "${repo_root}/../install/setup.bash" 2>/dev/null || source "${repo_root}/../../install/setup.bash" 2>/dev/null || true
-if [[ -f "/home/sasaki/workspace/old_~2026/lidarloc_ws/install/setup.bash" ]]; then
+# Prefer the package-local install tree (standalone checkout), then workspace install.
+if [[ -f "${repo_root}/install/setup.bash" ]]; then
+  # shellcheck source=/dev/null
+  source "${repo_root}/install/setup.bash"
+elif [[ -f "${repo_root}/../install/setup.bash" ]]; then
+  # shellcheck source=/dev/null
+  source "${repo_root}/../install/setup.bash"
+elif [[ -f "${repo_root}/../../install/setup.bash" ]]; then
+  # shellcheck source=/dev/null
+  source "${repo_root}/../../install/setup.bash"
+elif [[ -f "/home/sasaki/workspace/old_~2026/lidarloc_ws/install/setup.bash" ]]; then
   # shellcheck source=/dev/null
   source "/home/sasaki/workspace/old_~2026/lidarloc_ws/install/setup.bash"
 fi

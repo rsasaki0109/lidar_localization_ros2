@@ -348,6 +348,35 @@ def generate_launch_description():
             'g2_use_cpp_backend', default_value='true',
             description='Use the compiled C++ BBS backend (bbs_cpp) when built; '
                         'falls back to the Python search if unavailable.'),
+        DeclareLaunchArgument(
+            'g2_candidate_source', default_value='bbs',
+            description='G2 candidate source: bbs (map-wide branch-and-bound) or '
+                        'route_crop (reference trajectory window; requires '
+                        'g2_reference_csv).'),
+        DeclareLaunchArgument(
+            'g2_reference_csv', default_value='',
+            description='Reference trajectory CSV for route_crop candidate generation '
+                        '(same format as make_route_grid_relocalization_attempts).'),
+        DeclareLaunchArgument(
+            'g2_route_time_radius_sec', default_value='20.0',
+            description='Reference poses within +/- this many seconds of the query '
+                        'scan stamp become route-crop seeds.'),
+        DeclareLaunchArgument(
+            'g2_route_min_spacing_m', default_value='8.0',
+            description='Minimum XY spacing between route-crop seed poses.'),
+        DeclareLaunchArgument(
+            'g2_route_max_poses', default_value='32',
+            description='Maximum route seed poses per query after spacing.'),
+        DeclareLaunchArgument(
+            'g2_route_yaw_offsets_deg', default_value='-15,0,15',
+            description='Comma-separated yaw offsets (deg) for route-crop candidates.'),
+        DeclareLaunchArgument(
+            'g2_route_lateral_offsets_m', default_value='-2,0,2',
+            description='Comma-separated lateral offsets (m) for route-crop candidates.'),
+        DeclareLaunchArgument(
+            'g2_route_longitudinal_offsets_m', default_value='-1,0,1',
+            description='Comma-separated longitudinal offsets (m) for route-crop '
+                        'candidates.'),
     ]
 
     # 1. Core localizer (also raises /reinitialization_requested + /alignment_status).
@@ -426,6 +455,18 @@ def generate_launch_description():
                 LaunchConfiguration('g2_nms_radius_m'), value_type=float),
             'use_cpp_backend': ParameterValue(
                 LaunchConfiguration('g2_use_cpp_backend'), value_type=bool),
+            'candidate_source': LaunchConfiguration('g2_candidate_source'),
+            'reference_csv': LaunchConfiguration('g2_reference_csv'),
+            'route_time_radius_sec': ParameterValue(
+                LaunchConfiguration('g2_route_time_radius_sec'), value_type=float),
+            'route_min_spacing_m': ParameterValue(
+                LaunchConfiguration('g2_route_min_spacing_m'), value_type=float),
+            'route_max_poses': ParameterValue(
+                LaunchConfiguration('g2_route_max_poses'), value_type=int),
+            'route_yaw_offsets_deg': LaunchConfiguration('g2_route_yaw_offsets_deg'),
+            'route_lateral_offsets_m': LaunchConfiguration('g2_route_lateral_offsets_m'),
+            'route_longitudinal_offsets_m': LaunchConfiguration(
+                'g2_route_longitudinal_offsets_m'),
             'use_sim_time': use_sim_time,
         }])
 

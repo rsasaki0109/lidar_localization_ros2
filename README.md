@@ -57,13 +57,23 @@ ros2 run lidar_localization_ros2 quickstart.py \
 
 Quickstart detects unambiguous sensor topics, generates a reusable configuration,
 restores only a pose saved against the same map, and verifies tracking. Add the matching
-occupancy map to use the default guarded global initialization with 3D NDT scoring:
+occupancy map or a mapping-run reference CSV for guarded global initialization with
+3D NDT scoring:
 
 ```bash
 ros2 run lidar_localization_ros2 quickstart.py \
   --profile mid360 \
   --map /absolute/path/to/map.pcd \
   --occupancy-map /absolute/path/to/map.yaml
+```
+
+Known routes (avoids map-wide BBS corridor aliases):
+
+```bash
+ros2 run lidar_localization_ros2 quickstart.py \
+  --profile mid360 \
+  --map /absolute/path/to/map.pcd \
+  --reference-csv /absolute/path/to/mapping_run/reference.csv
 ```
 
 If no safe candidate is available, it asks for **2D Pose Estimate** in RViz; it never

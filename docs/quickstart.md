@@ -16,7 +16,7 @@ ros2 run lidar_localization_ros2 quickstart.py \
 ```
 
 Without a known pose, enable map-wide search by supplying the 2D occupancy map used by
-the existing G2 BBS_2D engine:
+the existing G2 BBS_2D engine, or route-crop search from a mapping-run reference CSV:
 
 ```bash
 ros2 run lidar_localization_ros2 quickstart.py \
@@ -24,6 +24,18 @@ ros2 run lidar_localization_ros2 quickstart.py \
   --map /absolute/path/to/map.pcd \
   --occupancy-map /absolute/path/to/map.yaml
 ```
+
+Known-route sites (corridor alias risk on map-wide BBS):
+
+```bash
+ros2 run lidar_localization_ros2 quickstart.py \
+  --profile mid360 \
+  --map /absolute/path/to/map.pcd \
+  --reference-csv /absolute/path/to/mapping_run/reference.csv
+```
+
+Both `--occupancy-map` and `--reference-csv` may be supplied; when the reference CSV
+is present, G2 uses route-crop candidates and skips map-wide BBS.
 
 Use `--dry-run` to generate the configuration and inspect both the launch and bringup
 check commands without starting ROS nodes. A five-second topic/TF check runs after
@@ -42,7 +54,8 @@ The startup manager uses this fixed order:
 
 1. an explicit `--initial-pose`, when supplied;
 2. the last verified pose saved for the exact same pointcloud map contents;
-3. guarded BBS_2D global search when `--occupancy-map` is supplied;
+3. guarded global search when `--occupancy-map` is supplied, or guarded route-crop
+   search when `--reference-csv` is supplied;
 4. an operator pose from RViz **2D Pose Estimate**.
 
 There is no implicit `(0, 0, 0)` fallback. An explicit pose disables both saved-pose
@@ -63,7 +76,12 @@ disables restore without disabling future verified saves, and
 ## Global-search safety gates
 
 Global initialization reuses `global_localization_node.py`; it does not duplicate the
-BBS implementation. The startup-only state machine is separate from the G3 lost-tracking
+BBS implementation. When `--reference-csv` is supplied (or `--occupancy-map` for BBS),
+quickstart also launches the guarded G3 `reinitialization_supervisor_node` by default
+(`--g3-recovery`, disable with `--no-g3-recovery`) so lost tracking can re-query G2 and
+re-seed `/initialpose` after startup.
+
+The startup-only state machine is separate from the G3 lost-tracking
 supervisor because cold start has no previously trusted tracking episode.
 
 A candidate is published only when:
@@ -114,8 +132,8 @@ publication off as appropriate.
 
 ## Troubleshooting
 
-- `no_safe_automatic_source`: no matching saved pose and no occupancy map; use RViz or
-  restart with `--occupancy-map`.
+- `no_safe_automatic_source`: no matching saved pose and no occupancy map or reference
+  CSV; use RViz or restart with `--occupancy-map` / `--reference-csv`.
 - `map_mismatch`: the stored pose belongs to different map contents and was ignored.
 - `ambiguous_candidate_retry`: similar places are not distinguishable at the configured
   margin; do not loosen the margin without replay evidence.

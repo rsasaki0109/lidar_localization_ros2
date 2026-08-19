@@ -80,14 +80,32 @@ def _bringup_check(context):
 def generate_launch_description():
     package_share = get_package_share_directory("lidar_localization_ros2")
     global_initialization_ready = PythonExpression([
-        "'", LaunchConfiguration("enable_global_initialization"), "' == 'true' and '",
-        LaunchConfiguration("occupancy_yaml"), "' != ''",
+        "'", LaunchConfiguration("enable_global_initialization"), "' == 'true' and ('",
+        LaunchConfiguration("occupancy_yaml"), "' != '' or '",
+        LaunchConfiguration("reference_csv"), "' != '')",
+    ])
+    g3_recovery_ready = PythonExpression([
+        "'", LaunchConfiguration("enable_g3_recovery"), "' == 'true' and ('",
+        LaunchConfiguration("occupancy_yaml"), "' != '' or '",
+        LaunchConfiguration("reference_csv"), "' != '')",
     ])
     declarations = [
         DeclareLaunchArgument("profile", default_value="standalone"),
         DeclareLaunchArgument("localization_param_dir"),
         DeclareLaunchArgument("map_path"),
         DeclareLaunchArgument("occupancy_yaml", default_value=""),
+        DeclareLaunchArgument(
+            "reference_csv",
+            default_value="",
+            description="Reference trajectory CSV for route-crop G2 candidates."),
+        DeclareLaunchArgument("g2_candidate_source", default_value="bbs"),
+        DeclareLaunchArgument("g2_route_time_radius_sec", default_value="20.0"),
+        DeclareLaunchArgument("g2_route_min_spacing_m", default_value="8.0"),
+        DeclareLaunchArgument("g2_route_max_poses", default_value="32"),
+        DeclareLaunchArgument("g2_route_yaw_offsets_deg", default_value="-15,0,15"),
+        DeclareLaunchArgument("g2_route_lateral_offsets_m", default_value="-2,0,2"),
+        DeclareLaunchArgument(
+            "g2_route_longitudinal_offsets_m", default_value="-1,0,1"),
         DeclareLaunchArgument("pose_state_path"),
         DeclareLaunchArgument("cloud_topic", default_value="/velodyne_points"),
         DeclareLaunchArgument("imu_topic", default_value="/imu"),
@@ -105,7 +123,13 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "enable_global_initialization",
             default_value="true",
-            description="Run guarded global initialization when occupancy_yaml is provided."),
+            description="Run guarded global initialization when occupancy_yaml or "
+                        "reference_csv is provided."),
+        DeclareLaunchArgument(
+            "enable_g3_recovery",
+            default_value="true",
+            description="Launch guarded G3 reinitialization when global search assets "
+                        "are configured."),
         DeclareLaunchArgument("start_rviz", default_value="true"),
         DeclareLaunchArgument("run_bringup_check", default_value="true"),
         DeclareLaunchArgument("saved_pose_max_age_sec", default_value="0.0"),
@@ -129,6 +153,11 @@ def generate_launch_description():
         DeclareLaunchArgument("g2_angular_resolution_deg", default_value="10.0"),
         DeclareLaunchArgument("g2_max_candidates", default_value="8"),
         DeclareLaunchArgument("g2_nms_radius_m", default_value="3.0"),
+        DeclareLaunchArgument("supervisor_min_candidate_score", default_value="0.15"),
+        DeclareLaunchArgument("supervisor_query_timeout_sec", default_value="45.0"),
+        DeclareLaunchArgument("supervisor_max_walk_candidates", default_value="4"),
+        DeclareLaunchArgument("supervisor_recovery_fitness_threshold", default_value="1.5"),
+        DeclareLaunchArgument("supervisor_prefer_reset_default_z_m", default_value="false"),
     ]
 
     global_localization = Node(
@@ -162,6 +191,50 @@ def generate_launch_description():
                 LaunchConfiguration("g2_max_candidates"), value_type=int),
             "nms_radius_m": ParameterValue(
                 LaunchConfiguration("g2_nms_radius_m"), value_type=float),
+            "candidate_source": LaunchConfiguration("g2_candidate_source"),
+            "reference_csv": LaunchConfiguration("reference_csv"),
+            "route_time_radius_sec": ParameterValue(
+                LaunchConfiguration("g2_route_time_radius_sec"), value_type=float),
+            "route_min_spacing_m": ParameterValue(
+                LaunchConfiguration("g2_route_min_spacing_m"), value_type=float),
+            "route_max_poses": ParameterValue(
+                LaunchConfiguration("g2_route_max_poses"), value_type=int),
+            "route_yaw_offsets_deg": LaunchConfiguration("g2_route_yaw_offsets_deg"),
+            "route_lateral_offsets_m": LaunchConfiguration("g2_route_lateral_offsets_m"),
+            "route_longitudinal_offsets_m": LaunchConfiguration(
+                "g2_route_longitudinal_offsets_m"),
+            "use_sim_time": ParameterValue(
+                LaunchConfiguration("use_sim_time"), value_type=bool),
+        }],
+    )
+    reinitialization_supervisor = Node(
+        package="lidar_localization_ros2",
+        executable="reinitialization_supervisor_node.py",
+        name="reinitialization_supervisor_node",
+        output="screen",
+        condition=IfCondition(g3_recovery_ready),
+        parameters=[{
+            "query_service": "/global_localization_node/query",
+            "alignment_status_topic": "/alignment_status",
+            "initialpose_topic": "/initialpose",
+            "pose_topic": LaunchConfiguration("pose_topic"),
+            "global_frame_id": LaunchConfiguration("global_frame_id"),
+            "min_candidate_score": ParameterValue(
+                LaunchConfiguration("supervisor_min_candidate_score"), value_type=float),
+            "query_timeout_sec": ParameterValue(
+                LaunchConfiguration("supervisor_query_timeout_sec"), value_type=float),
+            "max_walk_candidates": ParameterValue(
+                LaunchConfiguration("supervisor_max_walk_candidates"), value_type=int),
+            "recovery_fitness_threshold": ParameterValue(
+                LaunchConfiguration("supervisor_recovery_fitness_threshold"),
+                value_type=float),
+            "max_attempts": ParameterValue(LaunchConfiguration("max_global_attempts"),
+                                           value_type=int),
+            "reset_default_z_m": ParameterValue(
+                LaunchConfiguration("g2_registration_seed_z_m"), value_type=float),
+            "prefer_reset_default_z_m": ParameterValue(
+                LaunchConfiguration("supervisor_prefer_reset_default_z_m"), value_type=bool),
+            "confirm_cross_check": True,
             "use_sim_time": ParameterValue(
                 LaunchConfiguration("use_sim_time"), value_type=bool),
         }],
@@ -227,5 +300,5 @@ def generate_launch_description():
         declarations
         + [OpaqueFunction(function=_localization_include),
            OpaqueFunction(function=_bringup_check), global_localization,
-           startup_initialization, rviz]
+           reinitialization_supervisor, startup_initialization, rviz]
     )

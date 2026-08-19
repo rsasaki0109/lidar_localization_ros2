@@ -61,6 +61,31 @@ walking; higher values return more spatially diverse candidates. Query latency
 on a validated window is a few seconds; see the roadmap for the speed/coverage
 envelope.
 
+### Route-crop candidates (opt-in, WP3)
+
+On routes where map-wide BBS returns along-corridor aliases (Koide outdoor north/
+south corridor), seed G2 from a reference trajectory near the query scan stamp
+instead of searching the full occupancy grid. This skips the BBS search entirely
+and is typically much faster; pair with `enable_registration_scoring:=true` so
+NDT fitness ranks the route-local hypotheses.
+
+```bash
+python3 scripts/global_localization_node.py --ros-args \
+  -p candidate_source:=route_crop \
+  -p reference_csv:=/path/to/reference.csv \
+  -p map_path:=/path/to/map.pcd \
+  -p enable_registration_scoring:=true \
+  -p cloud_topic:=/livox/points
+```
+
+Reference CSV format matches `make_route_grid_relocalization_attempts.py` (columns:
+`stamp_sec`, `position_x/y/z`, `orientation_x/y/z/w`). Generate from a mapping run
+with `tum_trajectory_to_pose_reference_csv_for_rosbag2.py`. Key parameters:
+`route_time_radius_sec`, `route_min_spacing_m`, `route_max_poses`, and the
+`*_offsets_*` lists. See `param/benchmark/koide_g3_recovery_route_crop.yaml` and
+`global_localization_recovery.launch.py` launch args `g2_candidate_source`,
+`g2_reference_csv`, etc.
+
 ## G3: guarded automatic reinitialization
 
 The localization node already raises `/reinitialization_requested`
@@ -154,9 +179,14 @@ through as launch arg `supervisor_recovery_fitness_threshold` on
 default is the intended production value. Example:
 
 ```bash
-scripts/run_koide_g3_recovery_replay.sh --skip-prepare --duration-sec 180 --rate 0.4
-scripts/run_koide_g3_recovery_replay.sh --skip-prepare --duration-sec 180 --rate 0.4 \
-  --recovery-fitness-threshold 2.0 --output-dir /tmp/lidarloc_koide_g3_recovery_180s_thr20
+scripts/run_koide_g3_recovery_replay.sh --skip-prepare
+
+# Optional slow-motion / longer evidence run:
+# scripts/run_koide_g3_recovery_replay.sh --skip-prepare --duration-sec 120 --rate 0.4
+
+# Boundary characterization only (not the production default):
+scripts/run_koide_g3_recovery_replay.sh --skip-prepare \
+  --recovery-fitness-threshold 2.0 --output-dir /tmp/lidarloc_koide_g3_recovery_thr20
 ```
 
 The three-node recovery bringup (`ros2 launch ... global_localization_recovery.launch.py`)

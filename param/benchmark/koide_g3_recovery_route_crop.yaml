@@ -1,0 +1,52 @@
+# Koide outdoor_hard_01a G3 recovery with route-crop G2 candidates (WP3).
+# Avoids map-wide BBS corridor aliases on the outdoor hard sequence.
+# Requires the benchmark reference CSV from the Koide hard dataset.
+#
+# Example:
+#   ros2 launch lidar_localization_ros2 global_localization_recovery.launch.py \
+#     cloud_topic:=/livox/points imu_topic:=/livox/imu \
+#     map_path:=/path/to/map_outdoor_hard.ply \
+#     localization_param_dir:=/path/to/koide_outdoor.yaml \
+#     g2_candidate_source:=route_crop \
+#     g2_reference_csv:=/path/to/benchmark/outdoor_hard_01a/reference.csv \
+#     g2_enable_registration_scoring:=true \
+#     base_frame_id:=livox_frame lidar_frame_id:=livox_frame \
+#     publish_lidar_tf:=false use_imu_preintegration:=true \
+#     use_sim_time:=true \
+#     supervisor_reset_default_z_m:=-11.046818 supervisor_prefer_reset_default_z_m:=true
+
+mode: notes
+
+dataset:
+  bag_path: repo://data/public/koide_hard_localization/sequences/outdoor_hard_01a
+  map_path: repo://data/public/koide_hard_localization/map_outdoor_hard.ply
+  reference_csv: repo://data/public/koide_hard_localization/benchmark/outdoor_hard_01a/reference.csv
+  cloud_topic: /livox/points
+  imu_topic: /livox/imu
+
+g2:
+  candidate_source: route_crop
+  route_time_radius_sec: 20.0
+  route_min_spacing_m: 8.0
+  route_max_poses: 32
+  route_yaw_offsets_deg: "-15,0,15"
+  route_lateral_offsets_m: "-2,0,2"
+  route_longitudinal_offsets_m: "-1,0,1"
+  max_candidates: 32
+  enable_registration_scoring: true
+  registration_score_gate: 6.0
+
+supervisor:
+  min_candidate_score: 0.15
+  max_walk_candidates: 4
+  settle_timeout_sec: 20.0
+  query_timeout_sec: 45.0
+  max_attempts: 5
+  enable_seed_motion_compensation: true
+  seed_motion_skip_registration_fitness_threshold: 1.0
+  reset_default_z_m: -11.046818
+  prefer_reset_default_z_m: true
+
+health_check:
+  script: scripts/check_koide_recovery_health.py
+  min_stable_windows: 1
