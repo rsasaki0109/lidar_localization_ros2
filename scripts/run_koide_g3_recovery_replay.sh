@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Run Koide G3 recovery replay (60 s default, real-time rate) with kidnap injection.
+Run Koide G3 recovery replay (60 s default, 90 s with --route-crop) with kidnap injection.
 
 Usage:
   scripts/run_koide_g3_recovery_replay.sh [options]
@@ -12,7 +12,7 @@ Usage:
 Options:
   --data-dir DIR         Koide dataset root.
   --output-dir DIR       Artifact output directory.
-  --duration-sec N       Bag replay duration. Default: 60.
+  --duration-sec N       Bag replay duration. Default: 60 (90 with --route-crop).
   --rate X               Bag replay rate. Default: 1.0.
   --ros-domain-id N      ROS domain id. Default: 181.
   --recovery-fitness-threshold X
@@ -66,6 +66,9 @@ if [[ -z "${output_dir}" ]]; then
     suffix="route_crop"
   fi
   output_dir="/tmp/lidarloc_koide_g3_recovery_${suffix}_$(date +%Y%m%d_%H%M%S)"
+fi
+if [[ "${route_crop}" -eq 1 && "${duration_sec}" == "60" ]]; then
+  duration_sec="${ROUTE_CROP_DURATION_SEC:-90}"
 fi
 mkdir -p "${output_dir}"
 
@@ -148,17 +151,23 @@ if [[ "${route_crop}" -eq 1 ]]; then
     echo "Missing reference CSV for route-crop: ${reference_csv}" >&2
     exit 2
   fi
-  launch_cmd+=(
-    "g2_candidate_source:=route_crop"
-    "g2_reference_csv:=${reference_csv}"
-    "g2_route_time_radius_sec:=20.0"
-    "g2_route_min_spacing_m:=8.0"
-    "g2_route_max_poses:=32"
-    "g2_route_yaw_offsets_deg:=-15,0,15"
-    "g2_route_lateral_offsets_m:=-2,0,2"
-    "g2_route_longitudinal_offsets_m:=-1,0,1"
-    "g2_max_candidates:=16"
-  )
+    launch_cmd+=(
+        "g2_candidate_source:=route_crop"
+        "g2_reference_csv:=${reference_csv}"
+        "g2_route_time_radius_sec:=20.0"
+        "g2_route_min_spacing_m:=8.0"
+        "g2_route_max_poses:=32"
+        "g2_route_yaw_offsets_deg:=-15,0,15"
+        "g2_route_lateral_offsets_m:=-2,0,2"
+        "g2_route_longitudinal_offsets_m:=-1,0,1"
+        "g2_max_candidates:=16"
+        "supervisor_recovery_fitness_threshold:=3.5"
+        "supervisor_max_walk_candidates:=1"
+        "supervisor_settle_timeout_sec:=25.0"
+        "supervisor_recovery_confirmation_samples:=1"
+        "supervisor_enable_seed_motion_compensation:=false"
+        "supervisor_confirm_cross_check:=false"
+    )
 fi
 
 injector_cmd=(

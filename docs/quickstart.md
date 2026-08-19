@@ -37,6 +37,9 @@ ros2 run lidar_localization_ros2 quickstart.py \
 Both `--occupancy-map` and `--reference-csv` may be supplied; when the reference CSV
 is present, G2 uses route-crop candidates and skips map-wide BBS.
 
+For a full repeat-route workflow (mapping CSV → one-command bringup → status checks),
+see [site_setup.md](site_setup.md).
+
 Use `--dry-run` to generate the configuration and inspect both the launch and bringup
 check commands without starting ROS nodes. A five-second topic/TF check runs after
 launch by default; disable it with `--no-bringup-check`. Use `--no-rviz` on a headless

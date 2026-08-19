@@ -157,6 +157,10 @@ def generate_launch_description():
         DeclareLaunchArgument("supervisor_query_timeout_sec", default_value="45.0"),
         DeclareLaunchArgument("supervisor_max_walk_candidates", default_value="4"),
         DeclareLaunchArgument("supervisor_recovery_fitness_threshold", default_value="1.5"),
+        DeclareLaunchArgument("supervisor_settle_timeout_sec", default_value="20.0"),
+        DeclareLaunchArgument("supervisor_recovery_confirmation_samples", default_value="3"),
+        DeclareLaunchArgument("supervisor_enable_seed_motion_compensation", default_value="false"),
+        DeclareLaunchArgument("supervisor_confirm_cross_check", default_value="true"),
         DeclareLaunchArgument("supervisor_prefer_reset_default_z_m", default_value="false"),
     ]
 
@@ -228,13 +232,24 @@ def generate_launch_description():
             "recovery_fitness_threshold": ParameterValue(
                 LaunchConfiguration("supervisor_recovery_fitness_threshold"),
                 value_type=float),
+            "settle_timeout_sec": ParameterValue(
+                LaunchConfiguration("supervisor_settle_timeout_sec"), value_type=float),
+            "recovery_confirmation_samples": ParameterValue(
+                LaunchConfiguration("supervisor_recovery_confirmation_samples"),
+                value_type=int),
+            "enable_seed_motion_compensation": ParameterValue(
+                LaunchConfiguration("supervisor_enable_seed_motion_compensation"),
+                value_type=bool),
+            "confirm_cross_check": ParameterValue(
+                LaunchConfiguration("supervisor_confirm_cross_check"), value_type=bool),
             "max_attempts": ParameterValue(LaunchConfiguration("max_global_attempts"),
                                            value_type=int),
             "reset_default_z_m": ParameterValue(
                 LaunchConfiguration("g2_registration_seed_z_m"), value_type=float),
             "prefer_reset_default_z_m": ParameterValue(
                 LaunchConfiguration("supervisor_prefer_reset_default_z_m"), value_type=bool),
-            "confirm_cross_check": True,
+            "confirm_cross_check": ParameterValue(
+                LaunchConfiguration("supervisor_confirm_cross_check"), value_type=bool),
             "use_sim_time": ParameterValue(
                 LaunchConfiguration("use_sim_time"), value_type=bool),
         }],

@@ -206,6 +206,10 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
     g3_enabled = global_enabled and args.g3_recovery
     supervisor_min_score = (
         0.15 if args.global_registration_scoring else args.min_candidate_score)
+    supervisor_recovery_threshold = (
+        3.5 if route_crop else args.verification_fitness_threshold)
+    supervisor_max_walk = 1 if route_crop else args.supervisor_max_walk_candidates
+    supervisor_confirm_samples = 1 if route_crop else 3
     values = {
         "profile": args.profile,
         "localization_param_dir": str(config_path),
@@ -265,8 +269,12 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         "g2_route_longitudinal_offsets_m": args.route_longitudinal_offsets_m,
         "supervisor_min_candidate_score": supervisor_min_score,
         "supervisor_query_timeout_sec": args.supervisor_query_timeout_sec,
-        "supervisor_max_walk_candidates": args.supervisor_max_walk_candidates,
-        "supervisor_recovery_fitness_threshold": args.verification_fitness_threshold,
+        "supervisor_max_walk_candidates": supervisor_max_walk,
+        "supervisor_recovery_fitness_threshold": supervisor_recovery_threshold,
+        "supervisor_settle_timeout_sec": 25.0 if route_crop else 20.0,
+        "supervisor_recovery_confirmation_samples": supervisor_confirm_samples,
+        "supervisor_enable_seed_motion_compensation": str(not route_crop).lower(),
+        "supervisor_confirm_cross_check": str(not route_crop).lower(),
         "supervisor_prefer_reset_default_z_m": str(abs(args.global_seed_z) > 1.0e-9).lower(),
     }
     parts = ["ros2", "launch", "lidar_localization_ros2", "quickstart.launch.py"]

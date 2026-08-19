@@ -32,18 +32,22 @@ g2:
   route_yaw_offsets_deg: "-15,0,15"
   route_lateral_offsets_m: "-2,0,2"
   route_longitudinal_offsets_m: "-1,0,1"
-  max_candidates: 32
+  max_candidates: 16
   enable_registration_scoring: true
   registration_score_gate: 6.0
 
 supervisor:
   min_candidate_score: 0.15
-  max_walk_candidates: 4
-  settle_timeout_sec: 20.0
+  max_walk_candidates: 1
+  settle_timeout_sec: 25.0
+  recovery_fitness_threshold: 3.5
+  recovery_confirmation_samples: 1
+  confirm_cross_check: false
   query_timeout_sec: 45.0
   max_attempts: 5
-  enable_seed_motion_compensation: true
-  seed_motion_skip_registration_fitness_threshold: 1.0
+  # Route-crop G2 queries take ~10–20 s; sim fix-to-fix extrapolation over that
+  # latency can move seeds tens of metres on a moving bag.
+  enable_seed_motion_compensation: false
   reset_default_z_m: -11.046818
   prefer_reset_default_z_m: true
 

@@ -77,7 +77,8 @@ ros2 run lidar_localization_ros2 quickstart.py \
 ```
 
 If no safe candidate is available, it asks for **2D Pose Estimate** in RViz; it never
-guesses the origin. See [quickstart and automatic initialization](docs/quickstart.md).
+guesses the origin. See [quickstart and automatic initialization](docs/quickstart.md)
+and the [repeat-route site setup](docs/site_setup.md) guide.
 Use `--no-auto-initialize` to disable saved-pose restoration and global initialization,
 or launch with `use_continuous_time_deskew:=false` to disable deskew.
 
