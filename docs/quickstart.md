@@ -139,7 +139,9 @@ publication off as appropriate.
   CSV; use RViz or restart with `--occupancy-map` / `--reference-csv`.
 - `map_mismatch`: the stored pose belongs to different map contents and was ignored.
 - `ambiguous_candidate_retry`: similar places are not distinguishable at the configured
-  margin; do not loosen the margin without replay evidence.
+  margin; do not loosen the margin without replay evidence. With `--reference-csv` and
+  3D registration scoring, a top `registration_fitness` at or below **0.5** bypasses this
+  gate and publishes after localizer verification instead.
 - `global_attempts_exhausted`: automatic publication stopped; set the pose in RViz.
 - no detected sensor topic: start the driver or bag first, or pass the topic explicitly.
 

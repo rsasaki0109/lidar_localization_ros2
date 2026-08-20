@@ -223,6 +223,27 @@ class TestStartupPolicy(unittest.TestCase):
         )
         self.assertEqual(accepted.action, MODEL.ACTION_PUBLISH_GLOBAL)
 
+    def test_high_confidence_registration_bypasses_ambiguous_margin_and_consensus(self):
+        params = MODEL.StartupParams(
+            verification_samples=2,
+            registration_fitness_high_confidence_threshold=0.5,
+        )
+        decision = MODEL.decide_startup(params, MODEL.StartupState(), self.obs(0.0))
+        decision = MODEL.decide_startup(
+            params,
+            decision.state,
+            self.obs(
+                1.0,
+                query_candidate_scores=(0.9685, 0.9684),
+                query_candidate_age_sec=10.0,
+                query_top_pose=(-86.0, -8.0, -1.4),
+                query_scan_stamp_sec=100.0,
+                query_top_registration_fitness=0.19,
+            ),
+        )
+        self.assertEqual(decision.action, MODEL.ACTION_PUBLISH_GLOBAL)
+        self.assertEqual(decision.reason, "global_registration_high_confidence")
+
     def test_no_source_never_falls_back_to_identity(self):
         decision = MODEL.decide_startup(
             self.params,

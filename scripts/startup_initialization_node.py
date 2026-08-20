@@ -64,6 +64,7 @@ class StartupInitializationNode(Node):
         self.declare_parameter("global_consensus_samples", 2)
         self.declare_parameter("global_consensus_translation_m", 2.0)
         self.declare_parameter("global_consensus_yaw_deg", 20.0)
+        self.declare_parameter("registration_fitness_high_confidence_threshold", 1.0e9)
         self.declare_parameter("save_interval_sec", 2.0)
         self.declare_parameter("position_std_m", 0.5)
         self.declare_parameter("yaw_std_rad", 0.25)
@@ -103,6 +104,9 @@ class StartupInitializationNode(Node):
                 self.get_parameter("global_consensus_translation_m").value),
             global_consensus_yaw_deg=float(
                 self.get_parameter("global_consensus_yaw_deg").value),
+            registration_fitness_high_confidence_threshold=float(
+                self.get_parameter(
+                    "registration_fitness_high_confidence_threshold").value),
         )
         parameter_error = model.validate_startup_params(self.params)
         if parameter_error is not None:
@@ -182,6 +186,7 @@ class StartupInitializationNode(Node):
         self.pending_candidate_age = None
         self.pending_top_pose = None
         self.pending_scan_stamp_sec = None
+        self.pending_top_registration_fitness = None
         self.latest_cloud_stamp_sec = None
         self.last_query_scan_stamp_sec = None
         self.candidates = []
@@ -364,6 +369,7 @@ class StartupInitializationNode(Node):
             query_candidate_age_sec=self.pending_candidate_age,
             query_top_pose=self.pending_top_pose,
             query_scan_stamp_sec=self.pending_scan_stamp_sec,
+            query_top_registration_fitness=self.pending_top_registration_fitness,
             diagnostic_fresh=self.diagnostic_fresh,
             tracking_good=self.latest_tracking_good,
             fitness=self.latest_fitness,
@@ -372,6 +378,7 @@ class StartupInitializationNode(Node):
         self.pending_candidate_age = None
         self.pending_top_pose = None
         self.pending_scan_stamp_sec = None
+        self.pending_top_registration_fitness = None
         self.diagnostic_fresh = False
         decision = model.decide_startup(self.params, self.state, observation)
         self.state = decision.state
@@ -445,6 +452,9 @@ class StartupInitializationNode(Node):
                 float(top["y"]),
                 math.radians(float(top["yaw_deg"])),
             )
+            reg_fit = top.get("registration_fitness")
+            self.pending_top_registration_fitness = (
+                float(reg_fit) if reg_fit is not None else None)
         except Exception as exc:  # noqa: BLE001
             self.get_logger().warning(f"global localization query failed: {exc}")
             self.candidates = []
@@ -452,6 +462,7 @@ class StartupInitializationNode(Node):
             self.pending_candidate_age = None
             self.pending_top_pose = None
             self.pending_scan_stamp_sec = None
+            self.pending_top_registration_fitness = None
 
     def _new_initialpose(self) -> PoseWithCovarianceStamped:
         msg = PoseWithCovarianceStamped()

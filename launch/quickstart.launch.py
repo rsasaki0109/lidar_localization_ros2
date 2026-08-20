@@ -143,6 +143,8 @@ def generate_launch_description():
         DeclareLaunchArgument("global_consensus_samples", default_value="2"),
         DeclareLaunchArgument("global_consensus_translation_m", default_value="2.0"),
         DeclareLaunchArgument("global_consensus_yaw_deg", default_value="20.0"),
+        DeclareLaunchArgument(
+            "registration_fitness_high_confidence_threshold", default_value="1000000000.0"),
         DeclareLaunchArgument("g2_use_cpp_backend", default_value="true"),
         DeclareLaunchArgument("g2_enable_registration_scoring", default_value="true"),
         DeclareLaunchArgument("require_global_registration_scoring", default_value="true"),
@@ -296,6 +298,9 @@ def generate_launch_description():
                 LaunchConfiguration("global_consensus_translation_m"), value_type=float),
             "global_consensus_yaw_deg": ParameterValue(
                 LaunchConfiguration("global_consensus_yaw_deg"), value_type=float),
+            "registration_fitness_high_confidence_threshold": ParameterValue(
+                LaunchConfiguration("registration_fitness_high_confidence_threshold"),
+                value_type=float),
             "default_z_m": ParameterValue(
                 LaunchConfiguration("g2_registration_seed_z_m"), value_type=float),
             "use_sim_time": ParameterValue(

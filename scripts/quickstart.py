@@ -248,6 +248,8 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         "global_consensus_samples": args.global_consensus_samples,
         "global_consensus_translation_m": args.global_consensus_translation_m,
         "global_consensus_yaw_deg": args.global_consensus_yaw_deg,
+        "registration_fitness_high_confidence_threshold": (
+            0.5 if route_crop else 1.0e9),
         "g2_use_cpp_backend": str(args.global_cpp_backend).lower(),
         "g2_enable_registration_scoring": str(
             args.global_registration_scoring).lower(),
@@ -342,6 +344,8 @@ def _validate(args) -> Optional[str]:
         global_consensus_samples=args.global_consensus_samples,
         global_consensus_translation_m=args.global_consensus_translation_m,
         global_consensus_yaw_deg=args.global_consensus_yaw_deg,
+        registration_fitness_high_confidence_threshold=(
+            0.5 if args.reference_csv else 1.0e9),
     )
     policy_error = model.validate_startup_params(policy_params)
     if policy_error:

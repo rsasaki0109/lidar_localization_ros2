@@ -196,6 +196,10 @@ class StartupParams:
     global_consensus_samples: int = 2
     global_consensus_translation_m: float = 2.0
     global_consensus_yaw_deg: float = 20.0
+    # When the top G2 candidate's NDT fitness is at or below this threshold, trust
+    # registration over occupancy score margin / distinct-scan consensus. Disabled
+    # by default (inf). Route-crop quickstart sets ~0.5 for mapping-run seeds.
+    registration_fitness_high_confidence_threshold: float = 1.0e9
 
 
 def validate_startup_params(params: StartupParams) -> Optional[str]:
@@ -208,9 +212,12 @@ def validate_startup_params(params: StartupParams) -> Optional[str]:
         params.verification_fitness_threshold,
         params.global_consensus_translation_m,
         params.global_consensus_yaw_deg,
+        params.registration_fitness_high_confidence_threshold,
     )
     if not _finite(finite_values):
         return "startup thresholds must be finite"
+    if params.registration_fitness_high_confidence_threshold < 0.0:
+        return "registration_fitness_high_confidence_threshold must be non-negative"
     if not 0.0 <= params.min_candidate_score <= 1.0:
         return "min_candidate_score must be between 0 and 1"
     if params.min_score_margin < 0.0:
@@ -257,6 +264,7 @@ class StartupObservation:
     query_candidate_age_sec: Optional[float] = None
     query_top_pose: Optional[Tuple[float, float, float]] = None
     query_scan_stamp_sec: Optional[float] = None
+    query_top_registration_fitness: Optional[float] = None
     diagnostic_fresh: bool = False
     tracking_good: bool = False
     fitness: Optional[float] = None
@@ -292,6 +300,19 @@ def _query(params: StartupParams, state: StartupState, now_sec: float, reason: s
 
 def _angle_error_rad(first: float, second: float) -> float:
     return abs(math.atan2(math.sin(first - second), math.cos(first - second)))
+
+
+def registration_high_confidence(
+    params: StartupParams,
+    fitness: Optional[float],
+) -> bool:
+    """True when NDT fitness alone is strong enough to skip BBS-style ambiguity gates."""
+    threshold = params.registration_fitness_high_confidence_threshold
+    if not math.isfinite(threshold) or threshold > 1.0e6:
+        return False
+    if fitness is None or not math.isfinite(fitness):
+        return False
+    return float(fitness) <= threshold
 
 
 def decide_startup(
@@ -352,8 +373,11 @@ def decide_startup(
         scores = obs.query_candidate_scores
         if not scores or not math.isfinite(scores[0]) or scores[0] < params.min_candidate_score:
             return _query(params, state, obs.now_sec, "weak_candidate_retry")
+        high_confidence = registration_high_confidence(
+            params, obs.query_top_registration_fitness)
         if (
-            len(scores) > 1
+            not high_confidence
+            and len(scores) > 1
             and math.isfinite(scores[1])
             and scores[0] - scores[1] < params.min_score_margin
         ):
@@ -366,6 +390,19 @@ def decide_startup(
             return _query(params, state, obs.now_sec, "stale_candidate_retry")
         if obs.query_top_pose is None or obs.query_scan_stamp_sec is None:
             return _query(params, state, obs.now_sec, "candidate_pose_or_stamp_missing")
+        if high_confidence:
+            next_state = replace(
+                state,
+                name=STATE_VERIFYING,
+                source="global",
+                deadline_sec=obs.now_sec + params.verification_timeout_sec,
+                confirmation_samples=0,
+            )
+            return StartupDecision(
+                ACTION_PUBLISH_GLOBAL,
+                "global_registration_high_confidence",
+                next_state,
+            )
         if state.consensus_samples == 0 or state.consensus_pose is None:
             primed = replace(
                 state,
