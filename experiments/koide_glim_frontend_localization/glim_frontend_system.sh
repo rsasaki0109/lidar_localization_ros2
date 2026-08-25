@@ -10,7 +10,7 @@
 # 2026-07-17 odom-bridge recovery (follow-up to the postmortem below): with
 # enable_map_odom_tf, the C++ recovery supervisor now keeps the last ACCEPTED
 # map -> odom offset alive (re-stamped) through a dropout instead of letting TF
-# go stale (see republishFrozenMapToOdomTransform in lidar_localization_component.cpp),
+# go stale (see republishFrozenMapToOdomTransform in src/component_pose_publisher.cpp),
 # and G3 (supervisor_use_odom_bridge_candidate:=true below) tries a candidate
 # from that live TF composition -- map -> odom(last accepted) x
 # odom -> base_link(now), i.e. GLIM's own low-drift odometry -- before every G2

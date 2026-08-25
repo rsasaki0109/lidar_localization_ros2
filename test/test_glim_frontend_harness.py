@@ -11,6 +11,13 @@ sys.path.insert(0, str(EXPERIMENT))
 import glim_tf_relay
 
 
+def component_sources():
+    return "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((ROOT / "src").glob("component_*.cpp"))
+    )
+
+
 class GlimFrontendHarnessTest(unittest.TestCase):
     def test_glim_tf_relay_renames_local_odom_parent(self):
         from geometry_msgs.msg import TransformStamped
@@ -30,9 +37,7 @@ class GlimFrontendHarnessTest(unittest.TestCase):
         self.assertEqual(odom_to_base.header.frame_id, "")
 
     def test_product_bridge_features_remain_default_off(self):
-        component = (ROOT / "src" / "lidar_localization_component.cpp").read_text(
-            encoding="utf-8"
-        )
+        component = component_sources()
         localizer_launch = (ROOT / "launch" / "lidar_localization.launch.py").read_text(
             encoding="utf-8"
         )
@@ -121,9 +126,7 @@ class GlimFrontendHarnessTest(unittest.TestCase):
         self.assertIn('"enable_timer_publishing": enable_bridge_timer', wrapper)
         self.assertIn('"pose_publish_frequency": 12.5', wrapper)
         self.assertIn('SUPERVISOR_USE_ODOM_BRIDGE_CANDIDATE:-true', wrapper)
-        component = (ROOT / "src" / "lidar_localization_component.cpp").read_text(
-            encoding="utf-8"
-        )
+        component = component_sources()
         self.assertIn("odom_bridge_pose_pub_->publish(pose_copy)", component)
         self.assertNotIn("/tmp/claude", idle_suite)
         self.assertIn('fullseq_glim_frontend_${seq}.yaml', idle_suite)

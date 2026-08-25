@@ -53,7 +53,16 @@ endif()
 
 
 add_library(lidar_localization_component SHARED
-src/lidar_localization_component.cpp
+  src/component_lifecycle.cpp
+  src/component_parameters.cpp
+  src/component_subscribers.cpp
+  src/component_scan_preparation.cpp
+  src/component_alignment.cpp
+  src/component_prediction_state.cpp
+  src/component_pose_backend.cpp
+  src/component_pose_publisher.cpp
+  src/component_reinit_recovery.cpp
+  src/component_diagnostics.cpp
 )
 target_link_libraries(lidar_localization_component Eigen3::Eigen)
 

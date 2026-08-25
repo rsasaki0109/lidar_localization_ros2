@@ -27,7 +27,7 @@ off-diagonal terms are zero except in the twist-EKF hybrid path.
 
 ## Fill modes
 
-Implementation: `fillPoseCovariance()` in `lidar_localization_component.cpp`,
+Implementation: `fillPoseCovariance()` in `src/component_pose_publisher.cpp`,
 policy in `pose_covariance_policy.hpp`. Select with `pose_covariance_mode`:
 
 | `pose_covariance_mode` | Behavior |
