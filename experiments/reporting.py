@@ -81,12 +81,20 @@ def overall_score(benchmark_score: float, readability_score: float, extensibilit
     return round(0.60 * benchmark_score + 0.20 * readability_score + 0.20 * extensibility_score, 2)
 
 
+COMPARISON_DOC_KEYS = ("title", "problem_statement", "interface", "fixtures")
+
+
 def load_problem_results(repo_root: Path) -> list[dict[str, Any]]:
     results = []
     for path in sorted(repo_root.glob("experiments/*/results.json")):
         result = json.loads(path.read_text(encoding="utf-8"))
-        if result.get("variants"):
-            results.append(result)
+        if not result.get("variants"):
+            continue
+        if not all(key in result for key in COMPARISON_DOC_KEYS):
+            # Decision-record style results.json files are evidence notes, not
+            # variant-comparison problems; they are excluded from generated docs.
+            continue
+        results.append(result)
     return results
 
 
