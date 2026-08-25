@@ -1,3 +1,9 @@
+#pragma once
+
+// PCLLocalization: the lifecycle-managed localization component.  The
+// implementation is split by concern into src/component_*.cpp translation
+// units; src/component_internal.hpp carries their shared include set.
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -85,8 +91,6 @@
 #include "bondcpp/bond.hpp"
 #endif
 
-using namespace std::chrono_literals;
-
 class PCLLocalization : public rclcpp_lifecycle::LifecycleNode
 {
 public:
@@ -97,6 +101,78 @@ public:
   using RecoverySupervisorState = lidar_localization::RecoverySupervisorState;
   using ReinitializationRequestDecision =
     lidar_localization::ReinitializationRequestDecision;
+
+  // --- Value types shared by the scan, alignment, and pose-backend paths ---
+
+  struct PreparedScanCloud
+  {
+    lidar_localization::ScanPreparationStatus status{
+      lidar_localization::ScanPreparationStatus::kReady};
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud;
+    std::size_t filtered_point_count{0};
+    std::vector<double> relative_times_sec;
+    double point_time_reference_sec{0.0};
+    bool relative_times_aligned_with_cloud{false};
+    std::vector<double> pre_voxel_relative_times_sec;
+  };
+  struct SelectedRegistrationSeed
+  {
+    Eigen::Matrix4f init_guess{Eigen::Matrix4f::Identity()};
+    lidar_localization::RegistrationSeedSource source{
+      lidar_localization::RegistrationSeedSource::kCurrentPose};
+    bool imu_prediction_ready{false};
+  };
+  struct ImuPreintegrationBackendUpdate
+  {
+    Eigen::Matrix4f pose{Eigen::Matrix4f::Identity()};
+    bool updated{true};
+    lidar_localization::ImuPreintegrationBackendState state;
+    double smoother_measurement_translation_delta_m{std::numeric_limits<double>::quiet_NaN()};
+    double smoother_measurement_rotation_delta_deg{std::numeric_limits<double>::quiet_NaN()};
+  };
+  struct PlanarSmootherBackendUpdate
+  {
+    Eigen::Matrix4f pose{Eigen::Matrix4f::Identity()};
+    bool updated{true};
+    const char * rejected_status_message{"smoother_update_rejected"};
+  };
+  struct PoseBackendApplyContext
+  {
+    const lidar_localization::RegistrationObservation & observation;
+    const lidar_localization::AlignmentAttempt & attempt;
+    const lidar_localization::MeasurementGateDecision & gate_result;
+    const builtin_interfaces::msg::Time & stamp;
+    std::size_t filtered_point_count;
+    double stamp_sec;
+    bool imu_prediction_ready;
+    std::string registration_seed_source;
+  };
+  struct AlignmentStatusPublishInput
+  {
+    const builtin_interfaces::msg::Time & stamp;
+    uint8_t level;
+    const std::string & message;
+    bool has_converged;
+    double fitness_score;
+    double alignment_time_sec;
+    std::size_t filtered_point_count;
+    double correction_translation_m;
+    double correction_yaw_deg;
+    double seed_translation_since_accept_m;
+    double seed_yaw_since_accept_deg;
+    double accepted_gap_sec;
+    bool imu_prediction_active;
+    std::string registration_seed_source;
+    lidar_localization::RegistrationLocalizabilityMetrics registration_localizability;
+  };
+  struct AlignmentStatusEvaluation
+  {
+    lidar_localization::AlignmentStatusInput status_input;
+    lidar_localization::AlignmentStatusPreparation status_preparation;
+    ReinitializationRequestDecision reinitialization_request;
+  };
+
+  // --- Lifecycle management ---
 
   CallbackReturn on_configure(const rclcpp_lifecycle::State &);
   CallbackReturn on_activate(const rclcpp_lifecycle::State &);
@@ -118,6 +194,8 @@ public:
   void imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr msg);
   void cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
   // void gnssReceived();
+
+  // --- TF infrastructure, publishers, and subscriptions ---
 
   tf2_ros::TransformBroadcaster broadcaster_;
   rclcpp::Clock clock_;
@@ -159,6 +237,8 @@ public:
     imu_sub_;
   rclcpp::CallbackGroup::SharedPtr imu_callback_group_;
 
+  // --- Registration backends ---
+
   pcl::Registration<pcl::PointXYZI, pcl::PointXYZI> * registration_{nullptr};
   pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr pcl_registration_;
   boost::shared_ptr<lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>>
@@ -168,6 +248,9 @@ public:
   small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>::Ptr small_gicp_registration_;
 #endif
   pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter_;
+
+  // --- Shared callback state ---
+
   // Mutated and read from pose, scan, odom, and lifecycle callbacks. The
   // default callback group is mutually exclusive, while /initialpose has a
   // dedicated group so a reset can interrupt long registration. Every access
@@ -424,73 +507,9 @@ public:
   std::size_t recovery_supervisor_transition_count_{0};
 
   rclcpp::TimerBase::SharedPtr pose_publish_timer_;
-  struct PreparedScanCloud
-  {
-    lidar_localization::ScanPreparationStatus status{
-      lidar_localization::ScanPreparationStatus::kReady};
-    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud;
-    std::size_t filtered_point_count{0};
-    std::vector<double> relative_times_sec;
-    double point_time_reference_sec{0.0};
-    bool relative_times_aligned_with_cloud{false};
-    std::vector<double> pre_voxel_relative_times_sec;
-  };
-  struct SelectedRegistrationSeed
-  {
-    Eigen::Matrix4f init_guess{Eigen::Matrix4f::Identity()};
-    lidar_localization::RegistrationSeedSource source{
-      lidar_localization::RegistrationSeedSource::kCurrentPose};
-    bool imu_prediction_ready{false};
-  };
-  struct ImuPreintegrationBackendUpdate
-  {
-    Eigen::Matrix4f pose{Eigen::Matrix4f::Identity()};
-    bool updated{true};
-    lidar_localization::ImuPreintegrationBackendState state;
-    double smoother_measurement_translation_delta_m{std::numeric_limits<double>::quiet_NaN()};
-    double smoother_measurement_rotation_delta_deg{std::numeric_limits<double>::quiet_NaN()};
-  };
-  struct PlanarSmootherBackendUpdate
-  {
-    Eigen::Matrix4f pose{Eigen::Matrix4f::Identity()};
-    bool updated{true};
-    const char * rejected_status_message{"smoother_update_rejected"};
-  };
-  struct PoseBackendApplyContext
-  {
-    const lidar_localization::RegistrationObservation & observation;
-    const lidar_localization::AlignmentAttempt & attempt;
-    const lidar_localization::MeasurementGateDecision & gate_result;
-    const builtin_interfaces::msg::Time & stamp;
-    std::size_t filtered_point_count;
-    double stamp_sec;
-    bool imu_prediction_ready;
-    std::string registration_seed_source;
-  };
-  struct AlignmentStatusPublishInput
-  {
-    const builtin_interfaces::msg::Time & stamp;
-    uint8_t level;
-    const std::string & message;
-    bool has_converged;
-    double fitness_score;
-    double alignment_time_sec;
-    std::size_t filtered_point_count;
-    double correction_translation_m;
-    double correction_yaw_deg;
-    double seed_translation_since_accept_m;
-    double seed_yaw_since_accept_deg;
-    double accepted_gap_sec;
-    bool imu_prediction_active;
-    std::string registration_seed_source;
-    lidar_localization::RegistrationLocalizabilityMetrics registration_localizability;
-  };
-  struct AlignmentStatusEvaluation
-  {
-    lidar_localization::AlignmentStatusInput status_input;
-    lidar_localization::AlignmentStatusPreparation status_preparation;
-    ReinitializationRequestDecision reinitialization_request;
-  };
+
+  // --- Per-scan admission and alignment pipeline ---
+
   void timerPublishPose();
   bool admitScanMessage(
     const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg,
@@ -550,6 +569,9 @@ public:
     const Eigen::Matrix4f & init_guess,
     const lidar_localization::AlignmentAttempt & selected_attempt,
     std::size_t filtered_point_count) const;
+
+  // --- Prediction state ---
+
   Eigen::Matrix4f currentPoseMatrix() const;
   Eigen::Matrix4f applyTwistPrediction(const Eigen::Matrix4f & pose_matrix, double dt_sec) const;
   void resetPredictionState(const Eigen::Matrix4f & pose_matrix, double stamp_sec);
@@ -558,6 +580,9 @@ public:
   void updatePredictionFromRejectedMeasurement(
     const Eigen::Matrix4f & rejected_pose_matrix,
     double stamp_sec);
+
+  // --- Pose backends ---
+
   bool applyRegistrationPoseBackend(
     const lidar_localization::RegistrationObservation & observation,
     const lidar_localization::AlignmentAttempt & attempt,
@@ -620,6 +645,9 @@ public:
     const builtin_interfaces::msg::Time & stamp,
     double stamp_sec,
     double fitness_score);
+
+  // --- Pose, path, and TF output ---
+
   void setCurrentPoseFromMatrix(
     const Eigen::Matrix4f & pose_matrix,
     const builtin_interfaces::msg::Time & stamp);
@@ -652,6 +680,9 @@ public:
     builtin_interfaces::msg::Time * resolved_stamp = nullptr);
   void publishBridgePoseAsRejectedOutput(const builtin_interfaces::msg::Time & stamp);
   void fillPoseCovariance(double fitness_score);
+
+  // --- Alignment status and diagnostics ---
+
   void publishAlignmentStatusForAttempt(
     const builtin_interfaces::msg::Time & stamp,
     uint8_t level,
@@ -660,6 +691,9 @@ public:
     std::size_t filtered_point_count,
     bool imu_prediction_active,
     const std::string & registration_seed_source);
+
+  // --- Reinitialization latch and recovery supervisor ---
+
   ReinitializationRequestDecision applyReinitializationRequestLatch(
     const builtin_interfaces::msg::Time & stamp,
     const ReinitializationRequestDecision & decision,
