@@ -28,6 +28,8 @@ namespace
 using Cloud = pcl::PointCloud<pcl::PointXYZI>;
 using CloudPtr = Cloud::Ptr;
 
+// --- CSV input/output helpers ---
+
 std::vector<std::string> split_csv_line(const std::string & line)
 {
   std::vector<std::string> fields;
@@ -150,6 +152,8 @@ std::string get_value(const std::map<std::string, std::string> & row, const std:
   return iter == row.end() ? "" : iter->second;
 }
 
+// --- Map / scan loading and pose geometry ---
+
 bool has_field(const std::vector<pcl::PCLPointField> & fields, const std::string & name)
 {
   return std::any_of(fields.begin(), fields.end(), [&](const auto & field) {
@@ -258,6 +262,8 @@ void ensure_header_field(std::vector<std::string> * header, const std::string & 
     header->push_back(field);
   }
 }
+
+// --- Command-line interface ---
 
 struct Args
 {

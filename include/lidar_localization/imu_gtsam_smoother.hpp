@@ -19,6 +19,8 @@ public:
   static constexpr int POSE_DIM = 9;
   static constexpr int BIAS_DIM = 6;
 
+  // --- Configuration ---
+
   struct Params
   {
     // NDT measurement noise (6DOF)
@@ -49,6 +51,8 @@ public:
   // IMU biases (shared across window)
   Eigen::Vector3d gyro_bias_ = Eigen::Vector3d::Zero();
   Eigen::Vector3d accel_bias_ = Eigen::Vector3d::Zero();
+
+  // --- Initialization and IMU integration ---
 
   bool isInitialized() const { return initialized_; }
 
@@ -123,6 +127,8 @@ public:
     Eigen::Vector3d omega = gyro - gyro_bias_;
     dr_R_ = dr_R_ * so3::Exp(omega * dt);
   }
+
+  // --- Measurement updates ---
 
   /// Update with GICP/NDT measurement at scan time
   bool update(
@@ -217,7 +223,8 @@ public:
     return true;
   }
 
-  // Accessors
+  // --- Accessors ---
+
   double px() const { return poses_.back().position.x(); }
   double py() const { return poses_.back().position.y(); }
   double pz() const { return poses_.back().position.z(); }
@@ -248,6 +255,8 @@ public:
   }
 
 private:
+  // --- Window state ---
+
   struct PoseEntry
   {
     Eigen::Vector3d position = Eigen::Vector3d::Zero();
@@ -280,6 +289,8 @@ private:
   Eigen::Vector3d dr_p_ = Eigen::Vector3d::Zero();
   Eigen::Vector3d dr_v_ = Eigen::Vector3d::Zero();
   Eigen::Matrix3d dr_R_ = Eigen::Matrix3d::Identity();
+
+  // --- Sliding-window Gauss-Newton optimization ---
 
   void optimize()
   {
