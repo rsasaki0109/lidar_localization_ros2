@@ -62,7 +62,11 @@ download_file() {
     return 0
   fi
   echo "Downloading ${url}"
+  # --speed-limit/--speed-time abort stalled transfers (Zenodo sometimes
+  # stops sending data without closing the connection); the retry loop then
+  # resumes from the .part file.
   curl -L --fail --continue-at - \
+    --speed-limit 10240 --speed-time 60 \
     --retry 12 --retry-all-errors --retry-delay 10 \
     --output "${partial}" "${url}"
   mv "${partial}" "${dst}"
