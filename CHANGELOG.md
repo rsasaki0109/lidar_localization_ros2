@@ -21,6 +21,22 @@
   pose must pass pre-publication NDT scoring, while a BBS_2D candidate requires active
   3D NDT scoring and distinct-scan consensus. Stale, weak, ambiguous, inconsistent, or
   exhausted candidates fall back to RViz without publishing an identity pose.
+- Added `rviz/localization_mid360.rviz` for MID-360 profiles (`/livox/points`) and a
+  `Global Candidates` PoseArray display (`/global_localization_node/candidates`) in both
+  RViz configs; `quickstart.launch.py` now selects the RViz config by profile.
+- Added `watch_alignment.py` for colored one-line `/alignment_status` monitoring with
+  next-action hints and optional CSV recording (diagnostics only).
+- Added `watch_startup.py` for one-line `/startup_initialization/status` progress
+  (saved pose → global search → verify → RViz fallback).
+- `quickstart.py` now prints an actionable `Next:` line (verify pose output, keep the
+  robot stationary for guarded search, or set 2D Pose Estimate in RViz), including in
+  `--dry-run`.
+- Bringup doctor failures now point at the right docs (`troubleshooting.md`,
+  `map_alignment.md`, `frame_contract.md`, `site_setup.md`, `global_localization.md`).
+- G2 `global_localization_node.py` publishes JSON query progress on `~/status`
+  (`started`/`search`/`scoring`/`done`) so 10–20 s queries are observable while they run.
+- The public validation dashboard now includes an engineering-evidence table (WP1/WP2/
+  Koide rows, labeled not-a-claim) with artifact links and the GIF gallery pointer.
 
 ## 1.2.0 - 2026-07-22
 
