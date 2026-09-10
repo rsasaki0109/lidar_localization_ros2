@@ -1033,6 +1033,12 @@ if(BUILD_TESTING)
   set_tests_properties(check_boreas_dataset_contract PROPERTIES
     ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
   add_test(
+    NAME build_public_validation_dashboard
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_build_public_validation_dashboard.py
+  )
+  set_tests_properties(build_public_validation_dashboard PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
+  add_test(
     NAME convert_glim_dump_to_pose_csv
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_convert_glim_dump_to_pose_csv.py
   )

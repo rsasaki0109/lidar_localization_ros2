@@ -75,6 +75,10 @@ def fmt_int(value: Any) -> str:
     return str(int(value))
 
 
+def _existing(path: Path) -> Optional[Path]:
+    return path if path.exists() else None
+
+
 def discover_paths(args: argparse.Namespace, repo_root: Path) -> Dict[str, Optional[Path]]:
     ws_root = (
         Path(args.workspace_root).expanduser().resolve()
@@ -116,6 +120,14 @@ def discover_paths(args: argparse.Namespace, repo_root: Path) -> Dict[str, Optio
         "demo_report_json": demo_path if demo_path.exists() else None,
         "release_summary_json": release_path if release_path.exists() else None,
         "public_summary_json": public_path if public_path.exists() else None,
+        "wp1_result_json": _existing(
+            ws_root / "artifacts/public/wp1_g2_ndt_search_method_ab_20260818/result.json"),
+        "wp2_result_json": _existing(
+            ws_root / "artifacts/public/wp2_route_crop_ab_20260818/result.json"),
+        "koide_g3_result_json": _existing(
+            ws_root / "artifacts/public/koide_g3_recovery_regression/regression_result.json"),
+        "koide_phase1_result_json": _existing(
+            ws_root / "artifacts/public/koide_phase1_backend_comparison/regression_result.json"),
         "demo_png": (
             demo_path.parent / "trajectory_xy.png"
             if demo_path.exists() and (demo_path.parent / "trajectory_xy.png").exists()
@@ -128,6 +140,10 @@ def build_dashboard_data(paths: Dict[str, Optional[Path]]) -> Dict[str, Any]:
     demo = load_json(paths["demo_report_json"])
     release = load_json(paths["release_summary_json"])
     public = load_json(paths["public_summary_json"])
+    wp1 = load_json(paths.get("wp1_result_json"))
+    wp2 = load_json(paths.get("wp2_result_json"))
+    koide_g3 = load_json(paths.get("koide_g3_result_json"))
+    koide_phase1 = load_json(paths.get("koide_phase1_result_json"))
 
     istanbul = (public or {}).get("istanbul", {})
     hdl = (public or {}).get("hdl", {})
@@ -196,6 +212,60 @@ def build_dashboard_data(paths: Dict[str, Optional[Path]]) -> Dict[str, Any]:
             }
         )
 
+    evidence_rows: List[Dict[str, str]] = []
+
+    if wp1:
+        per_candidate = (wp1.get("result") or {}).get("per_candidate_ms", {})
+        evidence_rows.append(
+            {
+                "experiment": "WP1 G2 latency A/B",
+                "result": (
+                    "per-candidate ms "
+                    + ", ".join(f"{key}={value}"
+                                for key, value in sorted(per_candidate.items()))
+                    + f"; verdict={wp1.get('verdict', 'n/a')}"
+                ),
+            }
+        )
+
+    if wp2:
+        wp2_result = wp2.get("result") or {}
+        evidence_rows.append(
+            {
+                "experiment": "WP2 route-crop A/B",
+                "result": (
+                    f"recall<=5m {wp2_result.get('route_crop_recall_le_5m', 'n/a')}, "
+                    f"alias-free {wp2_result.get('route_crop_alias_free', 'n/a')}; "
+                    f"verdict={wp2.get('verdict', 'n/a')}"
+                ),
+            }
+        )
+
+    if koide_g3 is not None:
+        health = koide_g3.get("recovery_health", {})
+        evidence_rows.append(
+            {
+                "experiment": "Koide G3 recovery regression",
+                "result": (
+                    f"overall_pass={koide_g3.get('overall_pass')}; "
+                    f"recovery_confirmed="
+                    f"{health.get('recovery_confirmed_count', 'n/a')}, "
+                    f"false_confirm={health.get('false_recovery_confirmed', 'n/a')}"
+                ),
+            }
+        )
+
+    if koide_phase1 is not None:
+        evidence_rows.append(
+            {
+                "experiment": "Koide Phase1 backend comparison",
+                "result": (
+                    f"overall_pass={koide_phase1.get('overall_pass')}; "
+                    f"recommended={koide_phase1.get('recommended_default', 'n/a')}"
+                ),
+            }
+        )
+
     return {
         "generated_at_unix": time.time(),
         "generated_at_iso": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -208,6 +278,10 @@ def build_dashboard_data(paths: Dict[str, Optional[Path]]) -> Dict[str, Any]:
             if paths["public_summary_json"] is None
             else str(paths["public_summary_json"]),
             "demo_trajectory_png": None if paths["demo_png"] is None else str(paths["demo_png"]),
+            "wp1_result_json": None if paths.get("wp1_result_json") is None else str(paths["wp1_result_json"]),
+            "wp2_result_json": None if paths.get("wp2_result_json") is None else str(paths["wp2_result_json"]),
+            "koide_g3_result_json": None if paths.get("koide_g3_result_json") is None else str(paths["koide_g3_result_json"]),
+            "koide_phase1_result_json": None if paths.get("koide_phase1_result_json") is None else str(paths["koide_phase1_result_json"]),
         },
         "overall": {
             "demo_available": demo is not None,
@@ -217,6 +291,7 @@ def build_dashboard_data(paths: Dict[str, Optional[Path]]) -> Dict[str, Any]:
             "public_overall_pass": None if public is None else bool(public.get("overall_pass")),
         },
         "rows": rows,
+        "evidence_rows": evidence_rows,
         "claim_boundary": [
             "Only public / reproducible datasets belong in outward-facing claims.",
             "Istanbul 60s numbers are no-IMU safety checks, not IMU benefit benchmarks.",
@@ -262,6 +337,39 @@ def render_markdown(data: Dict[str, Any], output_dir: Path) -> str:
                 "",
             ]
         )
+
+    lines.extend(
+        [
+            "## Engineering Evidence (not a claim)",
+            "",
+            "Koide / WP rows are development evidence. They are not release claims.",
+            "",
+        ]
+    )
+    if data.get("evidence_rows"):
+        lines.extend(
+            [
+                "| Experiment | Result |",
+                "| --- | --- |",
+            ]
+        )
+        for row in data["evidence_rows"]:
+            lines.append("| {experiment} | {result} |".format(**row))
+    else:
+        lines.append("- no engineering artifacts found under artifacts/public")
+    lines.extend(
+        [
+            "",
+            "## Artifact Links",
+            "",
+            "- WP1: [result.json](../wp1_g2_ndt_search_method_ab_20260818/result.json)",
+            "- WP2: [result.json](../wp2_route_crop_ab_20260818/result.json)",
+            "- Koide G3: [regression_result.json](../koide_g3_recovery_regression/regression_result.json)",
+            "- Koide Phase1: [regression_result.json](../koide_phase1_backend_comparison/regression_result.json)",
+            "- Demo gallery: `src/lidar_localization_ros2/docs/koide_gif_gallery.md`",
+            "",
+        ]
+    )
 
     lines.extend(
         [
@@ -321,6 +429,16 @@ def render_html(data: Dict[str, Any]) -> str:
 
     claim_items = "".join(f"<li>{html.escape(note)}</li>" for note in data["claim_boundary"])
 
+    evidence_rows_html = "".join(
+        "<tr>"
+        f"<td>{html.escape(row['experiment'])}</td>"
+        f"<td>{html.escape(row['result'])}</td>"
+        "</tr>"
+        for row in data.get("evidence_rows", [])
+    )
+    if not evidence_rows_html:
+        evidence_rows_html = "<tr><td colspan=\"2\">no engineering artifacts found</td></tr>"
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -358,6 +476,19 @@ def render_html(data: Dict[str, Any]) -> str:
     </table>
   </section>
   {image_block}
+  <section>
+    <h2>Engineering Evidence (not a claim)</h2>
+    <table>
+      <thead><tr><th>Experiment</th><th>Result</th></tr></thead>
+      <tbody>{evidence_rows_html}</tbody>
+    </table>
+    <ul>
+      <li><a href="../wp1_g2_ndt_search_method_ab_20260818/result.json">WP1 result.json</a></li>
+      <li><a href="../wp2_route_crop_ab_20260818/result.json">WP2 result.json</a></li>
+      <li><a href="../koide_g3_recovery_regression/regression_result.json">Koide G3 regression_result.json</a></li>
+      <li><a href="../koide_phase1_backend_comparison/regression_result.json">Koide Phase1 regression_result.json</a></li>
+    </ul>
+  </section>
   <section>
     <h2>Reproduce</h2>
     <pre><code>cd /path/to/lidarloc_ws/repo
