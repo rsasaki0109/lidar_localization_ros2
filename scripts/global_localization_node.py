@@ -22,6 +22,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import PointCloud2
+from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -194,6 +195,11 @@ class GlobalLocalizationNode(Node):
         )
         self.candidates_pub = self.create_publisher(
             PoseArray, "~/candidates", candidate_qos)
+        # Query progress (diagnostics only): JSON phases published while the
+        # blocking BBS+NDT search runs, so a 10-20 s query is observable via
+        # `ros2 topic echo ~/status`. Volatile: late joiners use ~/candidates.
+        self.status_pub = self.create_publisher(String, "~/status", 10)
+        self._query_seq = 0
         self.query_srv = self.create_service(Trigger, "~/query", self.handle_query)
         self.get_logger().info(
             "global localization service ready: source=%s map=%s scan=%s backend=%s"
@@ -219,7 +225,29 @@ class GlobalLocalizationNode(Node):
         scan_age_at_start_sec = _scan_age_sec(query_start_ros_sec, scan_stamp_sec)
         points_xyz = bbs_engine.pointcloud2_xyz_array(cloud)
         started = time.monotonic()
-        result = self.engine.query(points_xyz, scan_stamp_sec=scan_stamp_sec)
+        self._query_seq += 1
+        query_id = self._query_seq
+
+        def publish_progress(phase, done=0, total=0):
+            self.status_pub.publish(String(data=json.dumps({
+                "query_id": query_id,
+                "phase": phase,
+                "done": done,
+                "total": total,
+                "elapsed_sec": round(time.monotonic() - started, 3),
+                "candidate_source": self.engine.candidate_source,
+            })))
+
+        self.get_logger().info(
+            "query %d started: points=%d source=%s backend=%s"
+            % (query_id, int(points_xyz.shape[0]),
+               self.engine.candidate_source, self.engine.backend))
+        publish_progress("started")
+        result = self.engine.query(
+            points_xyz, scan_stamp_sec=scan_stamp_sec,
+            progress_callback=lambda phase, done, total:
+            publish_progress(phase, done, total))
+        publish_progress("done")
         runtime_sec = time.monotonic() - started
         query_end_ros_sec = _stamp_to_sec(self.get_clock().now().to_msg())
         scan_age_at_end_sec = _scan_age_sec(query_end_ros_sec, scan_stamp_sec)

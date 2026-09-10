@@ -61,6 +61,15 @@ walking; higher values return more spatially diverse candidates. Query latency
 on a validated window is a few seconds; see the roadmap for the speed/coverage
 envelope.
 
+While a query runs, the node publishes JSON progress on
+`/global_localization_node/status` (`std_msgs/String`: `query_id`, `phase`
+`started`/`search`/`scoring`/`done`, `done`/`total` candidate counts,
+`elapsed_sec`). Watch it during a slow query instead of waiting blind:
+
+```bash
+ros2 topic echo /global_localization_node/status
+```
+
 ### Route-crop candidates (opt-in, WP3)
 
 On routes where map-wide BBS returns along-corridor aliases (Koide outdoor north/

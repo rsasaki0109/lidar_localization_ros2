@@ -355,6 +355,25 @@ def test_default_candidate_source_is_bbs():
     assert glq.GlobalLocalizationConfig().candidate_source == glq.CANDIDATE_SOURCE_BBS
 
 
+def test_query_progress_callback_reports_phases():
+    with tempfile.TemporaryDirectory() as tmp:
+        yaml_path = write_occupancy_map(Path(tmp))
+        true_x, true_y, true_yaw = -1.0, 7.0, math.radians(30.0)
+        config = glq.GlobalLocalizationConfig(
+            angular_resolution_rad=math.radians(15.0),
+            max_candidates=8,
+            min_range_m=1.0,
+        )
+        engine = glq.GlobalLocalizationEngine(config, occupancy_yaml=yaml_path)
+        phases = []
+        result = engine.query(
+            make_scan(yaml_path, true_x, true_y, true_yaw),
+            progress_callback=lambda phase, done, total: phases.append(phase))
+        assert result.candidates, "expected at least one candidate"
+        assert "search" in phases
+        assert phases[-1] == "done"
+
+
 if __name__ == "__main__":
     test_query_recovers_known_pose()
     test_query_handles_empty_scan()
@@ -366,4 +385,5 @@ if __name__ == "__main__":
     test_route_crop_generates_local_candidates()
     test_route_crop_requires_scan_stamp()
     test_default_candidate_source_is_bbs()
+    test_query_progress_callback_reports_phases()
     print("test_global_localization_query: all tests passed")

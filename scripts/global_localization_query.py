@@ -276,12 +276,16 @@ class GlobalLocalizationEngine:
         self,
         points_xyz,
         candidates: List[GlobalLocalizationCandidate],
+        progress_callback=None,
     ) -> List[GlobalLocalizationCandidate]:
         if self.registration_scorer is None:
             return candidates
 
         ranked = []
-        for candidate in candidates:
+        total = len(candidates)
+        for index, candidate in enumerate(candidates):
+            if progress_callback is not None:
+                progress_callback("scoring", index, total)
             score_z = (
                 candidate.z_m
                 if math.isfinite(candidate.z_m) and abs(candidate.z_m) > 1.0e-6
@@ -338,7 +342,8 @@ class GlobalLocalizationEngine:
             ranked, score_gate=self.config.registration_score_gate)
         return [_candidate_from_ranked(item) for item in reranked]
 
-    def _query_route_crop(self, points_xyz, scan_stamp_sec):
+    def _query_route_crop(self, points_xyz, scan_stamp_sec,
+                            progress_callback=None):
         config = self.config
         scan_point_count = int(points_xyz.shape[0]) if points_xyz.size else 0
         base_result = {
@@ -357,6 +362,8 @@ class GlobalLocalizationEngine:
                 route_crop_error="scan_stamp_sec required for route_crop",
                 **base_result)
 
+        if progress_callback is not None:
+            progress_callback("search", 0, 1)
         route_rows, _nearest = route_grid.select_route_rows(
             self.reference_rows,
             trigger_stamp_sec=float(scan_stamp_sec),
@@ -388,12 +395,18 @@ class GlobalLocalizationEngine:
                     bbs_score=1.0,
                 ))
         if self.registration_scorer is not None:
-            candidates = self._score_with_registration(points_xyz, candidates)
+            if progress_callback is not None:
+                progress_callback("scoring", 0, len(candidates))
+            candidates = self._score_with_registration(
+                points_xyz, candidates, progress_callback=progress_callback)
+        if progress_callback is not None:
+            progress_callback("done", 1, 1)
         return GlobalLocalizationResult(candidates=candidates, **base_result)
 
-    def query(self, points_xyz, scan_stamp_sec=None):
+    def query(self, points_xyz, scan_stamp_sec=None, progress_callback=None):
         if self.candidate_source == CANDIDATE_SOURCE_ROUTE_CROP:
-            return self._query_route_crop(points_xyz, scan_stamp_sec)
+            return self._query_route_crop(
+                points_xyz, scan_stamp_sec, progress_callback=progress_callback)
 
         config = self.config
         resolution_m = self.occupancy_map.resolution_m
@@ -416,6 +429,8 @@ class GlobalLocalizationEngine:
                 candidate_source=self.candidate_source,
             )
 
+        if progress_callback is not None:
+            progress_callback("search", 0, 1)
         grid_candidates = self._search(
             self.matching_grid,
             scan_xy,
@@ -446,8 +461,13 @@ class GlobalLocalizationEngine:
                     bbs_score=bbs_score,
                 ))
         if self.registration_scorer is not None:
-            candidates = self._score_with_registration(points_xyz, candidates)
+            if progress_callback is not None:
+                progress_callback("scoring", 0, len(candidates))
+            candidates = self._score_with_registration(
+                points_xyz, candidates, progress_callback=progress_callback)
 
+        if progress_callback is not None:
+            progress_callback("done", 1, 1)
         return GlobalLocalizationResult(
             candidates=candidates,
             scan_point_count=int(scan_xy.shape[0]),
