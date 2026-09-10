@@ -109,7 +109,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /velodyne_points
+        Value: /livox/points
       Use Fixed Frame: true
       Use rainbow: false
       Value: true

@@ -15,6 +15,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 RViz_PATH = ROOT / "rviz" / "localization.rviz"
+RVIZ_MID360_PATH = ROOT / "rviz" / "localization_mid360.rviz"
 CMAKELISTS = ROOT / "CMakeLists.txt"
 QUICKSTART_LAUNCH = ROOT / "launch" / "quickstart.launch.py"
 
@@ -54,7 +55,29 @@ class TestRvizConfig(unittest.TestCase):
 
     def test_quickstart_loads_config_from_package_share(self):
         source = QUICKSTART_LAUNCH.read_text(encoding="utf-8")
-        self.assertIn('os.path.join(package_share, "rviz", "localization.rviz")', source)
+        self.assertIn('"rviz", rviz_file', source)
+        self.assertIn("localization_mid360.rviz", source)
+        self.assertIn("localization.rviz", source)
+
+    def test_mid360_config_uses_livox_scan_topic(self):
+        data = yaml.safe_load(RVIZ_MID360_PATH.read_text(encoding="utf-8"))
+        scan = next(
+            d for d in data["Visualization Manager"]["Displays"]
+            if d.get("Name") == "Live Scan")
+        self.assertEqual(scan["Topic"]["Value"], "/livox/points")
+
+    def test_both_configs_show_global_candidates(self):
+        for path in (RViz_PATH, RVIZ_MID360_PATH):
+            with self.subTest(path=path.name):
+                data = yaml.safe_load(path.read_text(encoding="utf-8"))
+                displays = {
+                    d.get("Name"): d
+                    for d in data["Visualization Manager"]["Displays"]}
+                self.assertIn("Global Candidates", displays)
+                candidates = displays["Global Candidates"]
+                self.assertEqual(
+                    candidates["Topic"]["Value"],
+                    "/global_localization_node/candidates")
 
 
 if __name__ == "__main__":

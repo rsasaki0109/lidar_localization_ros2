@@ -307,18 +307,25 @@ def generate_launch_description():
                 LaunchConfiguration("use_sim_time"), value_type=bool),
         }],
     )
-    rviz = Node(
-        package="rviz2",
-        executable="rviz2",
-        name="quickstart_rviz",
-        arguments=["-d", os.path.join(package_share, "rviz", "localization.rviz")],
-        condition=IfCondition(LaunchConfiguration("start_rviz")),
-        output="screen",
-    )
+    def _rviz_node(context):
+        package_share_inner = get_package_share_directory("lidar_localization_ros2")
+        profile = LaunchConfiguration("profile").perform(context)
+        rviz_file = (
+            "localization_mid360.rviz" if profile == "mid360"
+            else "localization.rviz")
+        return [Node(
+            package="rviz2",
+            executable="rviz2",
+            name="quickstart_rviz",
+            arguments=["-d", os.path.join(package_share_inner, "rviz", rviz_file)],
+            condition=IfCondition(LaunchConfiguration("start_rviz")),
+            output="screen",
+        )]
 
     return LaunchDescription(
         declarations
         + [OpaqueFunction(function=_localization_include),
            OpaqueFunction(function=_bringup_check), global_localization,
-           reinitialization_supervisor, startup_initialization, rviz]
+           reinitialization_supervisor, startup_initialization,
+           OpaqueFunction(function=_rviz_node)]
     )

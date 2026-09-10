@@ -16,6 +16,7 @@ ROS_RUN_SCRIPTS = {
     "scripts/create_lidar_localization_config.py",
     "scripts/quickstart.py",
     "scripts/startup_initialization_node.py",
+    "scripts/watch_alignment.py",
     "scripts/prepare_koide_hard_relocalization_assets.sh",
     "scripts/run_koide_hard_imu_deskew_smoke.sh",
     "scripts/run_koide_corner_deskew_ab.sh",
