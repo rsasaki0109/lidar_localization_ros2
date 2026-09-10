@@ -160,6 +160,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def next_step_line(args) -> str:
+    """One actionable next step printed after the launch/bringup commands.
+
+    Display only: never changes launch arguments or runtime behavior.
+    """
+    if args.initial_pose is not None:
+        return ("wait 5s, then verify pose output "
+                "(see Bringup check above); if no pose, echo /alignment_status")
+    has_global_asset = bool(args.occupancy_yaml or args.reference_csv)
+    if args.auto_initialize and has_global_asset:
+        return ("keep robot stationary ~30s for guarded search; "
+                "if no_safe_automatic_source, set 2D Pose Estimate in RViz "
+                "or add --reference-csv (see docs/site_setup.md)")
+    if args.auto_initialize:
+        return ("set 2D Pose Estimate in RViz, or restart with "
+                "--occupancy-map / --reference-csv for automatic search")
+    return "set 2D Pose Estimate in RViz or pass --initial-pose"
+
+
 def _config_args(args, cloud_topic: str, imu_topic: str):
     argv = [
         "--map-path", args.map_path,
@@ -414,6 +433,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print("  " + shlex.join(parts))
     print("Bringup check:")
     print("  " + config_tool.doctor_command(config_args))
+    print(f"Next: {next_step_line(args)}")
     if args.dry_run:
         return 0
     sys.stdout.flush()

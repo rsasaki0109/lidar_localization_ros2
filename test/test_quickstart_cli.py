@@ -122,6 +122,63 @@ class TestQuickstartCli(unittest.TestCase):
             self.assertIn("guarded route-crop search", text)
             self.assertIn("enable_global_initialization:=true", text)
 
+    def test_next_step_points_to_rviz_without_global_assets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            map_path = root / "site.pcd"
+            map_path.write_bytes(b"pcd")
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                result = QUICKSTART.main([
+                    "--map", str(map_path),
+                    "--no-discover-topics",
+                    "--dry-run",
+                ])
+            text = stdout.getvalue()
+            self.assertEqual(result, 0)
+            self.assertIn("Next: set 2D Pose Estimate in RViz", text)
+
+    def test_next_step_mentions_stationary_search_with_route_crop(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            map_path = root / "site.pcd"
+            reference = root / "reference.csv"
+            map_path.write_bytes(b"pcd")
+            reference.write_text(
+                "stamp_sec,position_x,position_y,position_z,"
+                "orientation_x,orientation_y,orientation_z,orientation_w\n"
+                "1.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0\n",
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                result = QUICKSTART.main([
+                    "--map", str(map_path),
+                    "--reference-csv", str(reference),
+                    "--no-discover-topics",
+                    "--dry-run",
+                ])
+            text = stdout.getvalue()
+            self.assertEqual(result, 0)
+            self.assertIn("Next: keep robot stationary", text)
+
+    def test_next_step_verifies_pose_with_explicit_pose(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            map_path = root / "site.pcd"
+            map_path.write_bytes(b"pcd")
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                result = QUICKSTART.main([
+                    "--map", str(map_path),
+                    "--initial-pose", "1", "2", "0", "0", "0", "0", "1",
+                    "--no-discover-topics",
+                    "--dry-run",
+                ])
+            text = stdout.getvalue()
+            self.assertEqual(result, 0)
+            self.assertIn("Next: wait 5s", text)
+
     def test_missing_map_is_actionable_error(self):
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
