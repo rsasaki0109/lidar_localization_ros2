@@ -149,7 +149,8 @@ set(LIDAR_LOCALIZATION_CONFIG_SCRIPTS
   scripts/run_nav2_replay_smoke
   scripts/send_nav2_goal.py
   scripts/startup_initialization_node.py
-  scripts/watch_alignment.py)
+  scripts/watch_alignment.py
+  scripts/watch_startup.py)
 
 set(LIDAR_LOCALIZATION_BENCHMARK_SCRIPTS
   scripts/benchmark_analyze_drift_window
@@ -1006,6 +1007,12 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_watch_alignment.py
   )
   set_tests_properties(watch_alignment PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
+  add_test(
+    NAME watch_startup
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_watch_startup.py
+  )
+  set_tests_properties(watch_startup PROPERTIES
     ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
   add_test(
     NAME g2_candidate_registration_rank_policy
