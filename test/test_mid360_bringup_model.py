@@ -15,6 +15,7 @@ from lidar_localization_mid360.bringup_model import OK
 from lidar_localization_mid360.bringup_model import WARN
 from lidar_localization_mid360.bringup_model import TopicStats
 from lidar_localization_mid360.bringup_model import build_tf_checks
+from lidar_localization_mid360.bringup_model import docs_hint_for_alignment
 from lidar_localization_mid360.bringup_model import evaluate_snapshot
 from lidar_localization_mid360.bringup_model import exit_code
 from lidar_localization_mid360.bringup_model import report_lines
@@ -663,6 +664,33 @@ class TestMid360BringupModel(unittest.TestCase):
             "continuous_time_deskew_status=continuous_time_deskew_applied",
             topic_summary("/alignment_status", stats),
         )
+
+
+    def test_docs_hint_points_bad_match_to_map_alignment(self):
+        hint = docs_hint_for_alignment(
+            "fitness_score_over_threshold_rejected",
+            {"failure_category": "bad_match"})
+        self.assertIn("troubleshooting.md", hint)
+        self.assertIn("map_alignment.md", hint)
+
+    def test_docs_hint_points_stale_to_site_setup(self):
+        hint = docs_hint_for_alignment(
+            "rejected", {"failure_category": "stale_prediction",
+                         "reinitialization_requested": "true"})
+        self.assertIn("site_setup.md", hint)
+
+    def test_docs_hint_defaults_to_troubleshooting(self):
+        self.assertIn("troubleshooting.md", docs_hint_for_alignment("ok", {}))
+
+    def test_alignment_error_hint_contains_docs_pointer(self):
+        config = BringupCheckConfig()
+        cloud = marked_cloud("livox_frame")
+        status = marked_status("fitness_score_over_threshold_rejected",
+                               level=2,
+                               values={"failure_category": "bad_match"})
+        results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
+        fails = [r for r in results if r.level == FAIL]
+        self.assertTrue(any("docs:" in r.hint for r in fails))
 
 
 if __name__ == "__main__":

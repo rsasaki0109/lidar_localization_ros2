@@ -129,6 +129,30 @@ def exit_code(results: Sequence[CheckResult]) -> int:
     return 1 if any(result.level == FAIL for result in results) else 0
 
 
+def docs_hint_for_alignment(message: str, status_values: Dict[str, str]) -> str:
+    """Return a one-line docs pointer for an alignment failure.
+
+    Pure function (no ROS) so the bringup doctor and unit tests share it.
+    """
+    category = str(status_values.get("failure_category", "") or "")
+    text = f"{message} {category}"
+    if "missing_map" in text:
+        return "docs: troubleshooting.md (Map Not Visible) + frame_contract.md"
+    if "missing_initial_pose" in text:
+        return "docs: frame_contract.md + troubleshooting.md (bringup checklist)"
+    if "weak_overlap" in text or "local_map_crop_too_small" in text:
+        return "docs: troubleshooting.md (weak_overlap) + map_alignment.md"
+    if "stale_prediction" in text or str(
+            status_values.get("reinitialization_requested", "")).lower() == "true":
+        return "docs: site_setup.md + global_localization.md (G2/G3 recovery)"
+    if "overload" in text:
+        return "docs: troubleshooting.md (overload: voxel/threads/load)"
+    if "bad_match" in text or "fitness_score_over_threshold" in text or \
+            "registration_not_converged" in text:
+        return "docs: troubleshooting.md (bad_match) + map_alignment.md"
+    return "docs: troubleshooting.md"
+
+
 def topic_summary(name: str, stats: TopicStats) -> str:
     hz = stats.hz()
     hz_text = "n/a" if hz is None else f"{hz:.1f} Hz"
@@ -410,7 +434,8 @@ def _evaluate_pose(
                 f"no localization pose received on {config.pose_topic}",
                 (
                     "Check that the map is loaded, /initialpose was provided or set_initial_pose is true, "
-                    "and /alignment_status is not reporting an error."
+                    "and /alignment_status is not reporting an error. "
+                    "docs: frame_contract.md + troubleshooting.md (bringup checklist)."
                 ),
             )
         )
@@ -438,7 +463,9 @@ def _evaluate_status(
             CheckResult(
                 FAIL,
                 f"alignment status error: {status.last_status_message or 'n/a'}",
-                "Use the status message to choose the next fix: map path, initial pose, TF, crop size, or score threshold.",
+                "Use the status message to choose the next fix: map path, initial pose, TF, crop size, or score threshold. "
+                + docs_hint_for_alignment(
+                    status.last_status_message or "", status.status_values),
             )
         )
     else:
