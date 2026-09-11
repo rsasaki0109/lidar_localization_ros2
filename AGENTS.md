@@ -42,31 +42,25 @@ cd ../build_ws
 colcon build --symlink-install --packages-up-to lidar_localization_ros2
 ```
 
-- For localization behavior, recovery logic, or parameter-default changes, also run the focused experiment suite after the build:
+- For localization behavior, recovery logic, or parameter-default changes, also run the focused Python test suite after the build:
 
 ```bash
-ros2 run lidar_localization_ros2 run_experiment_suite.py
+python3 -m pytest test/
 ```
 
-- For public-smoke validation use:
+- For bringup acceptance use:
 
 ```bash
-scripts/run_public_regression_suite.sh
+ros2 run lidar_localization_ros2 check_lidar_localization_bringup.py --help
+ros2 run lidar_localization_ros2 check_mid360_legged_bringup.py --help
 ```
 
-- For release-style validation use:
-
-```bash
-ros2 run lidar_localization_ros2 run_release_regression_suite.sh
-```
-
-- If required public datasets are absent or a regression run is too heavy for the current task, state exactly which validation was skipped.
+- If required datasets or a ROS graph are absent and a check is too heavy for the current task, state exactly which validation was skipped.
 
 ## Development Rules
 
-- New behavior should first be introduced as multiple comparable variants under `experiments/`.
+- New runtime behavior starts as a focused test or a `experiments/` C++ candidate before it graduates into `src/`/`include/`.
 - Promote only the winning behavior into runtime code after the shared fixture/rubric comparison.
-- `docs/interfaces.md`, `docs/experiments.md`, and `docs/decisions.md` are generated from experiment results; do not hand-edit them as source-of-truth documents.
 - Keep `param/nav2_ndt_urban.yaml` conservative. Long-horizon urban replay is still a known robustness boundary, not a solved production claim.
 - If adding a user-facing script, add it to the `install(PROGRAMS ...)` list in `CMakeLists.txt`.
 - If adding a parameter, keep declarations, YAML presets, README/docs, and diagnostics aligned.
@@ -75,11 +69,9 @@ ros2 run lidar_localization_ros2 run_release_regression_suite.sh
 
 ## Benchmark And Dataset Rules
 
-- Prefer binary little-endian float32 PLY maps for benchmark/runtime validation.
-- Generated PCD maps are acceptable for inspection, but not the preferred benchmark/runtime path.
-- Use a unique `ROS_DOMAIN_ID` for rosbag replay benchmarks to avoid unrelated ROS 2 graph traffic.
-- Istanbul localization-only public runs are default-on no-IMU safety checks; do not describe them as IMU benefit benchmarks.
-- Publishable benchmark claims should use official public datasets such as Autoware Istanbul or the official `hdl_localization` sample, with upstream sources cited.
+- Prefer binary little-endian float32 PLY maps for runtime validation.
+- Generated PCD maps are acceptable for inspection, but not the preferred runtime path.
+- Publishable claims should cite official public datasets with upstream sources.
 - Do not present local field-recorded bags or graph-derived synthetic bags as open benchmark data.
 
 ## Generated Files

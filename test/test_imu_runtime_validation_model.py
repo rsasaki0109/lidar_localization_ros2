@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 
-import contextlib
 import csv
-import importlib.util
-import io
 import json
 import sys
 import tempfile
@@ -21,15 +18,6 @@ from lidar_localization_mid360.validation_model import load_alignment_csv
 from lidar_localization_mid360.validation_model import render_runtime_report
 from lidar_localization_mid360.validation_model import summarize_runtime
 from lidar_localization_mid360.validation_model import validation_exit_code
-
-VALIDATOR_PATH = REPO_ROOT / "scripts" / "validate_lidar_localization_imu.py"
-validator_spec = importlib.util.spec_from_file_location(
-    "validate_lidar_localization_imu",
-    VALIDATOR_PATH,
-)
-validator_tool = importlib.util.module_from_spec(validator_spec)
-assert validator_spec.loader is not None
-validator_spec.loader.exec_module(validator_tool)
 
 
 def sample(status="imu_preintegration_prediction_active", **values):
@@ -227,18 +215,6 @@ class TestImuRuntimeValidationModel(unittest.TestCase):
         self.assertIn("registration seed sources", report)
         self.assertIn("imu preintegration seed source", report)
         self.assertIn("[OK] IMU preintegration active ratio", report)
-
-    def test_validator_reports_missing_alignment_csv_without_traceback(self):
-        stderr = io.StringIO()
-        with contextlib.redirect_stderr(stderr):
-            code = validator_tool.main([
-                "--alignment-csv",
-                "/tmp/missing_alignment_status.csv",
-            ])
-
-        self.assertEqual(code, 2)
-        self.assertIn("input error:", stderr.getvalue())
-        self.assertIn("missing_alignment_status.csv", stderr.getvalue())
 
 
 if __name__ == "__main__":

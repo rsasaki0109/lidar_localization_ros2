@@ -7,7 +7,6 @@ import shlex
 import sys
 import unittest
 from pathlib import Path
-from typing import Dict
 from typing import Set
 
 
@@ -23,15 +22,6 @@ config_spec = importlib.util.spec_from_file_location(
 config_tool = importlib.util.module_from_spec(config_spec)
 assert config_spec.loader is not None
 config_spec.loader.exec_module(config_tool)
-
-COMPARISON_SCRIPT_PATH = SCRIPTS_DIR / "run_lidar_localization_imu_comparison.py"
-comparison_spec = importlib.util.spec_from_file_location(
-    "run_lidar_localization_imu_comparison",
-    COMPARISON_SCRIPT_PATH,
-)
-comparison_tool = importlib.util.module_from_spec(comparison_spec)
-assert comparison_spec.loader is not None
-comparison_spec.loader.exec_module(comparison_tool)
 
 QUICKSTART_SCRIPT_PATH = SCRIPTS_DIR / "quickstart.py"
 quickstart_spec = importlib.util.spec_from_file_location(
@@ -181,36 +171,6 @@ class TestLaunchArgumentContract(unittest.TestCase):
                     enable_continuous_time_deskew=(profile == "mid360"),
                 )
                 command = config_tool.launch_command(tool_args, Path(tool_args.output))
-
-                assert_command_args_declared(self, command)
-
-    def test_comparison_runner_system_commands_use_declared_launch_arguments(self):
-        args = comparison_tool.build_arg_parser().parse_args([
-            "--bag-path",
-            "/bags/site",
-            "--map-path",
-            "/maps/site.pcd",
-            "--output-dir",
-            "/tmp/out",
-            "--profile",
-            "mid360",
-            "--mode",
-            "lidar_only",
-            "--mode",
-            "deskew",
-        ])
-        for mode in comparison_tool.selected_modes(args):
-            with self.subTest(mode=mode.name):
-                tool_args = comparison_tool.config_args_for_mode(
-                    args,
-                    mode,
-                    Path(f"/tmp/{mode.name}/localization.yaml"),
-                )
-                command = comparison_tool.system_command(
-                    tool_args,
-                    Path(f"/tmp/{mode.name}/localization.yaml"),
-                    extra_launch_args=[],
-                )
 
                 assert_command_args_declared(self, command)
 

@@ -1,7 +1,7 @@
 # Script catalog
 
 The script directory is intentionally flat. Existing filenames are public CLI
-and documentation contracts, and installed scripts must remain discoverable by
+contracts, and installed scripts must remain discoverable by
 `ros2 run lidar_localization_ros2 <name>`. Use the categories below instead of
 moving files into subdirectories.
 
@@ -13,36 +13,27 @@ moving files into subdirectories.
 | Generate a site preset | `create_lidar_localization_config.py` |
 | Check generic bringup | `check_lidar_localization_bringup.py` |
 | Check MID-360 bringup | `check_mid360_legged_bringup.py` |
-| Run public demo | `run_public_demo.sh` |
-| Run public regression | `run_public_regression_suite.sh` |
-| Run release regression | `run_release_regression_suite.sh` |
-| Run manifest benchmark | `benchmark_from_manifest` |
-| Compare benchmark runs | `benchmark_compare_runs` |
-| Build odometry runtime evidence | `build_odometry_runtime_evidence.py` |
-| Run fixed GLIM Koide odometry benchmark | `run_koide_glim_odometry_benchmark.py` |
-| Check Koide 380 s odometry goal | `check_koide_odometry_completion.py` |
-| Require Koide completion repeats | `summarize_koide_odometry_completion.py` |
+| Run global localization query | `global_localization_query.py` |
 
 ## Categories
 
-- `benchmark_*`: benchmark execution, recording, conversion, scoring, and
-  comparison primitives.
-- `fetch_*`, `convert_*`, `generate_*`, `build_*`, `prepare_*`, `scaffold_*`:
-  dataset, map, manifest, and report preparation.
-- `run_*`: end-to-end demos, experiments, replays, smoke tests, and regression
-  suites. Dataset-specific runners should state their data prerequisites in
-  `--help` output or their companion documentation.
-- `analyze_*`, `diagnose_*`, `summarize_*`, `compare_*`, `validate_*`,
-  `check_*`: offline analysis and acceptance checks.
-- `publish_*`, `relay_*`, `republish_*`, `record_*`, `send_*`, `inject_*`:
-  small ROS graph adapters used by launches and experiments.
-- `make_*`, `select_*`, `score_*`, `resolve_*`, `observe_*`: global
-  localization and relocalization planning stages.
-- `global_localization_*`, `reinitialization_supervisor_*`: runtime G2/G3
-  localization and recovery components.
+- `check_*`: bringup acceptance checks and generated-command validation.
 - `quickstart.py`, `quickstart_model.py`, `startup_initialization_node.py`:
   first-bringup orchestration, ROS-free startup policy/persistence, and its ROS I/O node.
-- `render_*`: GIF and gallery rendering.
+- `create_lidar_localization_config.py`: site preset generation.
+- `global_localization_node.py`, `global_localization_query.py`,
+  `g2_candidate_registration_rank_policy.py`: runtime G2/G3 localization and
+  candidate ranking.
+- `reinitialization_supervisor_node.py`, `reinitialization_supervisor_policy.py`:
+  runtime recovery supervision.
+- `make_bbs_relocalization_attempts.py`, `make_route_grid_relocalization_attempts.py`:
+  BBS/route candidate generation. The BBS search engine is also the runtime
+  Python fallback used by the global-localization nodes.
+- `publish_*`, `relay_*`, `republish_*`, `record_*`, `send_*`, `inject_*`:
+  small ROS graph adapters used by launches and recovery handling.
+- `watch_alignment.py`, `watch_startup.py`: status watchers.
+- `tum_trajectory_to_pose_reference_csv*.py`, `augment_pointcloud_intensity.py`:
+  dataset preparation.
 - `setup_local_env.sh`, `bootstrap_colcon_workspace.sh`: local developer
   environment setup; source or run these from the repository checkout.
 
@@ -56,24 +47,23 @@ paths.
 Current development-only helpers are:
 
 - environment: `setup_local_env.sh`, `bootstrap_colcon_workspace.sh`;
-- Koide acquisition/rendering: `fetch_all_koide_sequences.sh`,
-  `render_koide_dataset_gallery.sh`, `render_koide_localization_gif.py`,
-  `prepare_koide_localization_gif_benchmarks.py`;
-- focused research/reporting: `analyze_pose_covariance_calibration.py`,
-  `diagnose_local_map_crop_coverage.py`, `demo_pose_arbitration.py`,
-  `render_global_localization_demo_gif.py`,
-  `summarize_koide_phase1_backend_comparison.py`;
-- legacy/direct regression wrappers: `run_hdl_g3_recovery_regression.sh`,
-  `run_koide_g3_recovery_regression.sh`,
-  `run_koide_phase1_backend_comparison.sh`,
-  `run_koide_phase1_regression.sh`;
-- lower-level benchmark utilities: `benchmark_convert_traj_refined`,
-  `benchmark_drift_correlation_report`.
+- dataset preparation: `augment_pointcloud_intensity.py`,
+  `tum_trajectory_to_pose_reference_csv.py`,
+  `tum_trajectory_to_pose_reference_csv_for_rosbag2.py`.
 
 `scripts/lidar_localization_mid360/` is the small shared Python package used by
 MID-360 configuration and validation commands. Pure policy modules may be
 installed beside executable scripts because runtime nodes import them from the
 same directory.
+
+`relocalization_attempt_common.py` is a shared helper module installed the same
+way: it owns the `relocalization_attempts.csv` fieldname contract used by the
+candidate generators and the runtime global-localization engine.
+
+`experiments/glim_prior_map_localizer/` and
+`experiments/imu_yaw_prediction/` hold the remaining C++ experiment sources.
+They are discardable and only promoted into `src/`/`include/` after a shared
+fixture comparison.
 
 ## Adding a script
 

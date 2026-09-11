@@ -25,17 +25,9 @@ config_tool = load_script_module(
     "create_lidar_localization_config",
     "create_lidar_localization_config.py",
 )
-comparison_tool = load_script_module(
-    "run_lidar_localization_imu_comparison",
-    "run_lidar_localization_imu_comparison.py",
-)
 bringup_cli = load_script_module(
     "check_lidar_localization_bringup",
     "check_lidar_localization_bringup.py",
-)
-imu_validator = load_script_module(
-    "validate_lidar_localization_imu",
-    "validate_lidar_localization_imu.py",
 )
 
 
@@ -114,63 +106,6 @@ class TestCliCommandContract(unittest.TestCase):
                 self.assertTrue(parsed.require_imu)
                 if profile != "standalone":
                     self.assertTrue(parsed.require_cloud_time_field)
-
-    def test_generated_imu_validation_commands_parse_for_imu_modes(self):
-        args = comparison_tool.build_arg_parser().parse_args([
-            "--bag-path",
-            "/bags/site",
-            "--map-path",
-            "/maps/site.pcd",
-            "--output-dir",
-            "/tmp/out",
-        ])
-        for mode_name in ("imu_preintegration", "deskew"):
-            mode = comparison_tool.MODES[mode_name]
-            with self.subTest(mode=mode_name):
-                command = comparison_tool.imu_validation_command(args, mode, Path("/tmp/run"))
-                self.assertIsNotNone(command)
-                parser = imu_validator.build_arg_parser()
-
-                parsed = parser.parse_args(
-                    command_args_after_executable(
-                        str(command),
-                        "validate_lidar_localization_imu.py",
-                    )
-                )
-
-                self.assertEqual(parsed.alignment_csv, "/tmp/run/alignment_status.csv")
-                self.assertEqual(parsed.output_json, "/tmp/run/imu_validation.json")
-                self.assertEqual(parsed.output_md, "/tmp/run/imu_validation.md")
-                self.assertEqual(parsed.require_deskew_applied, mode_name == "deskew")
-
-    def test_comparison_runner_passes_open_loop_strict_gate_to_config(self):
-        args = comparison_tool.build_arg_parser().parse_args([
-            "--bag-path",
-            "/bags/site",
-            "--map-path",
-            "/maps/site.pcd",
-            "--output-dir",
-            "/tmp/out",
-            "--enable-open-loop-strict-score-threshold",
-            "--open-loop-strict-min-accepted-gap-sec",
-            "1.0",
-            "--open-loop-strict-min-seed-translation-m",
-            "0.5",
-            "--open-loop-strict-score-threshold",
-            "2.0",
-        ])
-
-        tool_args = comparison_tool.config_args_for_mode(
-            args,
-            comparison_tool.MODES["deskew"],
-            Path("/tmp/out/deskew/localization.yaml"),
-        )
-        params = config_tool.make_params(tool_args)
-
-        self.assertTrue(params["enable_open_loop_strict_score_threshold"])
-        self.assertEqual(params["open_loop_strict_min_accepted_gap_sec"], 1.0)
-        self.assertEqual(params["open_loop_strict_min_seed_translation_m"], 0.5)
-        self.assertEqual(params["open_loop_strict_score_threshold"], 2.0)
 
     def test_doctor_parser_accepts_boolean_optional_flags_used_by_docs(self):
         parser = bringup_cli.build_arg_parser()

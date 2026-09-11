@@ -37,12 +37,10 @@ _SCRIPT_DIR = str(Path(__file__).resolve().parent)
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
-# The CSV contract is owned by the map-grid generator; import it so the three
-# candidate generators cannot drift apart silently.
-from make_map_grid_relocalization_attempts import (  # noqa: E402
-    ATTEMPT_FIELDNAMES,
-    CANDIDATE_FIELDNAMES,
-)
+# The CSV contract is owned by the shared relocalization common module; import
+# it so the candidate generators cannot drift apart silently.
+from relocalization_attempt_common import CANDIDATE_FIELDNAMES  # noqa: E402
+from relocalization_attempt_common import ATTEMPT_FIELDNAMES  # noqa: E402
 
 
 @dataclass(frozen=True)
