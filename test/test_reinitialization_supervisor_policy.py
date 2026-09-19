@@ -15,7 +15,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-import reinitialization_supervisor_policy as rsp  # noqa: E402
+import itertools
+
+import reinitialization_supervisor_policy as rsp
 
 
 def test_shadow_relative_motion_ignores_constant_global_transform():
@@ -34,7 +36,8 @@ def test_shadow_relative_motion_ignores_constant_global_transform():
         math.radians(-10.0),
     )
     mismatch = rsp.compare_shadow_relative_motion(
-        first_candidate, second_candidate, first_odom, second_odom)
+        first_candidate, second_candidate, first_odom, second_odom
+    )
     assert mismatch.translation_m < 1.0e-9
     assert mismatch.yaw_deg < 1.0e-9
 
@@ -52,18 +55,17 @@ def test_shadow_relative_motion_rejects_alias_jump_and_wrong_turn():
 
 def test_shadow_motion_gate_withholds_until_required_consistent_sequence():
     gate = rsp.BbsShadowMotionGate(
-        required_samples=3,
-        max_translation_mismatch_m=1.0,
-        max_yaw_mismatch_deg=5.0)
+        required_samples=3, max_translation_mismatch_m=1.0, max_yaw_mismatch_deg=5.0
+    )
     assert not gate.observe((0.0, 0.0, 0.0), (10.0, 5.0, 0.4)).publish_allowed
-    second = gate.observe((2.0, 0.0, 0.0), (
-        10.0 + 2.0 * math.cos(0.4),
-        5.0 + 2.0 * math.sin(0.4), 0.4))
+    second = gate.observe(
+        (2.0, 0.0, 0.0), (10.0 + 2.0 * math.cos(0.4), 5.0 + 2.0 * math.sin(0.4), 0.4)
+    )
     assert second.consistent_samples == 2
     assert not second.publish_allowed
-    third = gate.observe((4.0, 0.0, 0.0), (
-        10.0 + 4.0 * math.cos(0.4),
-        5.0 + 4.0 * math.sin(0.4), 0.4))
+    third = gate.observe(
+        (4.0, 0.0, 0.0), (10.0 + 4.0 * math.cos(0.4), 5.0 + 4.0 * math.sin(0.4), 0.4)
+    )
     assert third.publish_allowed
     assert third.consistent_samples == 3
 
@@ -115,7 +117,9 @@ def run(
         fit = None
         if fitness is not None:
             fit = fitness(now, last_reset_sec) if callable(fitness) else fitness
-        obs = rsp.SupervisorObservation(now, req, best_candidate_score=score, best_fitness=fit)
+        obs = rsp.SupervisorObservation(
+            now, req, best_candidate_score=score, best_fitness=fit
+        )
         dec = rsp.decide(params, state, obs)
         state = dec.state
         events.append((now, dec.action, dec.reason, state.name))
@@ -138,6 +142,7 @@ def reset_times(events):
 
 # --- Gate: nothing happens without a sustained request -----------------------
 
+
 def test_transient_request_blip_never_queries_or_publishes():
     params = rsp.SupervisorParams(request_debounce_sec=2.0)
     # Request asserted for one second only (< debounce), then gone.
@@ -153,10 +158,14 @@ def test_no_request_is_pure_tracking():
 
 # --- Gate: happy path publishes once and stands down on recovery -------------
 
+
 def test_sustained_request_strong_candidate_publishes_once_then_recovers():
     params = rsp.SupervisorParams(
-        request_debounce_sec=1.0, min_candidate_score=0.6,
-        recovery_fitness_threshold=1.5, enable_confirm_cross_check=False)
+        request_debounce_sec=1.0,
+        min_candidate_score=0.6,
+        recovery_fitness_threshold=1.5,
+        enable_confirm_cross_check=False,
+    )
 
     # Fitness is bad until a reset lands, then recovers a couple ticks later.
     def fitness(now, last_reset_sec):
@@ -171,7 +180,7 @@ def test_sustained_request_strong_candidate_publishes_once_then_recovers():
     # Even though the request line stays high after recovery, the supervisor
     # stands down and does not re-fire (edge-triggered on the next problem).
     recovery_i = reasons.index("recovery_confirmed")
-    after = actions(events)[recovery_i + 1:]
+    after = actions(events)[recovery_i + 1 :]
     assert rsp.ACTION_QUERY not in after
     assert rsp.ACTION_PUBLISH_RESET not in after
     assert events[-1][3] == rsp.STATE_STANDDOWN
@@ -203,7 +212,9 @@ def test_recovery_confirmation_requires_consecutive_low_fitness():
     events = run(params, 40, requested=True, candidate_score=0.95, fitness=fitness)
     reasons = [r for (_, _, r, _) in events]
     assert "recovery_confirmed" in reasons
-    assert events[reasons.index("recovery_confirmed")][0] >= reset_times(events)[0] + 7.0
+    assert (
+        events[reasons.index("recovery_confirmed")][0] >= reset_times(events)[0] + 7.0
+    )
 
 
 def test_recovery_confirmation_does_not_double_count_same_fitness_sample():
@@ -229,21 +240,29 @@ def test_recovery_confirmation_does_not_double_count_same_fitness_sample():
     assert first.state.name == rsp.STATE_SETTLING
     assert first.state.recovery_evidence_count == 1
 
-    duplicate = rsp.decide(params, first.state, rsp.SupervisorObservation(
-        now_sec=101.5,
-        reinitialization_requested=True,
-        best_fitness=0.4,
-        fitness_observed_sec=101.0,
-    ))
+    duplicate = rsp.decide(
+        params,
+        first.state,
+        rsp.SupervisorObservation(
+            now_sec=101.5,
+            reinitialization_requested=True,
+            best_fitness=0.4,
+            fitness_observed_sec=101.0,
+        ),
+    )
     assert duplicate.state.name == rsp.STATE_SETTLING
     assert duplicate.state.recovery_evidence_count == 1
 
-    second = rsp.decide(params, duplicate.state, rsp.SupervisorObservation(
-        now_sec=102.0,
-        reinitialization_requested=True,
-        best_fitness=0.4,
-        fitness_observed_sec=102.0,
-    ))
+    second = rsp.decide(
+        params,
+        duplicate.state,
+        rsp.SupervisorObservation(
+            now_sec=102.0,
+            reinitialization_requested=True,
+            best_fitness=0.4,
+            fitness_observed_sec=102.0,
+        ),
+    )
     assert second.reason == "recovery_confirmed"
     assert second.state.name == rsp.STATE_STANDDOWN
 
@@ -262,38 +281,51 @@ def test_recovery_confirmation_requires_stable_tracking_when_available():
         candidate_scores=(0.9,),
     )
 
-    degraded = rsp.decide(params, state, rsp.SupervisorObservation(
-        now_sec=101.0,
-        reinitialization_requested=False,
-        best_fitness=0.4,
-        fitness_observed_sec=101.0,
-        stable_tracking=False,
-    ))
+    degraded = rsp.decide(
+        params,
+        state,
+        rsp.SupervisorObservation(
+            now_sec=101.0,
+            reinitialization_requested=False,
+            best_fitness=0.4,
+            fitness_observed_sec=101.0,
+            stable_tracking=False,
+        ),
+    )
     assert degraded.state.name == rsp.STATE_SETTLING
     assert degraded.state.recovery_evidence_count == 0
 
-    first_ok = rsp.decide(params, degraded.state, rsp.SupervisorObservation(
-        now_sec=102.0,
-        reinitialization_requested=False,
-        best_fitness=0.4,
-        fitness_observed_sec=102.0,
-        stable_tracking=True,
-    ))
+    first_ok = rsp.decide(
+        params,
+        degraded.state,
+        rsp.SupervisorObservation(
+            now_sec=102.0,
+            reinitialization_requested=False,
+            best_fitness=0.4,
+            fitness_observed_sec=102.0,
+            stable_tracking=True,
+        ),
+    )
     assert first_ok.state.name == rsp.STATE_SETTLING
     assert first_ok.state.recovery_evidence_count == 1
 
-    second_ok = rsp.decide(params, first_ok.state, rsp.SupervisorObservation(
-        now_sec=103.0,
-        reinitialization_requested=False,
-        best_fitness=0.4,
-        fitness_observed_sec=103.0,
-        stable_tracking=True,
-    ))
+    second_ok = rsp.decide(
+        params,
+        first_ok.state,
+        rsp.SupervisorObservation(
+            now_sec=103.0,
+            reinitialization_requested=False,
+            best_fitness=0.4,
+            fitness_observed_sec=103.0,
+            stable_tracking=True,
+        ),
+    )
     assert second_ok.reason == "recovery_confirmed"
     assert second_ok.state.name == rsp.STATE_STANDDOWN
 
 
 # --- Gate: never publish an unsafe (low-score) candidate ---------------------
+
 
 def test_weak_candidates_are_never_published():
     params = rsp.SupervisorParams(min_candidate_score=0.6, max_attempts=3)
@@ -313,13 +345,18 @@ def test_query_count_is_bounded_by_max_attempts_when_candidates_weak():
 def test_scan_not_ready_reply_retries_without_spending_attempt_budget():
     params = rsp.SupervisorParams(max_attempts=1)
     waiting = rsp.SupervisorState(
-        name=rsp.STATE_AWAIT_CANDIDATES, attempts=0, query_issued_sec=10.0)
-    decision = rsp.decide(params, waiting, rsp.SupervisorObservation(
-        now_sec=10.5,
-        reinitialization_requested=True,
-        candidate_scores=(),
-        retryable_empty_reply=True,
-    ))
+        name=rsp.STATE_AWAIT_CANDIDATES, attempts=0, query_issued_sec=10.0
+    )
+    decision = rsp.decide(
+        params,
+        waiting,
+        rsp.SupervisorObservation(
+            now_sec=10.5,
+            reinitialization_requested=True,
+            candidate_scores=(),
+            retryable_empty_reply=True,
+        ),
+    )
     assert decision.reason == "scan_not_ready"
     assert decision.state.name == rsp.STATE_AWAIT_QUERY
     assert decision.state.attempts == 0
@@ -327,10 +364,13 @@ def test_scan_not_ready_reply_retries_without_spending_attempt_budget():
 
 # --- Gate: a confidently-wrong candidate cannot loop forever -----------------
 
+
 def test_false_acceptance_does_not_loop_forever():
     # Strong score every time, but fitness never recovers: the classic
     # closed-loop blowup. Must be bounded by max_attempts, then give up.
-    params = rsp.SupervisorParams(min_candidate_score=0.6, max_attempts=3, settle_timeout_sec=4.0)
+    params = rsp.SupervisorParams(
+        min_candidate_score=0.6, max_attempts=3, settle_timeout_sec=4.0
+    )
     events = run(params, 300, requested=True, candidate_score=0.99, fitness=9.0)
     assert len(reset_times(events)) <= params.max_attempts
     assert rsp.ACTION_GIVE_UP in actions(events)
@@ -339,22 +379,29 @@ def test_false_acceptance_does_not_loop_forever():
 
 # --- Gate: reset publications respect the minimum spacing --------------------
 
+
 def test_resets_respect_minimum_spacing():
     params = rsp.SupervisorParams(
-        min_seconds_between_attempts=5.0, settle_timeout_sec=3.0, max_attempts=5)
+        min_seconds_between_attempts=5.0, settle_timeout_sec=3.0, max_attempts=5
+    )
     events = run(params, 300, requested=True, candidate_score=0.99, fitness=9.0, dt=1.0)
     times = reset_times(events)
-    gaps = [b - a for a, b in zip(times, times[1:])]
+    gaps = [b - a for a, b in itertools.pairwise(times)]
     assert all(g >= 5.0 for g in gaps), gaps
 
 
 # --- Gate: recovery clears the ceiling so a later problem gets a fresh budget -
 
+
 def test_recovery_resets_attempt_budget_for_a_later_problem():
     params = rsp.SupervisorParams(
-        request_debounce_sec=1.0, max_attempts=3, min_seconds_between_attempts=3.0,
-        settle_timeout_sec=5.0, recovery_fitness_threshold=1.5,
-        enable_confirm_cross_check=False)
+        request_debounce_sec=1.0,
+        max_attempts=3,
+        min_seconds_between_attempts=3.0,
+        settle_timeout_sec=5.0,
+        recovery_fitness_threshold=1.5,
+        enable_confirm_cross_check=False,
+    )
 
     # Two separate problem episodes separated by a healthy stretch.
     def requested(now):
@@ -374,6 +421,7 @@ def test_recovery_resets_attempt_budget_for_a_later_problem():
 
 # --- Gate: exhausted latches until the problem clears, then re-arms -----------
 
+
 def test_exhausted_latches_until_request_clears():
     params = rsp.SupervisorParams(min_candidate_score=0.6, max_attempts=2)
 
@@ -391,7 +439,9 @@ def test_exhausted_latches_until_request_clears():
 def test_decide_is_pure_same_inputs_same_outputs():
     params = rsp.SupervisorParams()
     state = rsp.initial_state()
-    obs = rsp.SupervisorObservation(3.0, True, best_candidate_score=0.9, best_fitness=2.0)
+    obs = rsp.SupervisorObservation(
+        3.0, True, best_candidate_score=0.9, best_fitness=2.0
+    )
     d1 = rsp.decide(params, state, obs)
     d2 = rsp.decide(params, state, obs)
     assert d1 == d2
@@ -408,6 +458,7 @@ def test_decide_is_pure_same_inputs_same_outputs():
 # never change BBS-only behavior when off, must be tried before every BBS query
 # when on and available, must never spend a BBS attempt, and must fall back to
 # BBS after odom_bridge_max_attempts unconfirmed tries.
+
 
 def run_with_bridge(
     params,
@@ -444,8 +495,12 @@ def run_with_bridge(
         if fitness is not None:
             fit = fitness(now, last_reset_sec) if callable(fitness) else fitness
         obs = rsp.SupervisorObservation(
-            now, req, best_candidate_score=score, best_fitness=fit,
-            odom_bridge_available=bridge_available)
+            now,
+            req,
+            best_candidate_score=score,
+            best_fitness=fit,
+            odom_bridge_available=bridge_available,
+        )
         dec = rsp.decide(params, state, obs)
         state = dec.state
         events.append((now, dec.action, dec.reason, state.name, dec.candidate_source))
@@ -460,8 +515,11 @@ def test_odom_bridge_off_by_default_preserves_bbs_only_behavior():
     # use_odom_bridge_candidate defaults to False: even with a bridge candidate
     # always available, behavior must be identical to plain BBS-only.
     params = rsp.SupervisorParams(
-        request_debounce_sec=1.0, min_candidate_score=0.6,
-        recovery_fitness_threshold=1.5, enable_confirm_cross_check=False)
+        request_debounce_sec=1.0,
+        min_candidate_score=0.6,
+        recovery_fitness_threshold=1.5,
+        enable_confirm_cross_check=False,
+    )
     assert params.use_odom_bridge_candidate is False
 
     def fitness(now, last_reset_sec):
@@ -470,21 +528,31 @@ def test_odom_bridge_off_by_default_preserves_bbs_only_behavior():
         return 0.4 if now - last_reset_sec >= 2.0 else 9.0
 
     events = run_with_bridge(
-        params, 40, requested=True, odom_bridge_available=True,
-        candidate_score=0.95, fitness=fitness)
+        params,
+        40,
+        requested=True,
+        odom_bridge_available=True,
+        candidate_score=0.95,
+        fitness=fitness,
+    )
     reasons = [r for (_, _, r, _, _) in events]
     assert "odom_bridge_reset_published" not in reasons
     assert "recovery_confirmed" in reasons
-    assert all(cs == "bbs" for (_, a, _, _, cs) in events
-               if a == rsp.ACTION_PUBLISH_RESET)
+    assert all(
+        cs == "bbs" for (_, a, _, _, cs) in events if a == rsp.ACTION_PUBLISH_RESET
+    )
 
 
 def test_odom_bridge_tried_before_bbs_query_and_never_spends_bbs_attempt():
     params = rsp.SupervisorParams(
-        request_debounce_sec=1.0, min_candidate_score=0.6,
-        recovery_fitness_threshold=1.5, enable_confirm_cross_check=False,
-        use_odom_bridge_candidate=True, odom_bridge_max_attempts=2,
-        max_attempts=1)
+        request_debounce_sec=1.0,
+        min_candidate_score=0.6,
+        recovery_fitness_threshold=1.5,
+        enable_confirm_cross_check=False,
+        use_odom_bridge_candidate=True,
+        odom_bridge_max_attempts=2,
+        max_attempts=1,
+    )
 
     def fitness(now, last_reset_sec):
         if last_reset_sec is None:
@@ -492,7 +560,8 @@ def test_odom_bridge_tried_before_bbs_query_and_never_spends_bbs_attempt():
         return 0.4 if now - last_reset_sec >= 2.0 else 9.0
 
     events = run_with_bridge(
-        params, 40, requested=True, odom_bridge_available=True, fitness=fitness)
+        params, 40, requested=True, odom_bridge_available=True, fitness=fitness
+    )
     reasons = [r for (_, _, r, _, _) in events]
     assert "odom_bridge_reset_published" in reasons
     assert rsp.ACTION_QUERY not in [e[1] for e in events]
@@ -510,25 +579,37 @@ def test_odom_bridge_falls_back_to_bbs_after_unconfirmed_tries():
     # odom_bridge_max_attempts unconfirmed tries it must stop retrying the
     # bridge and fall back to a BBS query, which does recover.
     params = rsp.SupervisorParams(
-        request_debounce_sec=1.0, min_candidate_score=0.6,
-        recovery_fitness_threshold=1.5, enable_confirm_cross_check=False,
-        use_odom_bridge_candidate=True, odom_bridge_max_attempts=1,
-        settle_timeout_sec=3.0, min_seconds_between_attempts=1.0,
-        max_attempts=2)
+        request_debounce_sec=1.0,
+        min_candidate_score=0.6,
+        recovery_fitness_threshold=1.5,
+        enable_confirm_cross_check=False,
+        use_odom_bridge_candidate=True,
+        odom_bridge_max_attempts=1,
+        settle_timeout_sec=3.0,
+        min_seconds_between_attempts=1.0,
+        max_attempts=2,
+    )
 
     def fitness(now, last_reset_sec):
         return 9.0
 
     events = run_with_bridge(
-        params, 60, requested=True, odom_bridge_available=True,
-        candidate_score=0.95, fitness=fitness, query_latency=1)
+        params,
+        60,
+        requested=True,
+        odom_bridge_available=True,
+        candidate_score=0.95,
+        fitness=fitness,
+        query_latency=1,
+    )
     reasons = [r for (_, _, r, _, _) in events]
     assert "odom_bridge_unconfirmed" in reasons
     # After exactly one unconfirmed bridge try (odom_bridge_max_attempts=1) it
     # must fall back to the BBS query path.
     assert rsp.ACTION_QUERY in [e[1] for e in events]
-    publish_sources = [cs for (_, a, _, _, cs) in events
-                        if a == rsp.ACTION_PUBLISH_RESET]
+    publish_sources = [
+        cs for (_, a, _, _, cs) in events if a == rsp.ACTION_PUBLISH_RESET
+    ]
     assert publish_sources[0] == "odom_bridge"
     assert "bbs" in publish_sources
 
@@ -537,9 +618,12 @@ def test_odom_bridge_unavailable_falls_back_to_bbs_immediately():
     # use_odom_bridge_candidate is on, but the node never has a fresh TF fix
     # (e.g. the external front end never came up): must behave like BBS-only.
     params = rsp.SupervisorParams(
-        request_debounce_sec=1.0, min_candidate_score=0.6,
-        recovery_fitness_threshold=1.5, enable_confirm_cross_check=False,
-        use_odom_bridge_candidate=True)
+        request_debounce_sec=1.0,
+        min_candidate_score=0.6,
+        recovery_fitness_threshold=1.5,
+        enable_confirm_cross_check=False,
+        use_odom_bridge_candidate=True,
+    )
 
     def fitness(now, last_reset_sec):
         if last_reset_sec is None:
@@ -547,8 +631,13 @@ def test_odom_bridge_unavailable_falls_back_to_bbs_immediately():
         return 0.4 if now - last_reset_sec >= 2.0 else 9.0
 
     events = run_with_bridge(
-        params, 40, requested=True, odom_bridge_available=False,
-        candidate_score=0.95, fitness=fitness)
+        params,
+        40,
+        requested=True,
+        odom_bridge_available=False,
+        candidate_score=0.95,
+        fitness=fitness,
+    )
     reasons = [r for (_, _, r, _, _) in events]
     assert "odom_bridge_reset_published" not in reasons
     assert rsp.ACTION_QUERY in [e[1] for e in events]
@@ -559,18 +648,24 @@ def test_odom_bridge_respects_reset_spacing():
     # The bridge must not republish faster than min_seconds_between_attempts,
     # exactly like the BBS path.
     params = rsp.SupervisorParams(
-        request_debounce_sec=1.0, min_candidate_score=0.6,
-        recovery_fitness_threshold=1.5, enable_confirm_cross_check=False,
-        use_odom_bridge_candidate=True, odom_bridge_max_attempts=5,
-        settle_timeout_sec=1.0, min_seconds_between_attempts=6.0)
+        request_debounce_sec=1.0,
+        min_candidate_score=0.6,
+        recovery_fitness_threshold=1.5,
+        enable_confirm_cross_check=False,
+        use_odom_bridge_candidate=True,
+        odom_bridge_max_attempts=5,
+        settle_timeout_sec=1.0,
+        min_seconds_between_attempts=6.0,
+    )
 
     def fitness(now, last_reset_sec):
         return 9.0  # never recovers, forcing repeated bridge tries
 
     events = run_with_bridge(
-        params, 30, requested=True, odom_bridge_available=True, fitness=fitness)
+        params, 30, requested=True, odom_bridge_available=True, fitness=fitness
+    )
     reset_times_local = [e[0] for e in events if e[1] == rsp.ACTION_PUBLISH_RESET]
-    for a, b in zip(reset_times_local, reset_times_local[1:]):
+    for a, b in itertools.pairwise(reset_times_local):
         assert b - a >= params.min_seconds_between_attempts
 
 
@@ -578,11 +673,16 @@ def test_odom_bridge_budget_and_exhausted_flag_reset_on_new_episode():
     # Exhausting the bridge budget in one episode must not carry over to a later,
     # unrelated episode after the request clears.
     params = rsp.SupervisorParams(
-        request_debounce_sec=1.0, min_candidate_score=0.6,
-        recovery_fitness_threshold=1.5, enable_confirm_cross_check=False,
-        use_odom_bridge_candidate=True, odom_bridge_max_attempts=1,
-        settle_timeout_sec=2.0, min_seconds_between_attempts=1.0,
-        max_attempts=1)
+        request_debounce_sec=1.0,
+        min_candidate_score=0.6,
+        recovery_fitness_threshold=1.5,
+        enable_confirm_cross_check=False,
+        use_odom_bridge_candidate=True,
+        odom_bridge_max_attempts=1,
+        settle_timeout_sec=2.0,
+        min_seconds_between_attempts=1.0,
+        max_attempts=1,
+    )
 
     state = rsp.initial_state()
     now = 0.0
@@ -591,7 +691,8 @@ def test_odom_bridge_budget_and_exhausted_flag_reset_on_new_episode():
     # never delivered a candidate (times out) -> exhausted.
     for _ in range(40):
         obs = rsp.SupervisorObservation(
-            now, True, best_fitness=9.0, odom_bridge_available=True)
+            now, True, best_fitness=9.0, odom_bridge_available=True
+        )
         dec = rsp.decide(params, state, obs)
         state = dec.state
         now += 1.0
@@ -609,7 +710,8 @@ def test_odom_bridge_budget_and_exhausted_flag_reset_on_new_episode():
 
     # Request clears -> back to idle with the bridge budget reset.
     dec = rsp.decide(
-        params, state, rsp.SupervisorObservation(now, False, odom_bridge_available=True))
+        params, state, rsp.SupervisorObservation(now, False, odom_bridge_available=True)
+    )
     state = dec.state
     assert state.name == rsp.STATE_IDLE
     assert state.odom_bridge_exhausted is False
@@ -622,6 +724,7 @@ def test_odom_bridge_budget_and_exhausted_flag_reset_on_new_episode():
 # separate a 190 m error from a 5 m hit). The supervisor must walk the ranked list
 # from one query, using the localizer's fitness as the registration oracle, before
 # spending another attempt -- and the bounds must still hold.
+
 
 def run_ranked(
     params,
@@ -655,7 +758,8 @@ def run_ranked(
         if published_index is not None:
             fit = 0.2 if published_index == recover_on_index else 9.0
         obs = rsp.SupervisorObservation(
-            now, req, candidate_scores=scores, best_fitness=fit)
+            now, req, candidate_scores=scores, best_fitness=fit
+        )
         dec = rsp.decide(params, state, obs)
         state = dec.state
         events.append((now, dec.action, dec.reason, state.name, dec.candidate_index))
@@ -676,12 +780,20 @@ def test_walk_recovers_on_lower_ranked_candidate_within_one_query():
     # (max_attempts=1) must walk 0 -> 1 -> 2 and recover, without giving up: walking
     # does not spend attempts, so the ceiling is never hit.
     params = rsp.SupervisorParams(
-        request_debounce_sec=1.0, min_candidate_score=0.6, settle_timeout_sec=3.0,
-        max_attempts=1, recovery_fitness_threshold=1.5,
-        enable_confirm_cross_check=False)
+        request_debounce_sec=1.0,
+        min_candidate_score=0.6,
+        settle_timeout_sec=3.0,
+        max_attempts=1,
+        recovery_fitness_threshold=1.5,
+        enable_confirm_cross_check=False,
+    )
     events = run_ranked(
-        params, 60, requested=True,
-        candidate_scores=[0.99, 0.98, 0.97], recover_on_index=2)
+        params,
+        60,
+        requested=True,
+        candidate_scores=[0.99, 0.98, 0.97],
+        recover_on_index=2,
+    )
     assert published_indices(events) == [0, 1, 2]
     assert actions(events).count(rsp.ACTION_QUERY) == 1
     assert rsp.ACTION_GIVE_UP not in actions(events)
@@ -696,11 +808,19 @@ def test_walk_exhausts_list_then_respects_max_attempts():
     # then a fresh query costs one attempt. The reset count must stay bounded by
     # max_attempts * list_length, and it must give up -- never loop forever.
     params = rsp.SupervisorParams(
-        request_debounce_sec=1.0, min_candidate_score=0.6, settle_timeout_sec=3.0,
-        min_seconds_between_attempts=2.0, max_attempts=2)
+        request_debounce_sec=1.0,
+        min_candidate_score=0.6,
+        settle_timeout_sec=3.0,
+        min_seconds_between_attempts=2.0,
+        max_attempts=2,
+    )
     events = run_ranked(
-        params, 300, requested=True,
-        candidate_scores=[0.99, 0.98], recover_on_index=None)
+        params,
+        300,
+        requested=True,
+        candidate_scores=[0.99, 0.98],
+        recover_on_index=None,
+    )
     assert actions(events).count(rsp.ACTION_QUERY) <= params.max_attempts
     # Two candidates walked per query, at most max_attempts queries.
     assert len(reset_times(events)) <= params.max_attempts * 2
@@ -712,11 +832,14 @@ def test_walk_stops_at_min_candidate_score_floor():
     # Rank 0 is strong, rank 1 is below the score floor: the walk must not publish
     # the sub-floor candidate even though the list has more entries.
     params = rsp.SupervisorParams(
-        request_debounce_sec=1.0, min_candidate_score=0.6, settle_timeout_sec=3.0,
-        max_attempts=1)
+        request_debounce_sec=1.0,
+        min_candidate_score=0.6,
+        settle_timeout_sec=3.0,
+        max_attempts=1,
+    )
     events = run_ranked(
-        params, 60, requested=True,
-        candidate_scores=[0.99, 0.4], recover_on_index=None)
+        params, 60, requested=True, candidate_scores=[0.99, 0.4], recover_on_index=None
+    )
     # Only the top candidate is ever published; index 1 (score 0.4) is never tried.
     assert published_indices(events) == [0]
     assert rsp.ACTION_GIVE_UP in actions(events)
@@ -728,11 +851,15 @@ def test_walk_is_bounded_by_max_walk_candidates():
     # all 16 -- past the top few occupancy maxima a fresh query is the better spend.
     # With max_attempts=1 (a single query) exactly max_walk_candidates resets fire.
     params = rsp.SupervisorParams(
-        request_debounce_sec=1.0, min_candidate_score=0.6, settle_timeout_sec=3.0,
-        max_attempts=1, max_walk_candidates=4)
+        request_debounce_sec=1.0,
+        min_candidate_score=0.6,
+        settle_timeout_sec=3.0,
+        max_attempts=1,
+        max_walk_candidates=4,
+    )
     events = run_ranked(
-        params, 120, requested=True,
-        candidate_scores=[0.99] * 16, recover_on_index=None)
+        params, 120, requested=True, candidate_scores=[0.99] * 16, recover_on_index=None
+    )
     assert published_indices(events) == [0, 1, 2, 3]
     assert actions(events).count(rsp.ACTION_QUERY) == 1
     assert rsp.ACTION_GIVE_UP in actions(events)
@@ -744,11 +871,16 @@ def test_high_max_walk_candidates_restores_full_list_walk():
     # rank 5 (beyond the default cap of 4) is reached and recovers only because the
     # cap is lifted -- proving the cap is what gates the deeper walk.
     params = rsp.SupervisorParams(
-        request_debounce_sec=1.0, min_candidate_score=0.6, settle_timeout_sec=3.0,
-        max_attempts=1, max_walk_candidates=999, enable_confirm_cross_check=False)
+        request_debounce_sec=1.0,
+        min_candidate_score=0.6,
+        settle_timeout_sec=3.0,
+        max_attempts=1,
+        max_walk_candidates=999,
+        enable_confirm_cross_check=False,
+    )
     events = run_ranked(
-        params, 120, requested=True,
-        candidate_scores=[0.99] * 6, recover_on_index=5)
+        params, 120, requested=True, candidate_scores=[0.99] * 6, recover_on_index=5
+    )
     assert published_indices(events) == [0, 1, 2, 3, 4, 5]
     assert events[-1][3] == rsp.STATE_STANDDOWN
 
@@ -764,8 +896,9 @@ def test_high_max_walk_candidates_restores_full_list_walk():
 
 def test_seed_velocity_from_consecutive_fixes():
     # Two fixes 10 m apart in x over 5 s -> 2 m/s east.
-    v = rsp.estimate_seed_velocity((0.0, 0.0), 100.0, (10.0, 0.0), 105.0,
-                                   max_speed_mps=30.0)
+    v = rsp.estimate_seed_velocity(
+        (0.0, 0.0), 100.0, (10.0, 0.0), 105.0, max_speed_mps=30.0
+    )
     assert v.valid
     assert abs(v.vx - 2.0) < 1e-9
     assert abs(v.vy - 0.0) < 1e-9
@@ -773,24 +906,27 @@ def test_seed_velocity_from_consecutive_fixes():
 
 def test_seed_velocity_rejects_within_query_walk():
     # Same query (issue times within min_dt) -> not a motion sample, invalid.
-    v = rsp.estimate_seed_velocity((0.0, 0.0), 100.0, (50.0, 0.0), 100.1,
-                                   max_speed_mps=30.0)
+    v = rsp.estimate_seed_velocity(
+        (0.0, 0.0), 100.0, (50.0, 0.0), 100.1, max_speed_mps=30.0
+    )
     assert not v.valid
 
 
 def test_seed_velocity_rejects_implausible_speed():
     # A perceptual-aliasing wrong candidate jumps 200 m in 2 s = 100 m/s -> rejected,
     # so a wrong/right fix pair never drives compensation.
-    v = rsp.estimate_seed_velocity((0.0, 0.0), 100.0, (200.0, 0.0), 102.0,
-                                   max_speed_mps=30.0)
+    v = rsp.estimate_seed_velocity(
+        (0.0, 0.0), 100.0, (200.0, 0.0), 102.0, max_speed_mps=30.0
+    )
     assert not v.valid
 
 
 def test_forward_compensate_pushes_seed_ahead_by_latency():
     v = rsp.SeedVelocity(vx=2.0, vy=1.0, valid=True)
     # 8 s of query latency at (2, 1) m/s -> +16 m east, +8 m north.
-    x, y = rsp.forward_compensate_xy((100.0, 50.0), v, latency_sec=8.0,
-                                     max_latency_sec=30.0)
+    x, y = rsp.forward_compensate_xy(
+        (100.0, 50.0), v, latency_sec=8.0, max_latency_sec=30.0
+    )
     assert abs(x - 116.0) < 1e-9
     assert abs(y - 58.0) < 1e-9
 
@@ -798,16 +934,18 @@ def test_forward_compensate_pushes_seed_ahead_by_latency():
 def test_forward_compensate_clamps_latency():
     v = rsp.SeedVelocity(vx=2.0, vy=0.0, valid=True)
     # A 100 s query is clamped to max_latency_sec (30 s) -> +60 m, not +200 m.
-    x, _ = rsp.forward_compensate_xy((0.0, 0.0), v, latency_sec=100.0,
-                                     max_latency_sec=30.0)
+    x, _ = rsp.forward_compensate_xy(
+        (0.0, 0.0), v, latency_sec=100.0, max_latency_sec=30.0
+    )
     assert abs(x - 60.0) < 1e-9
 
 
 def test_forward_compensate_invalid_velocity_is_noop():
     # An invalid estimate must never move the seed -- compensation cannot worsen a
     # publish, it can only help when the estimate is trustworthy.
-    x, y = rsp.forward_compensate_xy((7.0, 3.0), rsp.SeedVelocity(),
-                                     latency_sec=10.0, max_latency_sec=30.0)
+    x, y = rsp.forward_compensate_xy(
+        (7.0, 3.0), rsp.SeedVelocity(), latency_sec=10.0, max_latency_sec=30.0
+    )
     assert (x, y) == (7.0, 3.0)
 
 
@@ -879,12 +1017,16 @@ def test_settling_confirm_with_cross_check_issues_verify_query():
         recovery_evidence_count=1,
         candidate_scores=(0.9,),
     )
-    dec = rsp.decide(params, state, rsp.SupervisorObservation(
-        now_sec=101.0,
-        reinitialization_requested=True,
-        best_fitness=0.4,
-        fitness_observed_sec=101.0,
-    ))
+    dec = rsp.decide(
+        params,
+        state,
+        rsp.SupervisorObservation(
+            now_sec=101.0,
+            reinitialization_requested=True,
+            best_fitness=0.4,
+            fitness_observed_sec=101.0,
+        ),
+    )
     assert dec.action == rsp.ACTION_QUERY
     assert dec.reason == "confirm_cross_check_query"
     assert dec.state.name == rsp.STATE_VERIFYING
@@ -904,12 +1046,16 @@ def test_settling_confirm_without_cross_check_stands_down():
         recovery_evidence_count=1,
         candidate_scores=(0.9,),
     )
-    dec = rsp.decide(params, state, rsp.SupervisorObservation(
-        now_sec=101.0,
-        reinitialization_requested=True,
-        best_fitness=0.4,
-        fitness_observed_sec=101.0,
-    ))
+    dec = rsp.decide(
+        params,
+        state,
+        rsp.SupervisorObservation(
+            now_sec=101.0,
+            reinitialization_requested=True,
+            best_fitness=0.4,
+            fitness_observed_sec=101.0,
+        ),
+    )
     assert dec.action == rsp.ACTION_NONE
     assert dec.reason == "recovery_confirmed"
     assert dec.state.name == rsp.STATE_STANDDOWN
@@ -917,11 +1063,11 @@ def test_settling_confirm_without_cross_check_stands_down():
 
 
 def _verifying_state(**kwargs):
-    defaults = dict(
-        name=rsp.STATE_VERIFYING,
-        attempts=1,
-        query_issued_sec=100.0,
-    )
+    defaults = {
+        "name": rsp.STATE_VERIFYING,
+        "attempts": 1,
+        "query_issued_sec": 100.0,
+    }
     defaults.update(kwargs)
     return rsp.SupervisorState(**defaults)
 
@@ -982,7 +1128,8 @@ def test_verifying_mismatch_reseeds_from_verify_fix():
 
 def test_verifying_mismatch_weak_verify_fix_cooldown():
     params = rsp.SupervisorParams(
-        cross_check_mismatch_m=5.0, max_attempts=3, min_candidate_score=0.6)
+        cross_check_mismatch_m=5.0, max_attempts=3, min_candidate_score=0.6
+    )
     dec = rsp.decide(
         params,
         _verifying_state(attempts=1),
@@ -1062,10 +1209,14 @@ def test_cooldown_self_clear_cross_check_on_request_deassert():
         last_reset_sec=90.0,
         cooldown_since_sec=100.0,
     )
-    dec = rsp.decide(params, state, rsp.SupervisorObservation(
-        now_sec=106.0,
-        reinitialization_requested=False,
-    ))
+    dec = rsp.decide(
+        params,
+        state,
+        rsp.SupervisorObservation(
+            now_sec=106.0,
+            reinitialization_requested=False,
+        ),
+    )
     assert dec.action == rsp.ACTION_QUERY
     assert dec.reason == "self_clear_cross_check_query"
     assert dec.state.name == rsp.STATE_VERIFYING
@@ -1081,10 +1232,14 @@ def test_cooldown_request_deassert_without_reset_goes_idle():
         last_reset_sec=None,
         cooldown_since_sec=100.0,
     )
-    dec = rsp.decide(params, state, rsp.SupervisorObservation(
-        now_sec=106.0,
-        reinitialization_requested=False,
-    ))
+    dec = rsp.decide(
+        params,
+        state,
+        rsp.SupervisorObservation(
+            now_sec=106.0,
+            reinitialization_requested=False,
+        ),
+    )
     assert dec.action == rsp.ACTION_NONE
     assert dec.reason == "request_cleared"
     assert dec.state.name == rsp.STATE_IDLE
@@ -1104,10 +1259,14 @@ def test_cooldown_request_deassert_alias_confirmed_stays_in_episode():
         cooldown_since_sec=100.0,
         alias_confirmed=True,
     )
-    dec = rsp.decide(params, state, rsp.SupervisorObservation(
-        now_sec=106.0,
-        reinitialization_requested=False,
-    ))
+    dec = rsp.decide(
+        params,
+        state,
+        rsp.SupervisorObservation(
+            now_sec=106.0,
+            reinitialization_requested=False,
+        ),
+    )
     assert dec.action == rsp.ACTION_NONE
     assert dec.reason == "cooldown_elapsed"
     assert dec.state.name == rsp.STATE_AWAIT_QUERY
@@ -1121,10 +1280,14 @@ def test_await_query_alias_confirmed_still_issues_query():
         attempts=1,
         alias_confirmed=True,
     )
-    dec = rsp.decide(params, state, rsp.SupervisorObservation(
-        now_sec=10.0,
-        reinitialization_requested=False,
-    ))
+    dec = rsp.decide(
+        params,
+        state,
+        rsp.SupervisorObservation(
+            now_sec=10.0,
+            reinitialization_requested=False,
+        ),
+    )
     assert dec.action == rsp.ACTION_QUERY
     assert dec.reason == "query_issued"
     assert dec.state.name == rsp.STATE_AWAIT_CANDIDATES
@@ -1172,10 +1335,14 @@ def test_cooldown_request_deassert_cross_check_disabled_goes_idle():
         last_reset_sec=90.0,
         cooldown_since_sec=100.0,
     )
-    dec = rsp.decide(params, state, rsp.SupervisorObservation(
-        now_sec=106.0,
-        reinitialization_requested=False,
-    ))
+    dec = rsp.decide(
+        params,
+        state,
+        rsp.SupervisorObservation(
+            now_sec=106.0,
+            reinitialization_requested=False,
+        ),
+    )
     assert dec.action == rsp.ACTION_NONE
     assert dec.reason == "request_cleared"
     assert dec.state.name == rsp.STATE_IDLE
@@ -1183,12 +1350,15 @@ def test_cooldown_request_deassert_cross_check_disabled_goes_idle():
 
 if __name__ == "__main__":
     import pytest
+
     raise SystemExit(pytest.main([__file__, "-v"]))
+
 
 def test_sim_fix_velocity_from_consecutive_fixes():
     # Two fixes 10 m apart in x over 5 s on the bag clock -> 2 m/s east.
     v = rsp.estimate_sim_fix_velocity(
-        (0.0, 0.0), 100.0, (10.0, 0.0), 105.0, max_speed_mps=30.0)
+        (0.0, 0.0), 100.0, (10.0, 0.0), 105.0, max_speed_mps=30.0
+    )
     assert v.valid
     assert abs(v.vx - 2.0) < 1e-9
     assert abs(v.vy - 0.0) < 1e-9
@@ -1196,23 +1366,27 @@ def test_sim_fix_velocity_from_consecutive_fixes():
 
 def test_sim_fix_velocity_rejects_short_or_long_dt():
     short = rsp.estimate_sim_fix_velocity(
-        (0.0, 0.0), 100.0, (10.0, 0.0), 101.0, max_speed_mps=30.0)
+        (0.0, 0.0), 100.0, (10.0, 0.0), 101.0, max_speed_mps=30.0
+    )
     assert not short.valid
     long = rsp.estimate_sim_fix_velocity(
-        (0.0, 0.0), 100.0, (10.0, 0.0), 161.0, max_speed_mps=30.0)
+        (0.0, 0.0), 100.0, (10.0, 0.0), 161.0, max_speed_mps=30.0
+    )
     assert not long.valid
 
 
 def test_sim_fix_velocity_rejects_implausible_speed():
     v = rsp.estimate_sim_fix_velocity(
-        (0.0, 0.0), 100.0, (200.0, 0.0), 105.0, max_speed_mps=30.0)
+        (0.0, 0.0), 100.0, (200.0, 0.0), 105.0, max_speed_mps=30.0
+    )
     assert not v.valid
 
 
 def test_sim_fix_pose_delta_clamps_staleness():
     v = rsp.SeedVelocity(vx=2.0, vy=1.0, valid=True)
     delta = rsp.estimate_pose_delta_from_sim_fix(
-        v, fix_scan_stamp_sec=100.0, last_sim_stamp_sec=138.0, max_latency_sec=30.0)
+        v, fix_scan_stamp_sec=100.0, last_sim_stamp_sec=138.0, max_latency_sec=30.0
+    )
     assert delta is not None
     dx, dy, speed, staleness = delta
     assert abs(staleness - 30.0) < 1e-9
@@ -1223,12 +1397,18 @@ def test_sim_fix_pose_delta_clamps_staleness():
 
 def test_sim_fix_pose_delta_none_when_staleness_nonpositive():
     v = rsp.SeedVelocity(vx=2.0, vy=0.0, valid=True)
-    assert rsp.estimate_pose_delta_from_sim_fix(
-        v, fix_scan_stamp_sec=100.0, last_sim_stamp_sec=100.0,
-        max_latency_sec=30.0) is None
-    assert rsp.estimate_pose_delta_from_sim_fix(
-        v, fix_scan_stamp_sec=100.0, last_sim_stamp_sec=None,
-        max_latency_sec=30.0) is None
+    assert (
+        rsp.estimate_pose_delta_from_sim_fix(
+            v, fix_scan_stamp_sec=100.0, last_sim_stamp_sec=100.0, max_latency_sec=30.0
+        )
+        is None
+    )
+    assert (
+        rsp.estimate_pose_delta_from_sim_fix(
+            v, fix_scan_stamp_sec=100.0, last_sim_stamp_sec=None, max_latency_sec=30.0
+        )
+        is None
+    )
 
 
 def test_trusted_velocity_tracker_high_rate_stream_still_estimates():

@@ -1,0 +1,21 @@
+---
+# clang-tidy configuration for lidar_localization_ros2.
+#
+# High-signal checks only. The following are intentionally disabled:
+#   bugprone-easily-swappable-parameters   - fires on almost every geometric API
+#   bugprone-narrowing-conversions         - Eigen float/double interop is deliberate
+#   bugprone-implicit-widening-of-...      - only occurs in integer test fixtures
+#   bugprone-exception-escape              - test main() functions are allowed to throw
+#   clang-analyzer-optin.performance.Padding - micro-layout tuning, not correctness
+Checks: >
+  -*,
+  clang-analyzer-*,
+  -clang-analyzer-optin.performance.Padding,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-exception-escape
+WarningsAsErrors: '*'
+HeaderFilterRegex: 'include/lidar_localization/.*'
+FormatStyle: none

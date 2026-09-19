@@ -16,20 +16,26 @@ import time
 from pathlib import Path
 
 import rclpy
-from rclpy.executors import ExternalShutdownException
 from geometry_msgs.msg import Pose, PoseArray
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    DurabilityPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import make_bbs_relocalization_attempts as bbs_engine  # noqa: E402
-from global_localization_query import GlobalLocalizationConfig  # noqa: E402
-from global_localization_query import GlobalLocalizationEngine  # noqa: E402
+import make_bbs_relocalization_attempts as bbs_engine
+from global_localization_query import (
+    GlobalLocalizationConfig,
+    GlobalLocalizationEngine,
+)
 
 
 def _stamp_to_sec(stamp) -> float:
@@ -94,26 +100,32 @@ class GlobalLocalizationNode(Node):
         self.declare_parameter("route_longitudinal_offsets_m", "-1,0,1")
 
         candidate_source = str(
-            self.get_parameter("candidate_source").get_parameter_value().string_value)
+            self.get_parameter("candidate_source").get_parameter_value().string_value
+        )
         occupancy_yaml = (
-            self.get_parameter("occupancy_yaml").get_parameter_value().string_value)
+            self.get_parameter("occupancy_yaml").get_parameter_value().string_value
+        )
         if candidate_source.strip().lower() == "bbs" and not occupancy_yaml:
             raise RuntimeError(
                 "occupancy_yaml parameter is required when candidate_source=bbs "
-                "(output of generate_occupancy_map_from_pcd.py)")
+                "(output of generate_occupancy_map_from_pcd.py)"
+            )
 
         map_path = self.get_parameter("map_path").get_parameter_value().string_value
         reference_csv = (
-            self.get_parameter("reference_csv").get_parameter_value().string_value)
+            self.get_parameter("reference_csv").get_parameter_value().string_value
+        )
         enable_registration_scoring = bool(
-            self.get_parameter("enable_registration_scoring").value)
+            self.get_parameter("enable_registration_scoring").value
+        )
         config = GlobalLocalizationConfig(
             z_min_m=self.get_parameter("z_min_m").value,
             z_max_m=self.get_parameter("z_max_m").value,
             min_range_m=self.get_parameter("min_range_m").value,
             max_scan_points=int(self.get_parameter("max_scan_points").value),
             angular_resolution_rad=math.radians(
-                self.get_parameter("angular_resolution_deg").value),
+                self.get_parameter("angular_resolution_deg").value
+            ),
             pyramid_depth=int(self.get_parameter("pyramid_depth").value),
             max_candidates=int(self.get_parameter("max_candidates").value),
             nms_radius_m=self.get_parameter("nms_radius_m").value,
@@ -122,79 +134,93 @@ class GlobalLocalizationNode(Node):
             use_cpp_backend=bool(self.get_parameter("use_cpp_backend").value),
             enable_registration_scoring=enable_registration_scoring,
             registration_refine_candidates=bool(
-                self.get_parameter("registration_refine_candidates").value),
+                self.get_parameter("registration_refine_candidates").value
+            ),
             map_path=map_path or None,
             registration_score_gate=float(
-                self.get_parameter("registration_score_gate").value),
+                self.get_parameter("registration_score_gate").value
+            ),
             ndt_resolution=float(self.get_parameter("ndt_resolution").value),
             ndt_step_size=float(self.get_parameter("ndt_step_size").value),
             ndt_transform_epsilon=float(
-                self.get_parameter("ndt_transform_epsilon").value),
+                self.get_parameter("ndt_transform_epsilon").value
+            ),
             ndt_max_iterations=int(self.get_parameter("ndt_max_iterations").value),
             ndt_num_threads=int(self.get_parameter("ndt_num_threads").value),
-            ndt_search_method=str(
-                self.get_parameter("ndt_search_method").value),
+            ndt_search_method=str(self.get_parameter("ndt_search_method").value),
             ndt_scan_voxel_leaf_size=float(
-                self.get_parameter("ndt_scan_voxel_leaf_size").value),
+                self.get_parameter("ndt_scan_voxel_leaf_size").value
+            ),
             ndt_target_voxel_leaf_size=float(
-                self.get_parameter("ndt_target_voxel_leaf_size").value),
+                self.get_parameter("ndt_target_voxel_leaf_size").value
+            ),
             ndt_local_map_radius=float(
-                self.get_parameter("ndt_local_map_radius").value),
+                self.get_parameter("ndt_local_map_radius").value
+            ),
             ndt_min_target_points=int(
-                self.get_parameter("ndt_min_target_points").value),
+                self.get_parameter("ndt_min_target_points").value
+            ),
             registration_seed_z_m=float(
-                self.get_parameter("registration_seed_z_m").value),
+                self.get_parameter("registration_seed_z_m").value
+            ),
             candidate_source=candidate_source,
             reference_csv=reference_csv or None,
             route_time_radius_sec=float(
-                self.get_parameter("route_time_radius_sec").value),
-            route_min_spacing_m=float(
-                self.get_parameter("route_min_spacing_m").value),
+                self.get_parameter("route_time_radius_sec").value
+            ),
+            route_min_spacing_m=float(self.get_parameter("route_min_spacing_m").value),
             route_max_poses=int(self.get_parameter("route_max_poses").value),
             route_yaw_offsets_deg=str(
-                self.get_parameter("route_yaw_offsets_deg").value),
+                self.get_parameter("route_yaw_offsets_deg").value
+            ),
             route_lateral_offsets_m=str(
-                self.get_parameter("route_lateral_offsets_m").value),
+                self.get_parameter("route_lateral_offsets_m").value
+            ),
             route_longitudinal_offsets_m=str(
-                self.get_parameter("route_longitudinal_offsets_m").value),
+                self.get_parameter("route_longitudinal_offsets_m").value
+            ),
         )
         self.engine = GlobalLocalizationEngine(
-            config,
-            occupancy_yaml=Path(occupancy_yaml) if occupancy_yaml else None)
+            config, occupancy_yaml=Path(occupancy_yaml) if occupancy_yaml else None
+        )
         if config.use_cpp_backend and self.engine.backend != "cpp":
             self.get_logger().warn(
-                "use_cpp_backend requested but bbs_cpp is unavailable (%s); "
+                f"use_cpp_backend requested but bbs_cpp is unavailable ({self.engine.backend_error}); "
                 "falling back to the Python search"
-                % self.engine.backend_error)
+            )
         if enable_registration_scoring:
             if self.engine.registration_scorer is None:
                 self.get_logger().warn(
                     "enable_registration_scoring requested but g2_ndt_score is "
-                    "unavailable (%s); using BBS score only"
-                    % self.engine.registration_scoring_error)
+                    f"unavailable ({self.engine.registration_scoring_error}); using BBS score only"
+                )
             else:
                 self.get_logger().info(
-                    "registration scoring enabled: map=%s gate=%.2f"
-                    % (map_path, config.registration_score_gate))
+                    f"registration scoring enabled: map={map_path} gate={config.registration_score_gate:.2f}"
+                )
         if self.engine.candidate_source == "route_crop":
             self.get_logger().info(
-                "route-crop candidate source enabled: reference=%s radius=%.1fs"
-                % (reference_csv, config.route_time_radius_sec))
+                f"route-crop candidate source enabled: reference={reference_csv} radius={config.route_time_radius_sec:.1f}s"
+            )
         self.global_frame_id = (
-            self.get_parameter("global_frame_id").get_parameter_value().string_value)
+            self.get_parameter("global_frame_id").get_parameter_value().string_value
+        )
         self.latest_cloud = None
 
         cloud_topic = (
-            self.get_parameter("cloud_topic").get_parameter_value().string_value)
+            self.get_parameter("cloud_topic").get_parameter_value().string_value
+        )
         self.cloud_sub = self.create_subscription(
-            PointCloud2, cloud_topic, self.cloud_received, qos_profile_sensor_data)
+            PointCloud2, cloud_topic, self.cloud_received, qos_profile_sensor_data
+        )
         candidate_qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
         self.candidates_pub = self.create_publisher(
-            PoseArray, "~/candidates", candidate_qos)
+            PoseArray, "~/candidates", candidate_qos
+        )
         # Query progress (diagnostics only): JSON phases published while the
         # blocking BBS+NDT search runs, so a 10-20 s query is observable via
         # `ros2 topic echo ~/status`. Volatile: late joiners use ~/candidates.
@@ -202,13 +228,8 @@ class GlobalLocalizationNode(Node):
         self._query_seq = 0
         self.query_srv = self.create_service(Trigger, "~/query", self.handle_query)
         self.get_logger().info(
-            "global localization service ready: source=%s map=%s scan=%s backend=%s"
-            % (
-                self.engine.candidate_source,
-                occupancy_yaml or reference_csv,
-                cloud_topic,
-                self.engine.backend,
-            ))
+            f"global localization service ready: source={self.engine.candidate_source} map={occupancy_yaml or reference_csv} scan={cloud_topic} backend={self.engine.backend}"
+        )
 
     def cloud_received(self, msg: PointCloud2) -> None:
         self.latest_cloud = msg
@@ -229,31 +250,47 @@ class GlobalLocalizationNode(Node):
         query_id = self._query_seq
 
         def publish_progress(phase, done=0, total=0):
-            self.status_pub.publish(String(data=json.dumps({
-                "query_id": query_id,
-                "phase": phase,
-                "done": done,
-                "total": total,
-                "elapsed_sec": round(time.monotonic() - started, 3),
-                "candidate_source": self.engine.candidate_source,
-            })))
+            self.status_pub.publish(
+                String(
+                    data=json.dumps(
+                        {
+                            "query_id": query_id,
+                            "phase": phase,
+                            "done": done,
+                            "total": total,
+                            "elapsed_sec": round(time.monotonic() - started, 3),
+                            "candidate_source": self.engine.candidate_source,
+                        }
+                    )
+                )
+            )
 
         self.get_logger().info(
             "query %d started: points=%d source=%s backend=%s"
-            % (query_id, int(points_xyz.shape[0]),
-               self.engine.candidate_source, self.engine.backend))
+            % (
+                query_id,
+                int(points_xyz.shape[0]),
+                self.engine.candidate_source,
+                self.engine.backend,
+            )
+        )
         publish_progress("started")
         result = self.engine.query(
-            points_xyz, scan_stamp_sec=scan_stamp_sec,
-            progress_callback=lambda phase, done, total:
-            publish_progress(phase, done, total))
+            points_xyz,
+            scan_stamp_sec=scan_stamp_sec,
+            progress_callback=lambda phase, done, total: publish_progress(
+                phase, done, total
+            ),
+        )
         publish_progress("done")
         runtime_sec = time.monotonic() - started
         query_end_ros_sec = _stamp_to_sec(self.get_clock().now().to_msg())
         scan_age_at_end_sec = _scan_age_sec(query_end_ros_sec, scan_stamp_sec)
         candidate_age_sec = (
-            runtime_sec if scan_age_at_start_sec is None
-            else scan_age_at_start_sec + runtime_sec)
+            runtime_sec
+            if scan_age_at_start_sec is None
+            else scan_age_at_start_sec + runtime_sec
+        )
 
         pose_array = PoseArray()
         pose_array.header.stamp = cloud.header.stamp
@@ -302,7 +339,9 @@ class GlobalLocalizationNode(Node):
             "candidates": ranked,
         }
         if result.registration_scoring_backend:
-            summary["registration_scoring_backend"] = result.registration_scoring_backend
+            summary["registration_scoring_backend"] = (
+                result.registration_scoring_backend
+            )
         if result.registration_scoring_error:
             summary["registration_scoring_error"] = result.registration_scoring_error
         if result.route_crop_error:
@@ -311,7 +350,7 @@ class GlobalLocalizationNode(Node):
             summary["top"] = ranked[0]
         response.success = bool(result.candidates)
         response.message = json.dumps(summary)
-        self.get_logger().info("query answered: %s" % response.message)
+        self.get_logger().info(f"query answered: {response.message}")
         return response
 
 

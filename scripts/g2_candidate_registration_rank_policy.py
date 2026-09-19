@@ -9,8 +9,8 @@ supervisor-facing score and candidate order should follow registration quality
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Sequence, Tuple
 
 
 @dataclass(frozen=True)
@@ -20,15 +20,15 @@ class RankedG2Candidate:
     z_m: float
     yaw_rad: float
     bbs_score: float
-    registration_fitness: Optional[float]
+    registration_fitness: float | None
     score: float
     hit_count: int = 0
     point_count: int = 0
-    registration_converged: Optional[bool] = None
+    registration_converged: bool | None = None
 
 
 def registration_fitness_to_supervisor_score(
-    fitness: Optional[float],
+    fitness: float | None,
     score_gate: float = 6.0,
 ) -> float:
     """Map NDT fitness (lower is better) to a [0, 1] supervisor score."""
@@ -39,7 +39,7 @@ def registration_fitness_to_supervisor_score(
     return max(0.0, min(1.0, 1.0 - fitness / score_gate))
 
 
-def _fitness_sort_key(fitness: Optional[float]) -> float:
+def _fitness_sort_key(fitness: float | None) -> float:
     if fitness is None or not math.isfinite(fitness):
         return float("inf")
     return fitness
@@ -47,7 +47,7 @@ def _fitness_sort_key(fitness: Optional[float]) -> float:
 
 def rank_candidates_by_registration(
     candidates: Sequence[RankedG2Candidate],
-) -> List[RankedG2Candidate]:
+) -> list[RankedG2Candidate]:
     """Sort by registration fitness ascending, then BBS score descending."""
     return sorted(
         candidates,
@@ -62,12 +62,12 @@ def candidate_pose_from_registration(
     candidate: RankedG2Candidate,
     *,
     converged: bool,
-    fitness: Optional[float],
+    fitness: float | None,
     refined_x: float,
     refined_y: float,
     refined_z: float,
     refined_yaw: float,
-) -> Tuple[float, float, float, float]:
+) -> tuple[float, float, float, float]:
     """Return supervisor-facing pose; use NDT refinement only when converged."""
     if converged and fitness is not None and math.isfinite(fitness):
         return refined_x, refined_y, refined_z, refined_yaw
@@ -77,7 +77,7 @@ def candidate_pose_from_registration(
 def apply_registration_ranking(
     candidates: Sequence[RankedG2Candidate],
     score_gate: float = 6.0,
-) -> List[RankedG2Candidate]:
+) -> list[RankedG2Candidate]:
     """Recompute supervisor scores from fitness and return ranked candidates."""
     updated = []
     for candidate in candidates:
@@ -94,13 +94,14 @@ def apply_registration_ranking(
                 hit_count=candidate.hit_count,
                 point_count=candidate.point_count,
                 registration_converged=candidate.registration_converged,
-            ))
+            )
+        )
     return rank_candidates_by_registration(updated)
 
 
 def bbs_only_candidates(
-    raw_candidates: Iterable[Tuple[float, float, float, float, float, int, int]],
-) -> List[RankedG2Candidate]:
+    raw_candidates: Iterable[tuple[float, float, float, float, float, int, int]],
+) -> list[RankedG2Candidate]:
     """Wrap BBS-only candidates where score == bbs_score."""
     wrapped = []
     for x_m, y_m, z_m, yaw_rad, bbs_score, hit_count, point_count in raw_candidates:
@@ -116,5 +117,6 @@ def bbs_only_candidates(
                 hit_count=hit_count,
                 point_count=point_count,
                 registration_converged=None,
-            ))
+            )
+        )
     return list(wrapped)

@@ -5,14 +5,15 @@ from __future__ import annotations
 
 import argparse
 import csv
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
-from typing import Tuple
 
 import yaml
 
 
-def iter_tum_poses(path: Path) -> Iterator[Tuple[float, float, float, float, float, float, float]]:
+def iter_tum_poses(
+    path: Path,
+) -> Iterator[tuple[float, float, float, float, float, float, float]]:
     with path.open("r", encoding="utf-8", errors="replace") as stream:
         for line in stream:
             line = line.strip()
@@ -23,14 +24,19 @@ def iter_tum_poses(path: Path) -> Iterator[Tuple[float, float, float, float, flo
                 continue
             t = float(parts[0])
             x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
-            qx, qy, qz, qw = float(parts[4]), float(parts[5]), float(parts[6]), float(parts[7])
+            qx, qy, qz, qw = (
+                float(parts[4]),
+                float(parts[5]),
+                float(parts[6]),
+                float(parts[7]),
+            )
             yield t, x, y, z, qx, qy, qz, qw
 
 
 def export_initial_pose_yaml(
     path: Path,
-    position: Tuple[float, float, float],
-    quaternion: Tuple[float, float, float, float],
+    position: tuple[float, float, float],
+    quaternion: tuple[float, float, float, float],
 ) -> None:
     data = {
         "/**": {
@@ -52,8 +58,12 @@ def export_initial_pose_yaml(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", required=True, type=Path, help="TUM text file, no header")
-    parser.add_argument("--output-csv", required=True, type=Path, help="Destination pose reference CSV")
+    parser.add_argument(
+        "--input", required=True, type=Path, help="TUM text file, no header"
+    )
+    parser.add_argument(
+        "--output-csv", required=True, type=Path, help="Destination pose reference CSV"
+    )
     parser.add_argument(
         "--output-initial-pose-yaml",
         default="",

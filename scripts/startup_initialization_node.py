@@ -21,14 +21,15 @@ from std_srvs.srv import Trigger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import quickstart_model as model  # noqa: E402
+import quickstart_model as model
 
-
-_ACCEPT_ACTIONS = frozenset({
-    "accept_measurement",
-    "accept_measurement_with_warning",
-    "accept_measurement_after_recovery",
-})
+_ACCEPT_ACTIONS = frozenset(
+    {
+        "accept_measurement",
+        "accept_measurement_with_warning",
+        "accept_measurement_after_recovery",
+    }
+)
 _ACCEPT_STATES = frozenset({"tracking", "degraded", "recovering"})
 
 
@@ -75,11 +76,14 @@ class StartupInitializationNode(Node):
         self.state_path = Path(state_value).expanduser() if state_value else None
         self.restore_saved_pose = bool(self.get_parameter("restore_saved_pose").value)
         self.initial_pose_preconfigured = bool(
-            self.get_parameter("initial_pose_preconfigured").value)
+            self.get_parameter("initial_pose_preconfigured").value
+        )
         self.enable_global = bool(
-            self.get_parameter("enable_global_initialization").value)
+            self.get_parameter("enable_global_initialization").value
+        )
         self.require_global_registration_scoring = bool(
-            self.get_parameter("require_global_registration_scoring").value)
+            self.get_parameter("require_global_registration_scoring").value
+        )
         self.default_z = float(self.get_parameter("default_z_m").value)
         self.save_interval_sec = float(self.get_parameter("save_interval_sec").value)
         self.position_std = float(self.get_parameter("position_std_m").value)
@@ -88,25 +92,35 @@ class StartupInitializationNode(Node):
             min_candidate_score=float(self.get_parameter("min_candidate_score").value),
             min_score_margin=float(self.get_parameter("min_score_margin").value),
             max_candidate_age_sec=float(
-                self.get_parameter("max_candidate_age_sec").value),
+                self.get_parameter("max_candidate_age_sec").value
+            ),
             query_timeout_sec=float(self.get_parameter("query_timeout_sec").value),
             verification_timeout_sec=float(
-                self.get_parameter("verification_timeout_sec").value),
+                self.get_parameter("verification_timeout_sec").value
+            ),
             verification_fitness_threshold=float(
-                self.get_parameter("verification_fitness_threshold").value),
+                self.get_parameter("verification_fitness_threshold").value
+            ),
             verification_samples=max(
-                1, int(self.get_parameter("verification_samples").value)),
+                1, int(self.get_parameter("verification_samples").value)
+            ),
             max_global_attempts=max(
-                1, int(self.get_parameter("max_global_attempts").value)),
+                1, int(self.get_parameter("max_global_attempts").value)
+            ),
             global_consensus_samples=max(
-                1, int(self.get_parameter("global_consensus_samples").value)),
+                1, int(self.get_parameter("global_consensus_samples").value)
+            ),
             global_consensus_translation_m=float(
-                self.get_parameter("global_consensus_translation_m").value),
+                self.get_parameter("global_consensus_translation_m").value
+            ),
             global_consensus_yaw_deg=float(
-                self.get_parameter("global_consensus_yaw_deg").value),
+                self.get_parameter("global_consensus_yaw_deg").value
+            ),
             registration_fitness_high_confidence_threshold=float(
                 self.get_parameter(
-                    "registration_fitness_high_confidence_threshold").value),
+                    "registration_fitness_high_confidence_threshold"
+                ).value
+            ),
         )
         parameter_error = model.validate_startup_params(self.params)
         if parameter_error is not None:
@@ -121,17 +135,19 @@ class StartupInitializationNode(Node):
                 self.map_identity,
                 self.global_frame,
                 now_sec=time.time(),
-                max_age_sec=float(
-                    self.get_parameter("saved_pose_max_age_sec").value),
+                max_age_sec=float(self.get_parameter("saved_pose_max_age_sec").value),
             )
             self.saved_pose = loaded.pose
             self.saved_pose_reason = loaded.reason
         self.saved_pose_preverified = self.saved_pose is not None and not bool(
-            self.get_parameter("preverify_saved_pose").value)
+            self.get_parameter("preverify_saved_pose").value
+        )
         self.saved_pose_score_threshold = float(
-            self.get_parameter("saved_pose_score_threshold").value)
+            self.get_parameter("saved_pose_score_threshold").value
+        )
         self.saved_pose_preverify_attempts = max(
-            1, int(self.get_parameter("saved_pose_preverify_attempts").value))
+            1, int(self.get_parameter("saved_pose_preverify_attempts").value)
+        )
         self.saved_pose_preverify_count = 0
         self.saved_pose_scorer = None
         self._pointcloud2_xyz_array = None
@@ -152,7 +168,8 @@ class StartupInitializationNode(Node):
             reliable,
         )
         self.status_pub = self.create_publisher(
-            String, str(self.get_parameter("status_topic").value), transient)
+            String, str(self.get_parameter("status_topic").value), transient
+        )
         self.create_subscription(
             PointCloud2,
             str(self.get_parameter("cloud_topic").value),
@@ -172,7 +189,8 @@ class StartupInitializationNode(Node):
             transient,
         )
         self.query_client = self.create_client(
-            Trigger, str(self.get_parameter("query_service").value))
+            Trigger, str(self.get_parameter("query_service").value)
+        )
         self.create_timer(0.25, self._tick)
 
         self.scan_ready = False
@@ -194,18 +212,23 @@ class StartupInitializationNode(Node):
         self.last_report = None
         self._report(
             "starting",
-            extra={"saved_pose": self.saved_pose_reason, "map_sha256": self.map_identity.sha256},
+            extra={
+                "saved_pose": self.saved_pose_reason,
+                "map_sha256": self.map_identity.sha256,
+            },
         )
 
     def _on_cloud(self, _msg: PointCloud2) -> None:
         self.latest_cloud_stamp_sec = (
-            float(_msg.header.stamp.sec) + float(_msg.header.stamp.nanosec) * 1e-9)
+            float(_msg.header.stamp.sec) + float(_msg.header.stamp.nanosec) * 1e-9
+        )
         if self.saved_pose is not None and not self.saved_pose_preverified:
             if self.saved_pose_scorer is not None:
                 self._preverify_saved_pose(_msg)
                 if (
                     not self.saved_pose_preverified
-                    and self.saved_pose_preverify_count < self.saved_pose_preverify_attempts
+                    and self.saved_pose_preverify_count
+                    < self.saved_pose_preverify_attempts
                 ):
                     return
             else:
@@ -228,15 +251,14 @@ class StartupInitializationNode(Node):
             self.saved_pose_reason = "preverification_unavailable"
             self.get_logger().warning(
                 "saved pose will not be auto-published because NDT preverification "
-                f"is unavailable: {exc}")
+                f"is unavailable: {exc}"
+            )
 
     @staticmethod
     def _yaw_from_quaternion(orientation) -> float:
         x, y, z, w = orientation
-        siny_cosp = 2.0 * (
-            w * z + x * y)
-        cosy_cosp = 1.0 - 2.0 * (
-            y * y + z * z)
+        siny_cosp = 2.0 * (w * z + x * y)
+        cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
         return math.atan2(siny_cosp, cosy_cosp)
 
     def _preverify_saved_pose(self, cloud: PointCloud2) -> None:
@@ -256,12 +278,14 @@ class StartupInitializationNode(Node):
                 self._yaw_from_quaternion(orientation),
             )
             if model.saved_pose_score_acceptable(
-                result.converged, result.fitness, self.saved_pose_score_threshold):
+                result.converged, result.fitness, self.saved_pose_score_threshold
+            ):
                 self.saved_pose_preverified = True
                 self.saved_pose_reason = "scan_preverified"
                 self.get_logger().info(
                     "saved pose passed pre-publication NDT verification: "
-                    f"fitness={result.fitness:.3f}")
+                    f"fitness={result.fitness:.3f}"
+                )
             else:
                 self.saved_pose_reason = "scan_preverification_failed"
         except (RuntimeError, TypeError, ValueError) as exc:
@@ -288,7 +312,9 @@ class StartupInitializationNode(Node):
                 fitness = float(values["fitness_score"])
             except ValueError:
                 continue
-            reinit = str(values.get("reinitialization_requested", "false")).lower() == "true"
+            reinit = (
+                str(values.get("reinitialization_requested", "false")).lower() == "true"
+            )
             recovery_state = str(values.get("recovery_state", ""))
             recovery_action = str(values.get("recovery_action", ""))
             if recovery_state or recovery_action:
@@ -322,13 +348,17 @@ class StartupInitializationNode(Node):
         ):
             return
         now = time.time()
-        if self.last_save_sec is not None and now - self.last_save_sec < self.save_interval_sec:
+        if (
+            self.last_save_sec is not None
+            and now - self.last_save_sec < self.save_interval_sec
+        ):
             return
         msg = self.latest_pose
         if msg.header.frame_id and msg.header.frame_id != self.global_frame:
             self.get_logger().error(
                 "refusing to save pose in frame "
-                f"{msg.header.frame_id!r}; expected {self.global_frame!r}")
+                f"{msg.header.frame_id!r}; expected {self.global_frame!r}"
+            )
             return
         pose = msg.pose.pose
         stamp_sec = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
@@ -361,7 +391,8 @@ class StartupInitializationNode(Node):
             now_sec=time.monotonic(),
             scan_ready=self.scan_ready,
             saved_pose_available=(
-                self.saved_pose is not None and self.saved_pose_preverified),
+                self.saved_pose is not None and self.saved_pose_preverified
+            ),
             global_available=global_available,
             preconfigured_pose_available=self.initial_pose_preconfigured,
             query_in_flight=self.query_in_flight,
@@ -410,12 +441,9 @@ class StartupInitializationNode(Node):
         if not self.query_client.service_is_ready():
             self.get_logger().warning("global localization service is not ready")
             return
-        if (
-            self.last_query_scan_stamp_sec is not None
-            and (
-                self.latest_cloud_stamp_sec is None
-                or self.latest_cloud_stamp_sec <= self.last_query_scan_stamp_sec + 1.0e-9
-            )
+        if self.last_query_scan_stamp_sec is not None and (
+            self.latest_cloud_stamp_sec is None
+            or self.latest_cloud_stamp_sec <= self.last_query_scan_stamp_sec + 1.0e-9
         ):
             return
         self.query_in_flight = True
@@ -434,11 +462,14 @@ class StartupInitializationNode(Node):
                 self.require_global_registration_scoring,
             ):
                 detail = payload.get(
-                    "registration_scoring_error", "3D registration scorer unavailable")
+                    "registration_scoring_error", "3D registration scorer unavailable"
+                )
                 raise RuntimeError(
-                    "refusing unverified 2D-only global candidate: " + str(detail))
+                    "refusing unverified 2D-only global candidate: " + str(detail)
+                )
             candidates = payload.get("candidates") or (
-                [payload["top"]] if "top" in payload else [])
+                [payload["top"]] if "top" in payload else []
+            )
             self.candidates = candidates
             self.pending_scores = tuple(float(item["score"]) for item in candidates)
             age = payload.get("candidate_age_sec")
@@ -454,7 +485,8 @@ class StartupInitializationNode(Node):
             )
             reg_fit = top.get("registration_fitness")
             self.pending_top_registration_fitness = (
-                float(reg_fit) if reg_fit is not None else None)
+                float(reg_fit) if reg_fit is not None else None
+            )
         except Exception as exc:  # noqa: BLE001
             self.get_logger().warning(f"global localization query failed: {exc}")
             self.candidates = []
@@ -468,9 +500,9 @@ class StartupInitializationNode(Node):
         msg = PoseWithCovarianceStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self.global_frame
-        msg.pose.covariance[0] = self.position_std ** 2
-        msg.pose.covariance[7] = self.position_std ** 2
-        msg.pose.covariance[35] = self.yaw_std ** 2
+        msg.pose.covariance[0] = self.position_std**2
+        msg.pose.covariance[7] = self.position_std**2
+        msg.pose.covariance[35] = self.yaw_std**2
         return msg
 
     def _publish_saved_pose(self) -> None:
@@ -479,7 +511,9 @@ class StartupInitializationNode(Node):
         msg = self._new_initialpose()
         position = self.saved_pose.position
         orientation = self.saved_pose.orientation
-        msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z = position
+        msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z = (
+            position
+        )
         (
             msg.pose.pose.orientation.x,
             msg.pose.pose.orientation.y,

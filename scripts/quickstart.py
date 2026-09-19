@@ -11,9 +11,8 @@ import re
 import shlex
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional, Sequence
-
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -38,7 +37,13 @@ def default_config_path() -> Path:
 
 def default_state_path(map_path: Path) -> Path:
     safe_stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", map_path.stem) or "map"
-    return Path.home() / ".local" / "state" / "lidar_localization_ros2" / f"{safe_stem}.json"
+    return (
+        Path.home()
+        / ".local"
+        / "state"
+        / "lidar_localization_ros2"
+        / f"{safe_stem}.json"
+    )
 
 
 def parse_typed_topics(output: str):
@@ -68,15 +73,16 @@ def discover_typed_topics(timeout_sec: float = 2.0):
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="One-command lidar_localization_ros2 setup and guarded startup.")
+        description="One-command lidar_localization_ros2 setup and guarded startup."
+    )
     parser.add_argument("--map", "--map-path", dest="map_path", required=True)
     parser.add_argument("--occupancy-map", dest="occupancy_yaml")
     parser.add_argument(
         "--reference-csv",
         dest="reference_csv",
         help="Mapping-run reference trajectory CSV for route-crop G2 candidates "
-             "(same format as make_route_grid_relocalization_attempts.py). "
-             "Use with --occupancy-map or alone when the route is known.",
+        "(same format as make_route_grid_relocalization_attempts.py). "
+        "Use with --occupancy-map or alone when the route is known.",
     )
     parser.add_argument("--route-time-radius-sec", type=float, default=20.0)
     parser.add_argument("--route-min-spacing-m", type=float, default=8.0)
@@ -85,7 +91,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--route-lateral-offsets-m", default="-2,0,2")
     parser.add_argument("--route-longitudinal-offsets-m", default="-1,0,1")
     parser.add_argument(
-        "--profile", choices=sorted(config_tool.PROFILE_DEFAULTS), default="standalone")
+        "--profile", choices=sorted(config_tool.PROFILE_DEFAULTS), default="standalone"
+    )
     parser.add_argument("--output", type=Path, default=default_config_path())
     parser.add_argument("--state-file", type=Path)
     parser.add_argument("--cloud-topic")
@@ -104,15 +111,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Restore a verified saved pose, then use global search when configured.",
     )
     parser.add_argument(
-        "--restore-saved-pose", action=argparse.BooleanOptionalAction, default=True)
+        "--restore-saved-pose", action=argparse.BooleanOptionalAction, default=True
+    )
     parser.add_argument("--saved-pose-max-age-sec", type=float, default=0.0)
     parser.add_argument(
-        "--discover-topics", action=argparse.BooleanOptionalAction, default=True)
+        "--discover-topics", action=argparse.BooleanOptionalAction, default=True
+    )
     parser.add_argument("--rviz", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
-        "--bringup-check", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--publish-lidar-tf", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--publish-imu-tf", action=argparse.BooleanOptionalAction, default=False)
+        "--bringup-check", action=argparse.BooleanOptionalAction, default=True
+    )
+    parser.add_argument(
+        "--publish-lidar-tf", action=argparse.BooleanOptionalAction, default=True
+    )
+    parser.add_argument(
+        "--publish-imu-tf", action=argparse.BooleanOptionalAction, default=False
+    )
     parser.add_argument("--min-candidate-score", type=float, default=0.6)
     parser.add_argument("--min-score-margin", type=float, default=0.05)
     parser.add_argument("--max-candidate-age-sec", type=float, default=30.0)
@@ -124,7 +138,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--global-consensus-translation-m", type=float, default=2.0)
     parser.add_argument("--global-consensus-yaw-deg", type=float, default=20.0)
     parser.add_argument(
-        "--global-cpp-backend", action=argparse.BooleanOptionalAction, default=True)
+        "--global-cpp-backend", action=argparse.BooleanOptionalAction, default=True
+    )
     parser.add_argument(
         "--global-registration-scoring",
         action=argparse.BooleanOptionalAction,
@@ -166,29 +181,43 @@ def next_step_line(args) -> str:
     Display only: never changes launch arguments or runtime behavior.
     """
     if args.initial_pose is not None:
-        return ("wait 5s, then verify pose output "
-                "(see Bringup check above); if no pose, echo /alignment_status")
+        return (
+            "wait 5s, then verify pose output "
+            "(see Bringup check above); if no pose, echo /alignment_status"
+        )
     has_global_asset = bool(args.occupancy_yaml or args.reference_csv)
     if args.auto_initialize and has_global_asset:
-        return ("keep robot stationary ~30s for guarded search; "
-                "if no_safe_automatic_source, set 2D Pose Estimate in RViz "
-                "or add --reference-csv (see docs/site_setup.md)")
+        return (
+            "keep robot stationary ~30s for guarded search; "
+            "if no_safe_automatic_source, set 2D Pose Estimate in RViz "
+            "or add --reference-csv (see docs/site_setup.md)"
+        )
     if args.auto_initialize:
-        return ("set 2D Pose Estimate in RViz, or restart with "
-                "--occupancy-map / --reference-csv for automatic search")
+        return (
+            "set 2D Pose Estimate in RViz, or restart with "
+            "--occupancy-map / --reference-csv for automatic search"
+        )
     return "set 2D Pose Estimate in RViz or pass --initial-pose"
 
 
 def _config_args(args, cloud_topic: str, imu_topic: str):
     argv = [
-        "--map-path", args.map_path,
-        "--output", str(args.output),
-        "--profile", args.profile,
-        "--cloud-topic", cloud_topic,
-        "--imu-topic", imu_topic,
-        "--global-frame", args.global_frame,
-        "--odom-frame", args.odom_frame,
-        "--base-frame", args.base_frame,
+        "--map-path",
+        args.map_path,
+        "--output",
+        str(args.output),
+        "--profile",
+        args.profile,
+        "--cloud-topic",
+        cloud_topic,
+        "--imu-topic",
+        imu_topic,
+        "--global-frame",
+        args.global_frame,
+        "--odom-frame",
+        args.odom_frame,
+        "--base-frame",
+        args.base_frame,
         "--overwrite",
     ]
     if args.lidar_frame:
@@ -210,23 +239,28 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
     imu_frame = str(config_tool._arg_or_profile(config_args, "imu_frame"))
     pose_topic = (
         "/localization/pose_with_covariance"
-        if args.profile in {"nav2", "mid360"} else "/pcl_pose")
+        if args.profile in {"nav2", "mid360"}
+        else "/pcl_pose"
+    )
     explicit_pose = args.initial_pose is not None
     restore = args.auto_initialize and args.restore_saved_pose and not explicit_pose
     route_crop = bool(args.reference_csv)
     global_enabled = (
         args.auto_initialize
         and (args.occupancy_yaml or args.reference_csv)
-        and not explicit_pose)
+        and not explicit_pose
+    )
     g2_candidate_source = "route_crop" if route_crop else "bbs"
     g2_max_candidates = args.global_max_candidates
     if route_crop and g2_max_candidates == 8:
         g2_max_candidates = 16
     g3_enabled = global_enabled and args.g3_recovery
     supervisor_min_score = (
-        0.15 if args.global_registration_scoring else args.min_candidate_score)
+        0.15 if args.global_registration_scoring else args.min_candidate_score
+    )
     supervisor_recovery_threshold = (
-        3.5 if route_crop else args.verification_fitness_threshold)
+        3.5 if route_crop else args.verification_fitness_threshold
+    )
     supervisor_max_walk = 1 if route_crop else args.supervisor_max_walk_candidates
     supervisor_confirm_samples = 1 if route_crop else 3
     values = {
@@ -234,9 +268,11 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         "localization_param_dir": str(config_path),
         "map_path": str(Path(args.map_path).expanduser().resolve()),
         "occupancy_yaml": str(Path(args.occupancy_yaml).expanduser().resolve())
-        if args.occupancy_yaml else "",
+        if args.occupancy_yaml
+        else "",
         "reference_csv": str(Path(args.reference_csv).expanduser().resolve())
-        if args.reference_csv else "",
+        if args.reference_csv
+        else "",
         "g2_candidate_source": g2_candidate_source,
         "pose_state_path": str(state_path),
         "cloud_topic": cloud_topic,
@@ -268,15 +304,15 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         "global_consensus_translation_m": args.global_consensus_translation_m,
         "global_consensus_yaw_deg": args.global_consensus_yaw_deg,
         "registration_fitness_high_confidence_threshold": (
-            0.5 if route_crop else 1.0e9),
+            0.5 if route_crop else 1.0e9
+        ),
         "g2_use_cpp_backend": str(args.global_cpp_backend).lower(),
-        "g2_enable_registration_scoring": str(
-            args.global_registration_scoring).lower(),
+        "g2_enable_registration_scoring": str(args.global_registration_scoring).lower(),
         "require_global_registration_scoring": str(
-            args.require_global_registration_scoring).lower(),
+            args.require_global_registration_scoring
+        ).lower(),
         "g2_registration_score_gate": args.global_registration_score_gate,
-        "g2_registration_refine_candidates": str(
-            args.refine_global_candidates).lower(),
+        "g2_registration_refine_candidates": str(args.refine_global_candidates).lower(),
         "g2_registration_seed_z_m": args.global_seed_z,
         "g2_max_scan_points": args.global_max_scan_points,
         "g2_angular_resolution_deg": args.global_angular_resolution_deg,
@@ -296,7 +332,9 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         "supervisor_recovery_confirmation_samples": supervisor_confirm_samples,
         "supervisor_enable_seed_motion_compensation": str(not route_crop).lower(),
         "supervisor_confirm_cross_check": str(not route_crop).lower(),
-        "supervisor_prefer_reset_default_z_m": str(abs(args.global_seed_z) > 1.0e-9).lower(),
+        "supervisor_prefer_reset_default_z_m": str(
+            abs(args.global_seed_z) > 1.0e-9
+        ).lower(),
     }
     parts = ["ros2", "launch", "lidar_localization_ros2", "quickstart.launch.py"]
     parts.extend(
@@ -307,7 +345,7 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
     return parts
 
 
-def _validate(args) -> Optional[str]:
+def _validate(args) -> str | None:
     map_path = Path(args.map_path).expanduser()
     if not map_path.is_file():
         return f"Map file does not exist: {map_path}"
@@ -338,7 +376,9 @@ def _validate(args) -> Optional[str]:
         or args.global_max_scan_points < 1
         or args.global_max_candidates < 2
     ):
-        return "Verification samples, candidates, points, and attempts must be positive."
+        return (
+            "Verification samples, candidates, points, and attempts must be positive."
+        )
     if (
         not math.isfinite(args.global_registration_score_gate)
         or args.global_registration_score_gate <= 0.0
@@ -351,7 +391,9 @@ def _validate(args) -> Optional[str]:
         or args.global_nms_radius_m < 0.0
         or not math.isfinite(args.global_seed_z)
     ):
-        return "Global search resolution, NMS radius, and seed z must be finite and valid."
+        return (
+            "Global search resolution, NMS radius, and seed z must be finite and valid."
+        )
     policy_params = model.StartupParams(
         min_candidate_score=args.min_candidate_score,
         min_score_margin=args.min_score_margin,
@@ -364,7 +406,8 @@ def _validate(args) -> Optional[str]:
         global_consensus_translation_m=args.global_consensus_translation_m,
         global_consensus_yaw_deg=args.global_consensus_yaw_deg,
         registration_fitness_high_confidence_threshold=(
-            0.5 if args.reference_csv else 1.0e9),
+            0.5 if args.reference_csv else 1.0e9
+        ),
     )
     policy_error = model.validate_startup_params(policy_params)
     if policy_error:
@@ -372,7 +415,7 @@ def _validate(args) -> Optional[str]:
     return None
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     error = _validate(args)
     if error:
@@ -387,11 +430,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         typed = discover_typed_topics()
         if args.cloud_topic is None:
             cloud_topic, reason = model.select_discovered_topic(
-                typed, "sensor_msgs/msg/PointCloud2", cloud_topic)
+                typed, "sensor_msgs/msg/PointCloud2", cloud_topic
+            )
             discovery_notes.append(f"cloud={cloud_topic} ({reason})")
         if args.imu_topic is None:
             imu_topic, reason = model.select_discovered_topic(
-                typed, "sensor_msgs/msg/Imu", imu_topic)
+                typed, "sensor_msgs/msg/Imu", imu_topic
+            )
             discovery_notes.append(f"imu={imu_topic} ({reason})")
 
     config_args = _config_args(args, cloud_topic, imu_topic)
@@ -407,7 +452,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     state_path = (
         args.state_file.expanduser().resolve()
-        if args.state_file else default_state_path(Path(args.map_path)).resolve())
+        if args.state_file
+        else default_state_path(Path(args.map_path)).resolve()
+    )
     parts = launch_parts(args, config_args, output, state_path)
 
     print(f"Configuration: {output}")
@@ -418,10 +465,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("Initialization: explicit pose")
     elif args.auto_initialize and args.reference_csv:
         suffix = " + guarded G3 recovery" if args.g3_recovery else ""
-        print(f"Initialization: verified saved pose -> guarded route-crop search{suffix} -> RViz")
+        print(
+            f"Initialization: verified saved pose -> guarded route-crop search{suffix} -> RViz"
+        )
     elif args.auto_initialize and args.occupancy_yaml:
         suffix = " + guarded G3 recovery" if args.g3_recovery else ""
-        print(f"Initialization: verified saved pose -> guarded global search{suffix} -> RViz")
+        print(
+            f"Initialization: verified saved pose -> guarded global search{suffix} -> RViz"
+        )
     elif args.auto_initialize:
         print(
             "Initialization: verified saved pose -> RViz "

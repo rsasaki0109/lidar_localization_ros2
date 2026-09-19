@@ -7,7 +7,6 @@ import sys
 import unittest
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -79,7 +78,7 @@ def config_args(**overrides):
 def command_args_after_executable(command: str, executable: str):
     tokens = shlex.split(command)
     index = tokens.index(executable)
-    return tokens[index + 1:]
+    return tokens[index + 1 :]
 
 
 class TestCliCommandContract(unittest.TestCase):
@@ -110,13 +109,15 @@ class TestCliCommandContract(unittest.TestCase):
     def test_doctor_parser_accepts_boolean_optional_flags_used_by_docs(self):
         parser = bringup_cli.build_arg_parser()
 
-        parsed = parser.parse_args([
-            "--profile",
-            "mid360",
-            "--no-require-cloud-time-field",
-            "--require-imu-base-tf",
-            "--no-require-map-odom-tf",
-        ])
+        parsed = parser.parse_args(
+            [
+                "--profile",
+                "mid360",
+                "--no-require-cloud-time-field",
+                "--require-imu-base-tf",
+                "--no-require-map-odom-tf",
+            ]
+        )
 
         self.assertFalse(parsed.require_cloud_time_field)
         self.assertTrue(parsed.require_imu_base_tf)

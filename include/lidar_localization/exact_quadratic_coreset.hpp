@@ -15,8 +15,8 @@
 //  - Maalouf, Jubran, Feldman, "Fast and Accurate Least-Mean-Squares
 //    Solvers", NeurIPS 2019 (fast Caratheodory clustering scheme).
 
-#ifndef LIDAR_LOCALIZATION__EXACT_QUADRATIC_CORESET_HPP_
-#define LIDAR_LOCALIZATION__EXACT_QUADRATIC_CORESET_HPP_
+#ifndef LIDAR_LOCALIZATION_EXACT_QUADRATIC_CORESET_HPP_
+#define LIDAR_LOCALIZATION_EXACT_QUADRATIC_CORESET_HPP_
 
 #include <Eigen/Dense>
 
@@ -153,8 +153,10 @@ inline QuadraticCoreset extractQuadraticCoreset(
   Eigen::MatrixXd contributions(sym_dim, block_count);
   Eigen::MatrixXd block(rows_per_block, s);
   for (int i = 0; i < block_count; ++i) {
-    block.leftCols(dof) = jacobian.middleRows(i * rows_per_block, rows_per_block);
-    block.col(dof) = residual.segment(i * rows_per_block, rows_per_block);
+    block.leftCols(dof) = jacobian.middleRows(
+      static_cast<Eigen::Index>(i) * rows_per_block, rows_per_block);
+    block.col(dof) = residual.segment(
+      static_cast<Eigen::Index>(i) * rows_per_block, rows_per_block);
     contributions.col(i) = detail::symmetricOuterProductVector(block);
   }
 
@@ -235,4 +237,4 @@ inline QuadraticCoreset extractQuadraticCoreset(
 
 }  // namespace lidar_localization
 
-#endif  // LIDAR_LOCALIZATION__EXACT_QUADRATIC_CORESET_HPP_
+#endif  // LIDAR_LOCALIZATION_EXACT_QUADRATIC_CORESET_HPP_

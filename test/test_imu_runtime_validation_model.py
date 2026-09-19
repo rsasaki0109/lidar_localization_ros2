@@ -7,17 +7,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from lidar_localization_mid360.validation_model import AlignmentDiagnosticSample
-from lidar_localization_mid360.validation_model import RuntimeValidationConfig
-from lidar_localization_mid360.validation_model import evaluate_runtime_summary
-from lidar_localization_mid360.validation_model import load_alignment_csv
-from lidar_localization_mid360.validation_model import render_runtime_report
-from lidar_localization_mid360.validation_model import summarize_runtime
-from lidar_localization_mid360.validation_model import validation_exit_code
+from lidar_localization_mid360.validation_model import (
+    AlignmentDiagnosticSample,
+    RuntimeValidationConfig,
+    evaluate_runtime_summary,
+    load_alignment_csv,
+    render_runtime_report,
+    summarize_runtime,
+    validation_exit_code,
+)
 
 
 def sample(status="imu_preintegration_prediction_active", **values):
@@ -47,14 +48,18 @@ class TestImuRuntimeValidationModel(unittest.TestCase):
         self.assertEqual(validation_exit_code(checks), 0)
         self.assertEqual(summary["imu_active_count"], 3)
         self.assertEqual(summary["imu_integrated_sample_count_max"], 12)
-        self.assertEqual(summary["registration_seed_source_counts"]["imu_preintegration"], 3)
+        self.assertEqual(
+            summary["registration_seed_source_counts"]["imu_preintegration"], 3
+        )
 
     def test_required_imu_seed_source_passes_when_selected_enough(self):
-        summary = summarize_runtime([
-            sample(),
-            sample(),
-            sample(registration_seed_source="previous_delta"),
-        ])
+        summary = summarize_runtime(
+            [
+                sample(),
+                sample(),
+                sample(registration_seed_source="previous_delta"),
+            ]
+        )
         checks = evaluate_runtime_summary(
             summary,
             RuntimeValidationConfig(
@@ -76,14 +81,21 @@ class TestImuRuntimeValidationModel(unittest.TestCase):
         )
 
         self.assertEqual(validation_exit_code(checks), 1)
-        self.assertTrue(any("registration_seed_source is missing" in check.message for check in checks))
+        self.assertTrue(
+            any(
+                "registration_seed_source is missing" in check.message
+                for check in checks
+            )
+        )
 
     def test_required_imu_seed_source_fails_when_other_seed_is_used(self):
-        summary = summarize_runtime([
-            sample(registration_seed_source="previous_delta"),
-            sample(registration_seed_source="twist_prediction"),
-            sample(registration_seed_source="current_pose"),
-        ])
+        summary = summarize_runtime(
+            [
+                sample(registration_seed_source="previous_delta"),
+                sample(registration_seed_source="twist_prediction"),
+                sample(registration_seed_source="current_pose"),
+            ]
+        )
         checks = evaluate_runtime_summary(
             summary,
             RuntimeValidationConfig(require_imu_seed_source=True),
@@ -93,11 +105,19 @@ class TestImuRuntimeValidationModel(unittest.TestCase):
         self.assertTrue(any("seed source ratio" in check.message for check in checks))
 
     def test_inactive_imu_ratio_fails(self):
-        summary = summarize_runtime([
-            sample(),
-            sample(status="imu_preintegration_waiting_for_imu", imu_integrated_sample_count=0),
-            sample(status="imu_preintegration_waiting_for_imu", imu_integrated_sample_count=0),
-        ])
+        summary = summarize_runtime(
+            [
+                sample(),
+                sample(
+                    status="imu_preintegration_waiting_for_imu",
+                    imu_integrated_sample_count=0,
+                ),
+                sample(
+                    status="imu_preintegration_waiting_for_imu",
+                    imu_integrated_sample_count=0,
+                ),
+            ]
+        )
         checks = evaluate_runtime_summary(
             summary,
             RuntimeValidationConfig(min_imu_active_ratio=0.8),
@@ -107,11 +127,16 @@ class TestImuRuntimeValidationModel(unittest.TestCase):
         self.assertTrue(any("active ratio" in check.message for check in checks))
 
     def test_fallback_fails_by_default(self):
-        summary = summarize_runtime([
-            sample(),
-            sample(status="imu_preintegration_fallback_mode", imu_preintegration_fallback_mode="true"),
-            sample(),
-        ])
+        summary = summarize_runtime(
+            [
+                sample(),
+                sample(
+                    status="imu_preintegration_fallback_mode",
+                    imu_preintegration_fallback_mode="true",
+                ),
+                sample(),
+            ]
+        )
         checks = evaluate_runtime_summary(summary, RuntimeValidationConfig())
 
         self.assertEqual(validation_exit_code(checks), 1)
@@ -119,27 +144,31 @@ class TestImuRuntimeValidationModel(unittest.TestCase):
         self.assertTrue(any("fallback count" in check.message for check in checks))
 
     def test_deskew_required_passes_when_applied_enough(self):
-        summary = summarize_runtime([
-            sample(
-                continuous_time_deskew_status="continuous_time_deskew_applied",
-                continuous_time_deskew_applied="true",
-                continuous_time_deskew_point_count="100",
-                scan_time_duration_sec="0.2",
-            ),
-            sample(
-                continuous_time_deskew_status="continuous_time_deskew_applied",
-                continuous_time_deskew_applied="true",
-                continuous_time_deskew_point_count="120",
-                scan_time_duration_sec="0.3",
-            ),
-            sample(
-                continuous_time_deskew_status="continuous_time_deskew_waiting_for_new_imu",
-                scan_time_duration_sec="0.1",
-            ),
-        ])
+        summary = summarize_runtime(
+            [
+                sample(
+                    continuous_time_deskew_status="continuous_time_deskew_applied",
+                    continuous_time_deskew_applied="true",
+                    continuous_time_deskew_point_count="100",
+                    scan_time_duration_sec="0.2",
+                ),
+                sample(
+                    continuous_time_deskew_status="continuous_time_deskew_applied",
+                    continuous_time_deskew_applied="true",
+                    continuous_time_deskew_point_count="120",
+                    scan_time_duration_sec="0.3",
+                ),
+                sample(
+                    continuous_time_deskew_status="continuous_time_deskew_waiting_for_new_imu",
+                    scan_time_duration_sec="0.1",
+                ),
+            ]
+        )
         checks = evaluate_runtime_summary(
             summary,
-            RuntimeValidationConfig(require_deskew_applied=True, min_deskew_applied_ratio=0.5),
+            RuntimeValidationConfig(
+                require_deskew_applied=True, min_deskew_applied_ratio=0.5
+            ),
         )
 
         self.assertEqual(validation_exit_code(checks), 0)
@@ -151,18 +180,28 @@ class TestImuRuntimeValidationModel(unittest.TestCase):
         self.assertAlmostEqual(summary["scan_time_duration_max_sec"], 0.3)
 
     def test_deskew_required_fails_when_never_applied(self):
-        summary = summarize_runtime([
-            sample(continuous_time_deskew_status="continuous_time_deskew_scan_time_not_ready"),
-            sample(continuous_time_deskew_status="continuous_time_deskew_scan_time_not_ready"),
-            sample(continuous_time_deskew_status="continuous_time_deskew_scan_time_not_ready"),
-        ])
+        summary = summarize_runtime(
+            [
+                sample(
+                    continuous_time_deskew_status="continuous_time_deskew_scan_time_not_ready"
+                ),
+                sample(
+                    continuous_time_deskew_status="continuous_time_deskew_scan_time_not_ready"
+                ),
+                sample(
+                    continuous_time_deskew_status="continuous_time_deskew_scan_time_not_ready"
+                ),
+            ]
+        )
         checks = evaluate_runtime_summary(
             summary,
             RuntimeValidationConfig(require_deskew_applied=True),
         )
 
         self.assertEqual(validation_exit_code(checks), 1)
-        self.assertTrue(any("deskew applied ratio" in check.message for check in checks))
+        self.assertTrue(
+            any("deskew applied ratio" in check.message for check in checks)
+        )
 
     def test_load_alignment_csv_reads_values_json(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -192,7 +231,9 @@ class TestImuRuntimeValidationModel(unittest.TestCase):
                         "message": "ok",
                         "hardware_id": "",
                         "values_json": json.dumps(
-                            {"imu_preintegration_status": "imu_preintegration_prediction_active"}
+                            {
+                                "imu_preintegration_status": "imu_preintegration_prediction_active"
+                            }
                         ),
                     }
                 )

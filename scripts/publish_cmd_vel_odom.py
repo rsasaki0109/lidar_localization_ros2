@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 
 import math
-from typing import Optional
 
 import rclpy
-from geometry_msgs.msg import TransformStamped
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from tf2_ros import TransformBroadcaster
@@ -28,10 +26,16 @@ class CmdVelOdomPublisher(Node):
         self.declare_parameter("cmd_vel_timeout_sec", 0.5)
         self.declare_parameter("publish_tf", True)
 
-        cmd_vel_topic = self.get_parameter("cmd_vel_topic").get_parameter_value().string_value
+        cmd_vel_topic = (
+            self.get_parameter("cmd_vel_topic").get_parameter_value().string_value
+        )
         odom_topic = self.get_parameter("odom_topic").get_parameter_value().string_value
-        self.odom_frame_id = self.get_parameter("odom_frame_id").get_parameter_value().string_value
-        self.base_frame_id = self.get_parameter("base_frame_id").get_parameter_value().string_value
+        self.odom_frame_id = (
+            self.get_parameter("odom_frame_id").get_parameter_value().string_value
+        )
+        self.base_frame_id = (
+            self.get_parameter("base_frame_id").get_parameter_value().string_value
+        )
         rate_hz = self.get_parameter("rate_hz").get_parameter_value().double_value
         self.cmd_vel_timeout_sec = (
             self.get_parameter("cmd_vel_timeout_sec").get_parameter_value().double_value
@@ -40,14 +44,16 @@ class CmdVelOdomPublisher(Node):
 
         self.odom_pub = self.create_publisher(Odometry, odom_topic, 10)
         self.tf_broadcaster = TransformBroadcaster(self) if publish_tf else None
-        self.subscription = self.create_subscription(Twist, cmd_vel_topic, self._cmd_vel_callback, 50)
+        self.subscription = self.create_subscription(
+            Twist, cmd_vel_topic, self._cmd_vel_callback, 50
+        )
 
         self.x = 0.0
         self.y = 0.0
         self.yaw = 0.0
         self.linear_x = 0.0
         self.angular_z = 0.0
-        self.last_cmd_time: Optional[rclpy.time.Time] = None
+        self.last_cmd_time: rclpy.time.Time | None = None
         self.last_tick_time = self.get_clock().now()
 
         period_sec = 1.0 / max(rate_hz, 1e-3)

@@ -25,16 +25,18 @@ rclpy = pytest.importorskip("rclpy")
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from rclpy.executors import SingleThreadedExecutor          # noqa: E402
-from rclpy.node import Node                                  # noqa: E402
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy  # noqa: E402
-from std_msgs.msg import Bool                                # noqa: E402
-from std_srvs.srv import Trigger                             # noqa: E402
-from diagnostic_msgs.msg import (                            # noqa: E402
-    DiagnosticArray, DiagnosticStatus, KeyValue)
-from geometry_msgs.msg import PoseWithCovarianceStamped      # noqa: E402
-
-import reinitialization_supervisor_node as rsn               # noqa: E402
+import reinitialization_supervisor_node as rsn
+from diagnostic_msgs.msg import (
+    DiagnosticArray,
+    DiagnosticStatus,
+    KeyValue,
+)
+from geometry_msgs.msg import PoseWithCovarianceStamped
+from rclpy.executors import SingleThreadedExecutor
+from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Bool
+from std_srvs.srv import Trigger
 
 _REL = QoSProfile(depth=1)
 _REL.reliability = ReliabilityPolicy.RELIABLE
@@ -57,11 +59,13 @@ class _Harness(Node):
         self._reinit = self.create_publisher(Bool, "/reinitialization_requested", _REL)
         self._status = self.create_publisher(DiagnosticArray, "/alignment_status", 10)
         self.create_subscription(
-            PoseWithCovarianceStamped, "/initialpose", self._on_pose, _REL)
+            PoseWithCovarianceStamped, "/initialpose", self._on_pose, _REL
+        )
         # Optionally fake the localizer pose output so the supervisor can carry z.
         self._pose_z = pose_z
         self._pcl_pose = self.create_publisher(
-            PoseWithCovarianceStamped, "/pcl_pose", _POSE_QOS)
+            PoseWithCovarianceStamped, "/pcl_pose", _POSE_QOS
+        )
         self.query_calls = 0
         self.recover_on_second = recover_on_second
         self.poses = []
@@ -74,13 +78,15 @@ class _Harness(Node):
     def _on_query(self, request, response):
         self.query_calls += 1
         response.success = True
-        response.message = json.dumps({
-            "candidate_count": 2,
-            "candidates": [
-                {"x": 12.0, "y": 34.0, "yaw_deg": 45.0, "score": 0.99},
-                {"x": 99.0, "y": 88.0, "yaw_deg": -90.0, "score": 0.98},
-            ],
-        })
+        response.message = json.dumps(
+            {
+                "candidate_count": 2,
+                "candidates": [
+                    {"x": 12.0, "y": 34.0, "yaw_deg": 45.0, "score": 0.99},
+                    {"x": 99.0, "y": 88.0, "yaw_deg": -90.0, "score": 0.98},
+                ],
+            }
+        )
         return response
 
     def _on_pose(self, msg):
@@ -90,17 +96,25 @@ class _Harness(Node):
         self._reinit.publish(Bool(data=True))
         # Recover only once the node has walked to the 2nd candidate, else stay bad.
         recovered = self.recover_on_second and len(self.poses) >= 2
+
         def kv(key, value):
             item = KeyValue()
             item.key, item.value = key, value
             return item
+
         status = DiagnosticStatus()
         status.message = "ok" if recovered else "fitness_score_over_threshold_rejected"
         status.values = [
             kv("fitness_score", "0.2" if recovered else "9.0"),
             kv("reinitialization_requested", "false" if recovered else "true"),
-            kv("recovery_state", "tracking" if recovered else "reinitialization_requested"),
-            kv("recovery_action", "accept_measurement" if recovered else "request_reinitialization"),
+            kv(
+                "recovery_state",
+                "tracking" if recovered else "reinitialization_requested",
+            ),
+            kv(
+                "recovery_action",
+                "accept_measurement" if recovered else "request_reinitialization",
+            ),
         ]
         array = DiagnosticArray()
         array.status = [status]
@@ -128,7 +142,9 @@ def test_supervisor_node_closes_the_loop():
             time.sleep(0.1)
 
         assert harness.query_calls >= 1, "supervisor never queried the G2 service"
-        assert harness.initialpose is not None, "supervisor never published /initialpose"
+        assert harness.initialpose is not None, (
+            "supervisor never published /initialpose"
+        )
         pose = harness.initialpose.pose.pose
         assert abs(pose.position.x - 12.0) < 1e-3
         assert abs(pose.position.y - 34.0) < 1e-3
@@ -151,9 +167,13 @@ def test_supervisor_node_walks_to_second_candidate_and_recovers():
     # Walk fast and within a single query (max_attempts=1 proves walking does not
     # spend attempts -- a fresh query would have given up).
     sup.params = replace(
-        sup.params, settle_timeout_sec=2.0, request_debounce_sec=0.5,
-        min_seconds_between_attempts=1.0, max_attempts=1,
-        enable_confirm_cross_check=False)
+        sup.params,
+        settle_timeout_sec=2.0,
+        request_debounce_sec=0.5,
+        min_seconds_between_attempts=1.0,
+        max_attempts=1,
+        enable_confirm_cross_check=False,
+    )
     harness = _Harness(recover_on_second=True)
     executor = SingleThreadedExecutor()
     executor.add_node(sup)
@@ -162,14 +182,18 @@ def test_supervisor_node_walks_to_second_candidate_and_recovers():
     spin.start()
     try:
         deadline = time.monotonic() + 15.0
-        while (time.monotonic() < deadline
-               and sup.state.name != rsn.rsp.STATE_STANDDOWN):
+        while time.monotonic() < deadline and sup.state.name != rsn.rsp.STATE_STANDDOWN:
             time.sleep(0.1)
 
         assert len(harness.poses) >= 2, "node never walked to the second candidate"
         first, second = harness.poses[0].pose.pose, harness.poses[1].pose.pose
-        assert abs(first.position.x - 12.0) < 1e-3 and abs(first.position.y - 34.0) < 1e-3
-        assert abs(second.position.x - 99.0) < 1e-3 and abs(second.position.y - 88.0) < 1e-3
+        assert (
+            abs(first.position.x - 12.0) < 1e-3 and abs(first.position.y - 34.0) < 1e-3
+        )
+        assert (
+            abs(second.position.x - 99.0) < 1e-3
+            and abs(second.position.y - 88.0) < 1e-3
+        )
         # Recovered on the walked candidate, within one query, without giving up.
         assert sup.state.name == rsn.rsp.STATE_STANDDOWN
         assert harness.query_calls == 1
@@ -197,7 +221,9 @@ def test_reset_carries_z_from_localizer_pose():
         deadline = time.monotonic() + 12.0
         while time.monotonic() < deadline and harness.initialpose is None:
             time.sleep(0.1)
-        assert harness.initialpose is not None, "supervisor never published /initialpose"
+        assert harness.initialpose is not None, (
+            "supervisor never published /initialpose"
+        )
         # Candidate carried x/y from the query but z from the localizer pose.
         pose = harness.initialpose.pose.pose
         assert abs(pose.position.x - 12.0) < 1e-3
@@ -285,8 +311,7 @@ def test_bbs_reset_preserves_source_scan_stamp():
 
     try:
         sup.initialpose_pub = Publisher()
-        sup._candidates = [
-            {"x": -110.0, "y": 46.0, "yaw_deg": -170.0, "score": 0.7}]
+        sup._candidates = [{"x": -110.0, "y": 46.0, "yaw_deg": -170.0, "score": 0.7}]
         sup._current_query_scan_stamp_sec = 1693922514.4998405
         sup._publish_reset()
 
@@ -305,12 +330,19 @@ def test_verified_glil_request_clear_confirms_recovery(monkeypatch):
     try:
         sup.request_clear_confirms_recovery = True
         sup.params = replace(
-            sup.params, recovery_confirmation_samples=1,
-            enable_confirm_cross_check=False)
+            sup.params,
+            recovery_confirmation_samples=1,
+            enable_confirm_cross_check=False,
+        )
         sup._requested = False
         sup.state = replace(
-            sup.state, name=rsn.rsp.STATE_SETTLING, attempts=1,
-            last_reset_sec=100.0, candidate_scores=(0.9,), candidate_index=0)
+            sup.state,
+            name=rsn.rsp.STATE_SETTLING,
+            attempts=1,
+            last_reset_sec=100.0,
+            candidate_scores=(0.9,),
+            candidate_index=0,
+        )
         monkeypatch.setattr(rsn.time, "monotonic", lambda: 101.0)
 
         sup._tick()
@@ -468,8 +500,8 @@ def test_recovery_confirmation_requires_post_reset_fitness(monkeypatch):
             attempts=1,
             last_reset_sec=100.0,
             candidate_scores=(0.9,),
-                candidate_index=0,
-            )
+            candidate_index=0,
+        )
         sup.params = replace(sup.params, enable_confirm_cross_check=False)
 
         monkeypatch.setattr(rsn.time, "monotonic", lambda: 101.0)

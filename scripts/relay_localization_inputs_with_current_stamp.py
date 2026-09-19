@@ -13,18 +13,32 @@ class ReplayStampRelay(Node):
     def __init__(self) -> None:
         super().__init__("relay_localization_inputs_with_current_stamp")
 
-        self.declare_parameter("input_pointcloud_topic", "/localization/util/downsample/pointcloud")
-        self.declare_parameter("output_pointcloud_topic", "/localization/replay/downsample/pointcloud")
-        self.declare_parameter("input_twist_topic", "/localization/twist_estimator/twist_with_covariance")
-        self.declare_parameter("output_twist_topic", "/localization/replay/twist_with_covariance")
+        self.declare_parameter(
+            "input_pointcloud_topic", "/localization/util/downsample/pointcloud"
+        )
+        self.declare_parameter(
+            "output_pointcloud_topic", "/localization/replay/downsample/pointcloud"
+        )
+        self.declare_parameter(
+            "input_twist_topic", "/localization/twist_estimator/twist_with_covariance"
+        )
+        self.declare_parameter(
+            "output_twist_topic", "/localization/replay/twist_with_covariance"
+        )
 
         input_pointcloud_topic = (
-            self.get_parameter("input_pointcloud_topic").get_parameter_value().string_value
+            self.get_parameter("input_pointcloud_topic")
+            .get_parameter_value()
+            .string_value
         )
         output_pointcloud_topic = (
-            self.get_parameter("output_pointcloud_topic").get_parameter_value().string_value
+            self.get_parameter("output_pointcloud_topic")
+            .get_parameter_value()
+            .string_value
         )
-        input_twist_topic = self.get_parameter("input_twist_topic").get_parameter_value().string_value
+        input_twist_topic = (
+            self.get_parameter("input_twist_topic").get_parameter_value().string_value
+        )
         output_twist_topic = (
             self.get_parameter("output_twist_topic").get_parameter_value().string_value
         )
@@ -34,7 +48,9 @@ class ReplayStampRelay(Node):
             output_pointcloud_topic,
             qos_profile_sensor_data,
         )
-        self.twist_pub = self.create_publisher(TwistWithCovarianceStamped, output_twist_topic, 50)
+        self.twist_pub = self.create_publisher(
+            TwistWithCovarianceStamped, output_twist_topic, 50
+        )
 
         self.create_subscription(
             PointCloud2,

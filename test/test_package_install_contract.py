@@ -6,7 +6,6 @@ import sys
 import unittest
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -28,7 +27,9 @@ def cmake_script_groups(text: str) -> dict[str, list[str]]:
         re.DOTALL,
     )
     for match in pattern.finditer(text):
-        groups[match.group("name")] = re.findall(r"scripts/[^\s)]+", match.group("body"))
+        groups[match.group("name")] = re.findall(
+            r"scripts/[^\s)]+", match.group("body")
+        )
     return groups
 
 
@@ -41,7 +42,9 @@ def cmake_install_programs() -> set[str]:
         re.DOTALL,
     )
     if match is None:
-        raise AssertionError("install(PROGRAMS ... DESTINATION lib/${PROJECT_NAME}) not found")
+        raise AssertionError(
+            "install(PROGRAMS ... DESTINATION lib/${PROJECT_NAME}) not found"
+        )
     body = match.group("body")
     programs = set(re.findall(r"scripts/[^\s)]+", body))
     for variable in re.findall(r"\$\{([A-Z_]+)\}", body):
@@ -66,7 +69,9 @@ class TestPackageInstallContract(unittest.TestCase):
                 path = REPO_ROOT / relative_path
 
                 self.assertTrue(path.exists())
-                self.assertTrue(os.access(path, os.X_OK), f"{relative_path} is not executable")
+                self.assertTrue(
+                    os.access(path, os.X_OK), f"{relative_path} is not executable"
+                )
 
     def test_grouped_install_scripts_exist_and_are_unique(self):
         cmake_text = (REPO_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
@@ -84,14 +89,22 @@ class TestPackageInstallContract(unittest.TestCase):
         cmake_text = (REPO_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
 
         self.assertIn("scripts/lidar_localization_mid360", cmake_text)
-        self.assertTrue((REPO_ROOT / "scripts/lidar_localization_mid360/__init__.py").exists())
-        self.assertTrue((REPO_ROOT / "scripts/lidar_localization_mid360/validation_model.py").exists())
+        self.assertTrue(
+            (REPO_ROOT / "scripts/lidar_localization_mid360/__init__.py").exists()
+        )
+        self.assertTrue(
+            (
+                REPO_ROOT / "scripts/lidar_localization_mid360/validation_model.py"
+            ).exists()
+        )
 
     def test_colcon_bootstrap_script_is_executable(self):
         path = REPO_ROOT / BOOTSTRAP_SCRIPT
 
         self.assertTrue(path.exists())
-        self.assertTrue(os.access(path, os.X_OK), f"{BOOTSTRAP_SCRIPT} is not executable")
+        self.assertTrue(
+            os.access(path, os.X_OK), f"{BOOTSTRAP_SCRIPT} is not executable"
+        )
 
     def test_dependencies_repos_lists_required_ndt_dependency(self):
         repos_text = (REPO_ROOT / "dependencies.repos").read_text(encoding="utf-8")

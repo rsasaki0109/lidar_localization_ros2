@@ -43,6 +43,7 @@ export AMENT_PYTHON_EXECUTABLE="${AMENT_PYTHON_EXECUTABLE-}"
 export COLCON_TRACE="${COLCON_TRACE-}"
 export COLCON_PYTHON_EXECUTABLE="${COLCON_PYTHON_EXECUTABLE-}"
 
+# shellcheck source=/dev/null
 source "/opt/ros/${_lidarloc_ros_distro}/setup.bash"
 
 export LIDAR_LOCALIZATION_WS_ROOT="${_lidarloc_ws_root}"
@@ -57,6 +58,7 @@ export CPLUS_INCLUDE_PATH="${_lidarloc_prefix}/usr/include${CPLUS_INCLUDE_PATH:+
 export CMAKE_INCLUDE_PATH="${_lidarloc_prefix}/usr/include${CMAKE_INCLUDE_PATH:+:${CMAKE_INCLUDE_PATH}}"
 
 if [[ -f "${_lidarloc_overlay}" ]]; then
+  # shellcheck source=/dev/null
   source "${_lidarloc_overlay}"
 fi
 

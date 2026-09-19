@@ -4,14 +4,10 @@ import argparse
 import json
 import shlex
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Sequence
 
-
-PROFILE_DEFAULTS: Dict[str, Dict[str, object]] = {
+PROFILE_DEFAULTS: dict[str, dict[str, object]] = {
     "standalone": {
         "cloud_topic": "/velodyne_points",
         "imu_topic": "/imu",
@@ -75,7 +71,7 @@ def yaml_scalar(value: object) -> str:
     return str(value)
 
 
-def render_ros_params(params: Dict[str, object]) -> str:
+def render_ros_params(params: dict[str, object]) -> str:
     lines = ["/**:", "  ros__parameters:"]
     for key in sorted(params.keys()):
         lines.append(f"    {key}: {yaml_scalar(params[key])}")
@@ -90,9 +86,9 @@ def normalized_map_path(map_path: str) -> str:
     return str(Path(map_path).expanduser().resolve(strict=False))
 
 
-def map_path_warnings(map_path: str) -> List[str]:
+def map_path_warnings(map_path: str) -> list[str]:
     path = Path(normalized_map_path(map_path))
-    warnings: List[str] = []
+    warnings: list[str] = []
     if not path.exists():
         warnings.append(
             f"Map path does not exist yet: {path}. Check the path before launching."
@@ -100,9 +96,7 @@ def map_path_warnings(map_path: str) -> List[str]:
     suffix = path.suffix.lower()
     if suffix not in SUPPORTED_MAP_SUFFIXES:
         suffix_text = suffix if suffix else "none"
-        warnings.append(
-            f"Map path extension is {suffix_text}; expected .pcd or .ply."
-        )
+        warnings.append(f"Map path extension is {suffix_text}; expected .pcd or .ply.")
     return warnings
 
 
@@ -125,7 +119,9 @@ def use_imu_preintegration_base_frame_transform(args: argparse.Namespace) -> boo
     mode = effective_imu_mode(args)
     if mode not in {"preintegration", "both"}:
         return False
-    return bool(PROFILE_DEFAULTS[args.profile]["imu_preintegration_use_base_frame_transform"])
+    return bool(
+        PROFILE_DEFAULTS[args.profile]["imu_preintegration_use_base_frame_transform"]
+    )
 
 
 def use_continuous_time_deskew(args: argparse.Namespace) -> bool:
@@ -145,7 +141,7 @@ def continuous_time_deskew_requires_imu(args: argparse.Namespace) -> bool:
     )
 
 
-def validate_args(args: argparse.Namespace) -> Optional[str]:
+def validate_args(args: argparse.Namespace) -> str | None:
     if continuous_time_deskew_requires_imu(args) and effective_imu_mode(args) == "off":
         return (
             "--enable-continuous-time-deskew requires IMU preintegration. "
@@ -154,9 +150,9 @@ def validate_args(args: argparse.Namespace) -> Optional[str]:
     return None
 
 
-def make_params(args: argparse.Namespace) -> Dict[str, object]:
+def make_params(args: argparse.Namespace) -> dict[str, object]:
     imu_mode = effective_imu_mode(args)
-    params: Dict[str, object] = {
+    params: dict[str, object] = {
         "registration_method": "NDT_OMP",
         "score_threshold": _arg_or_profile(args, "score_threshold"),
         "ndt_resolution": args.ndt_resolution,
@@ -170,7 +166,8 @@ def make_params(args: argparse.Namespace) -> Dict[str, object]:
         "scan_min_range": _arg_or_profile(args, "scan_min_range"),
         "scan_period": args.scan_period,
         "scan_time_range_max_duration_ratio": getattr(
-            args, "scan_time_range_max_duration_ratio", 2.0),
+            args, "scan_time_range_max_duration_ratio", 2.0
+        ),
         "use_pcd_map": True,
         "map_path": normalized_map_path(args.map_path),
         "set_initial_pose": args.initial_pose is not None,
@@ -187,21 +184,29 @@ def make_params(args: argparse.Namespace) -> Dict[str, object]:
         "max_twist_prediction_dt": _arg_or_profile(args, "max_twist_prediction_dt"),
         "use_imu": imu_mode in {"legacy", "both"},
         "use_imu_preintegration": imu_mode in {"preintegration", "both"},
-        "imu_preintegration_use_base_frame_transform": use_imu_preintegration_base_frame_transform(args),
+        "imu_preintegration_use_base_frame_transform": use_imu_preintegration_base_frame_transform(
+            args
+        ),
         "use_continuous_time_deskew": use_continuous_time_deskew(args),
         "continuous_time_deskew_mode": getattr(
-            args, "continuous_time_deskew_mode", "relative_motion"),
+            args, "continuous_time_deskew_mode", "relative_motion"
+        ),
         "continuous_time_cloud_stamp_reference": getattr(
-            args, "continuous_time_cloud_stamp_reference", "start"),
+            args, "continuous_time_cloud_stamp_reference", "start"
+        ),
         "continuous_time_deskew_reference_time_sec": args.deskew_reference_time_sec,
         "continuous_time_pose_history_duration_sec": getattr(
-            args, "continuous_time_pose_history_duration_sec", 2.0),
+            args, "continuous_time_pose_history_duration_sec", 2.0
+        ),
         "enable_localizability_guard": getattr(
-            args, "enable_localizability_guard", False),
+            args, "enable_localizability_guard", False
+        ),
         "localizability_min_xy_eigen_ratio": getattr(
-            args, "localizability_min_xy_eigen_ratio", 0.05),
+            args, "localizability_min_xy_eigen_ratio", 0.05
+        ),
         "enable_registration_localizability_diagnostics": getattr(
-            args, "enable_registration_localizability_diagnostics", False),
+            args, "enable_registration_localizability_diagnostics", False
+        ),
         "enable_debug": False,
         "predict_pose_from_previous_delta": True,
         "enable_local_map_crop": True,
@@ -212,25 +217,34 @@ def make_params(args: argparse.Namespace) -> Dict[str, object]:
         "borderline_seed_gate_score_threshold": 5.25,
         "borderline_seed_gate_min_seed_translation_m": 1.0,
         "enable_open_loop_strict_score_threshold": getattr(
-            args, "enable_open_loop_strict_score_threshold", False),
+            args, "enable_open_loop_strict_score_threshold", False
+        ),
         "open_loop_strict_min_accepted_gap_sec": getattr(
-            args, "open_loop_strict_min_accepted_gap_sec", 15.0),
+            args, "open_loop_strict_min_accepted_gap_sec", 15.0
+        ),
         "open_loop_strict_min_seed_translation_m": getattr(
-            args, "open_loop_strict_min_seed_translation_m", 100.0),
+            args, "open_loop_strict_min_seed_translation_m", 100.0
+        ),
         "open_loop_strict_score_threshold": getattr(
-            args, "open_loop_strict_score_threshold", 5.25),
+            args, "open_loop_strict_score_threshold", 5.25
+        ),
         "enable_reinitialization_request_output": True,
         "enable_reinitialization_request_latch": True,
         "reinitialization_trigger_threshold": getattr(
-            args, "reinitialization_trigger_threshold", 0.95),
+            args, "reinitialization_trigger_threshold", 0.95
+        ),
         "reinitialization_trigger_gap_scale_sec": getattr(
-            args, "reinitialization_trigger_gap_scale_sec", 30.0),
-        "reinitialization_trigger_seed_translation_scale_m":
-            getattr(args, "reinitialization_trigger_seed_translation_scale_m", 100.0),
-        "reinitialization_trigger_reject_streak_scale":
-            getattr(args, "reinitialization_trigger_reject_streak_scale", 200.0),
-        "reinitialization_trigger_fitness_explosion_threshold":
-            getattr(args, "reinitialization_trigger_fitness_explosion_threshold", 1000.0),
+            args, "reinitialization_trigger_gap_scale_sec", 30.0
+        ),
+        "reinitialization_trigger_seed_translation_scale_m": getattr(
+            args, "reinitialization_trigger_seed_translation_scale_m", 100.0
+        ),
+        "reinitialization_trigger_reject_streak_scale": getattr(
+            args, "reinitialization_trigger_reject_streak_scale", 200.0
+        ),
+        "reinitialization_trigger_fitness_explosion_threshold": getattr(
+            args, "reinitialization_trigger_fitness_explosion_threshold", 1000.0
+        ),
         "enable_map_odom_tf": _arg_or_profile(args, "enable_map_odom_tf"),
         "global_frame_id": args.global_frame,
         "odom_frame_id": args.odom_frame,
@@ -278,11 +292,13 @@ def launch_command(args: argparse.Namespace, output_path: Path) -> str:
             f"imu_topic:={imu_topic}",
             f"lidar_frame_id:={lidar_frame}",
         ]
-    extras.extend([
-        f"global_frame_id:={args.global_frame}",
-        f"odom_frame_id:={args.odom_frame}",
-        f"base_frame_id:={args.base_frame}",
-    ])
+    extras.extend(
+        [
+            f"global_frame_id:={args.global_frame}",
+            f"odom_frame_id:={args.odom_frame}",
+            f"base_frame_id:={args.base_frame}",
+        ]
+    )
     if getattr(args, "use_sim_time", False):
         extras.append("use_sim_time:=true")
     if args.profile == "mid360" and args.initial_pose is not None:
@@ -297,7 +313,8 @@ def launch_command(args: argparse.Namespace, output_path: Path) -> str:
         ]
         extras.append("set_initial_pose:=true")
         extras.extend(
-            f"{key}:={value}" for key, value in zip(initial_pose_keys, args.initial_pose)
+            f"{key}:={value}"
+            for key, value in zip(initial_pose_keys, args.initial_pose, strict=True)
         )
     if args.no_publish_lidar_tf or args.base_frame == lidar_frame:
         extras.append("publish_lidar_tf:=false")
@@ -310,14 +327,18 @@ def launch_command(args: argparse.Namespace, output_path: Path) -> str:
             "lidar_tf_pitch",
             "lidar_tf_yaw",
         ]
-        extras.extend(f"{key}:={value}" for key, value in zip(tf_keys, args.lidar_tf))
+        extras.extend(
+            f"{key}:={value}" for key, value in zip(tf_keys, args.lidar_tf, strict=True)
+        )
     if args.no_publish_imu_tf or args.base_frame == imu_frame:
         extras.append("publish_imu_tf:=false")
     elif args.imu_tf is not None:
-        extras.extend([
-            "publish_imu_tf:=true",
-            f"imu_frame_id:={imu_frame}",
-        ])
+        extras.extend(
+            [
+                "publish_imu_tf:=true",
+                f"imu_frame_id:={imu_frame}",
+            ]
+        )
         tf_keys = [
             "imu_tf_x",
             "imu_tf_y",
@@ -326,21 +347,27 @@ def launch_command(args: argparse.Namespace, output_path: Path) -> str:
             "imu_tf_pitch",
             "imu_tf_yaw",
         ]
-        extras.extend(f"{key}:={value}" for key, value in zip(tf_keys, args.imu_tf))
+        extras.extend(
+            f"{key}:={value}" for key, value in zip(tf_keys, args.imu_tf, strict=True)
+        )
     elif args.imu_frame is not None:
         extras.append(f"imu_frame_id:={imu_frame}")
-    extras.extend([
-        f"use_imu_preintegration:={str(effective_imu_mode(args) in {'preintegration', 'both'}).lower()}",
-        (
-            "imu_preintegration_use_base_frame_transform:="
-            f"{str(use_imu_preintegration_base_frame_transform(args)).lower()}"
-        ),
-    ])
+    extras.extend(
+        [
+            f"use_imu_preintegration:={str(effective_imu_mode(args) in {'preintegration', 'both'}).lower()}",
+            (
+                "imu_preintegration_use_base_frame_transform:="
+                f"{str(use_imu_preintegration_base_frame_transform(args)).lower()}"
+            ),
+        ]
+    )
     if use_continuous_time_deskew(args):
-        extras.extend([
-            "use_continuous_time_deskew:=true",
-            f"continuous_time_deskew_reference_time_sec:={args.deskew_reference_time_sec}",
-        ])
+        extras.extend(
+            [
+                "use_continuous_time_deskew:=true",
+                f"continuous_time_deskew_reference_time_sec:={args.deskew_reference_time_sec}",
+            ]
+        )
     parts = [
         "ros2",
         "launch",
@@ -396,9 +423,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Generate a small lidar_localization_ros2 parameter file for first bringup."
     )
-    parser.add_argument("--map-path", required=True, help="Absolute or workspace-local PCD/PLY map path.")
+    parser.add_argument(
+        "--map-path",
+        required=True,
+        help="Absolute or workspace-local PCD/PLY map path.",
+    )
     parser.add_argument("--output", default="lidar_localization.generated.yaml")
-    parser.add_argument("--profile", choices=sorted(PROFILE_DEFAULTS), default="standalone")
+    parser.add_argument(
+        "--profile", choices=sorted(PROFILE_DEFAULTS), default="standalone"
+    )
     parser.add_argument("--cloud-topic")
     parser.add_argument("--imu-topic")
     parser.add_argument("--lidar-frame")
@@ -487,8 +520,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "for a while and the seed has moved away from the last accepted pose."
         ),
     )
-    parser.add_argument("--open-loop-strict-min-accepted-gap-sec", type=float, default=15.0)
-    parser.add_argument("--open-loop-strict-min-seed-translation-m", type=float, default=100.0)
+    parser.add_argument(
+        "--open-loop-strict-min-accepted-gap-sec", type=float, default=15.0
+    )
+    parser.add_argument(
+        "--open-loop-strict-min-seed-translation-m", type=float, default=100.0
+    )
     parser.add_argument("--open-loop-strict-score-threshold", type=float, default=5.25)
     parser.add_argument(
         "--reinitialization-trigger-threshold",
@@ -524,8 +561,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scan-max-range", type=float)
     parser.add_argument("--scan-min-range", type=float)
     parser.add_argument("--scan-period", type=float, default=0.1)
-    parser.add_argument(
-        "--scan-time-range-max-duration-ratio", type=float, default=2.0)
+    parser.add_argument("--scan-time-range-max-duration-ratio", type=float, default=2.0)
     parser.add_argument("--ndt-resolution", type=float, default=1.0)
     parser.add_argument("--ndt-threads", type=int, default=4)
     parser.add_argument("--ndt-max-iterations", type=int, default=35)
@@ -533,7 +569,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     validation_error = validate_args(args)
     if validation_error is not None:
@@ -541,7 +577,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
     output_path = Path(args.output).expanduser()
     if output_path.exists() and not args.overwrite:
-        print(f"{output_path} already exists. Pass --overwrite to replace it.", file=sys.stderr)
+        print(
+            f"{output_path} already exists. Pass --overwrite to replace it.",
+            file=sys.stderr,
+        )
         return 2
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(render_ros_params(make_params(args)), encoding="utf-8")
@@ -549,19 +588,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(f"Wrote {resolved_output}")
     warnings = map_path_warnings(args.map_path)
     if warnings:
-        print("")
+        print()
         print("Warnings:")
         for warning in warnings:
             print(f"  - {warning}")
-    print("")
+    print()
     print("Launch:")
     print(f"  {launch_command(args, resolved_output)}")
-    print("")
+    print()
     print("Bringup check:")
     print(f"  {doctor_command(args)}")
     if args.initial_pose is None:
-        print("")
-        print("Initial pose is not embedded. Publish /initialpose from RViz or pass --initial-pose.")
+        print()
+        print(
+            "Initial pose is not embedded. Publish /initialpose from RViz or pass --initial-pose."
+        )
     return 0
 
 

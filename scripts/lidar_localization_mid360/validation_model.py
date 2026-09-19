@@ -1,14 +1,10 @@
 import csv
 import json
+import statistics
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Sequence
-import statistics
-
 
 IMU_ACTIVE_STATUS = "imu_preintegration_prediction_active"
 IMU_AVAILABLE_STATUS = "imu_preintegration_prediction_available"
@@ -21,7 +17,7 @@ class AlignmentDiagnosticSample:
     stamp_sec: float
     level: int
     message: str
-    values: Dict[str, str]
+    values: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -47,7 +43,7 @@ def _as_bool(value: Any) -> bool:
     return str(value).strip().lower() == "true"
 
 
-def _as_int(value: Any) -> Optional[int]:
+def _as_int(value: Any) -> int | None:
     if value is None:
         return None
     try:
@@ -57,7 +53,7 @@ def _as_int(value: Any) -> Optional[int]:
     return number
 
 
-def _as_float(value: Any) -> Optional[float]:
+def _as_float(value: Any) -> float | None:
     if value is None:
         return None
     try:
@@ -66,7 +62,7 @@ def _as_float(value: Any) -> Optional[float]:
         return None
 
 
-def _percentile(values: Sequence[float], quantile: float) -> Optional[float]:
+def _percentile(values: Sequence[float], quantile: float) -> float | None:
     if not values:
         return None
     ordered = sorted(values)
@@ -79,9 +75,12 @@ def _percentile(values: Sequence[float], quantile: float) -> Optional[float]:
     return ordered[lower] * (1.0 - fraction) + ordered[upper] * fraction
 
 
-def _float_values(samples: Sequence[AlignmentDiagnosticSample], key: str) -> List[float]:
+def _float_values(
+    samples: Sequence[AlignmentDiagnosticSample], key: str
+) -> list[float]:
     return [
-        value for value in (_as_float(sample.values.get(key)) for sample in samples)
+        value
+        for value in (_as_float(sample.values.get(key)) for sample in samples)
         if value is not None
     ]
 
@@ -96,15 +95,16 @@ def _percent(ratio: float) -> str:
 
 def _max_int(samples: Sequence[AlignmentDiagnosticSample], key: str) -> int:
     values = [
-        value for value in (_as_int(sample.values.get(key)) for sample in samples)
+        value
+        for value in (_as_int(sample.values.get(key)) for sample in samples)
         if value is not None
     ]
     return max(values) if values else 0
 
 
-def load_alignment_csv(path: str) -> List[AlignmentDiagnosticSample]:
-    samples: List[AlignmentDiagnosticSample] = []
-    with open(path, "r", encoding="utf-8", newline="") as stream:
+def load_alignment_csv(path: str) -> list[AlignmentDiagnosticSample]:
+    samples: list[AlignmentDiagnosticSample] = []
+    with open(path, encoding="utf-8", newline="") as stream:
         for row in csv.DictReader(stream):
             try:
                 values = json.loads(row.get("values_json", "{}") or "{}")
@@ -121,7 +121,7 @@ def load_alignment_csv(path: str) -> List[AlignmentDiagnosticSample]:
     return samples
 
 
-def summarize_runtime(samples: Sequence[AlignmentDiagnosticSample]) -> Dict[str, Any]:
+def summarize_runtime(samples: Sequence[AlignmentDiagnosticSample]) -> dict[str, Any]:
     imu_status_counts = Counter(
         sample.values.get("imu_preintegration_status", "") for sample in samples
     )
@@ -132,7 +132,8 @@ def summarize_runtime(samples: Sequence[AlignmentDiagnosticSample]) -> Dict[str,
         sample.values.get("deskew_readiness_status", "") for sample in samples
     )
     registration_seed_source_counts = Counter(
-        sample.values.get("registration_seed_source", "not_selected") for sample in samples
+        sample.values.get("registration_seed_source", "not_selected")
+        for sample in samples
     )
     registration_seed_source_present_count = sum(
         1 for sample in samples if "registration_seed_source" in sample.values
@@ -143,7 +144,8 @@ def summarize_runtime(samples: Sequence[AlignmentDiagnosticSample]) -> Dict[str,
     imu_active_count = imu_status_counts.get(IMU_ACTIVE_STATUS, 0)
     imu_available_count = imu_status_counts.get(IMU_AVAILABLE_STATUS, 0)
     imu_fallback_count = sum(
-        1 for sample in samples
+        1
+        for sample in samples
         if sample.values.get("imu_preintegration_status", "") == IMU_FALLBACK_STATUS
         or _as_bool(sample.values.get("imu_preintegration_fallback_mode"))
     )
@@ -151,8 +153,10 @@ def summarize_runtime(samples: Sequence[AlignmentDiagnosticSample]) -> Dict[str,
         "imu_preintegration", 0
     )
     deskew_applied_count = sum(
-        1 for sample in samples
-        if sample.values.get("continuous_time_deskew_status", "") == DESKEW_APPLIED_STATUS
+        1
+        for sample in samples
+        if sample.values.get("continuous_time_deskew_status", "")
+        == DESKEW_APPLIED_STATUS
         or _as_bool(sample.values.get("continuous_time_deskew_applied"))
     )
     total = len(samples)
@@ -168,21 +172,31 @@ def summarize_runtime(samples: Sequence[AlignmentDiagnosticSample]) -> Dict[str,
         "imu_active_count": imu_active_count,
         "imu_available_count": imu_available_count,
         "imu_active_ratio": _ratio(imu_active_count, total),
-        "imu_available_or_active_ratio": _ratio(imu_active_count + imu_available_count, total),
+        "imu_available_or_active_ratio": _ratio(
+            imu_active_count + imu_available_count, total
+        ),
         "imu_fallback_count": imu_fallback_count,
-        "imu_integrated_sample_count_max": _max_int(samples, "imu_integrated_sample_count"),
+        "imu_integrated_sample_count_max": _max_int(
+            samples, "imu_integrated_sample_count"
+        ),
         "imu_received_sample_count_max": _max_int(samples, "imu_received_sample_count"),
         "imu_skipped_sample_count_max": _max_int(samples, "imu_skipped_sample_count"),
-        "imu_transform_failure_count_max": _max_int(samples, "imu_transform_failure_count"),
+        "imu_transform_failure_count_max": _max_int(
+            samples, "imu_transform_failure_count"
+        ),
         "imu_invalid_dt_count_max": _max_int(samples, "imu_invalid_dt_count"),
-        "imu_non_finite_sample_count_max": _max_int(samples, "imu_non_finite_sample_count"),
+        "imu_non_finite_sample_count_max": _max_int(
+            samples, "imu_non_finite_sample_count"
+        ),
         "scan_time_status_counts": dict(scan_time_status_counts),
         "scan_time_duration_sample_count": len(scan_time_durations),
         "scan_time_duration_median_sec": (
             statistics.median(scan_time_durations) if scan_time_durations else None
         ),
         "scan_time_duration_p95_sec": _percentile(scan_time_durations, 0.95),
-        "scan_time_duration_max_sec": max(scan_time_durations) if scan_time_durations else None,
+        "scan_time_duration_max_sec": max(scan_time_durations)
+        if scan_time_durations
+        else None,
         "deskew_readiness_counts": dict(deskew_readiness_counts),
         "registration_seed_source_counts": dict(registration_seed_source_counts),
         "registration_seed_source_present_count": registration_seed_source_present_count,
@@ -213,10 +227,10 @@ def summarize_runtime(samples: Sequence[AlignmentDiagnosticSample]) -> Dict[str,
 
 
 def evaluate_runtime_summary(
-    summary: Dict[str, Any],
+    summary: dict[str, Any],
     config: RuntimeValidationConfig,
-) -> List[ValidationCheck]:
-    checks: List[ValidationCheck] = []
+) -> list[ValidationCheck]:
+    checks: list[ValidationCheck] = []
     sample_count = int(summary["sample_count"])
     if sample_count < config.min_samples:
         checks.append(
@@ -285,7 +299,9 @@ def evaluate_runtime_summary(
         checks.append(ValidationCheck("OK", f"IMU fallback count={fallback_count}"))
 
     if config.require_imu_seed_source:
-        seed_source_present_count = int(summary["registration_seed_source_present_count"])
+        seed_source_present_count = int(
+            summary["registration_seed_source_present_count"]
+        )
         seed_ratio = float(summary["imu_preintegration_seed_ratio"])
         if seed_source_present_count <= 0:
             checks.append(
@@ -351,7 +367,9 @@ def validation_exit_code(checks: Sequence[ValidationCheck]) -> int:
     return 1 if any(check.level == "FAIL" for check in checks) else 0
 
 
-def render_runtime_report(summary: Dict[str, Any], checks: Sequence[ValidationCheck]) -> List[str]:
+def render_runtime_report(
+    summary: dict[str, Any], checks: Sequence[ValidationCheck]
+) -> list[str]:
     lines = [
         "Runtime IMU / deskew validation",
         f"samples: {summary['sample_count']}",
@@ -416,61 +434,3 @@ def render_runtime_report(summary: Dict[str, Any], checks: Sequence[ValidationCh
         if check.hint:
             lines.append(f"  hint: {check.hint}")
     return lines
-
-
-def markdown_report(summary: Dict[str, Any], checks: Sequence[ValidationCheck]) -> str:
-    status = "PASS" if validation_exit_code(checks) == 0 else "FAIL"
-    lines = [
-        f"# Runtime IMU / Deskew Validation: {status}",
-        "",
-        "| Metric | Value |",
-        "| --- | --- |",
-        f"| Samples | {summary['sample_count']} |",
-        f"| IMU active ratio | {_percent(float(summary['imu_active_ratio']))} |",
-        (
-            "| IMU preintegration seed source ratio | "
-            f"{_percent(float(summary['imu_preintegration_seed_ratio']))} |"
-        ),
-        f"| Max integrated IMU samples | {summary['imu_integrated_sample_count_max']} |",
-        f"| IMU fallback count | {summary['imu_fallback_count']} |",
-        f"| Scan time duration median sec | {summary['scan_time_duration_median_sec']} |",
-        f"| Scan time duration p95 sec | {summary['scan_time_duration_p95_sec']} |",
-        f"| Scan time duration max sec | {summary['scan_time_duration_max_sec']} |",
-        (
-            "| Continuous-time deskew applied ratio | "
-            f"{_percent(float(summary['continuous_time_deskew_applied_ratio']))} |"
-        ),
-        (
-            "| Pose-history coverage median | "
-            f"{summary['continuous_time_deskew_pose_history_coverage_median']} |"
-        ),
-        "",
-        "## Checks",
-        "",
-    ]
-    for check in checks:
-        lines.append(f"- **{check.level}** {check.message}")
-        if check.hint:
-            lines.append(f"  - hint: {check.hint}")
-    lines.extend([
-        "",
-        "## Status Counts",
-        "",
-        "```json",
-        json.dumps(
-            {
-                "imu_status_counts": summary["imu_status_counts"],
-                "scan_time_status_counts": summary["scan_time_status_counts"],
-                "deskew_readiness_counts": summary["deskew_readiness_counts"],
-                "registration_seed_source_counts": summary["registration_seed_source_counts"],
-                "continuous_time_deskew_status_counts": summary[
-                    "continuous_time_deskew_status_counts"
-                ],
-            },
-            indent=2,
-            sort_keys=True,
-        ),
-        "```",
-        "",
-    ])
-    return "\n".join(lines)

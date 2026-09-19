@@ -5,14 +5,10 @@ import csv
 import json
 import math
 import time
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from typing import Dict
-from typing import Iterable
-from typing import List
-from typing import Optional
-
 
 EXECUTION_FIELDNAMES = [
     "command_id",
@@ -61,18 +57,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--node-name", default="relocalization_reset_command_publisher")
     parser.add_argument("--xy-covariance", type=float, default=0.25)
     parser.add_argument("--z-covariance", type=float, default=0.25)
-    parser.add_argument("--roll-pitch-covariance", type=float, default=0.06853892326654787)
+    parser.add_argument(
+        "--roll-pitch-covariance", type=float, default=0.06853892326654787
+    )
     parser.add_argument("--yaw-covariance", type=float, default=0.06853892326654787)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
 
-def _read_csv(path: Path) -> List[Dict[str, str]]:
+def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8", newline="") as stream:
         return list(csv.DictReader(stream))
 
 
-def _as_bool(value: Any) -> Optional[bool]:
+def _as_bool(value: Any) -> bool | None:
     if value is None or str(value).strip() == "":
         return None
     normalized = str(value).strip().lower()
@@ -83,7 +81,7 @@ def _as_bool(value: Any) -> Optional[bool]:
     return None
 
 
-def _as_float(value: Any) -> Optional[float]:
+def _as_float(value: Any) -> float | None:
     if value is None or str(value).strip() == "":
         return None
     try:
@@ -93,15 +91,15 @@ def _as_float(value: Any) -> Optional[float]:
     return number if math.isfinite(number) else None
 
 
-def _counts(values: Iterable[str]) -> Dict[str, int]:
-    counts: Dict[str, int] = {}
+def _counts(values: Iterable[str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
     for value in values:
         key = str(value)
         counts[key] = counts.get(key, 0) + 1
     return counts
 
 
-def _load_validation(path: Path, allow_unvalidated: bool) -> Dict[str, Any]:
+def _load_validation(path: Path, allow_unvalidated: bool) -> dict[str, Any]:
     if not path.exists():
         if allow_unvalidated:
             return {"validation_passed": False, "missing": True}
@@ -109,7 +107,7 @@ def _load_validation(path: Path, allow_unvalidated: bool) -> Dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _validation_ok(validation: Dict[str, Any], args: argparse.Namespace) -> bool:
+def _validation_ok(validation: dict[str, Any], args: argparse.Namespace) -> bool:
     if args.allow_unvalidated:
         return True
     if bool(validation.get("validation_passed")):
@@ -117,18 +115,24 @@ def _validation_ok(validation: Dict[str, Any], args: argparse.Namespace) -> bool
     return bool(args.allow_failed_validation)
 
 
-def _safe_float(row: Dict[str, str], key: str) -> Optional[float]:
+def _safe_float(row: dict[str, str], key: str) -> float | None:
     return _as_float(row.get(key))
 
 
-def _command_rejection(row: Dict[str, str], args: argparse.Namespace) -> str:
+def _command_rejection(row: dict[str, str], args: argparse.Namespace) -> str:
     if row.get("status") != "dry_run_command_generated":
         return "command_status_not_generated"
     if _as_bool(row.get("dry_run")) is not True:
         return "command_not_marked_dry_run"
-    if _as_bool(row.get("source_plan_row_accepted")) is True and not args.allow_accepted_source_plan:
+    if (
+        _as_bool(row.get("source_plan_row_accepted")) is True
+        and not args.allow_accepted_source_plan
+    ):
         return "accepted_source_plan_not_allowed"
-    if row.get("source_selection_source") == "oracle_rank" and not args.allow_oracle_selection:
+    if (
+        row.get("source_selection_source") == "oracle_rank"
+        and not args.allow_oracle_selection
+    ):
         return "oracle_selection_not_allowed"
     for field in [
         "position_x",
@@ -145,14 +149,14 @@ def _command_rejection(row: Dict[str, str], args: argparse.Namespace) -> str:
 
 
 def _empty_execution(
-    row: Dict[str, str],
+    row: dict[str, str],
     args: argparse.Namespace,
     validation_json: Path,
     validation_passed: bool,
     status: str,
     rejection_reason: str,
     generated_at: str,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     return {
         "command_id": str(row.get("command_id", "")),
         "attempt_id": str(row.get("attempt_id", "")),
@@ -177,7 +181,7 @@ def _empty_execution(
     }
 
 
-def _covariance(args: argparse.Namespace) -> List[float]:
+def _covariance(args: argparse.Namespace) -> list[float]:
     covariance = [0.0] * 36
     covariance[0] = args.xy_covariance
     covariance[7] = args.xy_covariance
@@ -188,14 +192,16 @@ def _covariance(args: argparse.Namespace) -> List[float]:
     return covariance
 
 
-def publish_rows(rows: List[Dict[str, str]], args: argparse.Namespace) -> Dict[str, int]:
+def publish_rows(
+    rows: list[dict[str, str]], args: argparse.Namespace
+) -> dict[str, int]:
     import rclpy
     from geometry_msgs.msg import PoseWithCovarianceStamped
 
     rclpy.init()
     node = rclpy.create_node(args.node_name)
-    publishers: Dict[str, Any] = {}
-    counts: Dict[str, int] = {}
+    publishers: dict[str, Any] = {}
+    counts: dict[str, int] = {}
     try:
         deadline = time.monotonic() + max(0.0, args.spin_before_sec)
         while time.monotonic() < deadline:
@@ -204,7 +210,9 @@ def publish_rows(rows: List[Dict[str, str]], args: argparse.Namespace) -> Dict[s
         for row in rows:
             topic = row["publish_topic"]
             if topic not in publishers:
-                publishers[topic] = node.create_publisher(PoseWithCovarianceStamped, topic, 10)
+                publishers[topic] = node.create_publisher(
+                    PoseWithCovarianceStamped, topic, 10
+                )
             publisher = publishers[topic]
             msg = PoseWithCovarianceStamped()
             msg.header.frame_id = row["frame_id"]
@@ -233,13 +241,13 @@ def publish_rows(rows: List[Dict[str, str]], args: argparse.Namespace) -> Dict[s
 
 
 def build_execution_rows(
-    command_rows: List[Dict[str, str]],
+    command_rows: list[dict[str, str]],
     validation_json: Path,
     validation_passed: bool,
     args: argparse.Namespace,
-) -> List[Dict[str, str]]:
+) -> list[dict[str, str]]:
     generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
-    execution_rows: List[Dict[str, str]] = []
+    execution_rows: list[dict[str, str]] = []
     for row in command_rows:
         reason = _command_rejection(row, args)
         if reason:
@@ -295,7 +303,7 @@ def build_execution_rows(
     return execution_rows
 
 
-def write_csv(path: Path, rows: List[Dict[str, str]], overwrite: bool) -> None:
+def write_csv(path: Path, rows: list[dict[str, str]], overwrite: bool) -> None:
     if path.exists() and not overwrite:
         raise FileExistsError(f"output CSV already exists: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -305,7 +313,9 @@ def write_csv(path: Path, rows: List[Dict[str, str]], overwrite: bool) -> None:
         writer.writerows(rows)
 
 
-def build_summary(commands_csv: Path, output_csv: Path, rows: List[Dict[str, str]]) -> Dict[str, Any]:
+def build_summary(
+    commands_csv: Path, output_csv: Path, rows: list[dict[str, str]]
+) -> dict[str, Any]:
     published_count = sum(int(row.get("published_count", "0") or "0") for row in rows)
     return {
         "commands_csv": str(commands_csv),
@@ -313,7 +323,9 @@ def build_summary(commands_csv: Path, output_csv: Path, rows: List[Dict[str, str
         "execution_row_count": len(rows),
         "published_count": published_count,
         "status_counts": _counts(row.get("status", "") for row in rows),
-        "rejection_reason_counts": _counts(row.get("rejection_reason", "") for row in rows),
+        "rejection_reason_counts": _counts(
+            row.get("rejection_reason", "") for row in rows
+        ),
         "notes": [
             "actual publishing requires --execute",
             "validation_passed=true is required unless explicitly overridden",
@@ -322,14 +334,14 @@ def build_summary(commands_csv: Path, output_csv: Path, rows: List[Dict[str, str
     }
 
 
-def write_json(path: Path, data: Dict[str, Any], overwrite: bool) -> None:
+def write_json(path: Path, data: dict[str, Any], overwrite: bool) -> None:
     if path.exists() and not overwrite:
         raise FileExistsError(f"output JSON already exists: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def write_md(path: Path, data: Dict[str, Any], overwrite: bool) -> None:
+def write_md(path: Path, data: dict[str, Any], overwrite: bool) -> None:
     if path.exists() and not overwrite:
         raise FileExistsError(f"output Markdown already exists: {path}")
     lines = [
@@ -364,7 +376,9 @@ def main() -> None:
     command_rows = _read_csv(commands_csv)
     validation = _load_validation(validation_json, args.allow_unvalidated)
     validation_passed = _validation_ok(validation, args)
-    execution_rows = build_execution_rows(command_rows, validation_json, validation_passed, args)
+    execution_rows = build_execution_rows(
+        command_rows, validation_json, validation_passed, args
+    )
     publishable = [row for row in execution_rows if row["status"] == "pending_publish"]
     if publishable:
         published = publish_rows(publishable, args)
@@ -372,12 +386,16 @@ def main() -> None:
             if row["status"] == "pending_publish":
                 count = published.get(row["command_id"], 0)
                 row["published_count"] = str(count)
-                row["status"] = "published_initialpose" if count > 0 else "publish_failed"
+                row["status"] = (
+                    "published_initialpose" if count > 0 else "publish_failed"
+                )
                 row["rejection_reason"] = "" if count > 0 else "publisher_returned_zero"
     write_csv(output_csv, execution_rows, args.overwrite)
     summary = build_summary(commands_csv, output_csv, execution_rows)
     if args.output_json:
-        write_json(Path(args.output_json).expanduser().resolve(), summary, args.overwrite)
+        write_json(
+            Path(args.output_json).expanduser().resolve(), summary, args.overwrite
+        )
     if args.output_md:
         write_md(Path(args.output_md).expanduser().resolve(), summary, args.overwrite)
     print(json.dumps(summary, sort_keys=True))

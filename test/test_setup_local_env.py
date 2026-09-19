@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
-from pathlib import Path
 import os
 import subprocess
 import tempfile
 import unittest
-
+from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "setup_local_env.sh"
@@ -20,8 +19,16 @@ class SetupLocalEnvTest(unittest.TestCase):
         if explicit is not None:
             env["LIDAR_LOCALIZATION_OVERLAY"] = str(explicit)
         result = subprocess.run(
-            ["bash", "-c", f'source "{SCRIPT}" && printf %s "$LIDAR_TEST_OVERLAY_SOURCED"'],
-            check=True, capture_output=True, text=True, env=env)
+            [
+                "bash",
+                "-c",
+                f'source "{SCRIPT}" && printf %s "$LIDAR_TEST_OVERLAY_SOURCED"',
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
         return result.stdout
 
     def test_conventional_workspace_install_is_sourced(self):

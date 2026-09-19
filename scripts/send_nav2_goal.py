@@ -8,14 +8,12 @@ import time
 
 import rclpy
 from action_msgs.msg import GoalStatus
-from geometry_msgs.msg import PoseStamped
-from geometry_msgs.msg import PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from lifecycle_msgs.srv import GetState
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from tf2_ros import Buffer, TransformListener
-
 
 STATUS_NAMES = {
     GoalStatus.STATUS_UNKNOWN: "UNKNOWN",
@@ -51,12 +49,19 @@ class NavigateToPoseClient(Node):
                 self._on_pose,
                 10,
             )
-        if args.wait_for_transform_target_frame and args.wait_for_transform_source_frame:
+        if (
+            args.wait_for_transform_target_frame
+            and args.wait_for_transform_source_frame
+        ):
             self._tf_buffer = Buffer()
-            self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=False)
+            self._tf_listener = TransformListener(
+                self._tf_buffer, self, spin_thread=False
+            )
         for node_name in args.wait_for_lifecycle_node:
             service_name = f"/{node_name}/get_state"
-            self._lifecycle_clients[node_name] = self.create_client(GetState, service_name)
+            self._lifecycle_clients[node_name] = self.create_client(
+                GetState, service_name
+            )
 
     def wait_for_server(self) -> bool:
         return self._client.wait_for_server(timeout_sec=self._args.server_timeout_sec)
@@ -85,8 +90,14 @@ class NavigateToPoseClient(Node):
             if self._first_pose is None or self._latest_pose is None:
                 continue
 
-            dx = self._latest_pose.pose.pose.position.x - self._first_pose.pose.pose.position.x
-            dy = self._latest_pose.pose.pose.position.y - self._first_pose.pose.pose.position.y
+            dx = (
+                self._latest_pose.pose.pose.position.x
+                - self._first_pose.pose.pose.position.x
+            )
+            dy = (
+                self._latest_pose.pose.pose.position.y
+                - self._first_pose.pose.pose.position.y
+            )
             distance = math.hypot(dx, dy)
             if distance >= self._args.wait_for_pose_motion_m:
                 self.get_logger().info(
@@ -159,21 +170,24 @@ class NavigateToPoseClient(Node):
 
     def _resolve_goal(self):
         if not self._args.use_current_pose:
-            return self._args.goal_x, self._args.goal_y, self._args.goal_z, self._args.goal_yaw
+            return (
+                self._args.goal_x,
+                self._args.goal_y,
+                self._args.goal_z,
+                self._args.goal_yaw,
+            )
 
         pose = self._latest_pose
         current_x = pose.pose.pose.position.x
         current_y = pose.pose.pose.position.y
         current_z = pose.pose.pose.position.z
         current_yaw = quaternion_to_yaw(pose.pose.pose.orientation)
-        dx = (
-            self._args.forward_m * math.cos(current_yaw)
-            - self._args.left_m * math.sin(current_yaw)
-        )
-        dy = (
-            self._args.forward_m * math.sin(current_yaw)
-            + self._args.left_m * math.cos(current_yaw)
-        )
+        dx = self._args.forward_m * math.cos(
+            current_yaw
+        ) - self._args.left_m * math.sin(current_yaw)
+        dy = self._args.forward_m * math.sin(
+            current_yaw
+        ) + self._args.left_m * math.cos(current_yaw)
         goal_x = current_x + dx
         goal_y = current_y + dy
         goal_z = current_z + self._args.z_offset_m
@@ -216,7 +230,9 @@ class NavigateToPoseClient(Node):
             self._result_event.set()
             return
         self._status = result.status
-        self.get_logger().info(f"goal finished with status={STATUS_NAMES.get(result.status, result.status)}")
+        self.get_logger().info(
+            f"goal finished with status={STATUS_NAMES.get(result.status, result.status)}"
+        )
         self._result_event.set()
 
 
@@ -247,7 +263,9 @@ def parse_args():
     parser.add_argument("--result-timeout-sec", type=float, default=120.0)
     args = parser.parse_args()
     if not args.use_current_pose and (args.goal_x is None or args.goal_y is None):
-        parser.error("--goal-x and --goal-y are required unless --use-current-pose is set")
+        parser.error(
+            "--goal-x and --goal-y are required unless --use-current-pose is set"
+        )
     has_wait_target = bool(args.wait_for_transform_target_frame)
     has_wait_source = bool(args.wait_for_transform_source_frame)
     if has_wait_target != has_wait_source:
@@ -270,7 +288,9 @@ def main():
     node = NavigateToPoseClient(args)
 
     if args.use_current_pose and not node.wait_for_pose():
-        node.get_logger().error(f"pose topic did not publish in time: {args.pose_topic}")
+        node.get_logger().error(
+            f"pose topic did not publish in time: {args.pose_topic}"
+        )
         node.destroy_node()
         rclpy.shutdown()
         return 1

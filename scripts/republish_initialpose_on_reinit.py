@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 
-from typing import Optional
 
 import rclpy
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from rclpy.duration import Duration
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy
-from rclpy.qos import QoSProfile
-from rclpy.qos import ReliabilityPolicy
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool
 
 
@@ -32,22 +29,36 @@ class ReinitializationSupervisor(Node):
         self.declare_parameter("initial_pose_qz", 0.0)
         self.declare_parameter("initial_pose_qw", 1.0)
 
-        request_topic = self.get_parameter("request_topic").get_parameter_value().string_value
-        initialpose_topic = self.get_parameter("initialpose_topic").get_parameter_value().string_value
+        request_topic = (
+            self.get_parameter("request_topic").get_parameter_value().string_value
+        )
+        initialpose_topic = (
+            self.get_parameter("initialpose_topic").get_parameter_value().string_value
+        )
         pose_topic = self.get_parameter("pose_topic").get_parameter_value().string_value
-        self.global_frame_id = self.get_parameter("global_frame_id").get_parameter_value().string_value
-        self.use_latest_pose = self.get_parameter("use_latest_pose").get_parameter_value().bool_value
-        self.publish_count = max(1, self.get_parameter("publish_count").get_parameter_value().integer_value)
+        self.global_frame_id = (
+            self.get_parameter("global_frame_id").get_parameter_value().string_value
+        )
+        self.use_latest_pose = (
+            self.get_parameter("use_latest_pose").get_parameter_value().bool_value
+        )
+        self.publish_count = max(
+            1, self.get_parameter("publish_count").get_parameter_value().integer_value
+        )
         self.publish_interval = Duration(
             seconds=max(
                 0.05,
-                self.get_parameter("publish_interval_sec").get_parameter_value().double_value,
+                self.get_parameter("publish_interval_sec")
+                .get_parameter_value()
+                .double_value,
             )
         )
         self.republish_cooldown = Duration(
             seconds=max(
                 self.publish_interval.nanoseconds * 1e-9,
-                self.get_parameter("republish_cooldown_sec").get_parameter_value().double_value,
+                self.get_parameter("republish_cooldown_sec")
+                .get_parameter_value()
+                .double_value,
             )
         )
 
@@ -75,17 +86,21 @@ class ReinitializationSupervisor(Node):
             self.get_parameter("initial_pose_qw").get_parameter_value().double_value
         )
 
-        self.latest_pose: Optional[PoseWithCovarianceStamped] = None
+        self.latest_pose: PoseWithCovarianceStamped | None = None
         self.request_active = False
         self.pending_publish_count = 0
         self.last_publish_time = None
         self.next_publish_time = None
 
-        self.initialpose_pub = self.create_publisher(PoseWithCovarianceStamped, initialpose_topic, 10)
+        self.initialpose_pub = self.create_publisher(
+            PoseWithCovarianceStamped, initialpose_topic, 10
+        )
         request_qos = QoSProfile(depth=1)
         request_qos.reliability = ReliabilityPolicy.RELIABLE
         request_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
-        self.request_sub = self.create_subscription(Bool, request_topic, self._on_request, request_qos)
+        self.request_sub = self.create_subscription(
+            Bool, request_topic, self._on_request, request_qos
+        )
         self.pose_sub = self.create_subscription(
             PoseWithCovarianceStamped, pose_topic, self._on_pose, 10
         )
@@ -133,7 +148,10 @@ class ReinitializationSupervisor(Node):
         now = self.get_clock().now()
         if self.pending_publish_count > 0:
             return
-        if self.last_publish_time is not None and now - self.last_publish_time < self.republish_cooldown:
+        if (
+            self.last_publish_time is not None
+            and now - self.last_publish_time < self.republish_cooldown
+        ):
             return
         self.pending_publish_count = self.publish_count
         self.next_publish_time = now

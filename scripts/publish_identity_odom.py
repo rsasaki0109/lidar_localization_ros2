@@ -18,8 +18,12 @@ class IdentityOdomPublisher(Node):
         self.declare_parameter("publish_tf", True)
 
         odom_topic = self.get_parameter("odom_topic").get_parameter_value().string_value
-        self.odom_frame_id = self.get_parameter("odom_frame_id").get_parameter_value().string_value
-        self.base_frame_id = self.get_parameter("base_frame_id").get_parameter_value().string_value
+        self.odom_frame_id = (
+            self.get_parameter("odom_frame_id").get_parameter_value().string_value
+        )
+        self.base_frame_id = (
+            self.get_parameter("base_frame_id").get_parameter_value().string_value
+        )
         rate_hz = self.get_parameter("rate_hz").get_parameter_value().double_value
         publish_tf = self.get_parameter("publish_tf").get_parameter_value().bool_value
 

@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 
 import math
-from typing import Optional
-from typing import Tuple
 
 import rclpy
-from geometry_msgs.msg import PoseWithCovarianceStamped
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from tf2_ros import TransformBroadcaster
@@ -44,7 +41,9 @@ def rotate_vector(quaternion, vector):
 
 def quaternion_to_yaw(quaternion) -> float:
     siny_cosp = 2.0 * (quaternion[3] * quaternion[2] + quaternion[0] * quaternion[1])
-    cosy_cosp = 1.0 - 2.0 * (quaternion[1] * quaternion[1] + quaternion[2] * quaternion[2])
+    cosy_cosp = 1.0 - 2.0 * (
+        quaternion[1] * quaternion[1] + quaternion[2] * quaternion[2]
+    )
     return math.atan2(siny_cosp, cosy_cosp)
 
 
@@ -60,18 +59,26 @@ class OdomFromLocalizationPublisher(Node):
 
         pose_topic = self.get_parameter("pose_topic").get_parameter_value().string_value
         odom_topic = self.get_parameter("odom_topic").get_parameter_value().string_value
-        self.odom_frame_id = self.get_parameter("odom_frame_id").get_parameter_value().string_value
-        self.base_frame_id = self.get_parameter("base_frame_id").get_parameter_value().string_value
+        self.odom_frame_id = (
+            self.get_parameter("odom_frame_id").get_parameter_value().string_value
+        )
+        self.base_frame_id = (
+            self.get_parameter("base_frame_id").get_parameter_value().string_value
+        )
         publish_tf = self.get_parameter("publish_tf").get_parameter_value().bool_value
 
         self.odom_pub = self.create_publisher(Odometry, odom_topic, 10)
         self.tf_broadcaster = TransformBroadcaster(self) if publish_tf else None
-        self.pose_sub = self.create_subscription(PoseWithCovarianceStamped, pose_topic, self._on_pose, 10)
+        self.pose_sub = self.create_subscription(
+            PoseWithCovarianceStamped, pose_topic, self._on_pose, 10
+        )
 
         self.anchor_position = None
         self.anchor_orientation = None
-        self.previous_odom_pose: Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float, float]]] = None
-        self.previous_stamp_sec: Optional[float] = None
+        self.previous_odom_pose: (
+            tuple[tuple[float, float, float], tuple[float, float, float, float]] | None
+        ) = None
+        self.previous_stamp_sec: float | None = None
 
         self.get_logger().info(
             f"Publishing odom from localization pose {pose_topic} on {odom_topic} with "
@@ -128,12 +135,20 @@ class OdomFromLocalizationPublisher(Node):
             dt = stamp_sec - self.previous_stamp_sec
             if dt > 1e-6:
                 prev_position, prev_orientation = self.previous_odom_pose
-                odom.twist.twist.linear.x = (relative_position[0] - prev_position[0]) / dt
-                odom.twist.twist.linear.y = (relative_position[1] - prev_position[1]) / dt
-                odom.twist.twist.linear.z = (relative_position[2] - prev_position[2]) / dt
+                odom.twist.twist.linear.x = (
+                    relative_position[0] - prev_position[0]
+                ) / dt
+                odom.twist.twist.linear.y = (
+                    relative_position[1] - prev_position[1]
+                ) / dt
+                odom.twist.twist.linear.z = (
+                    relative_position[2] - prev_position[2]
+                ) / dt
                 yaw = quaternion_to_yaw(relative_orientation)
                 prev_yaw = quaternion_to_yaw(prev_orientation)
-                yaw_delta = math.atan2(math.sin(yaw - prev_yaw), math.cos(yaw - prev_yaw))
+                yaw_delta = math.atan2(
+                    math.sin(yaw - prev_yaw), math.cos(yaw - prev_yaw)
+                )
                 odom.twist.twist.angular.z = yaw_delta / dt
 
         self.odom_pub.publish(odom)

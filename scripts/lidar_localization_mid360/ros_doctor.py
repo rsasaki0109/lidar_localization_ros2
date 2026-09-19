@@ -1,23 +1,24 @@
 import time
-from typing import Dict
 
 import rclpy
 from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy
-from rclpy.qos import QoSProfile
-from rclpy.qos import ReliabilityPolicy
-from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import Imu
-from sensor_msgs.msg import PointCloud2
-from tf2_ros import Buffer
-from tf2_ros import TransformListener
+from rclpy.qos import (
+    DurabilityPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
+from sensor_msgs.msg import Imu, PointCloud2
+from tf2_ros import Buffer, TransformListener
 
-from lidar_localization_mid360.bringup_model import BringupCheckConfig
-from lidar_localization_mid360.bringup_model import BringupSnapshot
-from lidar_localization_mid360.bringup_model import TopicStats
-from lidar_localization_mid360.bringup_model import build_tf_checks
+from lidar_localization_mid360.bringup_model import (
+    BringupCheckConfig,
+    BringupSnapshot,
+    TopicStats,
+    build_tf_checks,
+)
 
 
 def stamp_to_sec(stamp) -> float:
@@ -70,20 +71,28 @@ class Mid360BringupDoctor(Node):
         )
 
     def on_cloud(self, msg: PointCloud2) -> None:
-        self.cloud.mark(msg.header.frame_id, stamp_to_sec(msg.header.stamp), time.monotonic())
+        self.cloud.mark(
+            msg.header.frame_id, stamp_to_sec(msg.header.stamp), time.monotonic()
+        )
         self.cloud.last_point_count = int(msg.width) * int(msg.height)
         field_names = {field.name for field in msg.fields}
         self.cloud.has_xyz_fields = {"x", "y", "z"}.issubset(field_names)
         self.cloud.field_names = tuple(sorted(field_names))
 
     def on_imu(self, msg: Imu) -> None:
-        self.imu.mark(msg.header.frame_id, stamp_to_sec(msg.header.stamp), time.monotonic())
+        self.imu.mark(
+            msg.header.frame_id, stamp_to_sec(msg.header.stamp), time.monotonic()
+        )
 
     def on_pose(self, msg: PoseWithCovarianceStamped) -> None:
-        self.pose.mark(msg.header.frame_id, stamp_to_sec(msg.header.stamp), time.monotonic())
+        self.pose.mark(
+            msg.header.frame_id, stamp_to_sec(msg.header.stamp), time.monotonic()
+        )
 
     def on_status(self, msg: DiagnosticArray) -> None:
-        self.status.mark(msg.header.frame_id, stamp_to_sec(msg.header.stamp), time.monotonic())
+        self.status.mark(
+            msg.header.frame_id, stamp_to_sec(msg.header.stamp), time.monotonic()
+        )
         if msg.status:
             latest = msg.status[0]
             self.status.last_status_level = int(latest.level)
@@ -95,11 +104,11 @@ class Mid360BringupDoctor(Node):
     def have_tf(self, target: str, source: str) -> bool:
         try:
             return self.tf_buffer.can_transform(target, source, rclpy.time.Time())
-        except Exception:
+        except Exception:  # noqa: BLE001 - any TF failure means the transform is unavailable
             return False
 
-    def published_topic_types(self) -> Dict[str, list]:
-        topic_types: Dict[str, list] = {}
+    def published_topic_types(self) -> dict[str, list]:
+        topic_types: dict[str, list] = {}
         for topic_name, _ in self.get_topic_names_and_types():
             publisher_infos = self.get_publishers_info_by_topic(topic_name)
             publisher_types = sorted(
@@ -110,7 +119,7 @@ class Mid360BringupDoctor(Node):
         return topic_types
 
     def snapshot(self) -> BringupSnapshot:
-        availability: Dict[str, bool] = {
+        availability: dict[str, bool] = {
             f"{self.config.base_frame} <- {self.config.lidar_frame}": self.have_tf(
                 self.config.base_frame, self.config.lidar_frame
             ),

@@ -3,17 +3,16 @@
 import argparse
 import sys
 import time
-from typing import Dict
-from typing import Optional
-from typing import Sequence
+from collections.abc import Sequence
 
-from lidar_localization_mid360.bringup_model import BringupCheckConfig
-from lidar_localization_mid360.bringup_model import evaluate_snapshot
-from lidar_localization_mid360.bringup_model import exit_code
-from lidar_localization_mid360.bringup_model import report_lines
+from lidar_localization_mid360.bringup_model import (
+    BringupCheckConfig,
+    evaluate_snapshot,
+    exit_code,
+    report_lines,
+)
 
-
-PROFILE_DEFAULTS: Dict[str, Dict[str, object]] = {
+PROFILE_DEFAULTS: dict[str, dict[str, object]] = {
     "standalone": {
         "cloud_topic": "/velodyne_points",
         "imu_topic": "/imu",
@@ -121,7 +120,9 @@ def config_from_args(args: argparse.Namespace) -> BringupCheckConfig:
         lidar_frame=str(_arg_or_profile(args, "lidar_frame")),
         imu_frame=str(_arg_or_profile(args, "imu_frame")),
         require_imu=args.require_imu,
-        require_cloud_time_field=bool(_arg_or_profile(args, "require_cloud_time_field")),
+        require_cloud_time_field=bool(
+            _arg_or_profile(args, "require_cloud_time_field")
+        ),
         require_imu_base_tf=bool(_arg_or_profile(args, "require_imu_base_tf")),
         require_odom_base_tf=bool(_arg_or_profile(args, "require_odom_base_tf")),
         require_map_odom_tf=bool(_arg_or_profile(args, "require_map_odom_tf")),
@@ -129,11 +130,10 @@ def config_from_args(args: argparse.Namespace) -> BringupCheckConfig:
     )
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
 
     import rclpy
-
     from lidar_localization_mid360.ros_doctor import Mid360BringupDoctor
 
     config = config_from_args(args)

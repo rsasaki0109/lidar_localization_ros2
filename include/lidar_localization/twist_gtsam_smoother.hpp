@@ -371,10 +371,13 @@ private:
       double max_update = 0.0;
       for (int i = 0; i < n; ++i) {
         // Skip anchor (first pose) — effectively fixed by large diagonal
-        poses_[i].x += delta(i * 3 + 0);
-        poses_[i].y += delta(i * 3 + 1);
-        poses_[i].yaw = normalizeAngle(poses_[i].yaw + delta(i * 3 + 2));
-        max_update = std::max(max_update, delta.segment<3>(i * 3).squaredNorm());
+        poses_[i].x += delta(static_cast<Eigen::Index>(i) * 3 + 0);
+        poses_[i].y += delta(static_cast<Eigen::Index>(i) * 3 + 1);
+        poses_[i].yaw =
+          normalizeAngle(poses_[i].yaw + delta(static_cast<Eigen::Index>(i) * 3 + 2));
+        max_update =
+          std::max(max_update,
+                   delta.segment<3>(static_cast<Eigen::Index>(i) * 3).squaredNorm());
       }
 
       if (max_update < 1e-10) break;

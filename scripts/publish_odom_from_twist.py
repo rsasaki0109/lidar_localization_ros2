@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 
 import math
-from typing import Optional
 
 import rclpy
-from geometry_msgs.msg import TransformStamped
-from geometry_msgs.msg import TwistWithCovarianceStamped
+from geometry_msgs.msg import TransformStamped, TwistWithCovarianceStamped
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.time import Time
@@ -33,14 +31,24 @@ class OdomFromTwistPublisher(Node):
         self.declare_parameter("max_dt_sec", 0.5)
         self.declare_parameter("stamp_with_current_time", True)
 
-        twist_topic = self.get_parameter("twist_topic").get_parameter_value().string_value
+        twist_topic = (
+            self.get_parameter("twist_topic").get_parameter_value().string_value
+        )
         odom_topic = self.get_parameter("odom_topic").get_parameter_value().string_value
-        self.odom_frame_id = self.get_parameter("odom_frame_id").get_parameter_value().string_value
-        self.base_frame_id = self.get_parameter("base_frame_id").get_parameter_value().string_value
+        self.odom_frame_id = (
+            self.get_parameter("odom_frame_id").get_parameter_value().string_value
+        )
+        self.base_frame_id = (
+            self.get_parameter("base_frame_id").get_parameter_value().string_value
+        )
         publish_tf = self.get_parameter("publish_tf").get_parameter_value().bool_value
-        self.max_dt_sec = self.get_parameter("max_dt_sec").get_parameter_value().double_value
+        self.max_dt_sec = (
+            self.get_parameter("max_dt_sec").get_parameter_value().double_value
+        )
         self.stamp_with_current_time = (
-            self.get_parameter("stamp_with_current_time").get_parameter_value().bool_value
+            self.get_parameter("stamp_with_current_time")
+            .get_parameter_value()
+            .bool_value
         )
 
         self.odom_pub = self.create_publisher(Odometry, odom_topic, 10)
@@ -52,7 +60,7 @@ class OdomFromTwistPublisher(Node):
             50,
         )
 
-        self.last_stamp: Optional[Time] = None
+        self.last_stamp: Time | None = None
         self.x = 0.0
         self.y = 0.0
         self.z = 0.0
@@ -72,7 +80,9 @@ class OdomFromTwistPublisher(Node):
         if self.last_stamp is not None:
             dt = (stamp - self.last_stamp).nanoseconds * 1e-9
             if dt < 0.0:
-                self.get_logger().warn("Received twist message with non-monotonic timestamp, skipping integration.")
+                self.get_logger().warn(
+                    "Received twist message with non-monotonic timestamp, skipping integration."
+                )
                 dt = 0.0
             elif dt > self.max_dt_sec:
                 self.get_logger().warn(
@@ -97,7 +107,11 @@ class OdomFromTwistPublisher(Node):
 
     def _publish(self, msg: TwistWithCovarianceStamped) -> None:
         qx, qy, qz, qw = quaternion_from_yaw(self.yaw)
-        stamp = self.get_clock().now().to_msg() if self.stamp_with_current_time else msg.header.stamp
+        stamp = (
+            self.get_clock().now().to_msg()
+            if self.stamp_with_current_time
+            else msg.header.stamp
+        )
 
         odom = Odometry()
         odom.header.stamp = stamp

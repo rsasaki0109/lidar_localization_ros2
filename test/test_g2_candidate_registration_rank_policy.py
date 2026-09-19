@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-import g2_candidate_registration_rank_policy as policy  # noqa: E402
+import g2_candidate_registration_rank_policy as policy
 
 
 def _candidate(x, y, bbs_score, fitness):
@@ -44,7 +44,8 @@ def test_ranking_prefers_low_fitness_over_high_bbs_score():
 
 def test_apply_registration_ranking_sets_supervisor_scores():
     ranked = policy.apply_registration_ranking(
-        [_candidate(0.0, 0.0, 0.9, 1.5)], score_gate=6.0)
+        [_candidate(0.0, 0.0, 0.9, 1.5)], score_gate=6.0
+    )
     assert ranked[0].score == 0.75
 
 

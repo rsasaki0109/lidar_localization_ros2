@@ -79,7 +79,6 @@ Conventions
 
 import math
 from dataclasses import dataclass, field, replace
-from typing import Optional, Tuple
 
 # Supervisor states. The names mirror the C++ RecoverySupervisorState vocabulary
 # where they overlap so the two halves of the loop read consistently in logs.
@@ -167,21 +166,21 @@ class SupervisorState:
     name: str = STATE_IDLE
     attempts: int = 0
     # When the current sustained request was first seen (for debounce).
-    request_since_sec: Optional[float] = None
+    request_since_sec: float | None = None
     # When the in-flight query was issued (for query_timeout).
-    query_issued_sec: Optional[float] = None
+    query_issued_sec: float | None = None
     # When the most recent reset was published (for settle/cooldown spacing).
-    last_reset_sec: Optional[float] = None
+    last_reset_sec: float | None = None
     # When the current cooldown began.
-    cooldown_since_sec: Optional[float] = None
+    cooldown_since_sec: float | None = None
     # Ranked candidate scores (high-to-low) from the query currently being walked,
     # and the index of the candidate published most recently. Set when a query
     # reply is consumed; used to walk to the next-best candidate on a failed settle
     # without spending another attempt.
-    candidate_scores: Tuple[float, ...] = field(default_factory=tuple)
+    candidate_scores: tuple[float, ...] = field(default_factory=tuple)
     candidate_index: int = 0
     recovery_evidence_count: int = 0
-    last_recovery_fitness_observed_sec: Optional[float] = None
+    last_recovery_fitness_observed_sec: float | None = None
     # Set when a cross-check objectively detected the localizer is off; while True
     # the episode proceeds even if reinitialization_requested is de-asserted.
     alias_confirmed: bool = False
@@ -204,28 +203,28 @@ class SupervisorObservation:
     # Best candidate score from the most recent service reply, if one is ready
     # this tick (None while no fresh reply is available). Back-compat shorthand for
     # a single-candidate reply; prefer ``candidate_scores`` for the full ranked list.
-    best_candidate_score: Optional[float] = None
+    best_candidate_score: float | None = None
     # Full ranked candidate scores (high-to-low) from the most recent reply, if one
     # is ready this tick. When present it supersedes ``best_candidate_score`` and
     # enables the ranked-candidate walk. None while no fresh reply is available.
-    candidate_scores: Optional[Tuple[float, ...]] = None
+    candidate_scores: tuple[float, ...] | None = None
     # A service reply arrived before G2 had received its first scan. This is a
     # readiness condition rather than a localization attempt: retry without
     # spending the hard candidate-query budget.
     retryable_empty_reply: bool = False
     # Current alignment fitness, if known (lower is better).
-    best_fitness: Optional[float] = None
+    best_fitness: float | None = None
     # Optional unique timestamp for the fitness observation. When supplied, the
     # reducer counts a recovery sample only once even if the node ticks faster
     # than /alignment_status arrives.
-    fitness_observed_sec: Optional[float] = None
+    fitness_observed_sec: float | None = None
     # Optional health classification from /alignment_status. When supplied,
     # recovery evidence must be both low-fitness and stable tracking, not just a
     # transient low score from a degraded/recovering state.
-    stable_tracking: Optional[bool] = None
+    stable_tracking: bool | None = None
     # Distance (m) between the verify query's top raw fix and the localizer pose at
     # the fix scan stamp; None when the node could not evaluate it.
-    cross_check_mismatch_m: Optional[float] = None
+    cross_check_mismatch_m: float | None = None
     # True when the node currently has a usable odom-bridge candidate (a fresh
     # TF lookup of global_frame_id -> base_frame_id composed from the frozen
     # map -> odom offset and the live external odom -> base_link). The policy
@@ -257,14 +256,14 @@ def initial_state() -> SupervisorState:
 # Per-episode fields every exit branch (standdown, idle, exhausted) must clear so
 # a later, unrelated episode always starts with a clean slate -- the odom-bridge
 # budget included, exactly like alias_confirmed and the recovery-evidence counters.
-_EPISODE_RESET_FIELDS = dict(
-    recovery_evidence_count=0,
-    last_recovery_fitness_observed_sec=None,
-    alias_confirmed=False,
-    active_source="bbs",
-    odom_bridge_attempts=0,
-    odom_bridge_exhausted=False,
-)
+_EPISODE_RESET_FIELDS = {
+    "recovery_evidence_count": 0,
+    "last_recovery_fitness_observed_sec": None,
+    "alias_confirmed": False,
+    "active_source": "bbs",
+    "odom_bridge_attempts": 0,
+    "odom_bridge_exhausted": False,
+}
 
 
 def _standdown_confirmed(state: SupervisorState) -> SupervisorState:
@@ -300,19 +299,26 @@ def _to_exhausted(state: SupervisorState, **overrides) -> SupervisorState:
     return replace(state, **fields)
 
 
-def _cooldown(state: SupervisorState, now_sec: float, reason: str) -> SupervisorDecision:
+def _cooldown(
+    state: SupervisorState, now_sec: float, reason: str
+) -> SupervisorDecision:
     return SupervisorDecision(
         ACTION_NONE,
         reason,
-        replace(state, name=STATE_COOLDOWN, cooldown_since_sec=now_sec,
-                query_issued_sec=None, recovery_evidence_count=0,
-                last_recovery_fitness_observed_sec=None),
+        replace(
+            state,
+            name=STATE_COOLDOWN,
+            cooldown_since_sec=now_sec,
+            query_issued_sec=None,
+            recovery_evidence_count=0,
+            last_recovery_fitness_observed_sec=None,
+        ),
     )
 
 
 def _resolve_candidate_scores(
     obs: SupervisorObservation,
-) -> Optional[Tuple[float, ...]]:
+) -> tuple[float, ...] | None:
     """Return the ranked candidate scores ready this tick, or None if no reply.
 
     Prefers the full ranked ``candidate_scores`` list; falls back to the
@@ -342,7 +348,9 @@ def decide(
 
     # Track how long the request has been continuously asserted, for debounce.
     if requested:
-        request_since = state.request_since_sec if state.request_since_sec is not None else now
+        request_since = (
+            state.request_since_sec if state.request_since_sec is not None else now
+        )
     else:
         request_since = None
     state = replace(state, request_since_sec=request_since)
@@ -356,101 +364,151 @@ def decide(
             return SupervisorDecision(ACTION_NONE, "request_debouncing", state)
         # Sustained request: move toward a query (cooldown handled in AWAIT_QUERY).
         return SupervisorDecision(
-            ACTION_NONE, "request_armed", replace(state, name=STATE_AWAIT_QUERY))
+            ACTION_NONE, "request_armed", replace(state, name=STATE_AWAIT_QUERY)
+        )
 
     if name == STATE_AWAIT_QUERY:
         if not requested and not state.alias_confirmed:
             return SupervisorDecision(
-                ACTION_NONE, "request_cleared",
-                _reset_to_idle(state))
+                ACTION_NONE, "request_cleared", _reset_to_idle(state)
+            )
         # Respect spacing relative to the previous reset, if any -- applies to
         # the odom bridge too, so neither source can republish back-to-back.
-        if (state.last_reset_sec is not None
-                and now - state.last_reset_sec < params.min_seconds_between_attempts):
+        if (
+            state.last_reset_sec is not None
+            and now - state.last_reset_sec < params.min_seconds_between_attempts
+        ):
             return SupervisorDecision(ACTION_NONE, "spacing_hold", state)
-        if (params.use_odom_bridge_candidate
-                and not state.odom_bridge_exhausted
-                and obs.odom_bridge_available):
+        if (
+            params.use_odom_bridge_candidate
+            and not state.odom_bridge_exhausted
+            and obs.odom_bridge_available
+        ):
             # Zero-latency reseed from the external front end's odom (map ->
             # odom(last accepted) x odom -> base_link(now)), tried before every
             # BBS query -- see SupervisorParams.use_odom_bridge_candidate. Does
             # not touch state.attempts: that ceiling is the BBS query budget,
             # and the bridge has its own (odom_bridge_max_attempts) below.
             return SupervisorDecision(
-                ACTION_PUBLISH_RESET, "odom_bridge_reset_published",
+                ACTION_PUBLISH_RESET,
+                "odom_bridge_reset_published",
                 replace(
-                    state, name=STATE_SETTLING, last_reset_sec=now,
-                    query_issued_sec=None, active_source="odom_bridge",
-                    candidate_scores=(), candidate_index=0,
+                    state,
+                    name=STATE_SETTLING,
+                    last_reset_sec=now,
+                    query_issued_sec=None,
+                    active_source="odom_bridge",
+                    candidate_scores=(),
+                    candidate_index=0,
                     recovery_evidence_count=0,
-                    last_recovery_fitness_observed_sec=None),
-                candidate_index=0, candidate_source="odom_bridge")
+                    last_recovery_fitness_observed_sec=None,
+                ),
+                candidate_index=0,
+                candidate_source="odom_bridge",
+            )
         if state.attempts >= params.max_attempts:
             return SupervisorDecision(
-                ACTION_GIVE_UP, "attempts_exhausted", _to_exhausted(state))
+                ACTION_GIVE_UP, "attempts_exhausted", _to_exhausted(state)
+            )
         return SupervisorDecision(
-            ACTION_QUERY, "query_issued",
-            replace(state, name=STATE_AWAIT_CANDIDATES, query_issued_sec=now,
-                    active_source="bbs"))
+            ACTION_QUERY,
+            "query_issued",
+            replace(
+                state,
+                name=STATE_AWAIT_CANDIDATES,
+                query_issued_sec=now,
+                active_source="bbs",
+            ),
+        )
 
     if name == STATE_AWAIT_CANDIDATES:
         if obs.retryable_empty_reply:
             return SupervisorDecision(
-                ACTION_NONE, "scan_not_ready",
-                replace(state, name=STATE_AWAIT_QUERY, query_issued_sec=None))
+                ACTION_NONE,
+                "scan_not_ready",
+                replace(state, name=STATE_AWAIT_QUERY, query_issued_sec=None),
+            )
         reply_scores = _resolve_candidate_scores(obs)
         if reply_scores is not None:
             if reply_scores and reply_scores[0] >= params.min_candidate_score:
                 # Publish the best candidate and start walking the ranked list.
                 return SupervisorDecision(
-                    ACTION_PUBLISH_RESET, "reset_published",
-                    replace(state, name=STATE_SETTLING, last_reset_sec=now,
-                            query_issued_sec=None, attempts=state.attempts + 1,
-                            candidate_scores=tuple(reply_scores), candidate_index=0,
-                            recovery_evidence_count=0,
-                            last_recovery_fitness_observed_sec=None),
-                    candidate_index=0)
+                    ACTION_PUBLISH_RESET,
+                    "reset_published",
+                    replace(
+                        state,
+                        name=STATE_SETTLING,
+                        last_reset_sec=now,
+                        query_issued_sec=None,
+                        attempts=state.attempts + 1,
+                        candidate_scores=tuple(reply_scores),
+                        candidate_index=0,
+                        recovery_evidence_count=0,
+                        last_recovery_fitness_observed_sec=None,
+                    ),
+                    candidate_index=0,
+                )
             # Empty list or confidently-bad best candidate: never publish; count attempt.
             return _cooldown(
-                replace(state, attempts=state.attempts + 1,
-                        candidate_scores=(), candidate_index=0),
-                now, "weak_candidate_rejected")
+                replace(
+                    state,
+                    attempts=state.attempts + 1,
+                    candidate_scores=(),
+                    candidate_index=0,
+                ),
+                now,
+                "weak_candidate_rejected",
+            )
         # No candidates yet -- wait, or abandon on timeout.
-        if (state.query_issued_sec is not None
-                and now - state.query_issued_sec >= params.query_timeout_sec):
+        if (
+            state.query_issued_sec is not None
+            and now - state.query_issued_sec >= params.query_timeout_sec
+        ):
             return _cooldown(
-                replace(state, attempts=state.attempts + 1), now, "query_timeout")
+                replace(state, attempts=state.attempts + 1), now, "query_timeout"
+            )
         return SupervisorDecision(ACTION_NONE, "awaiting_candidates", state)
 
     if name == STATE_SETTLING:
-        recovery_confirmation_samples = max(1, int(params.recovery_confirmation_samples))
+        recovery_confirmation_samples = max(
+            1, int(params.recovery_confirmation_samples)
+        )
         fitness_observed_sec = obs.fitness_observed_sec
         has_new_fitness = obs.best_fitness is not None
-        if (has_new_fitness and fitness_observed_sec is not None
-                and fitness_observed_sec == state.last_recovery_fitness_observed_sec):
+        if (
+            has_new_fitness
+            and fitness_observed_sec is not None
+            and fitness_observed_sec == state.last_recovery_fitness_observed_sec
+        ):
             has_new_fitness = False
         if has_new_fitness:
             has_recovery_evidence = (
                 obs.best_fitness is not None
                 and obs.best_fitness <= params.recovery_fitness_threshold
-                and obs.stable_tracking is not False)
+                and obs.stable_tracking is not False
+            )
             recovery_evidence_count = (
-                state.recovery_evidence_count + 1 if has_recovery_evidence else 0)
+                state.recovery_evidence_count + 1 if has_recovery_evidence else 0
+            )
             last_recovery_fitness_observed_sec = fitness_observed_sec
         else:
             recovery_evidence_count = state.recovery_evidence_count
-            last_recovery_fitness_observed_sec = state.last_recovery_fitness_observed_sec
+            last_recovery_fitness_observed_sec = (
+                state.last_recovery_fitness_observed_sec
+            )
         state_with_evidence = replace(
             state,
             recovery_evidence_count=recovery_evidence_count,
-            last_recovery_fitness_observed_sec=last_recovery_fitness_observed_sec)
+            last_recovery_fitness_observed_sec=last_recovery_fitness_observed_sec,
+        )
         recovered = recovery_evidence_count >= recovery_confirmation_samples
         if recovered:
             if params.enable_confirm_cross_check:
                 # One more G2 query: a fresh global fix that disagrees with the
                 # localizer exposes along-corridor alias locks that pass fitness alone.
                 return SupervisorDecision(
-                    ACTION_QUERY, "confirm_cross_check_query",
+                    ACTION_QUERY,
+                    "confirm_cross_check_query",
                     replace(
                         state_with_evidence,
                         name=STATE_VERIFYING,
@@ -458,14 +516,20 @@ def decide(
                         recovery_evidence_count=0,
                         last_recovery_fitness_observed_sec=None,
                         candidate_scores=(),
-                        candidate_index=0))
+                        candidate_index=0,
+                    ),
+                )
             # Confirmed recovery: stand down and clear the ceiling, but wait for
             # the request to de-assert before re-arming (edge-triggered next time).
             return SupervisorDecision(
-                ACTION_NONE, "recovery_confirmed",
-                _standdown_confirmed(state_with_evidence))
-        if (state.last_reset_sec is not None
-                and now - state.last_reset_sec >= params.settle_timeout_sec):
+                ACTION_NONE,
+                "recovery_confirmed",
+                _standdown_confirmed(state_with_evidence),
+            )
+        if (
+            state.last_reset_sec is not None
+            and now - state.last_reset_sec >= params.settle_timeout_sec
+        ):
             if state.active_source == "odom_bridge":
                 # The bridge reset did not take (e.g. the dropout is long enough
                 # that odom drift finally exceeded the registration basin). Spend
@@ -474,7 +538,8 @@ def decide(
                 # falls through to the BBS query instead.
                 odom_bridge_attempts = state.odom_bridge_attempts + 1
                 odom_bridge_exhausted = (
-                    odom_bridge_attempts >= params.odom_bridge_max_attempts)
+                    odom_bridge_attempts >= params.odom_bridge_max_attempts
+                )
                 return _cooldown(
                     replace(
                         state_with_evidence,
@@ -483,38 +548,51 @@ def decide(
                         candidate_scores=(),
                         candidate_index=0,
                         recovery_evidence_count=0,
-                        last_recovery_fitness_observed_sec=None),
-                    now, "odom_bridge_unconfirmed")
+                        last_recovery_fitness_observed_sec=None,
+                    ),
+                    now,
+                    "odom_bridge_unconfirmed",
+                )
             # This candidate did not take. Walk to the next-best candidate from the
             # same query (the localizer's fitness is the registration oracle) before
             # spending another attempt -- only re-querying consumes max_attempts.
             next_index = state.candidate_index + 1
-            if (next_index < len(state.candidate_scores)
-                    and next_index < params.max_walk_candidates
-                    and state.candidate_scores[next_index] >= params.min_candidate_score):
+            if (
+                next_index < len(state.candidate_scores)
+                and next_index < params.max_walk_candidates
+                and state.candidate_scores[next_index] >= params.min_candidate_score
+            ):
                 return SupervisorDecision(
-                    ACTION_PUBLISH_RESET, "next_candidate",
+                    ACTION_PUBLISH_RESET,
+                    "next_candidate",
                     replace(
                         state_with_evidence,
                         last_reset_sec=now,
                         candidate_index=next_index,
                         recovery_evidence_count=0,
-                        last_recovery_fitness_observed_sec=None),
-                    candidate_index=next_index)
+                        last_recovery_fitness_observed_sec=None,
+                    ),
+                    candidate_index=next_index,
+                )
             # Ranked list exhausted: the whole query failed. Give up if the attempt
             # ceiling is reached, else cool down and re-query.
             if state.attempts >= params.max_attempts:
                 return SupervisorDecision(
-                    ACTION_GIVE_UP, "recovery_failed_exhausted",
-                    _to_exhausted(state_with_evidence))
+                    ACTION_GIVE_UP,
+                    "recovery_failed_exhausted",
+                    _to_exhausted(state_with_evidence),
+                )
             return _cooldown(
                 replace(
                     state_with_evidence,
                     candidate_scores=(),
                     candidate_index=0,
                     recovery_evidence_count=0,
-                    last_recovery_fitness_observed_sec=None),
-                now, "recovery_unconfirmed")
+                    last_recovery_fitness_observed_sec=None,
+                ),
+                now,
+                "recovery_unconfirmed",
+            )
         return SupervisorDecision(ACTION_NONE, "settling", state_with_evidence)
 
     if name == STATE_VERIFYING:
@@ -523,11 +601,10 @@ def decide(
         reply_scores = _resolve_candidate_scores(obs)
         if reply_scores is not None:
             mismatch = obs.cross_check_mismatch_m
-            if (mismatch is None
-                    or mismatch <= params.cross_check_mismatch_m):
+            if mismatch is None or mismatch <= params.cross_check_mismatch_m:
                 return SupervisorDecision(
-                    ACTION_NONE, "recovery_confirmed",
-                    _standdown_confirmed(state))
+                    ACTION_NONE, "recovery_confirmed", _standdown_confirmed(state)
+                )
             # The reset this verify query is checking already paid an attempt at
             # publish time; the mismatch is only the honest detection of its
             # failure. Charging it again would halve the effective ceiling
@@ -542,15 +619,16 @@ def decide(
             )
             if state.attempts >= params.max_attempts:
                 return SupervisorDecision(
-                    ACTION_GIVE_UP, "recovery_failed_exhausted",
-                    _to_exhausted(cleared))
+                    ACTION_GIVE_UP, "recovery_failed_exhausted", _to_exhausted(cleared)
+                )
             if reply_scores and reply_scores[0] >= params.min_candidate_score:
                 # The verify reply is itself the freshest trustworthy fix (and it
                 # just updated the fix-to-fix velocity pair), so reseed from it
                 # immediately: a cooldown + re-query would add a full query
                 # runtime of staleness to the next seed for no information gain.
                 return SupervisorDecision(
-                    ACTION_PUBLISH_RESET, "cross_check_reseed",
+                    ACTION_PUBLISH_RESET,
+                    "cross_check_reseed",
                     replace(
                         cleared,
                         name=STATE_SETTLING,
@@ -559,46 +637,63 @@ def decide(
                         active_source="bbs",
                         candidate_scores=tuple(reply_scores),
                         candidate_index=0,
-                        alias_confirmed=True),
-                    candidate_index=0, candidate_source="bbs")
+                        alias_confirmed=True,
+                    ),
+                    candidate_index=0,
+                    candidate_source="bbs",
+                )
             return _cooldown(
-                replace(cleared, alias_confirmed=True), now, "cross_check_mismatch")
-        if (state.query_issued_sec is not None
-                and now - state.query_issued_sec >= params.query_timeout_sec):
+                replace(cleared, alias_confirmed=True), now, "cross_check_mismatch"
+            )
+        if (
+            state.query_issued_sec is not None
+            and now - state.query_issued_sec >= params.query_timeout_sec
+        ):
             return SupervisorDecision(
-                ACTION_NONE, "cross_check_timeout",
-                _standdown_confirmed(state))
+                ACTION_NONE, "cross_check_timeout", _standdown_confirmed(state)
+            )
         return SupervisorDecision(ACTION_NONE, "verifying", state)
 
     if name == STATE_COOLDOWN:
-        if state.cooldown_since_sec is not None and now - state.cooldown_since_sec < params.min_seconds_between_attempts:
+        if (
+            state.cooldown_since_sec is not None
+            and now - state.cooldown_since_sec < params.min_seconds_between_attempts
+        ):
             return SupervisorDecision(ACTION_NONE, "cooldown", state)
         if state.attempts >= params.max_attempts:
             return SupervisorDecision(
-                ACTION_GIVE_UP, "attempts_exhausted", _to_exhausted(state))
+                ACTION_GIVE_UP, "attempts_exhausted", _to_exhausted(state)
+            )
         if not requested and not state.alias_confirmed:
-            if (params.enable_confirm_cross_check
-                    and state.last_reset_sec is not None):
+            if params.enable_confirm_cross_check and state.last_reset_sec is not None:
                 return SupervisorDecision(
-                    ACTION_QUERY, "self_clear_cross_check_query",
+                    ACTION_QUERY,
+                    "self_clear_cross_check_query",
                     replace(
                         state,
                         name=STATE_VERIFYING,
                         query_issued_sec=now,
                         candidate_scores=(),
-                        candidate_index=0))
+                        candidate_index=0,
+                    ),
+                )
             return SupervisorDecision(
-                ACTION_NONE, "request_cleared", _reset_to_idle(state))
+                ACTION_NONE, "request_cleared", _reset_to_idle(state)
+            )
         return SupervisorDecision(
-            ACTION_NONE, "cooldown_elapsed",
-            replace(state, name=STATE_AWAIT_QUERY, cooldown_since_sec=None))
+            ACTION_NONE,
+            "cooldown_elapsed",
+            replace(state, name=STATE_AWAIT_QUERY, cooldown_since_sec=None),
+        )
 
     if name == STATE_STANDDOWN:
         # Wait for the request to clear, then re-arm for the next problem.
         if not requested:
             return SupervisorDecision(
-                ACTION_NONE, "standdown_cleared",
-                _reset_to_idle(state, request_since_sec=None))
+                ACTION_NONE,
+                "standdown_cleared",
+                _reset_to_idle(state, request_since_sec=None),
+            )
         return SupervisorDecision(ACTION_NONE, "standdown", state)
 
     if name == STATE_EXHAUSTED:
@@ -606,8 +701,10 @@ def decide(
         # should surface this to an operator rather than retry silently.
         if not requested:
             return SupervisorDecision(
-                ACTION_NONE, "exhausted_cleared",
-                _reset_to_idle(state, last_reset_sec=None, cooldown_since_sec=None))
+                ACTION_NONE,
+                "exhausted_cleared",
+                _reset_to_idle(state, last_reset_sec=None, cooldown_since_sec=None),
+            )
         return SupervisorDecision(ACTION_NONE, "exhausted", state)
 
     raise ValueError(f"unknown supervisor state: {name!r}")
@@ -645,6 +742,7 @@ def decide(
 @dataclass(frozen=True)
 class SeedVelocity:
     """Map-frame velocity (m/s) inferred from two successive query fixes."""
+
     vx: float = 0.0
     vy: float = 0.0
     valid: bool = False
@@ -662,7 +760,7 @@ class ShadowMotionMismatch:
 class ShadowMotionGateResult:
     publish_allowed: bool
     consistent_samples: int
-    mismatch: Optional[ShadowMotionMismatch] = None
+    mismatch: ShadowMotionMismatch | None = None
 
 
 def _wrap_angle_rad(angle: float) -> float:
@@ -670,10 +768,10 @@ def _wrap_angle_rad(angle: float) -> float:
 
 
 def compare_shadow_relative_motion(
-    first_candidate: Tuple[float, float, float],
-    second_candidate: Tuple[float, float, float],
-    first_odom: Tuple[float, float, float],
-    second_odom: Tuple[float, float, float],
+    first_candidate: tuple[float, float, float],
+    second_candidate: tuple[float, float, float],
+    first_odom: tuple[float, float, float],
+    second_odom: tuple[float, float, float],
 ) -> ShadowMotionMismatch:
     """Compare two motions without requiring a shared absolute map anchor.
 
@@ -698,10 +796,9 @@ def compare_shadow_relative_motion(
     odom_delta = relative(first_odom, second_odom)
     return ShadowMotionMismatch(
         translation_m=math.hypot(
-            candidate_delta[0] - odom_delta[0],
-            candidate_delta[1] - odom_delta[1]),
-        yaw_deg=abs(math.degrees(_wrap_angle_rad(
-            candidate_delta[2] - odom_delta[2]))),
+            candidate_delta[0] - odom_delta[0], candidate_delta[1] - odom_delta[1]
+        ),
+        yaw_deg=abs(math.degrees(_wrap_angle_rad(candidate_delta[2] - odom_delta[2]))),
     )
 
 
@@ -725,8 +822,8 @@ class BbsShadowMotionGate:
 
     def observe(
         self,
-        candidate_pose: Tuple[float, float, float],
-        odom_pose: Tuple[float, float, float],
+        candidate_pose: tuple[float, float, float],
+        odom_pose: tuple[float, float, float],
     ) -> ShadowMotionGateResult:
         current = (candidate_pose, odom_pose)
         if self._sample is None:
@@ -735,10 +832,13 @@ class BbsShadowMotionGate:
             return ShadowMotionGateResult(False, 1)
         previous_candidate, previous_odom = self._sample
         mismatch = compare_shadow_relative_motion(
-            previous_candidate, candidate_pose, previous_odom, odom_pose)
+            previous_candidate, candidate_pose, previous_odom, odom_pose
+        )
         self._sample = current
-        if (mismatch.translation_m <= self.max_translation_mismatch_m
-                and mismatch.yaw_deg <= self.max_yaw_mismatch_deg):
+        if (
+            mismatch.translation_m <= self.max_translation_mismatch_m
+            and mismatch.yaw_deg <= self.max_yaw_mismatch_deg
+        ):
             self.consistent_samples += 1
         else:
             self.consistent_samples = 1
@@ -750,9 +850,9 @@ class BbsShadowMotionGate:
 
 
 def estimate_seed_velocity(
-    prev_xy: Tuple[float, float],
+    prev_xy: tuple[float, float],
     prev_issue_sec: float,
-    curr_xy: Tuple[float, float],
+    curr_xy: tuple[float, float],
     curr_issue_sec: float,
     max_speed_mps: float,
     min_dt_sec: float = 0.5,
@@ -801,23 +901,31 @@ class TrustedSeedVelocityTracker:
         # held until the baseline is long enough; advancing it on every message
         # would make every pair sub-floor and the tracker permanently invalid.
         self._min_pair_dt_sec = min_pair_dt_sec
-        self._prev_x: Optional[float] = None
-        self._prev_y: Optional[float] = None
-        self._prev_sec: Optional[float] = None
+        self._prev_x: float | None = None
+        self._prev_y: float | None = None
+        self._prev_sec: float | None = None
         self._prev_trusted = False
         self._velocity = SeedVelocity()
-        self._velocity_sec: Optional[float] = None
+        self._velocity_sec: float | None = None
 
     def observe(self, x: float, y: float, observed_sec: float, trusted: bool) -> None:
         if trusted:
-            if (self._prev_trusted and self._prev_x is not None
-                    and self._prev_y is not None and self._prev_sec is not None):
+            if (
+                self._prev_trusted
+                and self._prev_x is not None
+                and self._prev_y is not None
+                and self._prev_sec is not None
+            ):
                 if observed_sec - self._prev_sec < self._min_pair_dt_sec:
                     return  # hold the anchor until the baseline is long enough
                 new_velocity = estimate_seed_velocity(
-                    (self._prev_x, self._prev_y), self._prev_sec,
-                    (x, y), observed_sec, self._max_speed_mps,
-                    min_dt_sec=self._min_pair_dt_sec)
+                    (self._prev_x, self._prev_y),
+                    self._prev_sec,
+                    (x, y),
+                    observed_sec,
+                    self._max_speed_mps,
+                    min_dt_sec=self._min_pair_dt_sec,
+                )
                 if new_velocity.valid:
                     self._velocity = new_velocity
                     self._velocity_sec = observed_sec
@@ -839,21 +947,23 @@ class TrustedSeedVelocityTracker:
         return self._velocity
 
     def velocity_rejection_reason(
-        self, now_sec: float, max_age_sec: float,
-    ) -> Optional[str]:
+        self,
+        now_sec: float,
+        max_age_sec: float,
+    ) -> str | None:
         """Human-readable reason ``velocity_at`` would return invalid, or None."""
         if not self._velocity.valid or self._velocity_sec is None:
             return "no trusted velocity"
         age = now_sec - self._velocity_sec
         if age > max_age_sec:
-            return "stale trusted velocity (age %.1fs > %.1fs)" % (age, max_age_sec)
+            return f"stale trusted velocity (age {age:.1f}s > {max_age_sec:.1f}s)"
         return None
 
 
 def estimate_sim_fix_velocity(
-    prev_xy: Tuple[float, float],
+    prev_xy: tuple[float, float],
     prev_scan_stamp_sec: float,
-    curr_xy: Tuple[float, float],
+    curr_xy: tuple[float, float],
     curr_scan_stamp_sec: float,
     max_speed_mps: float,
     min_dt_sec: float = 2.0,
@@ -875,16 +985,21 @@ def estimate_sim_fix_velocity(
     # Same two-fix arithmetic (min-dt and max-speed guards included) as the
     # wall-clock estimator; only the upper dt bound is specific to this path.
     return estimate_seed_velocity(
-        prev_xy, prev_scan_stamp_sec, curr_xy, curr_scan_stamp_sec,
-        max_speed_mps=max_speed_mps, min_dt_sec=min_dt_sec)
+        prev_xy,
+        prev_scan_stamp_sec,
+        curr_xy,
+        curr_scan_stamp_sec,
+        max_speed_mps=max_speed_mps,
+        min_dt_sec=min_dt_sec,
+    )
 
 
 def estimate_pose_delta_from_sim_fix(
     velocity: SeedVelocity,
     fix_scan_stamp_sec: float,
-    last_sim_stamp_sec: Optional[float],
+    last_sim_stamp_sec: float | None,
     max_latency_sec: float,
-) -> Optional[Tuple[float, float, float, float]]:
+) -> tuple[float, float, float, float] | None:
     """Forward-extrapolate a seed by bag-clock staleness since the latest fix.
 
     ``last_sim_stamp_sec`` is the most recent bag-clock stamp seen on
@@ -909,11 +1024,11 @@ def estimate_pose_delta_from_sim_fix(
 
 
 def forward_compensate_xy(
-    xy: Tuple[float, float],
+    xy: tuple[float, float],
     velocity: SeedVelocity,
     latency_sec: float,
     max_latency_sec: float,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """Push ``xy`` ahead by ``velocity * latency`` (clamped), or return it unchanged.
 
     ``latency_sec`` is the query->publish delay; it is clamped to
