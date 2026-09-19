@@ -142,6 +142,8 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("covariance_roll_pitch_floor_std_deg", 1.5);
   declare_parameter("enable_timer_publishing", false);
   declare_parameter("pose_publish_frequency", 10.0);
+  declare_parameter(
+    "path_max_poses", static_cast<int>(lidar_localization::kDefaultPathMaxPoses));
   declare_parameter("viz_downsample", false);
   declare_parameter("viz_voxel_leaf_size", 0.5);
 }

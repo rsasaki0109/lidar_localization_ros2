@@ -65,3 +65,5 @@
       base_frame_id: base_link
       enable_timer_publishing: false
       pose_publish_frequency: 30.0
+      # Visualization path history bound; 0 keeps the full history.
+      path_max_poses: 2000

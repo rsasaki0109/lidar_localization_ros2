@@ -468,6 +468,15 @@ void PCLLocalization::initializeParameters()
       get_logger(), "pose_publish_frequency must be finite and positive; using %lf",
       pose_publish_frequency_);
   }
+  int requested_path_max_poses = static_cast<int>(lidar_localization::kDefaultPathMaxPoses);
+  get_parameter("path_max_poses", requested_path_max_poses);
+  const auto path_max_poses = lidar_localization::normalizePathMaxPoses(
+    requested_path_max_poses, lidar_localization::kDefaultPathMaxPoses);
+  path_max_poses_ = path_max_poses.value;
+  if (path_max_poses.was_adjusted) {
+    RCLCPP_WARN(
+      get_logger(), "path_max_poses must be non-negative; using %zu", path_max_poses_);
+  }
 
   RCLCPP_INFO(get_logger(),"global_frame_id: %s", global_frame_id_.c_str());
   RCLCPP_INFO(get_logger(),"odom_frame_id: %s", odom_frame_id_.c_str());
@@ -696,5 +705,8 @@ void PCLLocalization::initializeParameters()
     imu_prediction_correction_guard_warmup_accepts_);
   RCLCPP_INFO(get_logger(),"enable_timer_publishing: %d", enable_timer_publishing_);
   RCLCPP_INFO(get_logger(),"pose_publish_frequency: %lf", pose_publish_frequency_);
+  RCLCPP_INFO(
+    get_logger(), "path_max_poses: %zu%s", path_max_poses_,
+    path_max_poses_ == 0 ? " (unbounded)" : "");
 }
 

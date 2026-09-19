@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <cstddef>
 #include <string>
 
 namespace ll = lidar_localization;
@@ -169,6 +170,75 @@ void test_pose_stamped_and_path_append()
   assert(path.poses[0].header.stamp.sec == 10);
 }
 
+void test_path_append_is_bounded_by_default()
+{
+  nav_msgs::msg::Path path;
+  const std::size_t appended = ll::kDefaultPathMaxPoses + 32;
+  for (std::size_t i = 0; i < appended; ++i) {
+    ll::appendPoseToPath(
+      path,
+      ll::makePoseStamped(stamp(static_cast<int32_t>(i)), "map", pose_xyz(0.0, 0.0, 0.0)));
+  }
+
+  assert(path.poses.size() == ll::kDefaultPathMaxPoses);
+  assert(path.poses.back().header.stamp.sec == static_cast<int32_t>(appended - 1));
+}
+
+void test_path_append_zero_bound_keeps_full_history()
+{
+  nav_msgs::msg::Path path;
+  for (int32_t i = 0; i < 64; ++i) {
+    ll::appendPoseToPath(path, ll::makePoseStamped(stamp(i), "map", pose_xyz(i, 0.0, 0.0)), 0);
+  }
+
+  assert(path.poses.size() == 64);
+  assert(path.poses.front().header.stamp.sec == 0);
+  assert(path.poses.back().header.stamp.sec == 63);
+}
+
+void test_normalize_path_max_poses()
+{
+  const auto kept = ll::normalizePathMaxPoses(500, ll::kDefaultPathMaxPoses);
+  assert(kept.value == 500);
+  assert(!kept.was_adjusted);
+
+  const auto unbounded = ll::normalizePathMaxPoses(0, ll::kDefaultPathMaxPoses);
+  assert(unbounded.value == 0);
+  assert(!unbounded.was_adjusted);
+
+  const auto negative = ll::normalizePathMaxPoses(-1, ll::kDefaultPathMaxPoses);
+  assert(negative.value == ll::kDefaultPathMaxPoses);
+  assert(negative.was_adjusted);
+}
+
+void test_path_append_keeps_newest_poses_within_bound()
+{
+  nav_msgs::msg::Path path;
+  const std::size_t max_poses = 8;
+  for (int32_t i = 0; i < 64; ++i) {
+    ll::appendPoseToPath(
+      path, ll::makePoseStamped(stamp(i), "map", pose_xyz(i, 0.0, 0.0)), max_poses);
+    assert(path.poses.size() <= max_poses);
+  }
+
+  // The bound keeps the newest samples and drops the oldest ones.
+  assert(path.poses.size() == max_poses);
+  assert(path.poses.front().header.stamp.sec == 56);
+  assert(path.poses.back().header.stamp.sec == 63);
+  assert(near(path.poses.back().pose.position.x, 63.0));
+}
+
+void test_path_append_bound_larger_than_history_keeps_all()
+{
+  nav_msgs::msg::Path path;
+  for (int32_t i = 0; i < 3; ++i) {
+    ll::appendPoseToPath(path, ll::makePoseStamped(stamp(i), "map", pose_xyz(i, 0.0, 0.0)), 10);
+  }
+
+  assert(path.poses.size() == 3);
+  assert(path.poses.front().header.stamp.sec == 0);
+}
+
 void test_stamp_pose_with_covariance()
 {
   geometry_msgs::msg::PoseWithCovarianceStamped pose;
@@ -219,6 +289,11 @@ int main()
   test_planar_constraint_preserves_negative_yaw_branch();
   test_height_only_odom_prediction_constraint();
   test_pose_stamped_and_path_append();
+  test_path_append_is_bounded_by_default();
+  test_path_append_zero_bound_keeps_full_history();
+  test_path_append_keeps_newest_poses_within_bound();
+  test_path_append_bound_larger_than_history_keeps_all();
+  test_normalize_path_max_poses();
   test_stamp_pose_with_covariance();
   test_map_to_base_transform();
   test_compose_map_to_odom_transform();
