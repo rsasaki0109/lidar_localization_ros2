@@ -75,7 +75,7 @@ jobs:
         run: |
           source /opt/ros/jazzy/setup.bash
           sudo apt-get update
-          sudo apt-get install -y python3-rosdep python3-colcon-common-extensions clang-tidy
+          sudo apt-get install -y python3-rosdep python3-colcon-common-extensions clang-tidy libomp-dev
           rosdep update
           cd ~/ros2_ws/src
           # ndt_omp_ros2 does not publish a dedicated jazzy branch yet; humble is used in CI.
