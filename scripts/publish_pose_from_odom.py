@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 
 import math
-from typing import Optional, Tuple
 
 import rclpy
-from geometry_msgs.msg import PoseWithCovarianceStamped
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from tf2_ros import TransformBroadcaster
@@ -17,12 +15,14 @@ def yaw_from_quaternion(x: float, y: float, z: float, w: float) -> float:
     return math.atan2(siny_cosp, cosy_cosp)
 
 
-def quaternion_from_yaw(yaw: float) -> Tuple[float, float, float, float]:
+def quaternion_from_yaw(yaw: float) -> tuple[float, float, float, float]:
     half = 0.5 * yaw
     return 0.0, 0.0, math.sin(half), math.cos(half)
 
 
-def inverse_planar_transform(x: float, y: float, yaw: float) -> Tuple[float, float, float]:
+def inverse_planar_transform(
+    x: float, y: float, yaw: float
+) -> tuple[float, float, float]:
     c = math.cos(yaw)
     s = math.sin(yaw)
     inv_x = -(c * x + s * y)
@@ -37,7 +37,7 @@ def compose_planar_transforms(
     bx: float,
     by: float,
     byaw: float,
-) -> Tuple[float, float, float]:
+) -> tuple[float, float, float]:
     c = math.cos(ayaw)
     s = math.sin(ayaw)
     x = ax + c * bx - s * by
@@ -70,18 +70,40 @@ class PoseFromOdomPublisher(Node):
 
         odom_topic = self.get_parameter("odom_topic").get_parameter_value().string_value
         pose_topic = self.get_parameter("pose_topic").get_parameter_value().string_value
-        self.global_frame_id = self.get_parameter("global_frame_id").get_parameter_value().string_value
-        self.odom_frame_id = self.get_parameter("odom_frame_id").get_parameter_value().string_value
-        self.base_frame_id = self.get_parameter("base_frame_id").get_parameter_value().string_value
-        self.publish_tf = self.get_parameter("publish_tf").get_parameter_value().bool_value
+        self.global_frame_id = (
+            self.get_parameter("global_frame_id").get_parameter_value().string_value
+        )
+        self.odom_frame_id = (
+            self.get_parameter("odom_frame_id").get_parameter_value().string_value
+        )
+        self.base_frame_id = (
+            self.get_parameter("base_frame_id").get_parameter_value().string_value
+        )
+        self.publish_tf = (
+            self.get_parameter("publish_tf").get_parameter_value().bool_value
+        )
 
-        self.initial_x = self.get_parameter("initial_pose_x").get_parameter_value().double_value
-        self.initial_y = self.get_parameter("initial_pose_y").get_parameter_value().double_value
-        self.initial_z = self.get_parameter("initial_pose_z").get_parameter_value().double_value
-        self.initial_qx = self.get_parameter("initial_pose_qx").get_parameter_value().double_value
-        self.initial_qy = self.get_parameter("initial_pose_qy").get_parameter_value().double_value
-        self.initial_qz = self.get_parameter("initial_pose_qz").get_parameter_value().double_value
-        self.initial_qw = self.get_parameter("initial_pose_qw").get_parameter_value().double_value
+        self.initial_x = (
+            self.get_parameter("initial_pose_x").get_parameter_value().double_value
+        )
+        self.initial_y = (
+            self.get_parameter("initial_pose_y").get_parameter_value().double_value
+        )
+        self.initial_z = (
+            self.get_parameter("initial_pose_z").get_parameter_value().double_value
+        )
+        self.initial_qx = (
+            self.get_parameter("initial_pose_qx").get_parameter_value().double_value
+        )
+        self.initial_qy = (
+            self.get_parameter("initial_pose_qy").get_parameter_value().double_value
+        )
+        self.initial_qz = (
+            self.get_parameter("initial_pose_qz").get_parameter_value().double_value
+        )
+        self.initial_qw = (
+            self.get_parameter("initial_pose_qw").get_parameter_value().double_value
+        )
         self.initial_yaw = yaw_from_quaternion(
             self.initial_qx,
             self.initial_qy,
@@ -89,18 +111,28 @@ class PoseFromOdomPublisher(Node):
             self.initial_qw,
         )
 
-        self.xy_covariance = self.get_parameter("xy_covariance").get_parameter_value().double_value
-        self.z_covariance = self.get_parameter("z_covariance").get_parameter_value().double_value
-        self.roll_pitch_covariance = (
-            self.get_parameter("roll_pitch_covariance").get_parameter_value().double_value
+        self.xy_covariance = (
+            self.get_parameter("xy_covariance").get_parameter_value().double_value
         )
-        self.yaw_covariance = self.get_parameter("yaw_covariance").get_parameter_value().double_value
+        self.z_covariance = (
+            self.get_parameter("z_covariance").get_parameter_value().double_value
+        )
+        self.roll_pitch_covariance = (
+            self.get_parameter("roll_pitch_covariance")
+            .get_parameter_value()
+            .double_value
+        )
+        self.yaw_covariance = (
+            self.get_parameter("yaw_covariance").get_parameter_value().double_value
+        )
 
         self.pose_pub = self.create_publisher(PoseWithCovarianceStamped, pose_topic, 10)
         self.tf_broadcaster = TransformBroadcaster(self) if self.publish_tf else None
-        self.subscription = self.create_subscription(Odometry, odom_topic, self._odom_callback, 50)
+        self.subscription = self.create_subscription(
+            Odometry, odom_topic, self._odom_callback, 50
+        )
 
-        self._map_to_odom: Optional[Tuple[float, float, float]] = None
+        self._map_to_odom: tuple[float, float, float] | None = None
 
         self.get_logger().info(
             "Publishing map pose from odom on "

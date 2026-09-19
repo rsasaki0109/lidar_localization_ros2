@@ -5,15 +5,10 @@ import csv
 import json
 import math
 import time
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from typing import Dict
-from typing import Iterable
-from typing import List
-from typing import Optional
-from typing import Tuple
-
 
 ATTEMPT_FIELDNAMES = [
     "attempt_id",
@@ -86,9 +81,15 @@ def parse_args() -> argparse.Namespace:
             "relocalization can be developed against a stable CSV contract."
         )
     )
-    parser.add_argument("--alignment-csv", required=True, help="Input alignment_status.csv")
-    parser.add_argument("--reference-csv", required=True, help="Reference trajectory CSV")
-    parser.add_argument("--output-csv", required=True, help="Output relocalization_attempts.csv")
+    parser.add_argument(
+        "--alignment-csv", required=True, help="Input alignment_status.csv"
+    )
+    parser.add_argument(
+        "--reference-csv", required=True, help="Reference trajectory CSV"
+    )
+    parser.add_argument(
+        "--output-csv", required=True, help="Output relocalization_attempts.csv"
+    )
     parser.add_argument(
         "--output-candidates-csv",
         default="",
@@ -149,7 +150,9 @@ def parse_args() -> argparse.Namespace:
         default="candidate_scoring_not_implemented",
         help="Rejection reason written for every generated attempt.",
     )
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite output CSV files.")
+    parser.add_argument(
+        "--overwrite", action="store_true", help="Overwrite output CSV files."
+    )
     return parser.parse_args()
 
 
@@ -157,7 +160,7 @@ def _as_bool(value: Any) -> bool:
     return str(value).strip().lower() in {"true", "1", "yes", "y"}
 
 
-def _as_float(value: Any) -> Optional[float]:
+def _as_float(value: Any) -> float | None:
     if value is None or str(value).strip() == "":
         return None
     try:
@@ -167,8 +170,8 @@ def _as_float(value: Any) -> Optional[float]:
     return number if math.isfinite(number) else None
 
 
-def _parse_float_list(raw: str) -> List[float]:
-    values: List[float] = []
+def _parse_float_list(raw: str) -> list[float]:
+    values: list[float] = []
     for token in str(raw).split(","):
         token = token.strip()
         if not token:
@@ -189,8 +192,8 @@ def _wrap_angle(angle: float) -> float:
     return math.atan2(math.sin(angle), math.cos(angle))
 
 
-def load_alignment_rows(path: Path) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
+def load_alignment_rows(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8", newline="") as stream:
         for record in csv.DictReader(stream):
             values = json.loads(record["values_json"])
@@ -205,8 +208,8 @@ def load_alignment_rows(path: Path) -> List[Dict[str, Any]]:
     return rows
 
 
-def load_reference_rows(path: Path) -> List[Dict[str, float]]:
-    rows: List[Dict[str, float]] = []
+def load_reference_rows(path: Path) -> list[dict[str, float]]:
+    rows: list[dict[str, float]] = []
     with path.open("r", encoding="utf-8", newline="") as stream:
         for record in csv.DictReader(stream):
             qx = float(record["orientation_x"])
@@ -228,8 +231,8 @@ def load_reference_rows(path: Path) -> List[Dict[str, float]]:
     return rows
 
 
-def request_windows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    windows: List[Dict[str, Any]] = []
+def request_windows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    windows: list[dict[str, Any]] = []
     index = 0
     while index < len(rows):
         if not rows[index]["requested"]:
@@ -253,18 +256,22 @@ def request_windows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return windows
 
 
-def _distance_xy(a: Dict[str, float], b: Dict[str, float]) -> float:
+def _distance_xy(a: dict[str, float], b: dict[str, float]) -> float:
     return math.hypot(a["x"] - b["x"], a["y"] - b["y"])
 
 
 def _spaced_reference_rows(
-    rows: Iterable[Dict[str, float]],
+    rows: Iterable[dict[str, float]],
     min_spacing_m: float,
     max_rows: int,
-) -> List[Dict[str, float]]:
-    selected: List[Dict[str, float]] = []
+) -> list[dict[str, float]]:
+    selected: list[dict[str, float]] = []
     for row in rows:
-        if selected and min_spacing_m > 0.0 and _distance_xy(row, selected[-1]) < min_spacing_m:
+        if (
+            selected
+            and min_spacing_m > 0.0
+            and _distance_xy(row, selected[-1]) < min_spacing_m
+        ):
             continue
         selected.append(row)
         if max_rows > 0 and len(selected) >= max_rows:
@@ -273,12 +280,12 @@ def _spaced_reference_rows(
 
 
 def select_route_rows(
-    reference_rows: List[Dict[str, float]],
+    reference_rows: list[dict[str, float]],
     trigger_stamp_sec: float,
     time_radius_sec: float,
     min_spacing_m: float,
     max_route_poses: int,
-) -> Tuple[List[Dict[str, float]], Dict[str, float]]:
+) -> tuple[list[dict[str, float]], dict[str, float]]:
     nearest = min(
         reference_rows,
         key=lambda row: abs(row["stamp_sec"] - trigger_stamp_sec),
@@ -299,7 +306,10 @@ def select_route_rows(
         if max_route_poses > 0 and len(selected) > max_route_poses:
             selected = sorted(
                 selected,
-                key=lambda row: (row["stamp_sec"] != nearest["stamp_sec"], abs(row["stamp_sec"] - nearest["stamp_sec"])),
+                key=lambda row: (
+                    row["stamp_sec"] != nearest["stamp_sec"],
+                    abs(row["stamp_sec"] - nearest["stamp_sec"]),
+                ),
             )[:max_route_poses]
             selected.sort(key=lambda row: row["stamp_sec"])
     return selected, nearest
@@ -307,15 +317,15 @@ def select_route_rows(
 
 def build_candidates(
     attempt_id: str,
-    route_rows: List[Dict[str, float]],
+    route_rows: list[dict[str, float]],
     trigger_stamp_sec: float,
     source: str,
-    longitudinal_offsets_m: List[float],
-    lateral_offsets_m: List[float],
-    yaw_offsets_deg: List[float],
+    longitudinal_offsets_m: list[float],
+    lateral_offsets_m: list[float],
+    yaw_offsets_deg: list[float],
     max_candidates: int,
-) -> List[Dict[str, Any]]:
-    candidates: List[Dict[str, Any]] = []
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
     for route_row in route_rows:
         cos_yaw = math.cos(route_row["yaw"])
         sin_yaw = math.sin(route_row["yaw"])
@@ -351,8 +361,8 @@ def build_candidates(
 
 
 def build_attempt_artifacts(
-    alignment_rows: List[Dict[str, Any]],
-    reference_rows: List[Dict[str, float]],
+    alignment_rows: list[dict[str, Any]],
+    reference_rows: list[dict[str, float]],
     candidates_csv: Path,
     source: str,
     mode: str,
@@ -361,14 +371,14 @@ def build_attempt_artifacts(
     route_min_spacing_m: float,
     max_route_poses: int,
     max_candidates: int,
-    yaw_offsets_deg: List[float],
-    lateral_offsets_m: List[float],
-    longitudinal_offsets_m: List[float],
+    yaw_offsets_deg: list[float],
+    lateral_offsets_m: list[float],
+    longitudinal_offsets_m: list[float],
     rejection_reason: str,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
-    attempts: List[Dict[str, Any]] = []
-    candidate_rows: List[Dict[str, Any]] = []
+    attempts: list[dict[str, Any]] = []
+    candidate_rows: list[dict[str, Any]] = []
     for window in request_windows(alignment_rows):
         started = time.monotonic()
         attempt_id = f"{source}_{len(attempts) + 1:04d}"
@@ -418,7 +428,9 @@ def build_attempt_artifacts(
                 "post_reset_window_sec": "",
                 "false_recovery": "false",
                 "request_reason": window["reason"] or "",
-                "request_score": "" if window["score"] is None else f"{window['score']:.10g}",
+                "request_score": ""
+                if window["score"] is None
+                else f"{window['score']:.10g}",
                 "request_window_rows": str(window["row_count"]),
                 "request_window_duration_sec": f"{max(0.0, window['end_stamp_sec'] - window['start_stamp_sec']):.9f}",
                 "generated_at": generated_at,
@@ -429,8 +441,12 @@ def build_attempt_artifacts(
                 "route_window_end_stamp_sec": f"{route_end:.9f}",
                 "nearest_reference_stamp_sec": f"{nearest['stamp_sec']:.9f}",
                 "nearest_reference_time_delta_sec": f"{nearest['stamp_sec'] - trigger_stamp_sec:.9f}",
-                "yaw_offsets_deg": ",".join(f"{value:.9f}" for value in yaw_offsets_deg),
-                "lateral_offsets_m": ",".join(f"{value:.9f}" for value in lateral_offsets_m),
+                "yaw_offsets_deg": ",".join(
+                    f"{value:.9f}" for value in yaw_offsets_deg
+                ),
+                "lateral_offsets_m": ",".join(
+                    f"{value:.9f}" for value in lateral_offsets_m
+                ),
                 "longitudinal_offsets_m": ",".join(
                     f"{value:.9f}" for value in longitudinal_offsets_m
                 ),
@@ -442,8 +458,8 @@ def build_attempt_artifacts(
 
 def write_csv(
     path: Path,
-    rows: List[Dict[str, Any]],
-    fieldnames: List[str],
+    rows: list[dict[str, Any]],
+    fieldnames: list[str],
     overwrite: bool,
 ) -> None:
     if path.exists() and not overwrite:
@@ -487,7 +503,9 @@ def main() -> None:
         rejection_reason=args.rejection_reason,
     )
     write_csv(output_csv, attempts, ATTEMPT_FIELDNAMES, overwrite=args.overwrite)
-    write_csv(candidates_csv, candidates, CANDIDATE_FIELDNAMES, overwrite=args.overwrite)
+    write_csv(
+        candidates_csv, candidates, CANDIDATE_FIELDNAMES, overwrite=args.overwrite
+    )
     print(
         json.dumps(
             {

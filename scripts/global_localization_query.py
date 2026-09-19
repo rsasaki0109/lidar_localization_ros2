@@ -16,23 +16,24 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import g2_candidate_registration_rank_policy as g2_rank  # noqa: E402
-import make_bbs_relocalization_attempts as bbs_engine  # noqa: E402
-import make_route_grid_relocalization_attempts as route_grid  # noqa: E402
+import g2_candidate_registration_rank_policy as g2_rank
+import make_bbs_relocalization_attempts as bbs_engine
+import make_route_grid_relocalization_attempts as route_grid
 
 CANDIDATE_SOURCE_BBS = "bbs"
 CANDIDATE_SOURCE_ROUTE_CROP = "route_crop"
-SUPPORTED_CANDIDATE_SOURCES = frozenset({
-    CANDIDATE_SOURCE_BBS,
-    CANDIDATE_SOURCE_ROUTE_CROP,
-})
+SUPPORTED_CANDIDATE_SOURCES = frozenset(
+    {
+        CANDIDATE_SOURCE_BBS,
+        CANDIDATE_SOURCE_ROUTE_CROP,
+    }
+)
 
 
-def _candidate_module_dirs(module_name: str) -> List[Path]:
+def _candidate_module_dirs(module_name: str) -> list[Path]:
     """Return likely directories for an optional installed pybind11 module."""
     dirs = [
         Path(__file__).resolve().parent,
@@ -77,7 +78,7 @@ class GlobalLocalizationConfig:
     # also snaps *wrong* hypotheses to locally-perfect alignments and collapses nearby
     # walk candidates onto one pose — keep it off unless the scenario shows it helps.
     registration_refine_candidates: bool = False
-    map_path: Optional[str] = None
+    map_path: str | None = None
     registration_score_gate: float = 6.0
     ndt_resolution: float = 1.0
     ndt_step_size: float = 0.1
@@ -96,7 +97,7 @@ class GlobalLocalizationConfig:
     # stamp instead of map-wide BBS. Requires reference_csv and scan_stamp_sec
     # on each query; pair with registration scoring for ranking.
     candidate_source: str = CANDIDATE_SOURCE_BBS
-    reference_csv: Optional[str] = None
+    reference_csv: str | None = None
     route_time_radius_sec: float = 20.0
     route_min_spacing_m: float = 8.0
     route_max_poses: int = 32
@@ -118,13 +119,15 @@ def normalize_candidate_source(value: str) -> str:
     key = str(value).strip().lower()
     if key not in SUPPORTED_CANDIDATE_SOURCES:
         raise ValueError(
-            "candidate_source must be one of " +
-            ", ".join(sorted(SUPPORTED_CANDIDATE_SOURCES)) +
-            "; got " + key)
+            "candidate_source must be one of "
+            + ", ".join(sorted(SUPPORTED_CANDIDATE_SOURCES))
+            + "; got "
+            + key
+        )
     return key
 
 
-def parse_float_list(raw: str) -> List[float]:
+def parse_float_list(raw: str) -> list[float]:
     return route_grid._parse_float_list(raw)
 
 
@@ -134,9 +137,11 @@ def resolve_pclomp_search_method(value: str) -> int:
         return PCLOMP_SEARCH_METHOD_VALUES[key]
     except KeyError:
         raise ValueError(
-            "ndt_search_method must be one of " +
-            ", ".join(sorted(PCLOMP_SEARCH_METHOD_VALUES)) +
-            "; got " + key)
+            "ndt_search_method must be one of "
+            + ", ".join(sorted(PCLOMP_SEARCH_METHOD_VALUES))
+            + "; got "
+            + key
+        ) from None
 
 
 @dataclass(frozen=True)
@@ -149,22 +154,24 @@ class GlobalLocalizationCandidate:
     hit_count: int
     point_count: int
     bbs_score: float
-    registration_fitness: Optional[float] = None
-    registration_converged: Optional[bool] = None
+    registration_fitness: float | None = None
+    registration_converged: bool | None = None
 
 
 @dataclass(frozen=True)
 class GlobalLocalizationResult:
-    candidates: List[GlobalLocalizationCandidate]
+    candidates: list[GlobalLocalizationCandidate]
     scan_point_count: int
     registration_scoring_enabled: bool = False
-    registration_scoring_backend: Optional[str] = None
-    registration_scoring_error: Optional[str] = None
+    registration_scoring_backend: str | None = None
+    registration_scoring_error: str | None = None
     candidate_source: str = CANDIDATE_SOURCE_BBS
-    route_crop_error: Optional[str] = None
+    route_crop_error: str | None = None
 
 
-def _candidate_from_ranked(ranked: g2_rank.RankedG2Candidate) -> GlobalLocalizationCandidate:
+def _candidate_from_ranked(
+    ranked: g2_rank.RankedG2Candidate,
+) -> GlobalLocalizationCandidate:
     return GlobalLocalizationCandidate(
         x_m=ranked.x_m,
         y_m=ranked.y_m,
@@ -191,21 +198,23 @@ class GlobalLocalizationEngine:
         self.route_yaw_offsets_deg = parse_float_list(config.route_yaw_offsets_deg)
         self.route_lateral_offsets_m = parse_float_list(config.route_lateral_offsets_m)
         self.route_longitudinal_offsets_m = parse_float_list(
-            config.route_longitudinal_offsets_m)
+            config.route_longitudinal_offsets_m
+        )
 
         if self.candidate_source == CANDIDATE_SOURCE_ROUTE_CROP:
             if not config.reference_csv:
                 raise ValueError(
-                    "reference_csv is required when candidate_source=route_crop")
+                    "reference_csv is required when candidate_source=route_crop"
+                )
             self.reference_rows = route_grid.load_reference_rows(
-                Path(config.reference_csv))
+                Path(config.reference_csv)
+            )
             self.backend = CANDIDATE_SOURCE_ROUTE_CROP
             self.backend_error = None
             self._search = None
         else:
             if occupancy_yaml is None:
-                raise ValueError(
-                    "occupancy_yaml is required when candidate_source=bbs")
+                raise ValueError("occupancy_yaml is required when candidate_source=bbs")
             self.occupancy_map = bbs_engine.load_occupancy_map(Path(occupancy_yaml))
             matching_grid = self.occupancy_map.occupied
             for _ in range(max(0, config.dilate_cells)):
@@ -221,7 +230,8 @@ class GlobalLocalizationEngine:
             if config.use_cpp_backend:
                 try:
                     _append_module_dirs("bbs_cpp")
-                    import bbs_cpp  # noqa: E402
+                    import bbs_cpp
+
                     self._search = bbs_cpp.branch_and_bound_candidates
                     self.backend = "cpp"
                 except ImportError as exc:  # pragma: no cover - depends on build
@@ -232,11 +242,14 @@ class GlobalLocalizationEngine:
         self._registration_seed_z_m = config.registration_seed_z_m
         if config.enable_registration_scoring:
             if not config.map_path:
-                self.registration_scoring_error = "map_path required for registration scoring"
+                self.registration_scoring_error = (
+                    "map_path required for registration scoring"
+                )
             else:
                 try:
                     _append_module_dirs("g2_ndt_score")
-                    import g2_ndt_score  # noqa: E402
+                    import g2_ndt_score
+
                     scorer_args = (
                         config.map_path,
                         config.ndt_resolution,
@@ -252,7 +265,8 @@ class GlobalLocalizationEngine:
                     )
                     try:
                         self.registration_scorer = g2_ndt_score.MapNdtScorer(
-                            *scorer_args)
+                            *scorer_args
+                        )
                     except TypeError:
                         # Older g2_ndt_score builds omit ndt_search_method.
                         self.registration_scorer = g2_ndt_score.MapNdtScorer(
@@ -275,9 +289,9 @@ class GlobalLocalizationEngine:
     def _score_with_registration(
         self,
         points_xyz,
-        candidates: List[GlobalLocalizationCandidate],
+        candidates: list[GlobalLocalizationCandidate],
         progress_callback=None,
-    ) -> List[GlobalLocalizationCandidate]:
+    ) -> list[GlobalLocalizationCandidate]:
         if self.registration_scorer is None:
             return candidates
 
@@ -289,7 +303,8 @@ class GlobalLocalizationEngine:
             score_z = (
                 candidate.z_m
                 if math.isfinite(candidate.z_m) and abs(candidate.z_m) > 1.0e-6
-                else self._registration_seed_z_m)
+                else self._registration_seed_z_m
+            )
             result = self.registration_scorer.score_candidate(
                 points_xyz,
                 candidate.x_m,
@@ -300,31 +315,38 @@ class GlobalLocalizationEngine:
             fitness = (
                 float(result.fitness)
                 if result.converged and math.isfinite(result.fitness)
-                else float("inf"))
+                else float("inf")
+            )
             if self.config.registration_refine_candidates:
-                pose_x, pose_y, pose_z, pose_yaw = g2_rank.candidate_pose_from_registration(
-                    g2_rank.RankedG2Candidate(
-                        x_m=candidate.x_m,
-                        y_m=candidate.y_m,
-                        z_m=candidate.z_m,
-                        yaw_rad=candidate.yaw_rad,
-                        bbs_score=candidate.bbs_score,
-                        registration_fitness=fitness,
-                        score=candidate.score,
-                        hit_count=candidate.hit_count,
-                        point_count=candidate.point_count,
-                        registration_converged=bool(result.converged),
-                    ),
-                    converged=bool(result.converged),
-                    fitness=fitness if math.isfinite(fitness) else None,
-                    refined_x=float(result.refined_x),
-                    refined_y=float(result.refined_y),
-                    refined_z=float(result.refined_z),
-                    refined_yaw=float(result.refined_yaw),
+                pose_x, pose_y, pose_z, pose_yaw = (
+                    g2_rank.candidate_pose_from_registration(
+                        g2_rank.RankedG2Candidate(
+                            x_m=candidate.x_m,
+                            y_m=candidate.y_m,
+                            z_m=candidate.z_m,
+                            yaw_rad=candidate.yaw_rad,
+                            bbs_score=candidate.bbs_score,
+                            registration_fitness=fitness,
+                            score=candidate.score,
+                            hit_count=candidate.hit_count,
+                            point_count=candidate.point_count,
+                            registration_converged=bool(result.converged),
+                        ),
+                        converged=bool(result.converged),
+                        fitness=fitness if math.isfinite(fitness) else None,
+                        refined_x=float(result.refined_x),
+                        refined_y=float(result.refined_y),
+                        refined_z=float(result.refined_z),
+                        refined_yaw=float(result.refined_yaw),
+                    )
                 )
             else:
                 pose_x, pose_y, pose_z, pose_yaw = (
-                    candidate.x_m, candidate.y_m, candidate.z_m, candidate.yaw_rad)
+                    candidate.x_m,
+                    candidate.y_m,
+                    candidate.z_m,
+                    candidate.yaw_rad,
+                )
             ranked.append(
                 g2_rank.RankedG2Candidate(
                     x_m=pose_x,
@@ -337,20 +359,22 @@ class GlobalLocalizationEngine:
                     hit_count=candidate.hit_count,
                     point_count=candidate.point_count,
                     registration_converged=bool(result.converged),
-                ))
+                )
+            )
         reranked = g2_rank.apply_registration_ranking(
-            ranked, score_gate=self.config.registration_score_gate)
+            ranked, score_gate=self.config.registration_score_gate
+        )
         return [_candidate_from_ranked(item) for item in reranked]
 
-    def _query_route_crop(self, points_xyz, scan_stamp_sec,
-                            progress_callback=None):
+    def _query_route_crop(self, points_xyz, scan_stamp_sec, progress_callback=None):
         config = self.config
         scan_point_count = int(points_xyz.shape[0]) if points_xyz.size else 0
         base_result = {
             "scan_point_count": scan_point_count,
             "registration_scoring_enabled": self.registration_scorer is not None,
             "registration_scoring_backend": (
-                "g2_ndt_score" if self.registration_scorer is not None else None),
+                "g2_ndt_score" if self.registration_scorer is not None else None
+            ),
             "registration_scoring_error": self.registration_scoring_error,
             "candidate_source": self.candidate_source,
         }
@@ -360,7 +384,8 @@ class GlobalLocalizationEngine:
             return GlobalLocalizationResult(
                 candidates=[],
                 route_crop_error="scan_stamp_sec required for route_crop",
-                **base_result)
+                **base_result,
+            )
 
         if progress_callback is not None:
             progress_callback("search", 0, 1)
@@ -393,12 +418,14 @@ class GlobalLocalizationEngine:
                     hit_count=0,
                     point_count=scan_point_count,
                     bbs_score=1.0,
-                ))
+                )
+            )
         if self.registration_scorer is not None:
             if progress_callback is not None:
                 progress_callback("scoring", 0, len(candidates))
             candidates = self._score_with_registration(
-                points_xyz, candidates, progress_callback=progress_callback)
+                points_xyz, candidates, progress_callback=progress_callback
+            )
         if progress_callback is not None:
             progress_callback("done", 1, 1)
         return GlobalLocalizationResult(candidates=candidates, **base_result)
@@ -406,7 +433,8 @@ class GlobalLocalizationEngine:
     def query(self, points_xyz, scan_stamp_sec=None, progress_callback=None):
         if self.candidate_source == CANDIDATE_SOURCE_ROUTE_CROP:
             return self._query_route_crop(
-                points_xyz, scan_stamp_sec, progress_callback=progress_callback)
+                points_xyz, scan_stamp_sec, progress_callback=progress_callback
+            )
 
         config = self.config
         resolution_m = self.occupancy_map.resolution_m
@@ -424,7 +452,8 @@ class GlobalLocalizationEngine:
                 scan_point_count=0,
                 registration_scoring_enabled=self.registration_scorer is not None,
                 registration_scoring_backend=(
-                    "g2_ndt_score" if self.registration_scorer is not None else None),
+                    "g2_ndt_score" if self.registration_scorer is not None else None
+                ),
                 registration_scoring_error=self.registration_scoring_error,
                 candidate_source=self.candidate_source,
             )
@@ -438,16 +467,17 @@ class GlobalLocalizationEngine:
             config.angular_resolution_rad,
             config.pyramid_depth,
             config.max_candidates,
-            nms_radius_cells=int(
-                round(max(0.0, config.nms_radius_m) / resolution_m)),
+            nms_radius_cells=round(max(0.0, config.nms_radius_m) / resolution_m),
         )
 
         candidates = []
         for candidate in grid_candidates:
             x_m, y_m = self.occupancy_map.grid_cell_center_to_world(
-                candidate.tx_cell, candidate.ty_cell)
+                candidate.tx_cell, candidate.ty_cell
+            )
             yaw_rad = bbs_engine.normalize_angle_rad(
-                self.occupancy_map.origin_yaw_rad + candidate.yaw_rad)
+                self.occupancy_map.origin_yaw_rad + candidate.yaw_rad
+            )
             bbs_score = candidate.score
             candidates.append(
                 GlobalLocalizationCandidate(
@@ -459,12 +489,14 @@ class GlobalLocalizationEngine:
                     hit_count=candidate.hit_count,
                     point_count=candidate.point_count,
                     bbs_score=bbs_score,
-                ))
+                )
+            )
         if self.registration_scorer is not None:
             if progress_callback is not None:
                 progress_callback("scoring", 0, len(candidates))
             candidates = self._score_with_registration(
-                points_xyz, candidates, progress_callback=progress_callback)
+                points_xyz, candidates, progress_callback=progress_callback
+            )
 
         if progress_callback is not None:
             progress_callback("done", 1, 1)
@@ -473,7 +505,8 @@ class GlobalLocalizationEngine:
             scan_point_count=int(scan_xy.shape[0]),
             registration_scoring_enabled=self.registration_scorer is not None,
             registration_scoring_backend=(
-                "g2_ndt_score" if self.registration_scorer is not None else None),
+                "g2_ndt_score" if self.registration_scorer is not None else None
+            ),
             registration_scoring_error=self.registration_scoring_error,
             candidate_source=self.candidate_source,
         )

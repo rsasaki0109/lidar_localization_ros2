@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from typing import Dict, Tuple
 
 STATE_COLORS = {
     "active": "32",
@@ -26,7 +25,7 @@ STATE_COLORS = {
 }
 
 
-def parse_status_json(text: str) -> Dict:
+def parse_status_json(text: str) -> dict:
     """Parse a status payload safely; return {} on invalid JSON."""
     try:
         payload = json.loads(text)
@@ -35,7 +34,7 @@ def parse_status_json(text: str) -> Dict:
     return payload if isinstance(payload, dict) else {}
 
 
-def suggest_startup_action(payload: Dict) -> str:
+def suggest_startup_action(payload: dict) -> str:
     """Return the one-line next action for a startup status payload."""
     state = str(payload.get("state", "") or "")
     reason = str(payload.get("reason", "") or "")
@@ -43,13 +42,17 @@ def suggest_startup_action(payload: Dict) -> str:
         return "startup complete; tracking via localizer"
     if state == "needs_operator":
         if reason == "no_safe_automatic_source":
-            return ("set 2D Pose Estimate in RViz or restart with "
-                    "--occupancy-map / --reference-csv")
+            return (
+                "set 2D Pose Estimate in RViz or restart with "
+                "--occupancy-map / --reference-csv"
+            )
         if reason == "global_attempts_exhausted":
             return "automatic publication stopped; set pose in RViz"
         if reason.startswith("ambiguous"):
-            return ("similar places indistinguishable; do not loosen margin "
-                    "without replay evidence")
+            return (
+                "similar places indistinguishable; do not loosen margin "
+                "without replay evidence"
+            )
         if reason == "map_mismatch":
             return "stored pose belongs to different map; delete state file or ignore"
         return f"operator input needed ({reason or 'unknown reason'})"
@@ -62,7 +65,7 @@ def suggest_startup_action(payload: Dict) -> str:
     return f"state={state or 'unknown'}"
 
 
-def format_startup_line(payload: Dict) -> Tuple[str, str]:
+def format_startup_line(payload: dict) -> tuple[str, str]:
     """Format a status payload as (plain_line, color_code).
 
     Pure function (no rclpy) so unit tests run without a ROS env.
@@ -72,8 +75,7 @@ def format_startup_line(payload: Dict) -> Tuple[str, str]:
     attempts = payload.get("global_attempts", "?")
     reason = str(payload.get("reason", "") or "")
     action = suggest_startup_action(payload)
-    line = (f"[{state}] source={source} attempts={attempts} "
-            f"reason={reason} -> {action}")
+    line = f"[{state}] source={source} attempts={attempts} reason={reason} -> {action}"
     return line, STATE_COLORS.get(state, "0")
 
 
@@ -85,13 +87,19 @@ def colorize(line: str, color_code: str, use_color: bool) -> str:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Watch startup initialization status with one-line updates.")
+        description="Watch startup initialization status with one-line updates."
+    )
     parser.add_argument("--topic", default="/startup_initialization/status")
-    parser.add_argument("--once", action="store_true",
-                        help="Print one sample and exit.")
+    parser.add_argument(
+        "--once", action="store_true", help="Print one sample and exit."
+    )
     parser.add_argument("--no-color", action="store_true")
-    parser.add_argument("--timeout-sec", type=float, default=0.0,
-                        help="Exit after N seconds without a message (0 = wait).")
+    parser.add_argument(
+        "--timeout-sec",
+        type=float,
+        default=0.0,
+        help="Exit after N seconds without a message (0 = wait).",
+    )
     return parser
 
 
@@ -99,8 +107,8 @@ def main(argv=None) -> int:
     args = build_arg_parser().parse_args(argv)
     try:
         import rclpy
-        from std_msgs.msg import String
         from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+        from std_msgs.msg import String
     except ImportError as exc:
         print(f"watch_startup: ROS env not sourced ({exc})", file=sys.stderr)
         return 2
@@ -124,13 +132,13 @@ def main(argv=None) -> int:
 
     node.create_subscription(String, args.topic, callback, qos)
     import time
+
     start = time.monotonic()
     try:
         while rclpy.ok() and not done["flag"]:
             rclpy.spin_once(node, timeout_sec=0.5)
             if args.timeout_sec > 0.0 and (time.monotonic() - start) > args.timeout_sec:
-                print("watch_startup: timeout waiting for status",
-                      file=sys.stderr)
+                print("watch_startup: timeout waiting for status", file=sys.stderr)
                 break
     except KeyboardInterrupt:
         pass

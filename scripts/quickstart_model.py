@@ -3,15 +3,15 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import math
 import os
 import tempfile
+from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Iterable, Optional, Sequence, Tuple
-
 
 POSE_STATE_SCHEMA = 1
 
@@ -42,14 +42,14 @@ class StoredPose:
     frame_id: str
     stamp_sec: float
     saved_at_sec: float
-    position: Tuple[float, float, float]
-    orientation: Tuple[float, float, float, float]
-    covariance: Tuple[float, ...]
+    position: tuple[float, float, float]
+    orientation: tuple[float, float, float, float]
+    covariance: tuple[float, ...]
 
 
 @dataclass(frozen=True)
 class PoseLoadResult:
-    pose: Optional[StoredPose]
+    pose: StoredPose | None
     reason: str
 
 
@@ -72,12 +72,14 @@ def _finite(values: Iterable[float]) -> bool:
     return all(math.isfinite(float(value)) for value in values)
 
 
-def validate_stored_pose(pose: StoredPose) -> Optional[str]:
+def validate_stored_pose(pose: StoredPose) -> str | None:
     if pose.schema_version != POSE_STATE_SCHEMA:
         return "unsupported_schema"
     if not pose.frame_id:
         return "missing_frame"
-    if not _finite((*pose.position, *pose.orientation, pose.stamp_sec, pose.saved_at_sec)):
+    if not _finite(
+        (*pose.position, *pose.orientation, pose.stamp_sec, pose.saved_at_sec)
+    ):
         return "nonfinite_pose"
     norm = math.sqrt(sum(value * value for value in pose.orientation))
     if norm < 0.5 or norm > 1.5:
@@ -89,7 +91,9 @@ def validate_stored_pose(pose: StoredPose) -> Optional[str]:
     return None
 
 
-def saved_pose_score_acceptable(converged: bool, fitness: float, threshold: float) -> bool:
+def saved_pose_score_acceptable(
+    converged: bool, fitness: float, threshold: float
+) -> bool:
     return (
         bool(converged)
         and math.isfinite(float(fitness))
@@ -99,7 +103,8 @@ def saved_pose_score_acceptable(converged: bool, fitness: float, threshold: floa
 
 
 def global_registration_scoring_acceptable(
-        registration_scoring_enabled: object, required: bool) -> bool:
+    registration_scoring_enabled: object, required: bool
+) -> bool:
     """Fail closed when automatic global initialization requires 3D scoring."""
     return not required or registration_scoring_enabled is True
 
@@ -120,10 +125,8 @@ def save_stored_pose(path: Path, pose: StoredPose) -> None:
             os.fsync(stream.fileno())
         os.replace(temporary, target)
     except BaseException:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(temporary)
-        except FileNotFoundError:
-            pass
         raise
 
 
@@ -132,7 +135,8 @@ def _stored_pose_from_dict(raw: dict) -> StoredPose:
     return StoredPose(
         schema_version=int(raw["schema_version"]),
         map_identity=MapIdentity(
-            size_bytes=int(identity["size_bytes"]), sha256=str(identity["sha256"])),
+            size_bytes=int(identity["size_bytes"]), sha256=str(identity["sha256"])
+        ),
         frame_id=str(raw["frame_id"]),
         stamp_sec=float(raw["stamp_sec"]),
         saved_at_sec=float(raw["saved_at_sec"]),
@@ -170,10 +174,12 @@ def load_stored_pose(
 
 
 def select_discovered_topic(
-    typed_topics: Sequence[Tuple[str, str]], message_type: str, preferred: str
-) -> Tuple[str, str]:
+    typed_topics: Sequence[tuple[str, str]], message_type: str, preferred: str
+) -> tuple[str, str]:
     """Choose an unambiguous live topic, otherwise retain the profile default."""
-    candidates = sorted({name for name, type_name in typed_topics if type_name == message_type})
+    candidates = sorted(
+        {name for name, type_name in typed_topics if type_name == message_type}
+    )
     if preferred in candidates:
         return preferred, "preferred_live"
     if len(candidates) == 1:
@@ -202,7 +208,7 @@ class StartupParams:
     registration_fitness_high_confidence_threshold: float = 1.0e9
 
 
-def validate_startup_params(params: StartupParams) -> Optional[str]:
+def validate_startup_params(params: StartupParams) -> str | None:
     finite_values = (
         params.min_candidate_score,
         params.min_score_margin,
@@ -243,13 +249,13 @@ def validate_startup_params(params: StartupParams) -> Optional[str]:
 class StartupState:
     name: str = STATE_WAITING_FOR_SCAN
     source: str = ""
-    deadline_sec: Optional[float] = None
+    deadline_sec: float | None = None
     global_attempts: int = 0
     confirmation_samples: int = 0
     saved_attempted: bool = False
     consensus_samples: int = 0
-    consensus_pose: Optional[Tuple[float, float, float]] = None
-    consensus_scan_stamp_sec: Optional[float] = None
+    consensus_pose: tuple[float, float, float] | None = None
+    consensus_scan_stamp_sec: float | None = None
 
 
 @dataclass(frozen=True)
@@ -260,14 +266,14 @@ class StartupObservation:
     global_available: bool
     preconfigured_pose_available: bool = False
     query_in_flight: bool = False
-    query_candidate_scores: Optional[Tuple[float, ...]] = None
-    query_candidate_age_sec: Optional[float] = None
-    query_top_pose: Optional[Tuple[float, float, float]] = None
-    query_scan_stamp_sec: Optional[float] = None
-    query_top_registration_fitness: Optional[float] = None
+    query_candidate_scores: tuple[float, ...] | None = None
+    query_candidate_age_sec: float | None = None
+    query_top_pose: tuple[float, float, float] | None = None
+    query_scan_stamp_sec: float | None = None
+    query_top_registration_fitness: float | None = None
     diagnostic_fresh: bool = False
     tracking_good: bool = False
-    fitness: Optional[float] = None
+    fitness: float | None = None
 
 
 @dataclass(frozen=True)
@@ -280,8 +286,10 @@ class StartupDecision:
 
 def _operator(state: StartupState, reason: str) -> StartupDecision:
     return StartupDecision(
-        ACTION_NEEDS_OPERATOR, reason,
-        replace(state, name=STATE_NEEDS_OPERATOR, deadline_sec=None))
+        ACTION_NEEDS_OPERATOR,
+        reason,
+        replace(state, name=STATE_NEEDS_OPERATOR, deadline_sec=None),
+    )
 
 
 def _query(params: StartupParams, state: StartupState, now_sec: float, reason: str):
@@ -304,7 +312,7 @@ def _angle_error_rad(first: float, second: float) -> float:
 
 def registration_high_confidence(
     params: StartupParams,
-    fitness: Optional[float],
+    fitness: float | None,
 ) -> bool:
     """True when NDT fitness alone is strong enough to skip BBS-style ambiguity gates."""
     threshold = params.registration_fitness_high_confidence_threshold
@@ -333,7 +341,8 @@ def decide_startup(
             state = replace(state, confirmation_samples=confirmations)
             if confirmations >= params.verification_samples:
                 active = replace(
-                    state, name=STATE_ACTIVE, source="manual", deadline_sec=None)
+                    state, name=STATE_ACTIVE, source="manual", deadline_sec=None
+                )
                 return StartupDecision(ACTION_ACTIVE, "manual_pose_verified", active)
         return StartupDecision(ACTION_NEEDS_OPERATOR, "manual_pose_required", state)
 
@@ -358,7 +367,9 @@ def decide_startup(
                 saved_attempted=True,
                 confirmation_samples=0,
             )
-            return StartupDecision(ACTION_PUBLISH_SAVED, "saved_pose_available", next_state)
+            return StartupDecision(
+                ACTION_PUBLISH_SAVED, "saved_pose_available", next_state
+            )
         if obs.global_available:
             return _query(params, state, obs.now_sec, "query_global_startup")
         return _operator(state, "no_safe_automatic_source")
@@ -371,10 +382,15 @@ def decide_startup(
                 return _query(params, state, obs.now_sec, "query_timeout_retry")
             return StartupDecision(ACTION_WAIT, "awaiting_global_query", state)
         scores = obs.query_candidate_scores
-        if not scores or not math.isfinite(scores[0]) or scores[0] < params.min_candidate_score:
+        if (
+            not scores
+            or not math.isfinite(scores[0])
+            or scores[0] < params.min_candidate_score
+        ):
             return _query(params, state, obs.now_sec, "weak_candidate_retry")
         high_confidence = registration_high_confidence(
-            params, obs.query_top_registration_fitness)
+            params, obs.query_top_registration_fitness
+        )
         if (
             not high_confidence
             and len(scores) > 1
@@ -433,7 +449,8 @@ def decide_startup(
                     consensus_scan_stamp_sec=obs.query_scan_stamp_sec,
                 )
                 return _query(
-                    params, restarted, obs.now_sec, "global_consensus_mismatch_retry")
+                    params, restarted, obs.now_sec, "global_consensus_mismatch_retry"
+                )
             agreed = replace(
                 state,
                 consensus_samples=state.consensus_samples + 1,
@@ -450,7 +467,9 @@ def decide_startup(
             deadline_sec=obs.now_sec + params.verification_timeout_sec,
             confirmation_samples=0,
         )
-        return StartupDecision(ACTION_PUBLISH_GLOBAL, "global_candidate_accepted", next_state)
+        return StartupDecision(
+            ACTION_PUBLISH_GLOBAL, "global_candidate_accepted", next_state
+        )
 
     if state.name == STATE_VERIFYING:
         confirmations = state.confirmation_samples
@@ -465,10 +484,14 @@ def decide_startup(
             state = replace(state, confirmation_samples=confirmations)
             if confirmations >= params.verification_samples:
                 active = replace(state, name=STATE_ACTIVE, deadline_sec=None)
-                return StartupDecision(ACTION_ACTIVE, f"{state.source}_pose_verified", active)
+                return StartupDecision(
+                    ACTION_ACTIVE, f"{state.source}_pose_verified", active
+                )
         if state.deadline_sec is not None and obs.now_sec > state.deadline_sec:
             if obs.global_available:
-                return _query(params, state, obs.now_sec, f"{state.source}_verification_failed")
+                return _query(
+                    params, state, obs.now_sec, f"{state.source}_verification_failed"
+                )
             return _operator(state, f"{state.source}_verification_failed")
         return StartupDecision(ACTION_WAIT, "verifying_pose", state)
 

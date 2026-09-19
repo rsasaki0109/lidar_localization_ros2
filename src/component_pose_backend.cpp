@@ -318,11 +318,10 @@ PCLLocalization::updateImuPreintegrationBackend(
   }
 
   if (
-    imu_dual_queue_enabled_ &&
-    (update.state.state_reset || !update.updated))
+    (imu_dual_queue_enabled_ &&
+     (update.state.state_reset || !update.updated)) ||
+    (!imu_dual_queue_enabled_ && !update.state.fallback_mode))
   {
-    resetImuPreintegrationSmootherToObservation(observation, stamp_sec);
-  } else if (!imu_dual_queue_enabled_ && !update.state.fallback_mode) {
     resetImuPreintegrationSmootherToObservation(observation, stamp_sec);
   }
   imu_preintegration_fallback_mode_ = update.state.fallback_mode;

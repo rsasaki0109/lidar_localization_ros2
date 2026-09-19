@@ -7,10 +7,10 @@ import time
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
-    "quickstart_model", ROOT / "scripts" / "quickstart_model.py")
+    "quickstart_model", ROOT / "scripts" / "quickstart_model.py"
+)
 MODEL = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 sys.modules[SPEC.name] = MODEL
@@ -38,10 +38,12 @@ class TestPoseStore(unittest.TestCase):
             first.write_bytes(b"same map")
             second.write_bytes(b"same map")
             self.assertEqual(
-                MODEL.compute_map_identity(first), MODEL.compute_map_identity(second))
+                MODEL.compute_map_identity(first), MODEL.compute_map_identity(second)
+            )
             second.write_bytes(b"different map")
             self.assertNotEqual(
-                MODEL.compute_map_identity(first), MODEL.compute_map_identity(second))
+                MODEL.compute_map_identity(first), MODEL.compute_map_identity(second)
+            )
 
     def test_round_trip_and_map_guard(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -53,7 +55,8 @@ class TestPoseStore(unittest.TestCase):
             MODEL.save_stored_pose(state_path, self._pose(identity))
 
             loaded = MODEL.load_stored_pose(
-                state_path, identity, "map", now_sec=120.0, max_age_sec=30.0)
+                state_path, identity, "map", now_sec=120.0, max_age_sec=30.0
+            )
             self.assertEqual(loaded.reason, "ok")
             self.assertEqual(loaded.pose.position, (1.0, 2.0, 3.0))
 
@@ -72,11 +75,13 @@ class TestPoseStore(unittest.TestCase):
             state_path = root / "pose.json"
             MODEL.save_stored_pose(state_path, self._pose(identity))
             expired = MODEL.load_stored_pose(
-                state_path, identity, "map", now_sec=200.0, max_age_sec=20.0)
+                state_path, identity, "map", now_sec=200.0, max_age_sec=20.0
+            )
             self.assertEqual(expired.reason, "expired")
             state_path.write_text("not json", encoding="utf-8")
             malformed = MODEL.load_stored_pose(
-                state_path, identity, "map", now_sec=time.time())
+                state_path, identity, "map", now_sec=time.time()
+            )
             self.assertEqual(malformed.reason, "invalid_file")
 
     def test_saved_pose_score_must_converge_and_be_finite(self):
@@ -139,13 +144,16 @@ class TestStartupPolicy(unittest.TestCase):
         )
         self.assertIn(
             "positive",
-            MODEL.validate_startup_params(MODEL.StartupParams(global_consensus_samples=0)),
+            MODEL.validate_startup_params(
+                MODEL.StartupParams(global_consensus_samples=0)
+            ),
         )
 
     def test_saved_pose_is_verified_before_active(self):
         state = MODEL.StartupState()
         decision = MODEL.decide_startup(
-            self.params, state, self.obs(0.0, saved_pose_available=True))
+            self.params, state, self.obs(0.0, saved_pose_available=True)
+        )
         self.assertEqual(decision.action, MODEL.ACTION_PUBLISH_SAVED)
         state = decision.state
         decision = MODEL.decide_startup(
@@ -178,13 +186,13 @@ class TestStartupPolicy(unittest.TestCase):
             MODEL.StartupState(),
             self.obs(0.0, saved_pose_available=True),
         )
-        decision = MODEL.decide_startup(
-            self.params, decision.state, self.obs(9.0))
+        decision = MODEL.decide_startup(self.params, decision.state, self.obs(9.0))
         self.assertEqual(decision.action, MODEL.ACTION_QUERY_GLOBAL)
 
     def test_global_candidate_needs_score_margin_freshness_and_confirmation(self):
         decision = MODEL.decide_startup(
-            self.params, MODEL.StartupState(), self.obs(0.0))
+            self.params, MODEL.StartupState(), self.obs(0.0)
+        )
         self.assertEqual(decision.action, MODEL.ACTION_QUERY_GLOBAL)
 
         ambiguous = MODEL.decide_startup(
@@ -280,8 +288,7 @@ class TestStartupPolicy(unittest.TestCase):
 
     def test_weak_candidates_exhaust_to_operator(self):
         params = MODEL.StartupParams(max_global_attempts=2)
-        decision = MODEL.decide_startup(
-            params, MODEL.StartupState(), self.obs(0.0))
+        decision = MODEL.decide_startup(params, MODEL.StartupState(), self.obs(0.0))
         decision = MODEL.decide_startup(
             params,
             decision.state,
@@ -297,7 +304,8 @@ class TestStartupPolicy(unittest.TestCase):
 
     def test_consensus_rejects_different_scan_pose(self):
         decision = MODEL.decide_startup(
-            self.params, MODEL.StartupState(), self.obs(0.0))
+            self.params, MODEL.StartupState(), self.obs(0.0)
+        )
         primed = MODEL.decide_startup(
             self.params,
             decision.state,
@@ -325,7 +333,8 @@ class TestStartupPolicy(unittest.TestCase):
 
     def test_in_flight_query_timeout_falls_back_without_duplicate_attempt(self):
         decision = MODEL.decide_startup(
-            self.params, MODEL.StartupState(), self.obs(0.0))
+            self.params, MODEL.StartupState(), self.obs(0.0)
+        )
         timed_out = MODEL.decide_startup(
             self.params,
             decision.state,

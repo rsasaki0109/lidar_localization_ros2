@@ -7,8 +7,6 @@ import shlex
 import sys
 import unittest
 from pathlib import Path
-from typing import Set
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
@@ -25,7 +23,8 @@ config_spec.loader.exec_module(config_tool)
 
 QUICKSTART_SCRIPT_PATH = SCRIPTS_DIR / "quickstart.py"
 quickstart_spec = importlib.util.spec_from_file_location(
-    "quickstart", QUICKSTART_SCRIPT_PATH)
+    "quickstart", QUICKSTART_SCRIPT_PATH
+)
 quickstart_tool = importlib.util.module_from_spec(quickstart_spec)
 assert quickstart_spec.loader is not None
 sys.modules[quickstart_spec.name] = quickstart_tool
@@ -81,7 +80,7 @@ def config_args(**overrides):
     return argparse.Namespace(**defaults)
 
 
-def declared_launch_arguments(launch_file: str) -> Set[str]:
+def declared_launch_arguments(launch_file: str) -> set[str]:
     text = (REPO_ROOT / "launch" / launch_file).read_text(encoding="utf-8")
     return set(LAUNCH_ARG_RE.findall(text))
 
@@ -93,9 +92,9 @@ def launch_file_from_command(command: str) -> str:
     raise AssertionError(f"no launch file token found in command: {command}")
 
 
-def launch_argument_keys_from_command(command: str) -> Set[str]:
+def launch_argument_keys_from_command(command: str) -> set[str]:
     launch_file_seen = False
-    keys: Set[str] = set()
+    keys: set[str] = set()
     for token in shlex.split(command):
         if token.endswith(".launch.py"):
             launch_file_seen = True
@@ -133,7 +132,8 @@ class TestLaunchArgumentContract(unittest.TestCase):
 
     def test_quickstart_defaults_to_asset_gated_global_initialization(self):
         source = (REPO_ROOT / "launch" / "quickstart.launch.py").read_text(
-            encoding="utf-8")
+            encoding="utf-8"
+        )
         self.assertRegex(
             source,
             r"DeclareLaunchArgument\(\s*['\"]enable_global_initialization['\"]"
@@ -142,20 +142,28 @@ class TestLaunchArgumentContract(unittest.TestCase):
         self.assertIn("global_initialization_ready", source)
 
     def test_quickstart_command_uses_declared_launch_arguments(self):
-        args = quickstart_tool.build_arg_parser().parse_args([
-            "--map", "/maps/site.pcd",
-            "--occupancy-map", "/maps/site.yaml",
-            "--profile", "mid360",
-            "--no-discover-topics",
-        ])
+        args = quickstart_tool.build_arg_parser().parse_args(
+            [
+                "--map",
+                "/maps/site.pcd",
+                "--occupancy-map",
+                "/maps/site.yaml",
+                "--profile",
+                "mid360",
+                "--no-discover-topics",
+            ]
+        )
         generated_config_args = quickstart_tool._config_args(
-            args, "/livox/points", "/livox/imu")
-        command = shlex.join(quickstart_tool.launch_parts(
-            args,
-            generated_config_args,
-            Path("/tmp/quickstart.yaml"),
-            Path("/tmp/quickstart-pose.json"),
-        ))
+            args, "/livox/points", "/livox/imu"
+        )
+        command = shlex.join(
+            quickstart_tool.launch_parts(
+                args,
+                generated_config_args,
+                Path("/tmp/quickstart.yaml"),
+                Path("/tmp/quickstart-pose.json"),
+            )
+        )
 
         assert_command_args_declared(self, command)
 

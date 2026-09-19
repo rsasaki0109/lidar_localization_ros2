@@ -1,0 +1,34 @@
+[tool.ruff]
+# The local overlay tracks ROS 2 Humble (Python 3.10); Jazzy (3.12) is also supported.
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E4",  # pycodestyle: import placement / syntax
+    "E7",  # pycodestyle: comparison / statement issues
+    "E9",  # pycodestyle: runtime errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # import sorting
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "BLE", # flake8-blind-except
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+]
+ignore = [
+    # ROS logger calls use %-formatting so numeric formatting stays explicit and stable;
+    # pyupgrade's rewrite can change how values render.
+    "UP031",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests bootstrap sys.path before importing the package under test.
+"test/**" = ["E402"]
+# The BBS generator puts the shared script directory on sys.path before importing it.
+"scripts/make_bbs_relocalization_attempts.py" = ["E402"]
+
+[tool.ruff.format]
+# Keep the formatter deterministic across developer machines and CI.
+preview = false

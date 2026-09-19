@@ -28,28 +28,41 @@ class TestRvizConfig(unittest.TestCase):
         displays = manager["Displays"]
         names = [d.get("Name") for d in displays]
         self.assertGreaterEqual(len(displays), 6)
-        for expected in ("Map (prior)", "Live Scan", "Local Map",
-                         "Trajectory (/path)", "Localized Pose (/pcl_pose)", "TF"):
+        for expected in (
+            "Map (prior)",
+            "Live Scan",
+            "Local Map",
+            "Trajectory (/path)",
+            "Localized Pose (/pcl_pose)",
+            "TF",
+        ):
             self.assertIn(expected, names)
 
     def test_key_displays_are_enabled(self):
         data = yaml.safe_load(RViz_PATH.read_text(encoding="utf-8"))
         displays = {d.get("Name"): d for d in data["Visualization Manager"]["Displays"]}
         for name in ("Live Scan", "Localized Pose (/pcl_pose)", "Trajectory (/path)"):
-            self.assertTrue(displays[name]["Enabled"], f"{name} must be visible by default")
+            self.assertTrue(
+                displays[name]["Enabled"], f"{name} must be visible by default"
+            )
 
     def test_scan_display_uses_flat_color(self):
         data = yaml.safe_load(RViz_PATH.read_text(encoding="utf-8"))
         scan = next(
-            d for d in data["Visualization Manager"]["Displays"]
-            if d.get("Name") == "Live Scan")
+            d
+            for d in data["Visualization Manager"]["Displays"]
+            if d.get("Name") == "Live Scan"
+        )
         self.assertEqual(scan["Color Transformer"], "FlatColor")
         self.assertFalse(scan["Use rainbow"])
 
     def test_rviz_dir_is_installed_with_package(self):
         cmake = CMAKELISTS.read_text(encoding="utf-8")
-        match = re.search(r"install\(DIRECTORY\s*(.*?)\s*DESTINATION share/\$\{PROJECT_NAME\}",
-                          cmake, re.DOTALL)
+        match = re.search(
+            r"install\(DIRECTORY\s*(.*?)\s*DESTINATION share/\$\{PROJECT_NAME\}",
+            cmake,
+            re.DOTALL,
+        )
         self.assertIsNotNone(match, "install(DIRECTORY ... share) block not found")
         self.assertIn("rviz", match.group(1))
 
@@ -62,8 +75,10 @@ class TestRvizConfig(unittest.TestCase):
     def test_mid360_config_uses_livox_scan_topic(self):
         data = yaml.safe_load(RVIZ_MID360_PATH.read_text(encoding="utf-8"))
         scan = next(
-            d for d in data["Visualization Manager"]["Displays"]
-            if d.get("Name") == "Live Scan")
+            d
+            for d in data["Visualization Manager"]["Displays"]
+            if d.get("Name") == "Live Scan"
+        )
         self.assertEqual(scan["Topic"]["Value"], "/livox/points")
 
     def test_both_configs_show_global_candidates(self):
@@ -71,13 +86,13 @@ class TestRvizConfig(unittest.TestCase):
             with self.subTest(path=path.name):
                 data = yaml.safe_load(path.read_text(encoding="utf-8"))
                 displays = {
-                    d.get("Name"): d
-                    for d in data["Visualization Manager"]["Displays"]}
+                    d.get("Name"): d for d in data["Visualization Manager"]["Displays"]
+                }
                 self.assertIn("Global Candidates", displays)
                 candidates = displays["Global Candidates"]
                 self.assertEqual(
-                    candidates["Topic"]["Value"],
-                    "/global_localization_node/candidates")
+                    candidates["Topic"]["Value"], "/global_localization_node/candidates"
+                )
 
 
 if __name__ == "__main__":

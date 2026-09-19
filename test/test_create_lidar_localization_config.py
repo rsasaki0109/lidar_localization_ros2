@@ -9,10 +9,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "create_lidar_localization_config.py"
-spec = importlib.util.spec_from_file_location("create_lidar_localization_config", SCRIPT_PATH)
+spec = importlib.util.spec_from_file_location(
+    "create_lidar_localization_config", SCRIPT_PATH
+)
 config_tool = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(config_tool)
@@ -67,12 +68,18 @@ def args(**overrides):
 class TestCreateLidarLocalizationConfig(unittest.TestCase):
     def test_mid360_parser_enables_deskew_by_default_and_allows_opt_out(self):
         parser = config_tool.build_arg_parser()
-        defaults = parser.parse_args([
-            "--map-path", "/maps/site.pcd", "--profile", "mid360"])
-        disabled = parser.parse_args([
-            "--map-path", "/maps/site.pcd", "--profile", "mid360",
-            "--no-enable-continuous-time-deskew",
-        ])
+        defaults = parser.parse_args(
+            ["--map-path", "/maps/site.pcd", "--profile", "mid360"]
+        )
+        disabled = parser.parse_args(
+            [
+                "--map-path",
+                "/maps/site.pcd",
+                "--profile",
+                "mid360",
+                "--no-enable-continuous-time-deskew",
+            ]
+        )
 
         self.assertTrue(config_tool.use_continuous_time_deskew(defaults))
         self.assertFalse(config_tool.use_continuous_time_deskew(disabled))
@@ -91,7 +98,9 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
         self.assertFalse(params["set_initial_pose"])
         self.assertEqual(params["initial_pose_qw"], 1.0)
         self.assertIn("use_imu_preintegration:=false", launch_command)
-        self.assertIn("imu_preintegration_use_base_frame_transform:=false", launch_command)
+        self.assertIn(
+            "imu_preintegration_use_base_frame_transform:=false", launch_command
+        )
 
     def test_relative_map_path_is_written_as_absolute_path(self):
         relative_path = "maps/site.pcd"
@@ -131,7 +140,9 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
         self.assertTrue(params["imu_preintegration_use_base_frame_transform"])
         self.assertIn("map_path:=/maps/site.pcd", launch_command)
         self.assertIn("use_imu_preintegration:=true", launch_command)
-        self.assertIn("imu_preintegration_use_base_frame_transform:=true", launch_command)
+        self.assertIn(
+            "imu_preintegration_use_base_frame_transform:=true", launch_command
+        )
         self.assertIn("--require-imu", doctor_command)
         self.assertIn("--imu-frame livox_imu_frame", doctor_command)
         self.assertIn("--require-imu-base-tf", doctor_command)
@@ -146,7 +157,9 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
         self.assertFalse(params["use_imu_preintegration"])
         self.assertFalse(params["imu_preintegration_use_base_frame_transform"])
         self.assertIn("use_imu_preintegration:=false", launch_command)
-        self.assertIn("imu_preintegration_use_base_frame_transform:=false", launch_command)
+        self.assertIn(
+            "imu_preintegration_use_base_frame_transform:=false", launch_command
+        )
         self.assertNotIn("--require-imu", doctor_command)
         self.assertNotIn("--require-imu-base-tf", doctor_command)
 
@@ -195,9 +208,13 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
 
         self.assertEqual(params["reinitialization_trigger_threshold"], 0.4)
         self.assertEqual(params["reinitialization_trigger_gap_scale_sec"], 10.0)
-        self.assertEqual(params["reinitialization_trigger_seed_translation_scale_m"], 50.0)
+        self.assertEqual(
+            params["reinitialization_trigger_seed_translation_scale_m"], 50.0
+        )
         self.assertEqual(params["reinitialization_trigger_reject_streak_scale"], 80.0)
-        self.assertEqual(params["reinitialization_trigger_fitness_explosion_threshold"], 500.0)
+        self.assertEqual(
+            params["reinitialization_trigger_fitness_explosion_threshold"], 500.0
+        )
 
     def test_mid360_initial_pose_is_added_to_launch_command(self):
         tool_args = args(
@@ -289,7 +306,9 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
         self.assertIn("'localization_param_dir:=/tmp/site config.yaml'", command)
 
     def test_command_line_quotes_option_values_for_shell_copy_paste(self):
-        command = config_tool.command_line(["ros2", "run", "pkg", "tool", "--flag", "a b"])
+        command = config_tool.command_line(
+            ["ros2", "run", "pkg", "tool", "--flag", "a b"]
+        )
 
         self.assertEqual(command, "ros2 run pkg tool --flag 'a b'")
 
@@ -352,7 +371,9 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
     def test_continuous_time_deskew_requires_imu_preintegration(self):
         tool_args = args(enable_continuous_time_deskew=True)
 
-        self.assertIn("requires IMU preintegration", config_tool.validate_args(tool_args))
+        self.assertIn(
+            "requires IMU preintegration", config_tool.validate_args(tool_args)
+        )
 
     def test_enable_imu_compatibility_alias_enables_both_paths(self):
         params = config_tool.make_params(args(enable_imu=True))
@@ -375,7 +396,9 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
             output.write_text("existing", encoding="utf-8")
             stderr = io.StringIO()
             with contextlib.redirect_stderr(stderr):
-                code = config_tool.main(["--map-path", "/map.pcd", "--output", str(output)])
+                code = config_tool.main(
+                    ["--map-path", "/map.pcd", "--output", str(output)]
+                )
 
         self.assertEqual(code, 2)
 
@@ -384,12 +407,14 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
             output = Path(tmp_dir) / "config.yaml"
             stdout = io.StringIO()
             with contextlib.redirect_stdout(stdout):
-                code = config_tool.main([
-                    "--map-path",
-                    "/tmp/missing_map.txt",
-                    "--output",
-                    str(output),
-                ])
+                code = config_tool.main(
+                    [
+                        "--map-path",
+                        "/tmp/missing_map.txt",
+                        "--output",
+                        str(output),
+                    ]
+                )
 
         self.assertEqual(code, 0)
         self.assertIn("Warnings:", stdout.getvalue())
@@ -400,13 +425,15 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
             output = Path(tmp_dir) / "config.yaml"
             stderr = io.StringIO()
             with contextlib.redirect_stderr(stderr):
-                code = config_tool.main([
-                    "--map-path",
-                    "/map.pcd",
-                    "--output",
-                    str(output),
-                    "--enable-continuous-time-deskew",
-                ])
+                code = config_tool.main(
+                    [
+                        "--map-path",
+                        "/map.pcd",
+                        "--output",
+                        str(output),
+                        "--enable-continuous-time-deskew",
+                    ]
+                )
 
         self.assertEqual(code, 2)
         self.assertIn("requires IMU preintegration", stderr.getvalue())

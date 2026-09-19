@@ -12,7 +12,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-import global_localization_query as glq  # noqa: E402
+import global_localization_query as glq
 
 
 def write_occupancy_map(directory: Path) -> Path:
@@ -32,7 +32,8 @@ def write_occupancy_map(directory: Path) -> Path:
         "origin: [-10.0, -5.0, 0.0]\n"
         "negate: 0\n"
         "occupied_thresh: 0.65\n"
-        "free_thresh: 0.196\n")
+        "free_thresh: 0.196\n"
+    )
     return yaml_path
 
 
@@ -54,7 +55,8 @@ def make_scan(grid_yaml: Path, true_x: float, true_y: float, true_yaw: float):
     scan_y = s * dx + c * dy
     keep = np.hypot(scan_x, scan_y) >= 1.5
     points = np.stack(
-        [scan_x[keep], scan_y[keep], np.full(int(keep.sum()), 1.0)], axis=1)
+        [scan_x[keep], scan_y[keep], np.full(int(keep.sum()), 1.0)], axis=1
+    )
     clutter = np.array([[0.1, 0.0, 1.0], [3.0, 1.0, 9.0], [2.0, -1.0, -3.0]])
     return np.vstack([points, clutter])
 
@@ -74,10 +76,8 @@ def test_query_recovers_known_pose():
         assert result.candidates, "expected at least one candidate"
         assert len(result.candidates) <= 8
         top = result.candidates[0]
-        assert math.hypot(top.x_m - true_x, top.y_m - true_y) <= 1.0, (
-            top.x_m, top.y_m)
-        yaw_error = abs(
-            glq.bbs_engine.normalize_angle_rad(top.yaw_rad - true_yaw))
+        assert math.hypot(top.x_m - true_x, top.y_m - true_y) <= 1.0, (top.x_m, top.y_m)
+        yaw_error = abs(glq.bbs_engine.normalize_angle_rad(top.yaw_rad - true_yaw))
         assert yaw_error <= math.radians(15.0) + 1.0e-9, yaw_error
         scores = [candidate.score for candidate in result.candidates]
         assert scores == sorted(scores, reverse=True)
@@ -87,7 +87,8 @@ def test_query_handles_empty_scan():
     with tempfile.TemporaryDirectory() as tmp:
         yaml_path = write_occupancy_map(Path(tmp))
         engine = glq.GlobalLocalizationEngine(
-            glq.GlobalLocalizationConfig(), occupancy_yaml=yaml_path)
+            glq.GlobalLocalizationConfig(), occupancy_yaml=yaml_path
+        )
         result = engine.query(np.empty((0, 3), dtype=np.float64))
         assert result.candidates == []
         assert result.scan_point_count == 0
@@ -113,7 +114,9 @@ def test_bbs_cpp_search_path_includes_installed_lib_dir():
 
 
 class _FakeScoreResult:
-    def __init__(self, fitness, converged, refined_x, refined_y, refined_z, refined_yaw):
+    def __init__(
+        self, fitness, converged, refined_x, refined_y, refined_z, refined_yaw
+    ):
         self.fitness = fitness
         self.converged = converged
         self.refined_x = refined_x
@@ -137,25 +140,28 @@ def test_score_with_registration_rewrites_converged_candidate_pose():
         yaml_path = write_occupancy_map(Path(tmp))
         engine = glq.GlobalLocalizationEngine(
             glq.GlobalLocalizationConfig(registration_refine_candidates=True),
-            occupancy_yaml=yaml_path)
-        engine.registration_scorer = _FakeRegistrationScorer({
-            (-13.5, 29.7, 0.0, math.radians(10.0)): _FakeScoreResult(
-                fitness=0.042,
-                converged=True,
-                refined_x=-10.5,
-                refined_y=27.1,
-                refined_z=1.2,
-                refined_yaw=math.radians(12.0),
-            ),
-            (5.0, 6.0, 0.0, math.radians(20.0)): _FakeScoreResult(
-                fitness=float("inf"),
-                converged=False,
-                refined_x=99.0,
-                refined_y=99.0,
-                refined_z=99.0,
-                refined_yaw=math.radians(99.0),
-            ),
-        })
+            occupancy_yaml=yaml_path,
+        )
+        engine.registration_scorer = _FakeRegistrationScorer(
+            {
+                (-13.5, 29.7, 0.0, math.radians(10.0)): _FakeScoreResult(
+                    fitness=0.042,
+                    converged=True,
+                    refined_x=-10.5,
+                    refined_y=27.1,
+                    refined_z=1.2,
+                    refined_yaw=math.radians(12.0),
+                ),
+                (5.0, 6.0, 0.0, math.radians(20.0)): _FakeScoreResult(
+                    fitness=float("inf"),
+                    converged=False,
+                    refined_x=99.0,
+                    refined_y=99.0,
+                    refined_z=99.0,
+                    refined_yaw=math.radians(99.0),
+                ),
+            }
+        )
         raw_candidates = [
             glq.GlobalLocalizationCandidate(
                 x_m=-13.5,
@@ -179,7 +185,8 @@ def test_score_with_registration_rewrites_converged_candidate_pose():
             ),
         ]
         ranked = engine._score_with_registration(
-            np.zeros((8, 3), dtype=np.float64), raw_candidates)
+            np.zeros((8, 3), dtype=np.float64), raw_candidates
+        )
 
         assert ranked[0].x_m == -10.5
         assert ranked[0].y_m == 27.1
@@ -189,8 +196,10 @@ def test_score_with_registration_rewrites_converged_candidate_pose():
         assert ranked[0].registration_fitness == 0.042
 
         unconverged = next(
-            candidate for candidate in ranked
-            if candidate.x_m == 5.0 and candidate.y_m == 6.0)
+            candidate
+            for candidate in ranked
+            if candidate.x_m == 5.0 and candidate.y_m == 6.0
+        )
         assert unconverged.yaw_rad == math.radians(20.0)
         assert unconverged.z_m == 0.0
         assert not unconverged.registration_converged
@@ -200,17 +209,20 @@ def test_score_with_registration_keeps_raw_pose_by_default():
     with tempfile.TemporaryDirectory() as tmp:
         yaml_path = write_occupancy_map(Path(tmp))
         engine = glq.GlobalLocalizationEngine(
-            glq.GlobalLocalizationConfig(), occupancy_yaml=yaml_path)
-        engine.registration_scorer = _FakeRegistrationScorer({
-            (-13.5, 29.7, 0.0, math.radians(10.0)): _FakeScoreResult(
-                fitness=0.042,
-                converged=True,
-                refined_x=-10.5,
-                refined_y=27.1,
-                refined_z=1.2,
-                refined_yaw=math.radians(12.0),
-            ),
-        })
+            glq.GlobalLocalizationConfig(), occupancy_yaml=yaml_path
+        )
+        engine.registration_scorer = _FakeRegistrationScorer(
+            {
+                (-13.5, 29.7, 0.0, math.radians(10.0)): _FakeScoreResult(
+                    fitness=0.042,
+                    converged=True,
+                    refined_x=-10.5,
+                    refined_y=27.1,
+                    refined_z=1.2,
+                    refined_yaw=math.radians(12.0),
+                ),
+            }
+        )
         raw_candidates = [
             glq.GlobalLocalizationCandidate(
                 x_m=-13.5,
@@ -224,7 +236,8 @@ def test_score_with_registration_keeps_raw_pose_by_default():
             ),
         ]
         ranked = engine._score_with_registration(
-            np.zeros((8, 3), dtype=np.float64), raw_candidates)
+            np.zeros((8, 3), dtype=np.float64), raw_candidates
+        )
 
         assert ranked[0].x_m == -13.5
         assert ranked[0].y_m == 29.7
@@ -241,7 +254,7 @@ def test_resolve_pclomp_search_method_mapping():
 
     try:
         glq.resolve_pclomp_search_method("octree")
-        assert False, "expected ValueError for an unknown search method"
+        raise AssertionError("expected ValueError for an unknown search method")
     except ValueError:
         pass
 
@@ -254,6 +267,7 @@ def test_default_ndt_search_method_preserves_direct7_behavior():
 
 def _write_reference_csv(path: Path, rows):
     import csv
+
     with path.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(
             stream,
@@ -266,7 +280,8 @@ def _write_reference_csv(path: Path, rows):
                 "orientation_y",
                 "orientation_z",
                 "orientation_w",
-            ])
+            ],
+        )
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
@@ -328,16 +343,18 @@ def test_route_crop_requires_scan_stamp():
         reference_csv = Path(tmp) / "reference.csv"
         _write_reference_csv(
             reference_csv,
-            [{
-                "stamp_sec": "100.0",
-                "position_x": "1.0",
-                "position_y": "2.0",
-                "position_z": "0.5",
-                "orientation_x": "0.0",
-                "orientation_y": "0.0",
-                "orientation_z": "0.0",
-                "orientation_w": "1.0",
-            }],
+            [
+                {
+                    "stamp_sec": "100.0",
+                    "position_x": "1.0",
+                    "position_y": "2.0",
+                    "position_z": "0.5",
+                    "orientation_x": "0.0",
+                    "orientation_y": "0.0",
+                    "orientation_z": "0.0",
+                    "orientation_w": "1.0",
+                }
+            ],
         )
         config = glq.GlobalLocalizationConfig(
             candidate_source=glq.CANDIDATE_SOURCE_ROUTE_CROP,
@@ -368,7 +385,8 @@ def test_query_progress_callback_reports_phases():
         phases = []
         result = engine.query(
             make_scan(yaml_path, true_x, true_y, true_yaw),
-            progress_callback=lambda phase, done, total: phases.append(phase))
+            progress_callback=lambda phase, done, total: phases.append(phase),
+        )
         assert result.candidates, "expected at least one candidate"
         assert "search" in phases
         assert phases[-1] == "done"

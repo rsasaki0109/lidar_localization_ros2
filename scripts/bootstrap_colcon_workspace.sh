@@ -132,6 +132,7 @@ fi
 have_command colcon || die_missing_command "colcon" "sudo apt install python3-colcon-common-extensions"
 
 set +u
+# shellcheck source=/dev/null
 source "/opt/ros/${ros_distro}/setup.bash"
 set -u
 cd "${ws_root}"

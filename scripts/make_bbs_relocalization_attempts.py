@@ -21,13 +21,15 @@ import json
 import math
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 import numpy as np
 import yaml
+
 try:
     from PIL import Image
 except ImportError:  # Minimal GLIL runtime images only need PGM occupancy maps.
@@ -39,8 +41,10 @@ if _SCRIPT_DIR not in sys.path:
 
 # The CSV contract is owned by the shared relocalization common module; import
 # it so the candidate generators cannot drift apart silently.
-from relocalization_attempt_common import CANDIDATE_FIELDNAMES  # noqa: E402
-from relocalization_attempt_common import ATTEMPT_FIELDNAMES  # noqa: E402
+from relocalization_attempt_common import (
+    ATTEMPT_FIELDNAMES,
+    CANDIDATE_FIELDNAMES,
+)
 
 
 @dataclass(frozen=True)
@@ -51,11 +55,11 @@ class RequestWindow:
     end_stamp_sec: float
     row_count: int
     reason: str
-    score: Optional[float]
+    score: float | None
 
     @property
     def trigger_stamp_ns(self) -> int:
-        return int(round(self.trigger_stamp_sec * 1_000_000_000))
+        return round(self.trigger_stamp_sec * 1_000_000_000)
 
 
 @dataclass(frozen=True)
@@ -66,7 +70,7 @@ class OccupancyMap:
     origin_y_m: float
     origin_yaw_rad: float
 
-    def grid_cell_center_to_world(self, ix: int, iy: int) -> Tuple[float, float]:
+    def grid_cell_center_to_world(self, ix: int, iy: int) -> tuple[float, float]:
         gx = (float(ix) + 0.5) * self.resolution_m
         gy = (float(iy) + 0.5) * self.resolution_m
         c = math.cos(self.origin_yaw_rad)
@@ -92,7 +96,7 @@ def normalize_angle_rad(angle: float) -> float:
     return (angle + math.pi) % (2.0 * math.pi) - math.pi
 
 
-def build_occupancy_pyramid(occupancy: np.ndarray, depth: int) -> List[np.ndarray]:
+def build_occupancy_pyramid(occupancy: np.ndarray, depth: int) -> list[np.ndarray]:
     if occupancy.ndim != 2:
         raise ValueError("occupancy must be a 2D array")
     if depth < 0:
@@ -107,53 +111,15 @@ def build_occupancy_pyramid(occupancy: np.ndarray, depth: int) -> List[np.ndarra
     return levels
 
 
-def build_upper_bound_pyramid(occupancy_pyramid: Sequence[np.ndarray]) -> List[np.ndarray]:
+def build_upper_bound_pyramid(
+    occupancy_pyramid: Sequence[np.ndarray],
+) -> list[np.ndarray]:
     if not occupancy_pyramid:
         raise ValueError("occupancy pyramid must not be empty")
     levels = [occupancy_pyramid[0].astype(bool, copy=True)]
     for level in occupancy_pyramid[1:]:
         levels.append(_dilate_one_cell(level.astype(bool, copy=False)))
     return levels
-
-
-def bbs_exact_score(
-    occupancy: np.ndarray,
-    scan_xy_grid: np.ndarray,
-    tx_cell: int,
-    ty_cell: int,
-    yaw_rad: float,
-) -> float:
-    score, _hits, _count = _score_grid(
-        occupancy.astype(bool, copy=False),
-        scan_xy_grid,
-        tx_cell,
-        ty_cell,
-        yaw_rad,
-        factor=1,
-    )
-    return score
-
-
-def bbs_upper_bound(
-    upper_bound_pyramid: Sequence[np.ndarray],
-    scan_xy_grid: np.ndarray,
-    tx_cell: int,
-    ty_cell: int,
-    yaw_rad: float,
-    level: int,
-) -> float:
-    if level < 0 or level >= len(upper_bound_pyramid):
-        raise ValueError("level is outside the upper-bound pyramid")
-    factor = 1 << level
-    score, _hits, _count = _score_grid(
-        upper_bound_pyramid[level].astype(bool, copy=False),
-        scan_xy_grid,
-        tx_cell,
-        ty_cell,
-        yaw_rad,
-        factor=factor,
-    )
-    return score
 
 
 def branch_and_bound_candidates(
@@ -164,7 +130,7 @@ def branch_and_bound_candidates(
     pyramid_depth: int,
     max_candidates: int,
     nms_radius_cells: int = 0,
-) -> List[BbsGridCandidate]:
+) -> list[BbsGridCandidate]:
     if max_candidates <= 0:
         return []
     if resolution_m <= 0.0:
@@ -197,7 +163,7 @@ def branch_and_bound_candidates(
     # (yaw, level): precompute it once per pair and merge duplicate coarse cells
     # with counts, turning each node evaluation into a small integer gather
     # instead of a full scan rotation.
-    offset_cache: List[List[Tuple[np.ndarray, np.ndarray, np.ndarray]]] = []
+    offset_cache: list[list[tuple[np.ndarray, np.ndarray, np.ndarray]]] = []
     for yaw_rad in yaws:
         c = math.cos(yaw_rad)
         s = math.sin(yaw_rad)
@@ -209,9 +175,9 @@ def branch_and_bound_candidates(
             qx = np.floor((0.5 + rx) / factor).astype(np.int64)
             qy = np.floor((0.5 + ry) / factor).astype(np.int64)
             unique_cells, cell_counts = np.unique(
-                np.stack([qy, qx], axis=1), axis=0, return_counts=True)
-            per_level.append(
-                (unique_cells[:, 0], unique_cells[:, 1], cell_counts))
+                np.stack([qy, qx], axis=1), axis=0, return_counts=True
+            )
+            per_level.append((unique_cells[:, 0], unique_cells[:, 1], cell_counts))
         offset_cache.append(per_level)
 
     def full_hit_map(
@@ -235,15 +201,16 @@ def branch_and_bound_candidates(
 
         grid_height, grid_width = grid.shape
         padded = np.zeros(
-            (n_blocks_y + kernel_h - 1, n_blocks_x + kernel_w - 1), dtype=np.float64)
+            (n_blocks_y + kernel_h - 1, n_blocks_x + kernel_w - 1), dtype=np.float64
+        )
         src_y0 = max(0, qy_min)
         src_x0 = max(0, qx_min)
         src_y1 = min(grid_height, n_blocks_y + qy_min + kernel_h - 1)
         src_x1 = min(grid_width, n_blocks_x + qx_min + kernel_w - 1)
         if src_y1 > src_y0 and src_x1 > src_x0:
             padded[
-                src_y0 - qy_min:src_y1 - qy_min,
-                src_x0 - qx_min:src_x1 - qx_min,
+                src_y0 - qy_min : src_y1 - qy_min,
+                src_x0 - qx_min : src_x1 - qx_min,
             ] = grid[src_y0:src_y1, src_x0:src_x1]
 
         fft_shape = (
@@ -252,6 +219,7 @@ def branch_and_bound_candidates(
         )
         try:
             from scipy.fft import next_fast_len
+
             fft_shape = (
                 next_fast_len(fft_shape[0], real=True),
                 next_fast_len(fft_shape[1], real=True),
@@ -259,11 +227,12 @@ def branch_and_bound_candidates(
         except ImportError:
             pass
         spectrum = np.fft.rfft2(padded, fft_shape) * np.fft.rfft2(
-            kernel[::-1, ::-1], fft_shape)
+            kernel[::-1, ::-1], fft_shape
+        )
         correlation = np.fft.irfft2(spectrum, fft_shape)
         block_map = correlation[
-            kernel_h - 1:kernel_h - 1 + n_blocks_y,
-            kernel_w - 1:kernel_w - 1 + n_blocks_x,
+            kernel_h - 1 : kernel_h - 1 + n_blocks_y,
+            kernel_w - 1 : kernel_w - 1 + n_blocks_x,
         ]
         return np.rint(block_map).astype(np.int64)
 
@@ -288,8 +257,7 @@ def branch_and_bound_candidates(
         if calls > max(64, (grid_height * grid_width) // 256):
             n_blocks_y = (height + (1 << level) - 1) >> level
             n_blocks_x = (width + (1 << level) - 1) >> level
-            cached_map = full_hit_map(
-                grid, qy, qx, cell_counts, n_blocks_y, n_blocks_x)
+            cached_map = full_hit_map(grid, qy, qx, cell_counts, n_blocks_y, n_blocks_x)
             hit_map_cache[key] = cached_map
             return int(cached_map[ty_cell >> level, tx_cell >> level])
 
@@ -298,8 +266,7 @@ def branch_and_bound_candidates(
         inside = (ix >= 0) & (iy >= 0) & (ix < grid_width) & (iy < grid_height)
         if not np.any(inside):
             return 0
-        return int(
-            cell_counts[inside][grid[iy[inside], ix[inside]]].sum())
+        return int(cell_counts[inside][grid[iy[inside], ix[inside]]].sum())
 
     # Seed the queue by scoring every top-level block of a yaw at once: the
     # integer hit map is an accumulation of count-weighted shifted views of the
@@ -309,7 +276,7 @@ def branch_and_bound_candidates(
     top_grid = upper_bound_pyramid[start_level]
     top_height, top_width = top_grid.shape
 
-    heap: List[Tuple[float, int, int, int, int, int, float]] = []
+    heap: list[tuple[float, int, int, int, int, int, float]] = []
     sequence = 0
     for yaw_index, yaw_rad in enumerate(yaws):
         qy, qx, cell_counts = offset_cache[yaw_index][start_level]
@@ -319,32 +286,46 @@ def branch_and_bound_candidates(
         pad_right = int(max(0, len(block_txs) - 1 + qx.max() - (top_width - 1)))
         padded = np.zeros(
             (pad_top + top_height + pad_bottom, pad_left + top_width + pad_right),
-            dtype=np.int64)
-        padded[pad_top:pad_top + top_height, pad_left:pad_left + top_width] = top_grid
+            dtype=np.int64,
+        )
+        padded[pad_top : pad_top + top_height, pad_left : pad_left + top_width] = (
+            top_grid
+        )
         hit_map = np.zeros((len(block_tys), len(block_txs)), dtype=np.int64)
-        for offset_y, offset_x, count in zip(qy, qx, cell_counts):
+        for offset_y, offset_x, count in zip(qy, qx, cell_counts, strict=True):
             row = pad_top + int(offset_y)
             col = pad_left + int(offset_x)
-            hit_map += count * padded[
-                row:row + len(block_tys), col:col + len(block_txs)]
+            hit_map += (
+                count * padded[row : row + len(block_tys), col : col + len(block_txs)]
+            )
         for block_row, ty_cell in enumerate(block_tys):
             for block_col, tx_cell in enumerate(block_txs):
                 bound = float(hit_map[block_row, block_col]) / float(n_points)
                 heap.append(
-                    (-bound, sequence, start_level, tx_cell, ty_cell, yaw_index,
-                     yaw_rad))
+                    (
+                        -bound,
+                        sequence,
+                        start_level,
+                        tx_cell,
+                        ty_cell,
+                        yaw_index,
+                        yaw_rad,
+                    )
+                )
                 sequence += 1
     # Heap keys are unique (sequence tiebreaker), so pop order is the sorted key
     # order regardless of internal heap layout; heapify keeps behavior identical
     # to sequential pushes.
     heapq.heapify(heap)
 
-    best: List[BbsGridCandidate] = []
+    best: list[BbsGridCandidate] = []
     kth_score = -math.inf
     eps = 1.0e-12
 
     while heap:
-        neg_bound, _seq, level, tx_cell, ty_cell, yaw_index, yaw_rad = heapq.heappop(heap)
+        neg_bound, _seq, level, tx_cell, ty_cell, yaw_index, yaw_rad = heapq.heappop(
+            heap
+        )
         bound = -neg_bound
         if len(best) >= max_candidates and bound <= kth_score + eps:
             break
@@ -372,7 +353,8 @@ def branch_and_bound_candidates(
                 for index, existing in enumerate(best):
                     if (
                         abs(existing.tx_cell - candidate.tx_cell) <= nms_radius_cells
-                        and abs(existing.ty_cell - candidate.ty_cell) <= nms_radius_cells
+                        and abs(existing.ty_cell - candidate.ty_cell)
+                        <= nms_radius_cells
                     ):
                         if candidate.score > existing.score:
                             best[index] = candidate
@@ -402,14 +384,18 @@ def branch_and_bound_candidates(
                 cached_child = hit_map_cache.get((yaw_index, child_level))
                 if cached_child is not None:
                     child_bound = float(
-                        cached_child[
-                            child_ty >> child_level, child_tx >> child_level]
+                        cached_child[child_ty >> child_level, child_tx >> child_level]
                     ) / float(n_points)
                 else:
                     child_bound = float(
                         gather_hits(
-                            upper_bound_pyramid[child_level], child_level,
-                            yaw_index, child_tx, child_ty)) / float(n_points)
+                            upper_bound_pyramid[child_level],
+                            child_level,
+                            yaw_index,
+                            child_tx,
+                            child_ty,
+                        )
+                    ) / float(n_points)
                 if len(best) >= max_candidates and child_bound < kth_score - eps:
                     continue
                 heapq.heappush(
@@ -466,14 +452,12 @@ def load_occupancy_map(yaml_path: Path) -> OccupancyMap:
             pixels *= 255.0 / float(max_value)
     else:
         raise RuntimeError(
-            f"Pillow is unavailable and occupancy image is not PGM: {image_path}")
+            f"Pillow is unavailable and occupancy image is not PGM: {image_path}"
+        )
 
     occupied_thresh = float(metadata.get("occupied_thresh", 0.65))
     negate = int(metadata.get("negate", 0))
-    if negate:
-        occupied_probability = pixels / 255.0
-    else:
-        occupied_probability = (255.0 - pixels) / 255.0
+    occupied_probability = pixels / 255.0 if negate else (255.0 - pixels) / 255.0
 
     occupied_image = occupied_probability >= occupied_thresh
     occupied_grid = np.flipud(occupied_image)
@@ -492,7 +476,7 @@ def _as_bool(value: Any) -> bool:
     return str(value).strip().lower() in {"true", "1", "yes", "y"}
 
 
-def _as_float(value: Any) -> Optional[float]:
+def _as_float(value: Any) -> float | None:
     if value is None or str(value).strip() == "":
         return None
     try:
@@ -502,13 +486,13 @@ def _as_float(value: Any) -> Optional[float]:
     return number if math.isfinite(number) else None
 
 
-def load_request_windows(alignment_csv: Path, source: str) -> List[RequestWindow]:
+def load_request_windows(alignment_csv: Path, source: str) -> list[RequestWindow]:
     """Group consecutive reinitialization-requested alignment rows into windows.
 
     This mirrors request_windows() in the route-grid and map-grid generators:
     alignment_status.csv rows carry the request state inside values_json.
     """
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     with alignment_csv.open("r", encoding="utf-8", newline="") as stream:
         for record in csv.DictReader(stream):
             values = json.loads(record["values_json"])
@@ -521,7 +505,7 @@ def load_request_windows(alignment_csv: Path, source: str) -> List[RequestWindow
                 }
             )
 
-    windows: List[RequestWindow] = []
+    windows: list[RequestWindow] = []
     index = 0
     while index < len(rows):
         if not rows[index]["requested"]:
@@ -591,7 +575,7 @@ def make_attempt_row(
     yaw_samples_deg: Sequence[float],
     generated_at: str,
     candidates_csv: Path,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     return {
         "attempt_id": window.attempt_id,
         "trigger_stamp_sec": f"{window.trigger_stamp_sec:.9f}",
@@ -642,7 +626,7 @@ def make_candidate_row(
     pose_y: float,
     pose_z: float,
     yaw_rad: float,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     return {
         "attempt_id": window.attempt_id,
         "candidate_index": str(candidate_index),
@@ -667,7 +651,7 @@ def resolve_nearest_pointclouds(
     bag_path: Path,
     cloud_topic: str,
     windows: Sequence[RequestWindow],
-) -> Dict[int, Tuple[int, np.ndarray]]:
+) -> dict[int, tuple[int, np.ndarray]]:
     try:
         from rosbags.highlevel import AnyReader
         from rosbags.typesys import Stores, get_typestore
@@ -678,13 +662,19 @@ def resolve_nearest_pointclouds(
     # typestore; ROS2_HUMBLE matches the other readers in this repository.
     typestore = get_typestore(Stores.ROS2_HUMBLE)
 
-    targets = sorted((window.trigger_stamp_ns, index) for index, window in enumerate(windows))
-    results: Dict[int, Tuple[int, np.ndarray]] = {}
+    targets = sorted(
+        (window.trigger_stamp_ns, index) for index, window in enumerate(windows)
+    )
+    results: dict[int, tuple[int, np.ndarray]] = {}
     target_pos = 0
-    previous: Optional[Tuple[int, Any, bytes]] = None
+    previous: tuple[int, Any, bytes] | None = None
 
     with AnyReader([bag_path], default_typestore=typestore) as reader:
-        connections = [connection for connection in reader.connections if connection.topic == cloud_topic]
+        connections = [
+            connection
+            for connection in reader.connections
+            if connection.topic == cloud_topic
+        ]
         if not connections:
             raise ValueError(f"topic {cloud_topic!r} was not found in {bag_path}")
 
@@ -741,7 +731,7 @@ def pointcloud2_xyz_array(msg: Any) -> np.ndarray:
 
 def write_csv(
     path: Path,
-    rows: List[Dict[str, str]],
+    rows: list[dict[str, str]],
     fieldnames: Sequence[str],
     overwrite: bool,
 ) -> None:
@@ -775,7 +765,9 @@ def run(args: argparse.Namespace) -> None:
     angular_resolution_rad = args.angular_resolution_rad
     if args.angular_resolution_deg is not None:
         angular_resolution_rad = math.radians(args.angular_resolution_deg)
-    yaw_samples_deg = [math.degrees(yaw) for yaw in _yaw_samples(angular_resolution_rad)]
+    yaw_samples_deg = [
+        math.degrees(yaw) for yaw in _yaw_samples(angular_resolution_rad)
+    ]
 
     occupancy_map = load_occupancy_map(occupancy_yaml)
     matching_grid = occupancy_map.occupied
@@ -783,12 +775,14 @@ def run(args: argparse.Namespace) -> None:
         matching_grid = _dilate_one_cell(matching_grid)
     windows = load_request_windows(alignment_csv, source=args.source)
     clouds = (
-        resolve_nearest_pointclouds(bag_path, args.cloud_topic, windows) if windows else {}
+        resolve_nearest_pointclouds(bag_path, args.cloud_topic, windows)
+        if windows
+        else {}
     )
 
     generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
-    attempt_rows: List[Dict[str, str]] = []
-    candidate_rows: List[Dict[str, str]] = []
+    attempt_rows: list[dict[str, str]] = []
+    candidate_rows: list[dict[str, str]] = []
 
     for window_index, window in enumerate(windows):
         _scan_stamp_ns, points_xyz = clouds[window_index]
@@ -809,11 +803,15 @@ def run(args: argparse.Namespace) -> None:
             angular_resolution_rad,
             args.pyramid_depth,
             args.max_candidates,
-            nms_radius_cells=int(round(max(0.0, args.nms_radius_m) / occupancy_map.resolution_m)),
+            nms_radius_cells=round(
+                max(0.0, args.nms_radius_m) / occupancy_map.resolution_m
+            ),
         )
         runtime_sec = time.monotonic() - started
 
-        rejection_reason = args.rejection_reason if scan_xy.shape[0] > 0 else "empty_scan"
+        rejection_reason = (
+            args.rejection_reason if scan_xy.shape[0] > 0 else "empty_scan"
+        )
         attempt_rows.append(
             make_attempt_row(
                 window=window,
@@ -833,7 +831,9 @@ def run(args: argparse.Namespace) -> None:
             pose_x, pose_y = occupancy_map.grid_cell_center_to_world(
                 candidate.tx_cell, candidate.ty_cell
             )
-            yaw_rad = normalize_angle_rad(occupancy_map.origin_yaw_rad + candidate.yaw_rad)
+            yaw_rad = normalize_angle_rad(
+                occupancy_map.origin_yaw_rad + candidate.yaw_rad
+            )
             candidate_rows.append(
                 make_candidate_row(
                     window=window,
@@ -847,7 +847,9 @@ def run(args: argparse.Namespace) -> None:
             )
 
     write_csv(output_csv, attempt_rows, ATTEMPT_FIELDNAMES, overwrite=args.overwrite)
-    write_csv(candidates_csv, candidate_rows, CANDIDATE_FIELDNAMES, overwrite=args.overwrite)
+    write_csv(
+        candidates_csv, candidate_rows, CANDIDATE_FIELDNAMES, overwrite=args.overwrite
+    )
     print(
         json.dumps(
             {
@@ -869,15 +871,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "by BBS score; registration scoring stays downstream."
         )
     )
-    parser.add_argument("--alignment-csv", required=True, help="Input alignment_status.csv")
+    parser.add_argument(
+        "--alignment-csv", required=True, help="Input alignment_status.csv"
+    )
     parser.add_argument(
         "--occupancy-yaml",
         required=True,
         help="Occupancy map .yaml from generate_occupancy_map_from_pcd.py",
     )
-    parser.add_argument("--bag-path", required=True, help="rosbag2 directory with the scan topic")
-    parser.add_argument("--cloud-topic", required=True, help="PointCloud2 topic in the bag")
-    parser.add_argument("--output-csv", required=True, help="Output relocalization_attempts.csv")
+    parser.add_argument(
+        "--bag-path", required=True, help="rosbag2 directory with the scan topic"
+    )
+    parser.add_argument(
+        "--cloud-topic", required=True, help="PointCloud2 topic in the bag"
+    )
+    parser.add_argument(
+        "--output-csv", required=True, help="Output relocalization_attempts.csv"
+    )
     parser.add_argument(
         "--output-candidates-csv",
         default="",
@@ -963,7 +973,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default="candidate_scoring_not_implemented",
         help="Rejection reason written for every generated attempt.",
     )
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite output CSV files.")
+    parser.add_argument(
+        "--overwrite", action="store_true", help="Overwrite output CSV files."
+    )
     return parser
 
 
@@ -994,47 +1006,21 @@ def _dilate_one_cell(grid: np.ndarray) -> np.ndarray:
     return result
 
 
-def _yaw_samples(angular_resolution_rad: float) -> List[float]:
-    count = max(1, int(math.ceil((2.0 * math.pi) / angular_resolution_rad)))
+def _yaw_samples(angular_resolution_rad: float) -> list[float]:
+    count = max(1, math.ceil((2.0 * math.pi) / angular_resolution_rad))
     step = (2.0 * math.pi) / float(count)
     return [normalize_angle_rad(index * step) for index in range(count)]
 
 
-def _score_grid(
-    grid: np.ndarray,
-    scan_xy_grid: np.ndarray,
-    tx_cell: int,
-    ty_cell: int,
-    yaw_rad: float,
-    factor: int,
-) -> Tuple[float, int, int]:
-    if scan_xy_grid.size == 0:
-        return 0.0, 0, 0
-
-    c = math.cos(yaw_rad)
-    s = math.sin(yaw_rad)
-    rx = c * scan_xy_grid[:, 0] - s * scan_xy_grid[:, 1]
-    ry = s * scan_xy_grid[:, 0] + c * scan_xy_grid[:, 1]
-
-    ix = np.floor((float(tx_cell) + 0.5 + rx) / float(factor)).astype(np.int64)
-    iy = np.floor((float(ty_cell) + 0.5 + ry) / float(factor)).astype(np.int64)
-
-    height, width = grid.shape
-    inside = (ix >= 0) & (iy >= 0) & (ix < width) & (iy < height)
-    hits = int(grid[iy[inside], ix[inside]].sum()) if np.any(inside) else 0
-    count = int(scan_xy_grid.shape[0])
-    return float(hits) / float(count), hits, count
-
-
-def _candidate_sort_key(candidate: BbsGridCandidate) -> Tuple[float, int, int, int]:
+def _candidate_sort_key(candidate: BbsGridCandidate) -> tuple[float, int, int, int]:
     return (-candidate.score, candidate.yaw_index, candidate.ty_cell, candidate.tx_cell)
 
 
 def _choose_nearest_message(
-    previous: Optional[Tuple[int, Any, bytes]],
-    current: Tuple[int, Any, bytes],
+    previous: tuple[int, Any, bytes] | None,
+    current: tuple[int, Any, bytes],
     target_ns: int,
-) -> Tuple[int, Any, bytes]:
+) -> tuple[int, Any, bytes]:
     if previous is None:
         return current
     if abs(previous[0] - target_ns) <= abs(current[0] - target_ns):

@@ -584,10 +584,9 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
       // It is used by the experimental piecewise deskew mode. Translation remains
       // zero here intentionally: integrating accelerometer translation without a
       // timestamped bias, gravity, and velocity state is less safe than omitting it.
-      if (continuous_time_imu_pose_history_.empty() || last_imu_stamp_ <= 0.0) {
-        continuous_time_imu_orientation_ = Eigen::Quaternionf::Identity();
-        continuous_time_imu_pose_history_.clear();
-      } else if (lidar_localization::isValidImuPreintegrationDt(dt)) {
+      if (
+        !continuous_time_imu_pose_history_.empty() && last_imu_stamp_ > 0.0 &&
+        lidar_localization::isValidImuPreintegrationDt(dt)) {
         const Eigen::Vector3d deskew_gyro =
           preintegration_gyro - imu_smoother_.gyro_bias_;
         const Eigen::Vector3f rotation_vector =

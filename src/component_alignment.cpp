@@ -168,7 +168,6 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       }
       break;
     case lidar_localization::RegistrationSeedSource::kLocalizabilityGuard:
-      break;
     case lidar_localization::RegistrationSeedSource::kCurrentPose:
       break;
     case lidar_localization::RegistrationSeedSource::kOdomTfPrediction:

@@ -5,15 +5,15 @@ from __future__ import annotations
 
 import argparse
 import csv
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
-from typing import Optional
-from typing import Tuple
 
 import yaml
 
 
-def iter_tum_poses(path: Path) -> Iterator[Tuple[float, float, float, float, float, float, float, float]]:
+def iter_tum_poses(
+    path: Path,
+) -> Iterator[tuple[float, float, float, float, float, float, float, float]]:
     with path.open("r", encoding="utf-8", errors="replace") as stream:
         for line in stream:
             line = line.strip()
@@ -28,7 +28,9 @@ def iter_tum_poses(path: Path) -> Iterator[Tuple[float, float, float, float, flo
 def resolve_bag_metadata_path(bag_path: Path) -> Path:
     if bag_path.is_file():
         if bag_path.name != "metadata.yaml":
-            raise FileNotFoundError(f"Expected a rosbag2 metadata.yaml or bag directory, got file: {bag_path}")
+            raise FileNotFoundError(
+                f"Expected a rosbag2 metadata.yaml or bag directory, got file: {bag_path}"
+            )
         return bag_path
 
     metadata_path = bag_path / "metadata.yaml"
@@ -45,7 +47,7 @@ def load_bag_time_window(
     metadata_path: Path,
     bag_start_offset: float,
     bag_duration: float,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     metadata = yaml.safe_load(metadata_path.read_text(encoding="utf-8")) or {}
     info = metadata.get("rosbag2_bagfile_information", {})
     starting_time = info.get("starting_time", {})
@@ -54,19 +56,23 @@ def load_bag_time_window(
     start_ns = starting_time.get("nanoseconds_since_epoch")
     duration_ns = duration.get("nanoseconds")
     if not isinstance(start_ns, int) or not isinstance(duration_ns, int):
-        raise RuntimeError(f"Failed to read starting_time/duration from {metadata_path}")
+        raise TypeError(f"Failed to read starting_time/duration from {metadata_path}")
 
     bag_full_start = float(start_ns) * 1e-9
     bag_full_end = bag_full_start + float(duration_ns) * 1e-9
     start_sec = bag_full_start + bag_start_offset
-    end_sec = bag_full_end if bag_duration <= 0.0 else min(start_sec + bag_duration, bag_full_end)
+    end_sec = (
+        bag_full_end
+        if bag_duration <= 0.0
+        else min(start_sec + bag_duration, bag_full_end)
+    )
     return start_sec, end_sec
 
 
 def export_initial_pose_yaml(
     path: Path,
-    position: Tuple[float, float, float],
-    quaternion: Tuple[float, float, float, float],
+    position: tuple[float, float, float],
+    quaternion: tuple[float, float, float, float],
 ) -> None:
     data = {
         "/**": {
@@ -87,7 +93,7 @@ def export_initial_pose_yaml(
 
 
 def write_reference_csv(
-    rows: list[Tuple[float, float, float, float, float, float, float, float]],
+    rows: list[tuple[float, float, float, float, float, float, float, float]],
     output_csv: Path,
 ) -> None:
     output_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -128,9 +134,18 @@ def write_reference_csv(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", required=True, type=Path, help="Input TUM trajectory text file")
-    parser.add_argument("--bag-path", required=True, type=Path, help="rosbag2 directory or metadata.yaml")
-    parser.add_argument("--output-csv", required=True, type=Path, help="Destination reference CSV")
+    parser.add_argument(
+        "--input", required=True, type=Path, help="Input TUM trajectory text file"
+    )
+    parser.add_argument(
+        "--bag-path",
+        required=True,
+        type=Path,
+        help="rosbag2 directory or metadata.yaml",
+    )
+    parser.add_argument(
+        "--output-csv", required=True, type=Path, help="Destination reference CSV"
+    )
     parser.add_argument(
         "--output-initial-pose-yaml",
         default="",
@@ -164,11 +179,17 @@ def main() -> int:
     args = parser.parse_args()
 
     metadata_path = resolve_bag_metadata_path(args.bag_path.expanduser().resolve())
-    start_sec, end_sec = load_bag_time_window(metadata_path, args.bag_start_offset, args.bag_duration)
+    start_sec, end_sec = load_bag_time_window(
+        metadata_path, args.bag_start_offset, args.bag_duration
+    )
     start_sec -= args.time_padding
     end_sec += args.time_padding
 
-    rows = [row for row in iter_tum_poses(args.input.expanduser().resolve()) if start_sec <= row[0] <= end_sec]
+    rows = [
+        row
+        for row in iter_tum_poses(args.input.expanduser().resolve())
+        if start_sec <= row[0] <= end_sec
+    ]
     if not rows:
         raise SystemExit(
             f"No poses left after cropping to [{start_sec:.9f}, {end_sec:.9f}] from {args.input}"
@@ -176,7 +197,7 @@ def main() -> int:
 
     write_reference_csv(rows, args.output_csv.expanduser().resolve())
 
-    chosen: Optional[Tuple[float, float, float, float, float, float, float, float]]
+    chosen: tuple[float, float, float, float, float, float, float, float] | None
     if args.output_initial_pose_yaml:
         threshold = rows[0][0] + max(args.initial_pose_skip_sec, 0.0)
         chosen = next((row for row in rows if row[0] >= threshold), None)
@@ -191,7 +212,9 @@ def main() -> int:
             (qx, qy, qz, qw),
         )
         print(f"initial_pose_stamp_sec: {chosen[0]:.9f}")
-        print(f"output_initial_pose_yaml: {args.output_initial_pose_yaml.expanduser().resolve()}")
+        print(
+            f"output_initial_pose_yaml: {args.output_initial_pose_yaml.expanduser().resolve()}"
+        )
 
     print(f"metadata_path: {metadata_path}")
     print(f"crop_start_sec: {start_sec:.9f}")

@@ -6,10 +6,14 @@ import sys
 
 import rclpy
 from geometry_msgs.msg import PoseWithCovarianceStamped
-from rosgraph_msgs.msg import Clock
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    DurabilityPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
+from rosgraph_msgs.msg import Clock
 
 
 class KidnapInitialPoseInjector(Node):
@@ -32,7 +36,8 @@ class KidnapInitialPoseInjector(Node):
         self.declare_parameter("repeat_period_sec", 1.0)
         self.trigger_sim_sec = float(self.get_parameter("trigger_sim_sec").value)
         self.trigger_after_first_clock_sec = float(
-            self.get_parameter("trigger_after_first_clock_sec").value)
+            self.get_parameter("trigger_after_first_clock_sec").value
+        )
         self.repeat_count = max(1, int(self.get_parameter("repeat_count").value))
         self.repeat_period_sec = float(self.get_parameter("repeat_period_sec").value)
         self.first_clock_sec = None
@@ -46,7 +51,9 @@ class KidnapInitialPoseInjector(Node):
         )
         topic = self.get_parameter("initialpose_topic").value
         self.pub = self.create_publisher(PoseWithCovarianceStamped, topic, qos)
-        self.create_subscription(Clock, "/clock", self._on_clock, qos_profile_sensor_data)
+        self.create_subscription(
+            Clock, "/clock", self._on_clock, qos_profile_sensor_data
+        )
 
     def _build_pose(self, clock_msg) -> PoseWithCovarianceStamped:
         yaw = math.radians(float(self.get_parameter("yaw_deg").value))
@@ -82,13 +89,13 @@ class KidnapInitialPoseInjector(Node):
         yaw_deg = float(self.get_parameter("yaw_deg").value)
         if self.publish_count == 1:
             self.get_logger().warn(
-                "kidnap injected at sim %.3f -> (%.2f, %.2f, z=%.2f, yaw=%.1f deg)"
-                % (sim_sec, pose.pose.pose.position.x, pose.pose.pose.position.y,
-                   pose.pose.pose.position.z, yaw_deg))
+                f"kidnap injected at sim {sim_sec:.3f} -> ({pose.pose.pose.position.x:.2f}, {pose.pose.pose.position.y:.2f}, z={pose.pose.pose.position.z:.2f}, yaw={yaw_deg:.1f} deg)"
+            )
         else:
             self.get_logger().info(
                 "kidnap republish %d/%d at sim %.3f"
-                % (self.publish_count, self.repeat_count, sim_sec))
+                % (self.publish_count, self.repeat_count, sim_sec)
+            )
         if self.publish_count < self.repeat_count:
             self.next_publish_sim_sec = sim_sec + self.repeat_period_sec
 

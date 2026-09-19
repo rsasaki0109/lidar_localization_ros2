@@ -10,14 +10,10 @@ from __future__ import annotations
 import csv
 import json
 import math
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Sequence
-
 
 ATTEMPT_FIELDNAMES = [
     "attempt_id",
@@ -85,7 +81,7 @@ def as_bool(value: Any) -> bool:
     return str(value).strip().lower() in {"true", "1", "yes", "y"}
 
 
-def as_float(value: Any) -> Optional[float]:
+def as_float(value: Any) -> float | None:
     if value is None or str(value).strip() == "":
         return None
     try:
@@ -95,12 +91,8 @@ def as_float(value: Any) -> Optional[float]:
     return number if math.isfinite(number) else None
 
 
-def wrap_angle(angle: float) -> float:
-    return math.atan2(math.sin(angle), math.cos(angle))
-
-
-def parse_float_list(raw: str) -> List[float]:
-    values: List[float] = []
+def parse_float_list(raw: str) -> list[float]:
+    values: list[float] = []
     for token in str(raw).split(","):
         token = token.strip()
         if not token:
@@ -121,8 +113,8 @@ def generated_at() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
-def load_alignment_rows(path: Path) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
+def load_alignment_rows(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8", newline="") as stream:
         for record in csv.DictReader(stream):
             values = json.loads(record["values_json"])
@@ -137,8 +129,8 @@ def load_alignment_rows(path: Path) -> List[Dict[str, Any]]:
     return rows
 
 
-def request_windows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    windows: List[Dict[str, Any]] = []
+def request_windows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    windows: list[dict[str, Any]] = []
     index = 0
     while index < len(rows):
         if not rows[index]["requested"]:
@@ -164,7 +156,7 @@ def request_windows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def write_csv(
     path: Path,
-    rows: List[Dict[str, Any]],
+    rows: list[dict[str, Any]],
     fieldnames: Sequence[str],
     overwrite: bool,
 ) -> None:

@@ -1,13 +1,14 @@
 import argparse
 import sys
 import time
-from typing import Optional
-from typing import Sequence
+from collections.abc import Sequence
 
-from lidar_localization_mid360.bringup_model import BringupCheckConfig
-from lidar_localization_mid360.bringup_model import evaluate_snapshot
-from lidar_localization_mid360.bringup_model import exit_code
-from lidar_localization_mid360.bringup_model import report_lines
+from lidar_localization_mid360.bringup_model import (
+    BringupCheckConfig,
+    evaluate_snapshot,
+    exit_code,
+    report_lines,
+)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -64,7 +65,7 @@ def config_from_args(args: argparse.Namespace) -> BringupCheckConfig:
     )
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
 
     import rclpy

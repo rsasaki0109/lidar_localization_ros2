@@ -22,8 +22,12 @@ class Recorder:
         odom_path = os.path.join(self.output_dir, "hdl_odom.csv")
         status_path = os.path.join(self.output_dir, "hdl_status.csv")
 
-        self.odom_stream = open(odom_path, "w", newline="", encoding="utf-8")
-        self.status_stream = open(status_path, "w", newline="", encoding="utf-8")
+        self.odom_stream = open(  # noqa: SIM115 - closed in close()
+            odom_path, "w", newline="", encoding="utf-8"
+        )
+        self.status_stream = open(  # noqa: SIM115 - closed in close()
+            status_path, "w", newline="", encoding="utf-8"
+        )
 
         self.odom_writer = csv.writer(self.odom_stream)
         self.status_writer = csv.writer(self.status_stream)
@@ -70,7 +74,9 @@ class Recorder:
         )
 
         rospy.Subscriber("/odom", Odometry, self.odom_callback, queue_size=100)
-        rospy.Subscriber("/status", ScanMatchingStatus, self.status_callback, queue_size=100)
+        rospy.Subscriber(
+            "/status", ScanMatchingStatus, self.status_callback, queue_size=100
+        )
 
     def close(self) -> None:
         self.odom_stream.close()
@@ -128,8 +134,14 @@ class Recorder:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Record hdl_localization outputs into CSV files.")
-    parser.add_argument("--output-dir", required=True, help="Directory to store hdl_odom.csv and hdl_status.csv")
+    parser = argparse.ArgumentParser(
+        description="Record hdl_localization outputs into CSV files."
+    )
+    parser.add_argument(
+        "--output-dir",
+        required=True,
+        help="Directory to store hdl_odom.csv and hdl_status.csv",
+    )
     return parser.parse_args()
 
 

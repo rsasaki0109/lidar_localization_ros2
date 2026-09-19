@@ -25,14 +25,15 @@ Wiring::
     /initialpose (geometry_msgs/PoseWithCovarianceStamped) <-pub- supervisor
 """
 
+import csv
 import json
 import math
 import time
-import csv
 from collections import deque
 from pathlib import Path
 
 import rclpy
+import reinitialization_supervisor_policy as rsp
 from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from rclpy.executors import ExternalShutdownException
@@ -41,18 +42,20 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 
-import reinitialization_supervisor_policy as rsp
-
-_ACCEPT_MEASUREMENT_ACTIONS = frozenset({
-    "accept_measurement",
-    "accept_measurement_with_warning",
-    "accept_measurement_after_recovery",
-})
-_ACCEPT_TRACKING_STATES = frozenset({
-    "tracking",
-    "degraded",
-    "recovering",
-})
+_ACCEPT_MEASUREMENT_ACTIONS = frozenset(
+    {
+        "accept_measurement",
+        "accept_measurement_with_warning",
+        "accept_measurement_after_recovery",
+    }
+)
+_ACCEPT_TRACKING_STATES = frozenset(
+    {
+        "tracking",
+        "degraded",
+        "recovering",
+    }
+)
 
 
 def _roll_pitch_from_quat(x: float, y: float, z: float, w: float):
@@ -152,47 +155,64 @@ class ReinitializationSupervisorNode(Node):
         self.declare_parameter("event_log_csv", "")
 
         self.params = rsp.SupervisorParams(
-            request_debounce_sec=float(self.get_parameter("request_debounce_sec").value),
+            request_debounce_sec=float(
+                self.get_parameter("request_debounce_sec").value
+            ),
             min_seconds_between_attempts=float(
-                self.get_parameter("min_seconds_between_attempts").value),
+                self.get_parameter("min_seconds_between_attempts").value
+            ),
             max_attempts=int(self.get_parameter("max_attempts").value),
             min_candidate_score=float(self.get_parameter("min_candidate_score").value),
             query_timeout_sec=float(self.get_parameter("query_timeout_sec").value),
             settle_timeout_sec=float(self.get_parameter("settle_timeout_sec").value),
             recovery_fitness_threshold=float(
-                self.get_parameter("recovery_fitness_threshold").value),
+                self.get_parameter("recovery_fitness_threshold").value
+            ),
             recovery_confirmation_samples=int(
-                self.get_parameter("recovery_confirmation_samples").value),
+                self.get_parameter("recovery_confirmation_samples").value
+            ),
             max_walk_candidates=int(self.get_parameter("max_walk_candidates").value),
             enable_confirm_cross_check=bool(
-                self.get_parameter("confirm_cross_check").value),
+                self.get_parameter("confirm_cross_check").value
+            ),
             cross_check_mismatch_m=float(
-                self.get_parameter("cross_check_mismatch_m").value),
+                self.get_parameter("cross_check_mismatch_m").value
+            ),
             use_odom_bridge_candidate=bool(
-                self.get_parameter("use_odom_bridge_candidate").value),
+                self.get_parameter("use_odom_bridge_candidate").value
+            ),
             odom_bridge_max_attempts=int(
-                self.get_parameter("odom_bridge_max_attempts").value),
+                self.get_parameter("odom_bridge_max_attempts").value
+            ),
         )
         self.state = rsp.initial_state()
 
         self.global_frame_id = self.get_parameter("global_frame_id").value
         self.use_odom_bridge_candidate = self.params.use_odom_bridge_candidate
         self.odom_bridge_max_age_sec = float(
-            self.get_parameter("odom_bridge_max_age_sec").value)
+            self.get_parameter("odom_bridge_max_age_sec").value
+        )
         self.odom_bridge_position_std = float(
-            self.get_parameter("odom_bridge_position_std_m").value)
+            self.get_parameter("odom_bridge_position_std_m").value
+        )
         self.odom_bridge_yaw_std = float(
-            self.get_parameter("odom_bridge_yaw_std_rad").value)
+            self.get_parameter("odom_bridge_yaw_std_rad").value
+        )
         self.enable_bbs_shadow_motion_gate = bool(
-            self.get_parameter("enable_bbs_shadow_motion_gate").value)
+            self.get_parameter("enable_bbs_shadow_motion_gate").value
+        )
         self.bbs_shadow_required_samples = max(
-            2, int(self.get_parameter("bbs_shadow_required_samples").value))
+            2, int(self.get_parameter("bbs_shadow_required_samples").value)
+        )
         self.bbs_shadow_max_translation_mismatch = float(
-            self.get_parameter("bbs_shadow_max_translation_mismatch_m").value)
+            self.get_parameter("bbs_shadow_max_translation_mismatch_m").value
+        )
         self.bbs_shadow_max_yaw_mismatch_deg = float(
-            self.get_parameter("bbs_shadow_max_yaw_mismatch_deg").value)
+            self.get_parameter("bbs_shadow_max_yaw_mismatch_deg").value
+        )
         self.bbs_shadow_bridge_stamp_tolerance_sec = float(
-            self.get_parameter("bbs_shadow_bridge_stamp_tolerance_sec").value)
+            self.get_parameter("bbs_shadow_bridge_stamp_tolerance_sec").value
+        )
         # Latest odom_bridge_pose message and the wall time it was received, for
         # the freshness check in _odom_bridge_status. None while none has arrived
         # yet (or use_odom_bridge_candidate is off).
@@ -202,26 +222,34 @@ class ReinitializationSupervisorNode(Node):
         self._bbs_shadow_gate = rsp.BbsShadowMotionGate(
             self.bbs_shadow_required_samples,
             self.bbs_shadow_max_translation_mismatch,
-            self.bbs_shadow_max_yaw_mismatch_deg)
+            self.bbs_shadow_max_yaw_mismatch_deg,
+        )
         self.position_std = float(self.get_parameter("reset_position_std_m").value)
         self.request_clear_confirms_recovery = bool(
-            self.get_parameter("request_clear_confirms_recovery").value)
+            self.get_parameter("request_clear_confirms_recovery").value
+        )
         self.yaw_std = float(self.get_parameter("reset_yaw_std_rad").value)
         self.reset_default_z = float(self.get_parameter("reset_default_z_m").value)
         self.prefer_reset_default_z = bool(
-            self.get_parameter("prefer_reset_default_z_m").value)
+            self.get_parameter("prefer_reset_default_z_m").value
+        )
         self.enable_seed_motion = bool(
-            self.get_parameter("enable_seed_motion_compensation").value)
+            self.get_parameter("enable_seed_motion_compensation").value
+        )
         self.max_seed_speed = float(self.get_parameter("max_seed_speed_mps").value)
         self.max_seed_latency = float(self.get_parameter("max_seed_latency_sec").value)
         self.seed_velocity_max_age = float(
-            self.get_parameter("seed_velocity_max_age_sec").value)
+            self.get_parameter("seed_velocity_max_age_sec").value
+        )
         self.seed_motion_wall_fallback = bool(
-            self.get_parameter("seed_motion_wall_fallback").value)
+            self.get_parameter("seed_motion_wall_fallback").value
+        )
         self.seed_motion_skip_registration_fitness = float(
-            self.get_parameter("seed_motion_skip_registration_fitness_threshold").value)
+            self.get_parameter("seed_motion_skip_registration_fitness_threshold").value
+        )
         event_log_csv = (
-            self.get_parameter("event_log_csv").get_parameter_value().string_value)
+            self.get_parameter("event_log_csv").get_parameter_value().string_value
+        )
         self._event_log_csv = Path(event_log_csv) if event_log_csv else None
         self._stable_window_count = 0
         self._awaiting_stable_window = False
@@ -246,7 +274,9 @@ class ReinitializationSupervisorNode(Node):
         self._last_pose_x = None
         self._last_pose_y = None
         self._last_pose_observed_sec = None
-        self._seed_velocity_tracker = rsp.TrustedSeedVelocityTracker(self.max_seed_speed)
+        self._seed_velocity_tracker = rsp.TrustedSeedVelocityTracker(
+            self.max_seed_speed
+        )
         self._last_pose_roll = 0.0
         self._last_pose_pitch = 0.0
         # One-shot service reply delivered to the policy once: a tuple of ranked
@@ -298,54 +328,76 @@ class ReinitializationSupervisorNode(Node):
             self.create_subscription(
                 PoseWithCovarianceStamped,
                 self.get_parameter("odom_bridge_pose_topic").value,
-                self._on_odom_bridge_pose, pose_qos)
+                self._on_odom_bridge_pose,
+                pose_qos,
+            )
 
         self.create_subscription(
-            Bool, self.get_parameter("reinitialization_topic").value,
-            self._on_reinit, reliable)
+            Bool,
+            self.get_parameter("reinitialization_topic").value,
+            self._on_reinit,
+            reliable,
+        )
         self.create_subscription(
-            DiagnosticArray, self.get_parameter("alignment_status_topic").value,
-            self._on_alignment_status, 10)
+            DiagnosticArray,
+            self.get_parameter("alignment_status_topic").value,
+            self._on_alignment_status,
+            10,
+        )
         self.create_subscription(
-            PoseWithCovarianceStamped, self.get_parameter("pose_topic").value,
-            self._on_pose, pose_qos)
+            PoseWithCovarianceStamped,
+            self.get_parameter("pose_topic").value,
+            self._on_pose,
+            pose_qos,
+        )
         self.initialpose_pub = self.create_publisher(
-            PoseWithCovarianceStamped, self.get_parameter("initialpose_topic").value,
-            reliable)
+            PoseWithCovarianceStamped,
+            self.get_parameter("initialpose_topic").value,
+            reliable,
+        )
         self.query_client = self.create_client(
-            Trigger, self.get_parameter("query_service").value)
+            Trigger, self.get_parameter("query_service").value
+        )
 
         self.create_timer(
-            float(self.get_parameter("tick_period_sec").value), self._tick)
+            float(self.get_parameter("tick_period_sec").value), self._tick
+        )
         self.get_logger().info(
-            "reinitialization supervisor ready (opt-in); guards=%s" % (self.params,))
+            f"reinitialization supervisor ready (opt-in); guards={self.params}"
+        )
         self.get_logger().info(
-            "seed motion compensation: enabled=%s max_speed_mps=%.2f max_latency_sec=%.2f "
-            "velocity_max_age_sec=%.2f wall_fallback=%s skip_registration_fitness<=%.2f "
+            f"seed motion compensation: enabled={self.enable_seed_motion} max_speed_mps={self.max_seed_speed:.2f} max_latency_sec={self.max_seed_latency:.2f} "
+            f"velocity_max_age_sec={self.seed_velocity_max_age:.2f} wall_fallback={self.seed_motion_wall_fallback} skip_registration_fitness<={self.seed_motion_skip_registration_fitness:.2f} "
             "(sim fix-to-fix on bag clock preferred when available)"
-            % (self.enable_seed_motion, self.max_seed_speed, self.max_seed_latency,
-               self.seed_velocity_max_age, self.seed_motion_wall_fallback,
-               self.seed_motion_skip_registration_fitness))
+        )
         if self.prefer_reset_default_z:
             self.get_logger().info(
-                "seed z: using reset_default_z_m=%.3f (prefer_reset_default_z_m=true)"
-                % self.reset_default_z)
+                f"seed z: using reset_default_z_m={self.reset_default_z:.3f} (prefer_reset_default_z_m=true)"
+            )
         if self.use_odom_bridge_candidate:
             self.get_logger().info(
                 "odom bridge: enabled, tried before every BBS query; "
                 "topic=%s max_attempts=%d max_age_sec=%.2f "
                 "position_std_m=%.2f yaw_std_rad=%.2f"
-                % (self.get_parameter("odom_bridge_pose_topic").value,
-                   self.params.odom_bridge_max_attempts, self.odom_bridge_max_age_sec,
-                   self.odom_bridge_position_std, self.odom_bridge_yaw_std))
+                % (
+                    self.get_parameter("odom_bridge_pose_topic").value,
+                    self.params.odom_bridge_max_attempts,
+                    self.odom_bridge_max_age_sec,
+                    self.odom_bridge_position_std,
+                    self.odom_bridge_yaw_std,
+                )
+            )
         if self.enable_bbs_shadow_motion_gate:
             self.get_logger().info(
                 "BBS shadow motion gate: required_samples=%d translation<=%.2fm "
                 "yaw<=%.1fdeg bridge_stamp_tolerance<=%.2fs"
-                % (self.bbs_shadow_required_samples,
-                   self.bbs_shadow_max_translation_mismatch,
-                   self.bbs_shadow_max_yaw_mismatch_deg,
-                   self.bbs_shadow_bridge_stamp_tolerance_sec))
+                % (
+                    self.bbs_shadow_required_samples,
+                    self.bbs_shadow_max_translation_mismatch,
+                    self.bbs_shadow_max_yaw_mismatch_deg,
+                    self.bbs_shadow_bridge_stamp_tolerance_sec,
+                )
+            )
 
     # --- subscriptions -------------------------------------------------------
 
@@ -378,25 +430,32 @@ class ReinitializationSupervisorNode(Node):
                 self._fitness = float(values["fitness_score"])
                 self._fitness_observed_sec = self._wall_now_sec()
                 reinit_requested = (
-                    str(values.get("reinitialization_requested", "")).lower()
-                    == "true")
+                    str(values.get("reinitialization_requested", "")).lower() == "true"
+                )
                 recovery_state = str(values.get("recovery_state", ""))
                 recovery_action = str(values.get("recovery_action", ""))
-                if recovery_state or recovery_action or "reinitialization_requested" in values:
+                if (
+                    recovery_state
+                    or recovery_action
+                    or "reinitialization_requested" in values
+                ):
                     self._stable_tracking = (
                         status.message == "ok"
                         and recovery_state in _ACCEPT_TRACKING_STATES
                         and recovery_action in _ACCEPT_MEASUREMENT_ACTIONS
-                        and not reinit_requested)
+                        and not reinit_requested
+                    )
                 else:
-                    self._stable_tracking = (status.message == "ok")
+                    self._stable_tracking = status.message == "ok"
             except ValueError:
                 pass
             return
 
     def _pose_velocity_trusted(self) -> bool:
         return bool(self._stable_tracking) and self.state.name in (
-            rsp.STATE_IDLE, rsp.STATE_STANDDOWN)
+            rsp.STATE_IDLE,
+            rsp.STATE_STANDDOWN,
+        )
 
     def _on_pose(self, msg: PoseWithCovarianceStamped) -> None:
         sim_stamp_sec = self._stamp_to_sec(msg.header.stamp)
@@ -404,18 +463,25 @@ class ReinitializationSupervisorNode(Node):
         p = msg.pose.pose
         observed_sec = self._wall_now_sec()
         self._seed_velocity_tracker.observe(
-            float(p.position.x), float(p.position.y), observed_sec,
-            self._pose_velocity_trusted())
+            float(p.position.x),
+            float(p.position.y),
+            observed_sec,
+            self._pose_velocity_trusted(),
+        )
         self._last_pose_x = float(p.position.x)
         self._last_pose_y = float(p.position.y)
         self._last_pose_z = float(p.position.z)
         self._last_pose_observed_sec = observed_sec
         self._last_pose_roll, self._last_pose_pitch = _roll_pitch_from_quat(
-            p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w)
+            p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w
+        )
         self._pose_history.append(
-            (sim_stamp_sec, float(p.position.x), float(p.position.y)))
-        while (len(self._pose_history) > 1
-               and self._pose_history[-1][0] - self._pose_history[0][0] > 180.0):
+            (sim_stamp_sec, float(p.position.x), float(p.position.y))
+        )
+        while (
+            len(self._pose_history) > 1
+            and self._pose_history[-1][0] - self._pose_history[0][0] > 180.0
+        ):
             self._pose_history.popleft()
 
     def _on_odom_bridge_pose(self, msg: PoseWithCovarianceStamped) -> None:
@@ -429,23 +495,28 @@ class ReinitializationSupervisorNode(Node):
         if self._odom_bridge_pose_msg is None:
             self.get_logger().info(
                 "odom bridge: first odom_bridge_pose received (stamp=%d.%09d)"
-                % (msg.header.stamp.sec, msg.header.stamp.nanosec))
+                % (msg.header.stamp.sec, msg.header.stamp.nanosec)
+            )
         self._odom_bridge_pose_msg = msg
         self._odom_bridge_pose_received_sec = self._wall_now_sec()
         self._update_last_sim_stamp(msg.header.stamp)
         p = msg.pose.pose
         stamp_sec = self._stamp_to_sec(msg.header.stamp)
-        self._odom_bridge_history.append((
-            stamp_sec,
-            float(p.position.x),
-            float(p.position.y),
-            _yaw_from_quat(
-                p.orientation.x, p.orientation.y,
-                p.orientation.z, p.orientation.w),
-        ))
-        while (len(self._odom_bridge_history) > 1
-               and self._odom_bridge_history[-1][0]
-               - self._odom_bridge_history[0][0] > 300.0):
+        self._odom_bridge_history.append(
+            (
+                stamp_sec,
+                float(p.position.x),
+                float(p.position.y),
+                _yaw_from_quat(
+                    p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w
+                ),
+            )
+        )
+        while (
+            len(self._odom_bridge_history) > 1
+            and self._odom_bridge_history[-1][0] - self._odom_bridge_history[0][0]
+            > 300.0
+        ):
             self._odom_bridge_history.popleft()
 
     def _odom_bridge_status(self):
@@ -453,14 +524,16 @@ class ReinitializationSupervisorNode(Node):
         if not self.use_odom_bridge_candidate or self._odom_bridge_pose_msg is None:
             return None
         stamp_sec = self._stamp_to_sec(self._odom_bridge_pose_msg.header.stamp)
-        if (self._last_sim_stamp_sec is not None
-                and self._last_sim_stamp_sec - stamp_sec > self.odom_bridge_max_age_sec):
+        if (
+            self._last_sim_stamp_sec is not None
+            and self._last_sim_stamp_sec - stamp_sec > self.odom_bridge_max_age_sec
+        ):
             # Newer sim-clock traffic has arrived (e.g. /alignment_status) since
             # this pose, but no fresher odom_bridge_pose -- the front end stalled.
             self.get_logger().warn(
-                "odom bridge: pose stale (age %.2fs > %.2fs)"
-                % (self._last_sim_stamp_sec - stamp_sec, self.odom_bridge_max_age_sec),
-                throttle_duration_sec=5.0)
+                f"odom bridge: pose stale (age {self._last_sim_stamp_sec - stamp_sec:.2f}s > {self.odom_bridge_max_age_sec:.2f}s)",
+                throttle_duration_sec=5.0,
+            )
             return None
         return self._odom_bridge_pose_msg
 
@@ -480,19 +553,25 @@ class ReinitializationSupervisorNode(Node):
             self._pending_cross_check_mismatch = None
         best_fitness = self._fitness
         stable_tracking = self._stable_tracking
-        if (self.request_clear_confirms_recovery
-                and self.state.name == rsp.STATE_SETTLING
-                and not self._requested):
+        if (
+            self.request_clear_confirms_recovery
+            and self.state.name == rsp.STATE_SETTLING
+            and not self._requested
+        ):
             # GLIL only clears its latched request after its own independent
             # three-frame scan-to-prior-map verification has activated a new
             # map-state epoch. Treat that stronger signal as recovery evidence.
             best_fitness = 0.0
             stable_tracking = True
             self._fitness_observed_sec = now
-        if (self.state.name == rsp.STATE_SETTLING
-                and self.state.last_reset_sec is not None
-                and (self._fitness_observed_sec is None
-                     or self._fitness_observed_sec <= self.state.last_reset_sec)):
+        if (
+            self.state.name == rsp.STATE_SETTLING
+            and self.state.last_reset_sec is not None
+            and (
+                self._fitness_observed_sec is None
+                or self._fitness_observed_sec <= self.state.last_reset_sec
+            )
+        ):
             # Recovery evidence must be observed after the reset was published.
             # Otherwise a low fitness sample from before the reset can produce a
             # false recovery_confirmed while the localizer has not consumed the
@@ -560,13 +639,20 @@ class ReinitializationSupervisorNode(Node):
         elif decision.action == rsp.ACTION_GIVE_UP:
             self.get_logger().error(
                 "reinitialization gave up (%s) after %d attempt(s); operator "
-                "intervention needed" % (decision.reason, self.state.attempts))
+                "intervention needed" % (decision.reason, self.state.attempts)
+            )
 
-        if decision.reason not in ("tracking", "settling", "cooldown", "standdown",
-                                   "exhausted", "awaiting_candidates"):
+        if decision.reason not in (
+            "tracking",
+            "settling",
+            "cooldown",
+            "standdown",
+            "exhausted",
+            "awaiting_candidates",
+        ):
             self.get_logger().info(
-                "supervisor: %s -> %s (%s)"
-                % (decision.action, self.state.name, decision.reason))
+                f"supervisor: {decision.action} -> {self.state.name} ({decision.reason})"
+            )
 
     def _log_event(self, event_name: str) -> None:
         if self._event_log_csv is None:
@@ -626,26 +712,33 @@ class ReinitializationSupervisorNode(Node):
         # stamp the issue time for the query->publish latency used in compensation.
         self._query_issue_time = self._wall_now_sec()
         self._query_issue_pose_trusted = self._pose_velocity_trusted()
-        if (self._last_pose_x is not None and self._last_pose_y is not None
-                and self._last_pose_observed_sec is not None
-                and self._query_issue_time - self._last_pose_observed_sec
-                <= self.max_seed_latency):
+        if (
+            self._last_pose_x is not None
+            and self._last_pose_y is not None
+            and self._last_pose_observed_sec is not None
+            and self._query_issue_time - self._last_pose_observed_sec
+            <= self.max_seed_latency
+        ):
             self._query_issue_pose = (
-                self._last_pose_x, self._last_pose_y, self._last_pose_observed_sec)
+                self._last_pose_x,
+                self._last_pose_y,
+                self._last_pose_observed_sec,
+            )
         else:
             self._query_issue_pose = None
         self._query_issue_velocity = self._seed_velocity_tracker.velocity_at(
-            self._query_issue_time, self.seed_velocity_max_age)
+            self._query_issue_time, self.seed_velocity_max_age
+        )
 
     def _on_query_response(self, future) -> None:
         self._query_in_flight = False
         try:
             response = future.result()
         except Exception as exc:  # noqa: BLE001 - log and let the policy time out
-            self.get_logger().warn("query call failed: %s" % exc)
+            self.get_logger().warn(f"query call failed: {exc}")
             return
         if not response.success:
-            self.get_logger().info("query returned no candidate: %s" % response.message)
+            self.get_logger().info(f"query returned no candidate: {response.message}")
             try:
                 failure = json.loads(response.message)
             except (json.JSONDecodeError, TypeError):
@@ -654,8 +747,9 @@ class ReinitializationSupervisorNode(Node):
             # first (large) PointCloud2. That is not a failed localization query
             # and must not consume max_attempts.
             retryable = (
-                failure.get("error") == "no_scan_received" or
-                failure.get("scan_point_count") == 0)
+                failure.get("error") == "no_scan_received"
+                or failure.get("scan_point_count") == 0
+            )
             self._reset_failed_query_state(retryable=retryable)
             return
         try:
@@ -666,16 +760,17 @@ class ReinitializationSupervisorNode(Node):
                 candidates = [summary["top"]]
             scores = tuple(float(c["score"]) for c in candidates)
             candidate_age_sec = self._parse_nonnegative_float(
-                summary.get("candidate_age_sec"))
+                summary.get("candidate_age_sec")
+            )
             scan_stamp_sec = self._parse_nonnegative_float(
-                summary.get("scan_stamp_sec"))
+                summary.get("scan_stamp_sec")
+            )
         except (ValueError, KeyError, TypeError) as exc:
-            self.get_logger().warn("could not parse query reply: %s" % exc)
+            self.get_logger().warn(f"could not parse query reply: {exc}")
             self._reset_failed_query_state()
             return
         if self.enable_bbs_shadow_motion_gate:
-            scores = self._apply_bbs_shadow_motion_gate(
-                summary, candidates, scores)
+            scores = self._apply_bbs_shadow_motion_gate(summary, candidates, scores)
         self._candidates = candidates
         self._pending_reply = scores
         self._pending_reply_retryable = False
@@ -689,14 +784,14 @@ class ReinitializationSupervisorNode(Node):
             # The verify fix above also becomes the second sim fix-to-fix sample,
             # so a later reset after cross_check_mismatch gets motion compensation.
             self._pending_cross_check_mismatch = self._cross_check_mismatch_m(
-                summary, candidates[0] if candidates else None)
+                summary, candidates[0] if candidates else None
+            )
 
     def _apply_bbs_shadow_motion_gate(self, summary, candidates, scores):
         """Withhold BBS candidates until their temporal motion matches odometry."""
         withheld = tuple(0.0 for _ in scores)
         if not candidates or not scores or scores[0] < self.params.min_candidate_score:
-            self.get_logger().info(
-                "BBS shadow gate: weak/empty top candidate withheld")
+            self.get_logger().info("BBS shadow gate: weak/empty top candidate withheld")
             return withheld
         scan_stamp_sec = self._parse_nonnegative_float(summary.get("scan_stamp_sec"))
         if scan_stamp_sec is None:
@@ -705,17 +800,20 @@ class ReinitializationSupervisorNode(Node):
         bridge = self._nearest_history_entry(
             self._odom_bridge_history,
             scan_stamp_sec,
-            self.bbs_shadow_bridge_stamp_tolerance_sec)
+            self.bbs_shadow_bridge_stamp_tolerance_sec,
+        )
         if bridge is None:
             self.get_logger().warn(
-                "BBS shadow gate: no odom bridge sample near %.3f; withholding"
-                % scan_stamp_sec)
+                f"BBS shadow gate: no odom bridge sample near {scan_stamp_sec:.3f}; withholding"
+            )
             return withheld
         try:
             top = candidates[0]
             candidate_pose = (
-                float(top["x"]), float(top["y"]),
-                math.radians(float(top["yaw_deg"])))
+                float(top["x"]),
+                float(top["y"]),
+                math.radians(float(top["yaw_deg"])),
+            )
         except (KeyError, TypeError, ValueError):
             self.get_logger().warn("BBS shadow gate: malformed top pose; withholding")
             return withheld
@@ -725,7 +823,8 @@ class ReinitializationSupervisorNode(Node):
             self._log_event("bbs_shadow_primed")
             self.get_logger().info(
                 "BBS shadow gate: primed 1/%d; candidate not published"
-                % self.bbs_shadow_required_samples)
+                % self.bbs_shadow_required_samples
+            )
             return withheld
         mismatch = result.mismatch
         if not result.publish_allowed:
@@ -733,9 +832,13 @@ class ReinitializationSupervisorNode(Node):
             self.get_logger().warn(
                 "BBS shadow gate: candidate withheld; relative mismatch=%.2fm/%.1fdeg "
                 "consistent_samples=%d/%d"
-                % (mismatch.translation_m, mismatch.yaw_deg,
-                   result.consistent_samples,
-                   self.bbs_shadow_required_samples))
+                % (
+                    mismatch.translation_m,
+                    mismatch.yaw_deg,
+                    result.consistent_samples,
+                    self.bbs_shadow_required_samples,
+                )
+            )
             return withheld
 
         # Only rank 1 participated in the temporal validation. Keep the rest at
@@ -744,9 +847,9 @@ class ReinitializationSupervisorNode(Node):
         self.get_logger().warn(
             "BBS shadow gate: rank-1 candidate validated before publication; "
             "relative mismatch=%.2fm/%.1fdeg samples=%d"
-            % (mismatch.translation_m, mismatch.yaw_deg,
-               result.consistent_samples))
-        return (scores[0],) + tuple(0.0 for _ in scores[1:])
+            % (mismatch.translation_m, mismatch.yaw_deg, result.consistent_samples)
+        )
+        return (scores[0], *tuple(0.0 for _ in scores[1:]))
 
     def _cross_check_mismatch_m(self, summary, top_candidate):
         # Every "insufficient evidence" branch below returns math.inf, not
@@ -790,8 +893,7 @@ class ReinitializationSupervisorNode(Node):
         return math.hypot(fix_x - pose_x, fix_y - pose_y)
 
     def _nearest_pose_history_entry(self, stamp_sec, max_delta_sec):
-        return self._nearest_history_entry(
-            self._pose_history, stamp_sec, max_delta_sec)
+        return self._nearest_history_entry(self._pose_history, stamp_sec, max_delta_sec)
 
     @staticmethod
     def _nearest_history_entry(history, stamp_sec, max_delta_sec):
@@ -822,9 +924,12 @@ class ReinitializationSupervisorNode(Node):
         if self._prev_sim_fix is not None:
             prev_x, prev_y, prev_scan_stamp_sec = self._prev_sim_fix
             velocity = rsp.estimate_sim_fix_velocity(
-                (prev_x, prev_y), prev_scan_stamp_sec,
-                (raw_x, raw_y), scan_stamp_sec,
-                max_speed_mps=self.max_seed_speed)
+                (prev_x, prev_y),
+                prev_scan_stamp_sec,
+                (raw_x, raw_y),
+                scan_stamp_sec,
+                max_speed_mps=self.max_seed_speed,
+            )
         self._sim_fix_velocity = velocity
         self._prev_sim_fix = (raw_x, raw_y, scan_stamp_sec)
 
@@ -842,7 +947,9 @@ class ReinitializationSupervisorNode(Node):
 
     def _publish_reset(self, candidate_index: int = 0) -> None:
         if not self._candidates or candidate_index >= len(self._candidates):
-            self.get_logger().error("publish_reset requested with no candidate; skipping")
+            self.get_logger().error(
+                "publish_reset requested with no candidate; skipping"
+            )
             return
         top = self._candidates[candidate_index]
         yaw = math.radians(top["yaw_deg"])
@@ -854,14 +961,20 @@ class ReinitializationSupervisorNode(Node):
         if self.prefer_reset_default_z:
             z = self.reset_default_z
         else:
-            z = self._last_pose_z if self._last_pose_z is not None else self.reset_default_z
+            z = (
+                self._last_pose_z
+                if self._last_pose_z is not None
+                else self.reset_default_z
+            )
         qx, qy, qz, qw = _quat_from_rpy(
-            self._last_pose_roll, self._last_pose_pitch, yaw)
+            self._last_pose_roll, self._last_pose_pitch, yaw
+        )
         msg = PoseWithCovarianceStamped()
         if self._current_query_scan_stamp_sec is not None:
             stamp_sec = int(self._current_query_scan_stamp_sec)
-            stamp_nanosec = int(round(
-                (self._current_query_scan_stamp_sec - stamp_sec) * 1.0e9))
+            stamp_nanosec = round(
+                (self._current_query_scan_stamp_sec - stamp_sec) * 1.0e9
+            )
             if stamp_nanosec >= 1_000_000_000:
                 stamp_sec += 1
                 stamp_nanosec -= 1_000_000_000
@@ -878,23 +991,32 @@ class ReinitializationSupervisorNode(Node):
         msg.pose.pose.orientation.z = qz
         msg.pose.pose.orientation.w = qw
         cov = [0.0] * 36
-        cov[0] = self.position_std ** 2          # x
-        cov[7] = self.position_std ** 2          # y
-        cov[35] = self.yaw_std ** 2              # yaw
+        cov[0] = self.position_std**2  # x
+        cov[7] = self.position_std**2  # y
+        cov[35] = self.yaw_std**2  # yaw
         msg.pose.covariance = cov
         self.initialpose_pub.publish(msg)
         comp_note = ""
         if (seed_x, seed_y) != (raw_x, raw_y):
-            comp_note = " (motion-compensated from %.2f, %.2f; %s)" % (
-                raw_x, raw_y, self._last_seed_motion_status)
+            comp_note = f" (motion-compensated from {raw_x:.2f}, {raw_y:.2f}; {self._last_seed_motion_status})"
         elif self.enable_seed_motion:
-            comp_note = " (motion-compensation skipped: %s)" % (
-                self._last_seed_motion_status,)
+            comp_note = (
+                f" (motion-compensation skipped: {self._last_seed_motion_status})"
+            )
         self.get_logger().warn(
             "published /initialpose reset to (%.2f, %.2f, z=%.2f, %.1f deg) score=%s "
             "[candidate %d/%d]%s"
-            % (seed_x, seed_y, z, top["yaw_deg"], top["score"],
-               candidate_index + 1, len(self._candidates), comp_note))
+            % (
+                seed_x,
+                seed_y,
+                z,
+                top["yaw_deg"],
+                top["score"],
+                candidate_index + 1,
+                len(self._candidates),
+                comp_note,
+            )
+        )
 
     def _publish_odom_bridge_reset(self) -> None:
         """Publish /initialpose from the odom bridge's latest pose.
@@ -910,8 +1032,8 @@ class ReinitializationSupervisorNode(Node):
         bridge_pose = self._odom_bridge_status()
         if bridge_pose is None:
             self.get_logger().error(
-                "publish_odom_bridge_reset requested with no bridge pose; "
-                "skipping")
+                "publish_odom_bridge_reset requested with no bridge pose; skipping"
+            )
             return
         p = bridge_pose.pose.pose
         msg = PoseWithCovarianceStamped()
@@ -922,16 +1044,22 @@ class ReinitializationSupervisorNode(Node):
         msg.pose.pose.position.z = p.position.z
         msg.pose.pose.orientation = p.orientation
         cov = [0.0] * 36
-        cov[0] = self.odom_bridge_position_std ** 2   # x
-        cov[7] = self.odom_bridge_position_std ** 2   # y
-        cov[35] = self.odom_bridge_yaw_std ** 2       # yaw
+        cov[0] = self.odom_bridge_position_std**2  # x
+        cov[7] = self.odom_bridge_position_std**2  # y
+        cov[35] = self.odom_bridge_yaw_std**2  # yaw
         msg.pose.covariance = cov
         self.initialpose_pub.publish(msg)
         self.get_logger().warn(
             "published /initialpose reset from odom bridge to (%.2f, %.2f, z=%.2f) "
             "[map -> odom(last accepted) x odom -> base_link(now), stamp=%d.%09d]"
-            % (p.position.x, p.position.y, p.position.z,
-               bridge_pose.header.stamp.sec, bridge_pose.header.stamp.nanosec))
+            % (
+                p.position.x,
+                p.position.y,
+                p.position.z,
+                bridge_pose.header.stamp.sec,
+                bridge_pose.header.stamp.nanosec,
+            )
+        )
 
     def _compensate_seed(self, raw_x: float, raw_y: float, candidate_index: int = 0):
         """Forward-extrapolate (raw_x, raw_y) by the query->publish latency.
@@ -952,18 +1080,19 @@ class ReinitializationSupervisorNode(Node):
             if sim_delta is not None:
                 dx, dy, speed, staleness = sim_delta
                 self._last_seed_motion_status = (
-                    "sim fix-to-fix %.2fm/s, staleness %.2fs" % (speed, staleness))
+                    f"sim fix-to-fix {speed:.2f}m/s, staleness {staleness:.2f}s"
+                )
                 return raw_x + dx, raw_y + dy
         # Staleness is real regardless of how well the candidate registered at its
         # scan stamp; the skip gate below applies only to wall-clock paths whose
         # velocity is less trustworthy.
         if candidate_index < len(self._candidates):
             reg_fit = self._candidates[candidate_index].get("registration_fitness")
-            if (reg_fit is not None
-                    and float(reg_fit) <= self.seed_motion_skip_registration_fitness):
-                self._last_seed_motion_status = (
-                    "skipped: registration_fitness %.3f <= %.3f"
-                    % (float(reg_fit), self.seed_motion_skip_registration_fitness))
+            if (
+                reg_fit is not None
+                and float(reg_fit) <= self.seed_motion_skip_registration_fitness
+            ):
+                self._last_seed_motion_status = f"skipped: registration_fitness {float(reg_fit):.3f} <= {self.seed_motion_skip_registration_fitness:.3f}"
                 return raw_x, raw_y
         if not self.enable_seed_motion:
             return raw_x, raw_y
@@ -971,7 +1100,8 @@ class ReinitializationSupervisorNode(Node):
         # when it produced a delta.
         if not self.seed_motion_wall_fallback:
             self._last_seed_motion_status = (
-                "sim velocity unavailable; wall fallback disabled")
+                "sim velocity unavailable; wall fallback disabled"
+            )
             return raw_x, raw_y
         if issue is None:
             self._last_seed_motion_status = "no query issue time"
@@ -987,15 +1117,19 @@ class ReinitializationSupervisorNode(Node):
             if self._prev_fix is not None:
                 prev_x, prev_y, prev_fix_time = self._prev_fix
                 velocity = rsp.estimate_seed_velocity(
-                    (prev_x, prev_y), prev_fix_time, (raw_x, raw_y), fix_time,
-                    max_speed_mps=self.max_seed_speed)
+                    (prev_x, prev_y),
+                    prev_fix_time,
+                    (raw_x, raw_y),
+                    fix_time,
+                    max_speed_mps=self.max_seed_speed,
+                )
                 if not velocity.valid:
                     dt = fix_time - prev_fix_time
                     if dt > 0.0:
                         speed = math.hypot(raw_x - prev_x, raw_y - prev_y) / dt
                         self._last_seed_motion_status = (
-                            "invalid velocity estimate %.2fm/s over %.2fs"
-                            % (speed, dt))
+                            f"invalid velocity estimate {speed:.2f}m/s over {dt:.2f}s"
+                        )
                     else:
                         self._last_seed_motion_status = "invalid velocity estimate"
             else:
@@ -1004,7 +1138,8 @@ class ReinitializationSupervisorNode(Node):
                     dx, dy, speed, dt = pose_delta
                     self._current_query_pose_delta = (dx, dy)
                     self._last_seed_motion_status = (
-                        "pose delta %.2fm/s over %.2fs" % (speed, dt))
+                        f"pose delta {speed:.2f}m/s over {dt:.2f}s"
+                    )
                 else:
                     if self._last_seed_motion_status == "disabled":
                         self._last_seed_motion_status = "no previous query fix"
@@ -1026,35 +1161,44 @@ class ReinitializationSupervisorNode(Node):
             return raw_x + dx, raw_y + dy
         if velocity.valid:
             latency, latency_source = self._seed_latency_sec(issue)
-            self._last_seed_motion_status = "applied %s %.2fs" % (
-                latency_source, latency)
+            self._last_seed_motion_status = f"applied {latency_source} {latency:.2f}s"
             return rsp.forward_compensate_xy(
-                (raw_x, raw_y), velocity, latency, max_latency_sec=self.max_seed_latency)
+                (raw_x, raw_y), velocity, latency, max_latency_sec=self.max_seed_latency
+            )
         return raw_x, raw_y
 
     def _seed_latency_sec(self, issue):
-        if (self._current_query_candidate_age_sec is not None
-                and self._current_query_response_sec is not None):
+        if (
+            self._current_query_candidate_age_sec is not None
+            and self._current_query_response_sec is not None
+        ):
             response_age = max(
-                0.0, self._wall_now_sec() - self._current_query_response_sec)
+                0.0, self._wall_now_sec() - self._current_query_response_sec
+            )
             return self._current_query_candidate_age_sec + response_age, "candidate age"
         return self._wall_now_sec() - issue, "latency"
 
     def _current_query_fix_time(self, fallback_issue):
-        if (self._current_query_candidate_age_sec is not None
-                and self._current_query_response_sec is not None):
-            return self._current_query_response_sec - self._current_query_candidate_age_sec
+        if (
+            self._current_query_candidate_age_sec is not None
+            and self._current_query_response_sec is not None
+        ):
+            return (
+                self._current_query_response_sec - self._current_query_candidate_age_sec
+            )
         return fallback_issue
 
     def _estimate_pose_delta_since_query_issue(self):
-        if (not self._query_issue_pose_trusted
-                or not self._pose_velocity_trusted()):
+        if not self._query_issue_pose_trusted or not self._pose_velocity_trusted():
             self._last_seed_motion_status = "pose history untrusted during episode"
             return self._estimate_pose_delta_from_query_velocity()
         if self._query_issue_pose is None:
             return self._estimate_pose_delta_from_query_velocity()
-        if (self._last_pose_x is None or self._last_pose_y is None
-                or self._last_pose_observed_sec is None):
+        if (
+            self._last_pose_x is None
+            or self._last_pose_y is None
+            or self._last_pose_observed_sec is None
+        ):
             return self._estimate_pose_delta_from_query_velocity()
         issue_x, issue_y, issue_pose_sec = self._query_issue_pose
         dt = self._last_pose_observed_sec - issue_pose_sec
@@ -1065,14 +1209,17 @@ class ReinitializationSupervisorNode(Node):
         speed = math.hypot(dx, dy) / dt
         if speed > self.max_seed_speed:
             self._last_seed_motion_status = (
-                "invalid pose-delta velocity %.2fm/s over %.2fs" % (speed, dt))
+                f"invalid pose-delta velocity {speed:.2f}m/s over {dt:.2f}s"
+            )
             return None
         return dx, dy, speed, dt
 
     def _estimate_pose_delta_sim_fix(self):
-        if (not self._sim_fix_velocity.valid
-                or self._last_sim_stamp_sec is None
-                or self._prev_sim_fix is None):
+        if (
+            not self._sim_fix_velocity.valid
+            or self._last_sim_stamp_sec is None
+            or self._prev_sim_fix is None
+        ):
             return None
         # A valid velocity is always set together with _prev_sim_fix, whose
         # stamp is the fix the velocity ends at.
@@ -1080,14 +1227,16 @@ class ReinitializationSupervisorNode(Node):
             self._sim_fix_velocity,
             self._prev_sim_fix[2],
             self._last_sim_stamp_sec,
-            self.max_seed_latency)
+            self.max_seed_latency,
+        )
 
     def _estimate_pose_delta_from_query_velocity(self):
         if self._query_issue_time is None:
             return None
         if not self._query_issue_velocity.valid:
             reason = self._seed_velocity_tracker.velocity_rejection_reason(
-                self._query_issue_time, self.seed_velocity_max_age)
+                self._query_issue_time, self.seed_velocity_max_age
+            )
             if reason is not None:
                 self._last_seed_motion_status = reason
             return None
@@ -1101,7 +1250,8 @@ class ReinitializationSupervisorNode(Node):
             self._query_issue_velocity.vx * latency,
             self._query_issue_velocity.vy * latency,
             speed,
-            latency)
+            latency,
+        )
 
 
 def main() -> None:

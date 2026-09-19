@@ -443,9 +443,11 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   recovery_supervisor_state_entered_stamp_sec_ = 0.0;
   recovery_supervisor_transition_count_ = 0;
   recent_source_clouds_.clear();
+  // NOLINTBEGIN(clang-analyzer-cplusplus.NewDeleteLeaks): the target and full-map
+  // clouds are intentionally leaked when leak_target_clouds_for_shutdown is set.
+  // NDT_OMP can still hold shutdown-path ownership relationships to them, so
+  // freeing them during process teardown crashes.
   if (leak_target_clouds_for_shutdown) {
-    // NDT_OMP can still hold shutdown-path ownership relationships to the last
-    // target clouds. Leak them during process teardown instead of crashing.
     auto * leaked_target_clouds =
       new std::deque<pcl::PointCloud<pcl::PointXYZI>::Ptr>();
     leaked_target_clouds->swap(recent_target_clouds_);
@@ -461,6 +463,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
     full_map_cloud_ptr_.reset();
   }
   map_bounds_valid_ = false;
+  // NOLINTEND(clang-analyzer-cplusplus.NewDeleteLeaks)
   consecutive_crop_failures_ = 0;
   crop_failure_guard_active_ = false;
   last_crop_out_of_bounds_log_time_ = std::chrono::steady_clock::time_point{};

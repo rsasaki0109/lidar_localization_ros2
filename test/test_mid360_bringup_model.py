@@ -4,24 +4,25 @@ import sys
 import unittest
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from lidar_localization_mid360.bringup_model import BringupCheckConfig
-from lidar_localization_mid360.bringup_model import BringupSnapshot
-from lidar_localization_mid360.bringup_model import FAIL
-from lidar_localization_mid360.bringup_model import OK
-from lidar_localization_mid360.bringup_model import WARN
-from lidar_localization_mid360.bringup_model import TopicStats
-from lidar_localization_mid360.bringup_model import build_tf_checks
-from lidar_localization_mid360.bringup_model import docs_hint_for_alignment
-from lidar_localization_mid360.bringup_model import evaluate_snapshot
-from lidar_localization_mid360.bringup_model import exit_code
-from lidar_localization_mid360.bringup_model import report_lines
-from lidar_localization_mid360.bringup_model import topic_summary
-from lidar_localization_mid360 import bringup_cli
 import check_lidar_localization_bringup as generic_bringup_cli
+from lidar_localization_mid360 import bringup_cli
+from lidar_localization_mid360.bringup_model import (
+    FAIL,
+    OK,
+    WARN,
+    BringupCheckConfig,
+    BringupSnapshot,
+    TopicStats,
+    build_tf_checks,
+    docs_hint_for_alignment,
+    evaluate_snapshot,
+    exit_code,
+    report_lines,
+    topic_summary,
+)
 
 
 def marked_topic(frame_id="base_link", count=1):
@@ -46,7 +47,9 @@ def marked_status(message="ok", level=0, values=None):
     return status
 
 
-def snapshot(config, cloud, imu=None, pose=None, status=None, tf_available=None, topic_types=None):
+def snapshot(
+    config, cloud, imu=None, pose=None, status=None, tf_available=None, topic_types=None
+):
     return BringupSnapshot(
         cloud=cloud,
         imu=imu if imu is not None else TopicStats(),
@@ -196,8 +199,10 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud))
 
         mismatch_results = [
-            result for result in results
-            if result.message == "pointcloud frame is rslidar, but lidar_frame is velodyne"
+            result
+            for result in results
+            if result.message
+            == "pointcloud frame is rslidar, but lidar_frame is velodyne"
         ]
 
         self.assertEqual(mismatch_results[0].level, WARN)
@@ -210,7 +215,8 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud))
 
         missing_time_results = [
-            result for result in results
+            result
+            for result in results
             if result.message == "/livox/points has no per-point time field"
         ]
         self.assertEqual(missing_time_results[0].level, FAIL)
@@ -224,8 +230,10 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud))
 
         self.assertFalse(
-            any(result.message == "/livox/points has no per-point time field"
-                for result in results)
+            any(
+                result.message == "/livox/points has no per-point time field"
+                for result in results
+            )
         )
 
     def test_map_to_odom_tf_can_be_warning_or_failure(self):
@@ -261,10 +269,14 @@ class TestMid360BringupModel(unittest.TestCase):
             "map <- odom": False,
         }
 
-        results = evaluate_snapshot(config, snapshot(config, cloud, tf_available=availability))
+        results = evaluate_snapshot(
+            config, snapshot(config, cloud, tf_available=availability)
+        )
 
         odom_base_results = [
-            result for result in results if result.message == "TF missing: odom <- base_link"
+            result
+            for result in results
+            if result.message == "TF missing: odom <- base_link"
         ]
         self.assertEqual(odom_base_results[0].level, WARN)
         self.assertIn("standalone", odom_base_results[0].hint)
@@ -285,8 +297,10 @@ class TestMid360BringupModel(unittest.TestCase):
             snapshot(loose_config, cloud, tf_available=availability),
         )
         self.assertFalse(
-            any(result.message == "TF missing: base_link <- livox_imu_frame"
-                for result in loose_results)
+            any(
+                result.message == "TF missing: base_link <- livox_imu_frame"
+                for result in loose_results
+            )
         )
 
         strict_config = BringupCheckConfig(require_imu_base_tf=True)
@@ -295,7 +309,8 @@ class TestMid360BringupModel(unittest.TestCase):
             snapshot(strict_config, cloud, tf_available=availability),
         )
         imu_tf_results = [
-            result for result in strict_results
+            result
+            for result in strict_results
             if result.message == "TF missing: base_link <- livox_imu_frame"
         ]
         self.assertEqual(imu_tf_results[0].level, FAIL)
@@ -303,12 +318,14 @@ class TestMid360BringupModel(unittest.TestCase):
 
     def test_legacy_mid360_cli_accepts_imu_base_tf_arguments(self):
         parser = bringup_cli.build_arg_parser()
-        args = parser.parse_args([
-            "--imu-frame",
-            "imu_link",
-            "--require-cloud-time-field",
-            "--require-imu-base-tf",
-        ])
+        args = parser.parse_args(
+            [
+                "--imu-frame",
+                "imu_link",
+                "--require-cloud-time-field",
+                "--require-imu-base-tf",
+            ]
+        )
 
         config = bringup_cli.config_from_args(args)
 
@@ -318,11 +335,13 @@ class TestMid360BringupModel(unittest.TestCase):
 
     def test_generic_cli_accepts_cloud_time_field_requirement(self):
         parser = generic_bringup_cli.build_arg_parser()
-        args = parser.parse_args([
-            "--profile",
-            "mid360",
-            "--require-cloud-time-field",
-        ])
+        args = parser.parse_args(
+            [
+                "--profile",
+                "mid360",
+                "--require-cloud-time-field",
+            ]
+        )
 
         config = generic_bringup_cli.config_from_args(args)
 
@@ -367,7 +386,8 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
 
         active_results = [
-            result for result in results
+            result
+            for result in results
             if result.message.startswith("IMU preintegration active")
         ]
         self.assertEqual(active_results[0].level, OK)
@@ -390,7 +410,8 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
 
         imu_results = [
-            result for result in results
+            result
+            for result in results
             if result.message.startswith("IMU preintegration cannot transform samples")
         ]
         self.assertEqual(imu_results[0].level, FAIL)
@@ -414,7 +435,8 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
 
         imu_results = [
-            result for result in results
+            result
+            for result in results
             if result.message.startswith("IMU preintegration skipped samples")
         ]
         self.assertEqual(imu_results[0].level, FAIL)
@@ -431,7 +453,8 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
 
         disabled_results = [
-            result for result in results
+            result
+            for result in results
             if result.message == "IMU preintegration is disabled"
         ]
         self.assertEqual(disabled_results[0].level, FAIL)
@@ -452,7 +475,8 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
 
         scan_time_results = [
-            result for result in results
+            result
+            for result in results
             if result.message.startswith("per-point scan time ready")
         ]
         self.assertEqual(scan_time_results[0].level, OK)
@@ -467,7 +491,8 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
 
         scan_time_results = [
-            result for result in results
+            result
+            for result in results
             if result.message == "per-point scan time field is missing"
         ]
         self.assertEqual(scan_time_results[0].level, FAIL)
@@ -489,7 +514,8 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
 
         scan_time_results = [
-            result for result in results
+            result
+            for result in results
             if result.message.startswith("per-point scan time field is invalid")
         ]
         self.assertEqual(scan_time_results[0].level, WARN)
@@ -512,7 +538,8 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
 
         scan_time_results = [
-            result for result in results
+            result
+            for result in results
             if result.message.startswith("per-point scan time range is too large")
         ]
         self.assertEqual(scan_time_results[0].level, FAIL)
@@ -527,7 +554,8 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
 
         deskew_results = [
-            result for result in results
+            result
+            for result in results
             if result.message == "continuous-time deskew inputs are ready"
         ]
         self.assertEqual(deskew_results[0].level, OK)
@@ -546,8 +574,10 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
 
         deskew_results = [
-            result for result in results
-            if result.message == (
+            result
+            for result in results
+            if result.message
+            == (
                 "continuous-time deskew inputs are not ready: "
                 "deskew_imu_transform_unavailable"
             )
@@ -565,8 +595,10 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
 
         deskew_results = [
-            result for result in results
-            if result.message == (
+            result
+            for result in results
+            if result.message
+            == (
                 "continuous-time deskew inputs are not ready: "
                 "deskew_scan_time_field_missing"
             )
@@ -590,13 +622,19 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
 
         deskew_results = [
-            result for result in results
+            result
+            for result in results
             if result.message.startswith("continuous-time deskew applied")
         ]
         self.assertEqual(deskew_results[0].level, OK)
-        self.assertIn("points=120 skipped_invalid_time=1 clamped_time=2", deskew_results[0].message)
+        self.assertIn(
+            "points=120 skipped_invalid_time=1 clamped_time=2",
+            deskew_results[0].message,
+        )
 
-    def test_alignment_status_reports_continuous_time_deskew_skip_as_strict_failure(self):
+    def test_alignment_status_reports_continuous_time_deskew_skip_as_strict_failure(
+        self,
+    ):
         config = BringupCheckConfig(
             require_cloud_time_field=True,
             require_imu=True,
@@ -613,8 +651,10 @@ class TestMid360BringupModel(unittest.TestCase):
         results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
 
         deskew_results = [
-            result for result in results
-            if result.message == (
+            result
+            for result in results
+            if result.message
+            == (
                 "continuous-time deskew was not applied: "
                 "continuous_time_deskew_waiting_for_new_imu"
             )
@@ -665,18 +705,21 @@ class TestMid360BringupModel(unittest.TestCase):
             topic_summary("/alignment_status", stats),
         )
 
-
     def test_docs_hint_points_bad_match_to_map_alignment(self):
         hint = docs_hint_for_alignment(
-            "fitness_score_over_threshold_rejected",
-            {"failure_category": "bad_match"})
+            "fitness_score_over_threshold_rejected", {"failure_category": "bad_match"}
+        )
         self.assertIn("troubleshooting.md", hint)
         self.assertIn("map_alignment.md", hint)
 
     def test_docs_hint_points_stale_to_site_setup(self):
         hint = docs_hint_for_alignment(
-            "rejected", {"failure_category": "stale_prediction",
-                         "reinitialization_requested": "true"})
+            "rejected",
+            {
+                "failure_category": "stale_prediction",
+                "reinitialization_requested": "true",
+            },
+        )
         self.assertIn("site_setup.md", hint)
 
     def test_docs_hint_defaults_to_troubleshooting(self):
@@ -685,9 +728,11 @@ class TestMid360BringupModel(unittest.TestCase):
     def test_alignment_error_hint_contains_docs_pointer(self):
         config = BringupCheckConfig()
         cloud = marked_cloud("livox_frame")
-        status = marked_status("fitness_score_over_threshold_rejected",
-                               level=2,
-                               values={"failure_category": "bad_match"})
+        status = marked_status(
+            "fitness_score_over_threshold_rejected",
+            level=2,
+            values={"failure_category": "bad_match"},
+        )
         results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
         fails = [r for r in results if r.level == FAIL]
         self.assertTrue(any("docs:" in r.hint for r in fails))

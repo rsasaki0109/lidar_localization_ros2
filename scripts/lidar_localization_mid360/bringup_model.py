@@ -1,10 +1,5 @@
-from dataclasses import dataclass
-from dataclasses import field
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Sequence
-
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 
 OK = "OK"
 WARN = "WARN"
@@ -17,16 +12,16 @@ CLOUD_TIME_FIELDS = ("time", "t", "timestamp", "offset_time")
 @dataclass
 class TopicStats:
     count: int = 0
-    first_wall_time: Optional[float] = None
-    last_wall_time: Optional[float] = None
+    first_wall_time: float | None = None
+    last_wall_time: float | None = None
     last_frame_id: str = ""
-    last_stamp_sec: Optional[float] = None
-    last_point_count: Optional[int] = None
-    has_xyz_fields: Optional[bool] = None
+    last_stamp_sec: float | None = None
+    last_point_count: int | None = None
+    has_xyz_fields: bool | None = None
     field_names: Sequence[str] = ()
-    last_status_level: Optional[int] = None
+    last_status_level: int | None = None
     last_status_message: str = ""
-    status_values: Dict[str, str] = field(default_factory=dict)
+    status_values: dict[str, str] = field(default_factory=dict)
 
     def mark(self, frame_id: str, stamp_sec: float, wall_time: float) -> None:
         if self.first_wall_time is None:
@@ -36,8 +31,12 @@ class TopicStats:
         self.last_stamp_sec = stamp_sec
         self.count += 1
 
-    def hz(self) -> Optional[float]:
-        if self.count < 2 or self.first_wall_time is None or self.last_wall_time is None:
+    def hz(self) -> float | None:
+        if (
+            self.count < 2
+            or self.first_wall_time is None
+            or self.last_wall_time is None
+        ):
             return None
         elapsed = self.last_wall_time - self.first_wall_time
         if elapsed <= 0.0:
@@ -84,10 +83,12 @@ class BringupSnapshot:
     pose: TopicStats
     status: TopicStats
     tf_checks: Sequence[TfCheck]
-    topic_types: Dict[str, Sequence[str]] = field(default_factory=dict)
+    topic_types: dict[str, Sequence[str]] = field(default_factory=dict)
 
 
-def build_tf_checks(config: BringupCheckConfig, availability: Dict[str, bool]) -> List[TfCheck]:
+def build_tf_checks(
+    config: BringupCheckConfig, availability: dict[str, bool]
+) -> list[TfCheck]:
     checks = [
         TfCheck(
             f"{config.base_frame} <- {config.lidar_frame}",
@@ -115,8 +116,8 @@ def build_tf_checks(config: BringupCheckConfig, availability: Dict[str, bool]) -
 def evaluate_snapshot(
     config: BringupCheckConfig,
     snapshot: BringupSnapshot,
-) -> List[CheckResult]:
-    results: List[CheckResult] = []
+) -> list[CheckResult]:
+    results: list[CheckResult] = []
     _evaluate_cloud(config, snapshot.cloud, snapshot.topic_types, results)
     _evaluate_imu(config, snapshot.imu, snapshot.topic_types, results)
     _evaluate_tf(config, snapshot.tf_checks, results)
@@ -129,7 +130,7 @@ def exit_code(results: Sequence[CheckResult]) -> int:
     return 1 if any(result.level == FAIL for result in results) else 0
 
 
-def docs_hint_for_alignment(message: str, status_values: Dict[str, str]) -> str:
+def docs_hint_for_alignment(message: str, status_values: dict[str, str]) -> str:
     """Return a one-line docs pointer for an alignment failure.
 
     Pure function (no ROS) so the bringup doctor and unit tests share it.
@@ -142,13 +143,18 @@ def docs_hint_for_alignment(message: str, status_values: Dict[str, str]) -> str:
         return "docs: frame_contract.md + troubleshooting.md (bringup checklist)"
     if "weak_overlap" in text or "local_map_crop_too_small" in text:
         return "docs: troubleshooting.md (weak_overlap) + map_alignment.md"
-    if "stale_prediction" in text or str(
-            status_values.get("reinitialization_requested", "")).lower() == "true":
+    if (
+        "stale_prediction" in text
+        or str(status_values.get("reinitialization_requested", "")).lower() == "true"
+    ):
         return "docs: site_setup.md + global_localization.md (G2/G3 recovery)"
     if "overload" in text:
         return "docs: troubleshooting.md (overload: voxel/threads/load)"
-    if "bad_match" in text or "fitness_score_over_threshold" in text or \
-            "registration_not_converged" in text:
+    if (
+        "bad_match" in text
+        or "fitness_score_over_threshold" in text
+        or "registration_not_converged" in text
+    ):
         return "docs: troubleshooting.md (bad_match) + map_alignment.md"
     return "docs: troubleshooting.md"
 
@@ -180,7 +186,9 @@ def topic_summary(name: str, stats: TopicStats) -> str:
     deskew_status = stats.status_values.get("deskew_readiness_status", "")
     if deskew_status:
         detail += f" deskew_readiness_status={deskew_status}"
-    continuous_time_status = stats.status_values.get("continuous_time_deskew_status", "")
+    continuous_time_status = stats.status_values.get(
+        "continuous_time_deskew_status", ""
+    )
     if continuous_time_status:
         detail += f" continuous_time_deskew_status={continuous_time_status}"
     return detail
@@ -190,7 +198,7 @@ def report_lines(
     config: BringupCheckConfig,
     snapshot: BringupSnapshot,
     results: Sequence[CheckResult],
-) -> List[str]:
+) -> list[str]:
     lines = [
         topic_summary(config.cloud_topic, snapshot.cloud),
         topic_summary(config.imu_topic, snapshot.imu),
@@ -208,8 +216,8 @@ def report_lines(
 def _evaluate_cloud(
     config: BringupCheckConfig,
     cloud: TopicStats,
-    topic_types: Dict[str, Sequence[str]],
-    results: List[CheckResult],
+    topic_types: dict[str, Sequence[str]],
+    results: list[CheckResult],
 ) -> None:
     if cloud.count == 0:
         results.append(
@@ -266,24 +274,27 @@ def _cloud_has_time_field(cloud: TopicStats) -> bool:
 def _evaluate_imu(
     config: BringupCheckConfig,
     imu: TopicStats,
-    topic_types: Dict[str, Sequence[str]],
-    results: List[CheckResult],
+    topic_types: dict[str, Sequence[str]],
+    results: list[CheckResult],
 ) -> None:
     if imu.count == 0:
         level = FAIL if config.require_imu else WARN
         hint = _missing_imu_hint(config, topic_types)
-        results.append(CheckResult(level, f"no IMU received on {config.imu_topic}", hint))
+        results.append(
+            CheckResult(level, f"no IMU received on {config.imu_topic}", hint)
+        )
     else:
         results.append(CheckResult(OK, f"IMU received on {config.imu_topic}"))
 
 
 def _topics_with_type(
-    topic_types: Dict[str, Sequence[str]],
+    topic_types: dict[str, Sequence[str]],
     message_type: str,
     expected_topic: str,
-) -> List[str]:
+) -> list[str]:
     return sorted(
-        topic for topic, types in topic_types.items()
+        topic
+        for topic, types in topic_types.items()
         if topic != expected_topic and message_type in types
     )
 
@@ -300,7 +311,7 @@ def _format_topics(topics: Sequence[str]) -> str:
 
 def _missing_cloud_hint(
     config: BringupCheckConfig,
-    topic_types: Dict[str, Sequence[str]],
+    topic_types: dict[str, Sequence[str]],
 ) -> str:
     expected_types = topic_types.get(config.cloud_topic, [])
     if POINTCLOUD2_TYPE in expected_types:
@@ -330,18 +341,26 @@ def _missing_cloud_hint(
 
 def _missing_imu_hint(
     config: BringupCheckConfig,
-    topic_types: Dict[str, Sequence[str]],
+    topic_types: dict[str, Sequence[str]],
 ) -> str:
     expected_types = topic_types.get(config.imu_topic, [])
     if IMU_TYPE in expected_types:
-        prefix = "IMU is optional for this profile." if not config.require_imu else "IMU is required."
+        prefix = (
+            "IMU is optional for this profile."
+            if not config.require_imu
+            else "IMU is required."
+        )
         return (
             f"{prefix} {config.imu_topic} is advertised as Imu, but no messages arrived "
             "during this check. Make sure the driver or bag is actively publishing, try "
             f"--duration-sec 10, or inspect `ros2 topic hz {config.imu_topic}`."
         )
     if expected_types:
-        prefix = "IMU is optional for this profile." if not config.require_imu else "IMU is required."
+        prefix = (
+            "IMU is optional for this profile."
+            if not config.require_imu
+            else "IMU is required."
+        )
         return (
             f"{prefix} {config.imu_topic} exists, but its type is "
             f"{_topic_types_text(expected_types)}. Use a sensor_msgs/msg/Imu topic for imu_topic."
@@ -349,20 +368,26 @@ def _missing_imu_hint(
     alternatives = _topics_with_type(topic_types, IMU_TYPE, config.imu_topic)
     if alternatives:
         first = alternatives[0]
-        prefix = "IMU is optional for this profile." if not config.require_imu else "IMU is required."
+        prefix = (
+            "IMU is optional for this profile."
+            if not config.require_imu
+            else "IMU is required."
+        )
         return (
             f"{prefix} Observed IMU topic(s): {_format_topics(alternatives)}. "
             f"Pass imu_topic:={first} to launch and --imu-topic {first} here."
         )
     if config.require_imu:
         return f"Set imu_topic:={config.imu_topic} and verify the driver publishes sensor_msgs/Imu."
-    return "This is fine when use_imu is false; pass --require-imu for strict IMU bringup."
+    return (
+        "This is fine when use_imu is false; pass --require-imu for strict IMU bringup."
+    )
 
 
 def _evaluate_tf(
     config: BringupCheckConfig,
     tf_checks: Sequence[TfCheck],
-    results: List[CheckResult],
+    results: list[CheckResult],
 ) -> None:
     odom_base_name = f"{config.odom_frame} <- {config.base_frame}"
     map_odom_name = f"{config.global_frame} <- {config.odom_frame}"
@@ -371,12 +396,14 @@ def _evaluate_tf(
             results.append(CheckResult(OK, f"TF available: {tf_check.name}"))
             continue
         level = FAIL
-        if tf_check.name == odom_base_name and not config.require_odom_base_tf:
-            level = WARN
-        elif tf_check.name == map_odom_name and not config.require_map_odom_tf:
+        if (tf_check.name == odom_base_name and not config.require_odom_base_tf) or (
+            tf_check.name == map_odom_name and not config.require_map_odom_tf
+        ):
             level = WARN
         results.append(
-            CheckResult(level, f"TF missing: {tf_check.name}", _tf_hint(config, tf_check.name))
+            CheckResult(
+                level, f"TF missing: {tf_check.name}", _tf_hint(config, tf_check.name)
+            )
         )
 
 
@@ -424,7 +451,7 @@ def _tf_hint(config: BringupCheckConfig, tf_name: str) -> str:
 def _evaluate_pose(
     config: BringupCheckConfig,
     pose: TopicStats,
-    results: List[CheckResult],
+    results: list[CheckResult],
 ) -> None:
     if pose.count == 0:
         level = FAIL if config.require_localization_output else WARN
@@ -440,13 +467,15 @@ def _evaluate_pose(
             )
         )
     else:
-        results.append(CheckResult(OK, f"localization pose received on {config.pose_topic}"))
+        results.append(
+            CheckResult(OK, f"localization pose received on {config.pose_topic}")
+        )
 
 
 def _evaluate_status(
     config: BringupCheckConfig,
     status: TopicStats,
-    results: List[CheckResult],
+    results: list[CheckResult],
 ) -> None:
     if status.count == 0:
         level = FAIL if config.require_localization_output else WARN
@@ -465,12 +494,15 @@ def _evaluate_status(
                 f"alignment status error: {status.last_status_message or 'n/a'}",
                 "Use the status message to choose the next fix: map path, initial pose, TF, crop size, or score threshold. "
                 + docs_hint_for_alignment(
-                    status.last_status_message or "", status.status_values),
+                    status.last_status_message or "", status.status_values
+                ),
             )
         )
     else:
         results.append(
-            CheckResult(OK, f"alignment status observed: {status.last_status_message or 'n/a'}")
+            CheckResult(
+                OK, f"alignment status observed: {status.last_status_message or 'n/a'}"
+            )
         )
     _evaluate_imu_preintegration_status(config, status, results)
     _evaluate_scan_time_status(config, status, results)
@@ -481,7 +513,7 @@ def _evaluate_status(
 def _evaluate_imu_preintegration_status(
     config: BringupCheckConfig,
     status: TopicStats,
-    results: List[CheckResult],
+    results: list[CheckResult],
 ) -> None:
     imu_status = status.status_values.get("imu_preintegration_status", "")
     if not imu_status:
@@ -643,7 +675,7 @@ def _evaluate_imu_preintegration_status(
 def _evaluate_scan_time_status(
     config: BringupCheckConfig,
     status: TopicStats,
-    results: List[CheckResult],
+    results: list[CheckResult],
 ) -> None:
     scan_time_status = status.status_values.get("scan_time_status", "")
     if not scan_time_status:
@@ -653,9 +685,7 @@ def _evaluate_scan_time_status(
     duration = status.status_values.get("scan_time_duration_sec", "n/a")
     valid = _status_int(status, "scan_time_valid_point_count")
     invalid = _status_int(status, "scan_time_invalid_point_count")
-    counts = (
-        f"field={field} duration={duration}s valid_points={valid} invalid_points={invalid}"
-    )
+    counts = f"field={field} duration={duration}s valid_points={valid} invalid_points={invalid}"
     not_ready_level = FAIL if config.require_cloud_time_field else WARN
 
     if scan_time_status == "scan_time_range_ready":
@@ -715,7 +745,7 @@ def _evaluate_scan_time_status(
 def _evaluate_deskew_readiness_status(
     config: BringupCheckConfig,
     status: TopicStats,
-    results: List[CheckResult],
+    results: list[CheckResult],
 ) -> None:
     deskew_status = status.status_values.get("deskew_readiness_status", "")
     if not deskew_status:
@@ -779,17 +809,26 @@ def _deskew_readiness_hint(config: BringupCheckConfig, deskew_status: str) -> st
 def _evaluate_continuous_time_deskew_status(
     config: BringupCheckConfig,
     status: TopicStats,
-    results: List[CheckResult],
+    results: list[CheckResult],
 ) -> None:
-    continuous_time_status = status.status_values.get("continuous_time_deskew_status", "")
-    if not continuous_time_status or continuous_time_status == "continuous_time_deskew_disabled":
+    continuous_time_status = status.status_values.get(
+        "continuous_time_deskew_status", ""
+    )
+    if (
+        not continuous_time_status
+        or continuous_time_status == "continuous_time_deskew_disabled"
+    ):
         return
 
-    applied = status.status_values.get("continuous_time_deskew_applied", "false") == "true"
+    applied = (
+        status.status_values.get("continuous_time_deskew_applied", "false") == "true"
+    )
     point_count = _status_int(status, "continuous_time_deskew_point_count")
     skipped = _status_int(status, "continuous_time_deskew_skipped_invalid_time_count")
     clamped = _status_int(status, "continuous_time_deskew_clamped_time_count")
-    counts = f"points={point_count} skipped_invalid_time={skipped} clamped_time={clamped}"
+    counts = (
+        f"points={point_count} skipped_invalid_time={skipped} clamped_time={clamped}"
+    )
 
     if applied or continuous_time_status == "continuous_time_deskew_applied":
         results.append(CheckResult(OK, f"continuous-time deskew applied ({counts})"))

@@ -17,7 +17,6 @@ import argparse
 import csv
 import sys
 from pathlib import Path
-from typing import Dict, Tuple
 
 CATEGORY_COLORS = {
     "healthy": "32",
@@ -40,7 +39,7 @@ NEXT_ACTIONS = {
 }
 
 
-def suggest_next_action(values: Dict[str, str], message: str) -> str:
+def suggest_next_action(values: dict[str, str], message: str) -> str:
     """Return the one-line next action for a status sample."""
     category = str(values.get("failure_category", "") or "").strip()
     base = NEXT_ACTIONS.get(category, f"message={message}")
@@ -49,7 +48,7 @@ def suggest_next_action(values: Dict[str, str], message: str) -> str:
     return base
 
 
-def format_alignment_line(message: str, values: Dict[str, str]) -> Tuple[str, str]:
+def format_alignment_line(message: str, values: dict[str, str]) -> tuple[str, str]:
     """Format one status sample as (plain_line, color_code).
 
     Pure function (no rclpy) so unit tests run without a ROS env.
@@ -57,7 +56,8 @@ def format_alignment_line(message: str, values: Dict[str, str]) -> Tuple[str, st
     category = str(values.get("failure_category", "?") or "?")
     fitness = values.get("fitness_score", "?")
     threshold = values.get(
-        "effective_score_threshold", values.get("score_threshold", "?"))
+        "effective_score_threshold", values.get("score_threshold", "?")
+    )
     reject = values.get("consecutive_rejected_updates", "?")
     seed_m = values.get("seed_translation_since_accept_m", "?")
     seed_yaw = values.get("seed_yaw_since_accept_deg", "?")
@@ -79,21 +79,31 @@ def colorize(line: str, color_code: str, use_color: bool) -> str:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Watch /alignment_status with colored one-line updates.")
+        description="Watch /alignment_status with colored one-line updates."
+    )
     parser.add_argument("--topic", default="/alignment_status")
-    parser.add_argument("--csv", type=Path, default=None,
-                        help="Append raw key fields to this CSV file.")
-    parser.add_argument("--once", action="store_true",
-                        help="Print one sample and exit.")
+    parser.add_argument(
+        "--csv", type=Path, default=None, help="Append raw key fields to this CSV file."
+    )
+    parser.add_argument(
+        "--once", action="store_true", help="Print one sample and exit."
+    )
     parser.add_argument("--no-color", action="store_true")
     return parser
 
 
 def _csv_header() -> list:
-    return ["stamp_sec", "message", "failure_category", "fitness_score",
-            "effective_score_threshold", "consecutive_rejected_updates",
-            "seed_translation_since_accept_m",
-            "seed_yaw_since_accept_deg", "reinitialization_requested"]
+    return [
+        "stamp_sec",
+        "message",
+        "failure_category",
+        "fitness_score",
+        "effective_score_threshold",
+        "consecutive_rejected_updates",
+        "seed_translation_since_accept_m",
+        "seed_yaw_since_accept_deg",
+        "reinitialization_requested",
+    ]
 
 
 def main(argv=None) -> int:
@@ -110,7 +120,7 @@ def main(argv=None) -> int:
     if args.csv is not None:
         args.csv.parent.mkdir(parents=True, exist_ok=True)
         new_file = not args.csv.exists()
-        csv_file = open(args.csv, "a", newline="", encoding="utf-8")
+        csv_file = open(args.csv, "a", newline="", encoding="utf-8")  # noqa: SIM115 - closed in finally
         writer = csv.DictWriter(csv_file, fieldnames=_csv_header())
         if new_file:
             writer.writeheader()
@@ -129,23 +139,30 @@ def main(argv=None) -> int:
             print(colorize(line, color, use_color), flush=True)
             if writer is not None:
                 stamp = msg.header.stamp
-                writer.writerow({
-                    "stamp_sec": f"{stamp.sec}.{stamp.nanosec:09d}",
-                    "message": status.message,
-                    "failure_category": values.get("failure_category", ""),
-                    "fitness_score": values.get("fitness_score", ""),
-                    "effective_score_threshold": values.get(
-                        "effective_score_threshold",
-                        values.get("score_threshold", "")),
-                    "consecutive_rejected_updates": values.get(
-                        "consecutive_rejected_updates", ""),
-                    "seed_translation_since_accept_m": values.get(
-                        "seed_translation_since_accept_m", ""),
-                    "seed_yaw_since_accept_deg": values.get(
-                        "seed_yaw_since_accept_deg", ""),
-                    "reinitialization_requested": values.get(
-                        "reinitialization_requested", ""),
-                })
+                writer.writerow(
+                    {
+                        "stamp_sec": f"{stamp.sec}.{stamp.nanosec:09d}",
+                        "message": status.message,
+                        "failure_category": values.get("failure_category", ""),
+                        "fitness_score": values.get("fitness_score", ""),
+                        "effective_score_threshold": values.get(
+                            "effective_score_threshold",
+                            values.get("score_threshold", ""),
+                        ),
+                        "consecutive_rejected_updates": values.get(
+                            "consecutive_rejected_updates", ""
+                        ),
+                        "seed_translation_since_accept_m": values.get(
+                            "seed_translation_since_accept_m", ""
+                        ),
+                        "seed_yaw_since_accept_deg": values.get(
+                            "seed_yaw_since_accept_deg", ""
+                        ),
+                        "reinitialization_requested": values.get(
+                            "reinitialization_requested", ""
+                        ),
+                    }
+                )
                 csv_file.flush()
             if args.once:
                 done["flag"] = True
