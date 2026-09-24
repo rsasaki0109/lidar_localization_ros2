@@ -1,4 +1,5 @@
 #include "component_internal.hpp"
+#include "experiment_prediction_trace.hpp"
 Eigen::Matrix4f PCLLocalization::currentPoseMatrix() const
 {
   if (!corrent_pose_with_cov_stamped_ptr_) {
@@ -107,6 +108,10 @@ void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
     const double dt = lidar_localization::clampPredictionDt(
       stamp_sec, predicted_pose_time_sec_, max_twist_prediction_dt_);
     twist_predicted_pose_matrix = applyTwistPrediction(predicted_pose_matrix_, dt);
+    prediction_trace_experiment::record(
+      "advance", stamp_sec, predicted_pose_time_sec_, dt,
+      consecutive_rejected_updates_, latest_twist_msg_,
+      predicted_pose_matrix_, twist_predicted_pose_matrix);
   }
   const auto state = lidar_localization::advancePredictionWithoutMeasurement(
     make_prediction_state_snapshot(
