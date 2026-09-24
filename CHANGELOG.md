@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Twist prediction no longer extrapolates an unstamped initial pose by the maximum
+  prediction interval before the first simulated clock. Rejected-scan prediction
+  uses the same time validation as registration seeds.
 - Twist prediction no longer counts the inter-scan motion twice: after an accepted
   update the stored prediction was already extrapolated by the previous delta, and the
   twist seed then integrated the same motion again on top of it.
