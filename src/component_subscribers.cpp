@@ -736,6 +736,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     imu_prediction_ready,
     state_lock,
     seed_generation);
+  bool history_retry_adopted = false;
   if (enable_accepted_scan_history_ && ndt_omp_registration_ &&
     selected_seed.source != lidar_localization::RegistrationSeedSource::kImuPreintegration &&
     accepted_scan_history_.size() > 0 &&
@@ -743,7 +744,6 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     callback_state_coordinator_.initialPoseGenerationMatches(seed_generation))
   {
     bool attempted = false;
-    bool adopted = false;
     std::size_t combined_points = 0;
     const auto past_count = accepted_scan_history_.size();
     double preparation_sec = 0.0;
@@ -767,16 +767,16 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       },
       [&](const lidar_localization::AlignmentAttempt & attempt) {
         const auto gate = evaluateMeasurementGateForAttempt(attempt, selected_seed.source);
-        adopted = !gate.reject_measurement;
+        history_retry_adopted = !gate.reject_measurement;
         return gate;
       });
     if (attempted) {
       setRegistrationSourceCloud(tmp_ptr);
-      if (adopted) {filtered_point_count = combined_points;}
+      if (history_retry_adopted) {filtered_point_count = combined_points;}
       RCLCPP_INFO(get_logger(),
         "History retry: scan=%.9f past=%zu current=%zu combined=%zu preparation=%.6f adopted=%d",
         scan_stamp_sec, past_count, tmp_ptr->size(), combined_points, preparation_sec,
-        static_cast<int>(adopted));
+        static_cast<int>(history_retry_adopted));
     }
   }
 
@@ -819,7 +819,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
 
   if (enable_accepted_scan_history_) {
     accepted_scan_history_.accept(
-      scan_stamp_sec, tmp_ptr, currentPoseMatrix());
+      scan_stamp_sec, tmp_ptr, currentPoseMatrix(), history_retry_adopted);
   }
   printAlignmentDebugInfo(init_guess, pipeline_result.selected_attempt, filtered_point_count);
 }

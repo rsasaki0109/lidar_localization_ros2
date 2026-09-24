@@ -162,7 +162,10 @@ three accepted scans aged at most 0.3 seconds. IMU-preintegration seeds do not u
 this retry. The retry uses the same initial pose and measurement gates. An accepted
 primary result is unchanged, and a failed retry preserves the original rejection.
 Combined clouds use estimated poses and the current seed and are voxel filtered
-again. Original prepared scans are stored, so accumulation is not recursive.
+again. Only original prepared scans accepted without the history retry are stored;
+history-supported poses cannot replenish their own supporting history. A streak of
+history retries therefore loses its primary support after 0.3 seconds. Accumulation
+is not recursive.
 Initial-pose, map, lifecycle and non-increasing scan-time resets clear history.
 Preparation and retry alignment time are included in reported alignment time;
 `History retry` diagnostics record point counts and whether the retry was adopted.

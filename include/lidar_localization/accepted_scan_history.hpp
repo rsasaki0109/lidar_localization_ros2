@@ -50,9 +50,12 @@ public:
     return combined;
   }
 
-  void accept(double stamp, const Cloud::ConstPtr & cloud, const Eigen::Matrix4f & pose)
+  void accept(
+    double stamp, const Cloud::ConstPtr & cloud, const Eigen::Matrix4f & pose,
+    bool supported_by_history = false)
   {
-    if (!std::isfinite(stamp) || stamp != last_scan_stamp_ ||
+    // A history-supported pose must not replenish its own supporting history.
+    if (supported_by_history || !std::isfinite(stamp) || stamp != last_scan_stamp_ ||
       !cloud || cloud->empty() || !pose.allFinite())
     {
       return;

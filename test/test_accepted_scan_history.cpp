@@ -53,5 +53,19 @@ int main()
   history.accept(2.0, cloud, identity);
   history.beginScan(std::numeric_limits<double>::quiet_NaN());
   assert(history.size() == 0);
+  // Repeated successful history retries cannot extend the primary anchor lifetime.
+  history.beginScan(3.0);
+  history.accept(3.0, cloud, identity);
+  for (int i = 1; i <= 4; ++i) {
+    const double stamp = 3.0 + 0.1 * i;
+    history.beginScan(stamp);
+    history.accept(stamp, cloud, seed, true);
+    assert(history.size() == (i <= 3 ? 1u : 0u));
+  }
+  assert(history.combine(cloud, identity) == cloud);
+  // A later primary match can establish fresh support again.
+  history.beginScan(3.5);
+  history.accept(3.5, cloud, identity, false);
+  assert(history.size() == 1);
   return 0;
 }
