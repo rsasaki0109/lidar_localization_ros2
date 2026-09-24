@@ -1,5 +1,17 @@
 # Go2 NDT translation prior experiment
 
+**Rejected for promotion after closed-loop replay (2026-09-24).** On EIL_Box,
+weight 1 reduced the largest output gap to 0.200 s and raised coverage to 1.0,
+but ATE became 0.192632 m (baseline 0.0834–0.0852 m), maximum error 1.018933 m
+(baseline 0.406001 m), and a >0.5 m error episode took 3.500 s to recover.
+All 1046 Box scan stamps were diagnosed. The fixed-scan improvement did not
+transfer to a trajectory driven by its own previous estimates. Do not enable
+this prior in the normal preset. Mask1 finished, Mask2 missed its first two
+scans, and the remaining suite was stopped during Mix activation (exit 143).
+The synthetic fault suite was not run. Results are under
+`loc_cross/go2_prior1_anchor_20260924_r1` in the local JEPLO data directory.
+The default-off control passed Mask2 numerical parity and Box baseline range.
+
 `ndt_twist_prior_weight` defaults to zero (existing behavior). Positive values
 enable an isotropic translation penalty around the twist-predicted seed, scaled
 by the number of source points. Valid parameter range is finite `[0, 100]`.
