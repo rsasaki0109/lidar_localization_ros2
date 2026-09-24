@@ -1,5 +1,13 @@
 # Go2 twist freshness experiment
 
+**Not suitable for promotion after the first fault replay.** With the 0.25 s
+horizon and four-second Box dropout, ATE was 0.211 m, maximum error 2.767 m,
+coverage 0.833 and largest output gap 3.5 s (1044/1046 scans diagnosed).
+The seed switched to previous-delta at 30.319 s and back to twist at 34.019 s;
+large published errors followed the fallback interval. Rejecting stale input
+alone does not make the existing previous-delta fallback robust. Results:
+`loc_cross/go2_fresh025_drop_20260924_r1`. No main-runtime promotion was made.
+
 This candidate does not modify the registration objective or add parameters.
 Twist prediction now checks the timestamp and the velocity components it uses.
 The maximum sample age uses the existing `max_twist_prediction_dt`; the allowed
