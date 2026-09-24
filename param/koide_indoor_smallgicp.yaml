@@ -7,6 +7,7 @@
     # NDT initializer provides convergence basin; GICP refines with
     # point-to-plane matching better suited for planar indoor surfaces.
     registration_method: SMALL_GICP
+    enable_accepted_scan_history: false
     score_threshold: 15.0
     ndt_resolution: 0.5
     ndt_step_size: 0.1

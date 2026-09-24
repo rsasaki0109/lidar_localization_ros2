@@ -27,6 +27,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("ndt_num_threads", 4);
   declare_parameter("gicp_corr_randomness", 20);
   declare_parameter("gicp_max_correspondence_distance", 2.0);
+  declare_parameter("enable_accepted_scan_history", false);
   declare_parameter("vgicp_voxel_resolution", 1.0);
   declare_parameter("transform_epsilon", 0.01);
   declare_parameter("voxel_leaf_size", 0.2);
@@ -380,6 +381,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
 
   latest_twist_msg_.reset();
   last_scan_ptr_.reset();
+  accepted_scan_history_.clear();
   path_ptr_.reset();
   corrent_pose_with_cov_stamped_ptr_.reset();
 

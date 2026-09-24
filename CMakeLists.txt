@@ -429,6 +429,11 @@ if(BUILD_TESTING)
     COMMAND test_alignment_retry_policy
   )
 
+  add_executable(test_accepted_scan_history test/test_accepted_scan_history.cpp)
+  target_include_directories(test_accepted_scan_history PRIVATE include ${PCL_INCLUDE_DIRS})
+  target_link_libraries(test_accepted_scan_history ${PCL_LIBRARIES} Eigen3::Eigen)
+  add_test(NAME accepted_scan_history COMMAND test_accepted_scan_history)
+
   add_executable(test_alignment_pipeline_policy
     test/test_alignment_pipeline_policy.cpp)
   target_include_directories(test_alignment_pipeline_policy PRIVATE

@@ -97,6 +97,7 @@ void PCLLocalization::initializeRegistration()
   small_gicp_registration_.reset();
 #endif
   recent_source_clouds_.clear();
+  accepted_scan_history_.clear();
   recent_target_clouds_.clear();
 
   const auto registration_backend =
@@ -245,6 +246,7 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   last_accepted_pose_matrix_ = currentPoseMatrix();
   last_accepted_pose_time_sec_ = stamp_to_sec(msg->header.stamp);
   consecutive_rejected_updates_ = 0;
+  accepted_scan_history_.clear();
   resetPredictionState(currentPoseMatrix(), stamp_to_sec(msg->header.stamp));
   publishReinitializationRequest(msg->header.stamp, ReinitializationRequestDecision{});
 
@@ -349,6 +351,7 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
   }
 
   pcl::fromROSMsg(*msg, *map_cloud_ptr);
+  accepted_scan_history_.clear();
 
   const auto map_target_choice = lidar_localization::chooseMapSubscriptionTargetCloud(
     lidar_localization::usesFilteredTarget(registration_method_));
@@ -710,7 +713,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     publishBridgePoseAsRejectedOutput(msg->header.stamp);
     return;
   }
-  const std::size_t filtered_point_count = prepared_scan.filtered_point_count;
+  std::size_t filtered_point_count = prepared_scan.filtered_point_count;
   const pcl::PointCloud<pcl::PointXYZI>::Ptr tmp_ptr = prepared_scan.cloud;
   setRegistrationSourceCloud(tmp_ptr);
 
@@ -723,13 +726,32 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     lidar_localization::registrationSeedSourceName(selected_seed.source);
   Eigen::Matrix4f init_guess =
     refineSeedWithNdtInitializer(tmp_ptr, selected_seed.init_guess);
-  const auto pipeline_result = runAlignmentPipelineForScan(
+  double history_preparation_sec = 0.0;
+  if (enable_accepted_scan_history_) {
+    const auto start = std::chrono::steady_clock::now();
+    accepted_scan_history_.beginScan(scan_stamp_sec);
+    const auto combined = accepted_scan_history_.combine(tmp_ptr, init_guess);
+    if (combined != tmp_ptr) {
+      pcl::PointCloud<pcl::PointXYZI>::Ptr filtered(new pcl::PointCloud<pcl::PointXYZI>);
+      voxel_grid_filter_.setInputCloud(combined);
+      voxel_grid_filter_.filter(*filtered);
+      setRegistrationSourceCloud(filtered);
+      filtered_point_count = filtered->size();
+    }
+    history_preparation_sec = std::chrono::duration<double>(
+      std::chrono::steady_clock::now() - start).count();
+    RCLCPP_INFO(get_logger(), "Scan history: scan=%.9f past=%zu current=%zu combined=%zu time=%.6f",
+      scan_stamp_sec, accepted_scan_history_.size(), tmp_ptr->size(), filtered_point_count,
+      history_preparation_sec);
+  }
+  auto pipeline_result = runAlignmentPipelineForScan(
     init_guess,
     scan_stamp_sec,
     selected_seed.source,
     imu_prediction_ready,
     state_lock,
     seed_generation);
+  pipeline_result.selected_attempt.alignment_time_sec += history_preparation_sec;
 
   if (
     shutting_down_.load(std::memory_order_acquire) ||
@@ -768,5 +790,9 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     return;
   }
 
+  if (enable_accepted_scan_history_) {
+    accepted_scan_history_.accept(
+      scan_stamp_sec, tmp_ptr, currentPoseMatrix());
+  }
   printAlignmentDebugInfo(init_guess, pipeline_result.selected_attempt, filtered_point_count);
 }

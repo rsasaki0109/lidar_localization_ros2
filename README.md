@@ -152,3 +152,15 @@ commands, see [benchmarking](docs/benchmarking.md).
 ROS 2 Jazzy is the primary target; Humble remains supported for existing deployments.
 [ndt_omp_ros2](https://github.com/rsasaki0109/ndt_omp_ros2) is required and
 [small_gicp](https://github.com/koide3/small_gicp) is optional.
+
+### Experimental short scan history
+
+`enable_accepted_scan_history` defaults to false. It combines the current prepared
+scan with at most three accepted scans from the previous 0.3 seconds, transformed
+using their estimated poses and the current seed. The combined cloud is voxel
+filtered again. Original prepared scans are stored, so accumulation is not
+recursive. Initial-pose, map, lifecycle and non-increasing scan-time resets clear
+history. Preparation time is included in reported alignment time. This experiment
+is not a validated Go2 preset; real-time closed-loop accuracy and resource checks
+are required before enabling it. The earlier raw-scan aggregation screen used a
+different filtering order; runtime first prepares each scan independently.

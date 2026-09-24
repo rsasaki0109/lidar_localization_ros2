@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lidar_localization/accepted_scan_history.hpp"
+
 // PCLLocalization: the lifecycle-managed localization component.  The
 // implementation is split by concern into src/component_*.cpp translation
 // units; src/component_internal.hpp carries their shared include set.
@@ -242,6 +244,8 @@ public:
   small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>::Ptr small_gicp_registration_;
 #endif
   pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter_;
+  bool enable_accepted_scan_history_{false};
+  lidar_localization::AcceptedScanHistory accepted_scan_history_;
 
   // --- Shared callback state ---
 
