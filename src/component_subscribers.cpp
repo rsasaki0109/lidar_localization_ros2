@@ -726,23 +726,8 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     lidar_localization::registrationSeedSourceName(selected_seed.source);
   Eigen::Matrix4f init_guess =
     refineSeedWithNdtInitializer(tmp_ptr, selected_seed.init_guess);
-  double history_preparation_sec = 0.0;
   if (enable_accepted_scan_history_) {
-    const auto start = std::chrono::steady_clock::now();
     accepted_scan_history_.beginScan(scan_stamp_sec);
-    const auto combined = accepted_scan_history_.combine(tmp_ptr, init_guess);
-    if (combined != tmp_ptr) {
-      pcl::PointCloud<pcl::PointXYZI>::Ptr filtered(new pcl::PointCloud<pcl::PointXYZI>);
-      voxel_grid_filter_.setInputCloud(combined);
-      voxel_grid_filter_.filter(*filtered);
-      setRegistrationSourceCloud(filtered);
-      filtered_point_count = filtered->size();
-    }
-    history_preparation_sec = std::chrono::duration<double>(
-      std::chrono::steady_clock::now() - start).count();
-    RCLCPP_INFO(get_logger(), "Scan history: scan=%.9f past=%zu current=%zu combined=%zu time=%.6f",
-      scan_stamp_sec, accepted_scan_history_.size(), tmp_ptr->size(), filtered_point_count,
-      history_preparation_sec);
   }
   auto pipeline_result = runAlignmentPipelineForScan(
     init_guess,
@@ -751,7 +736,49 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     imu_prediction_ready,
     state_lock,
     seed_generation);
-  pipeline_result.selected_attempt.alignment_time_sec += history_preparation_sec;
+  if (enable_accepted_scan_history_ && ndt_omp_registration_ &&
+    selected_seed.source != lidar_localization::RegistrationSeedSource::kImuPreintegration &&
+    accepted_scan_history_.size() > 0 &&
+    !shutting_down_.load(std::memory_order_acquire) &&
+    callback_state_coordinator_.initialPoseGenerationMatches(seed_generation))
+  {
+    bool attempted = false;
+    bool adopted = false;
+    std::size_t combined_points = 0;
+    const auto past_count = accepted_scan_history_.size();
+    double preparation_sec = 0.0;
+    pipeline_result = lidar_localization::runRejectedAlignmentFallback(
+      pipeline_result,
+      [&]() {
+        attempted = true;
+        const auto start = std::chrono::steady_clock::now();
+        const auto combined = accepted_scan_history_.combine(tmp_ptr, init_guess);
+        pcl::PointCloud<pcl::PointXYZI>::Ptr filtered(new pcl::PointCloud<pcl::PointXYZI>);
+        voxel_grid_filter_.setInputCloud(combined);
+        voxel_grid_filter_.filter(*filtered);
+        combined_points = filtered->size();
+        setRegistrationSourceCloud(filtered);
+        preparation_sec = std::chrono::duration<double>(
+          std::chrono::steady_clock::now() - start).count();
+        auto attempt = runAlignmentAttempt(
+          init_guess, init_guess, scan_stamp_sec, state_lock, seed_generation);
+        attempt.alignment_time_sec += preparation_sec;
+        return attempt;
+      },
+      [&](const lidar_localization::AlignmentAttempt & attempt) {
+        const auto gate = evaluateMeasurementGateForAttempt(attempt, selected_seed.source);
+        adopted = !gate.reject_measurement;
+        return gate;
+      });
+    if (attempted) {
+      setRegistrationSourceCloud(tmp_ptr);
+      if (adopted) {filtered_point_count = combined_points;}
+      RCLCPP_INFO(get_logger(),
+        "History retry: scan=%.9f past=%zu current=%zu combined=%zu preparation=%.6f adopted=%d",
+        scan_stamp_sec, past_count, tmp_ptr->size(), combined_points, preparation_sec,
+        static_cast<int>(adopted));
+    }
+  }
 
   if (
     shutting_down_.load(std::memory_order_acquire) ||

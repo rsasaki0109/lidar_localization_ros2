@@ -155,12 +155,18 @@ ROS 2 Jazzy is the primary target; Humble remains supported for existing deploym
 
 ### Experimental short scan history
 
-`enable_accepted_scan_history` defaults to false. It combines the current prepared
-scan with at most three accepted scans from the previous 0.3 seconds, transformed
-using their estimated poses and the current seed. The combined cloud is voxel
-filtered again. Original prepared scans are stored, so accumulation is not
-recursive. Initial-pose, map, lifecycle and non-increasing scan-time resets clear
-history. Preparation time is included in reported alignment time. This experiment
-is not a validated Go2 preset; real-time closed-loop accuracy and resource checks
-are required before enabling it. The earlier raw-scan aggregation screen used a
-different filtering order; runtime first prepares each scan independently.
+`enable_accepted_scan_history` defaults to false. In this experimental branch,
+NDT_OMP first aligns the current prepared scan normally. Only a correction-guard
+rejection with an accepted-pose gap of at most one second can retry using up to
+three accepted scans aged at most 0.3 seconds. IMU-preintegration seeds do not use
+this retry. The retry uses the same initial pose and measurement gates. An accepted
+primary result is unchanged, and a failed retry preserves the original rejection.
+Combined clouds use estimated poses and the current seed and are voxel filtered
+again. Original prepared scans are stored, so accumulation is not recursive.
+Initial-pose, map, lifecycle and non-increasing scan-time resets clear history.
+Preparation and retry alignment time are included in reported alignment time;
+`History retry` diagnostics record point counts and whether the retry was adopted.
+This is not a validated Go2 preset. Fixed captured-input results support testing
+selective retry, but closed-loop accuracy, continuity and resource checks remain
+required. The earlier raw-scan screen used a different filtering order; runtime
+first prepares each scan independently.

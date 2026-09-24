@@ -1,6 +1,7 @@
 #ifndef LIDAR_LOCALIZATION_ALIGNMENT_PIPELINE_POLICY_HPP_
 #define LIDAR_LOCALIZATION_ALIGNMENT_PIPELINE_POLICY_HPP_
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -201,6 +202,42 @@ AlignmentPipelineResult runAlignmentPipeline(
     (void)try_recovery_retry(false);
   }
   return result;
+}
+
+// Retry only a recent, established NDT track rejected by the correction guard.
+// The fallback is judged against the original seed and the same measurement gate.
+template<typename FallbackFn, typename GateFn>
+AlignmentPipelineResult runRejectedAlignmentFallback(
+  AlignmentPipelineResult original, FallbackFn fallback_fn, GateFn evaluate_gate)
+{
+  if (!original.should_continue || !original.gate_result.reject_measurement ||
+    original.gate_result.status_message != "seed_correction_guard_rejected" ||
+    !std::isfinite(original.selected_attempt.accepted_gap_sec) ||
+    original.selected_attempt.accepted_gap_sec < 0.0 ||
+    original.selected_attempt.accepted_gap_sec > 1.0)
+  {
+    return original;
+  }
+  auto fallback = fallback_fn();
+  const double total_time = original.selected_attempt.alignment_time_sec +
+    fallback.alignment_time_sec;
+  original.selected_attempt.alignment_time_sec = total_time;
+  if (!fallback.target_ready || !fallback.has_converged ||
+    !fallback.final_transformation.allFinite() || !std::isfinite(fallback.fitness_score) ||
+    !std::isfinite(fallback.correction_translation_m) ||
+    !std::isfinite(fallback.correction_yaw_deg))
+  {
+    return original;
+  }
+  const auto gate = evaluate_gate(fallback);
+  if (gate.reject_measurement) {
+    return original;
+  }
+  fallback.alignment_time_sec = total_time;
+  original.selected_attempt = fallback;
+  original.gate_result = gate;
+  syncPipelineStatusFromGate(original);
+  return original;
 }
 
 }  // namespace lidar_localization

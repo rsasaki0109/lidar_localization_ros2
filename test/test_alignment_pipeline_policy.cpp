@@ -275,8 +275,57 @@ void test_continuing_recovery_handling_logs_and_uses_backend()
   assert(handling.continue_to_backend);
 }
 
+void test_guarded_backend_fallback()
+{
+  ll::AlignmentPipelineResult rejected;
+  rejected.selected_attempt = make_attempt(true, true, 0.03);
+  rejected.gate_result.reject_measurement = true;
+  rejected.gate_result.status_message = "seed_correction_guard_rejected";
+  ll::syncPipelineStatusFromGate(rejected);
+  auto good = make_attempt(true, true, 0.04);
+  int calls = 0;
+  auto fallback = [&]() {++calls; return good;};
+  auto accept = [](const ll::AlignmentAttempt &) {return ll::MeasurementGateDecision{};};
+  auto result = ll::runRejectedAlignmentFallback(rejected, fallback, accept);
+  assert(calls == 1 && !result.gate_result.reject_measurement);
+  assert(result.selected_attempt.fitness_score == good.fitness_score);
+  assert(result.selected_attempt.alignment_time_sec == 0.5);
+  assert(!result.recovered_by_retry_from_last_pose);
+
+  for (int variant = 0; variant < 6; ++variant) {
+    auto skip = rejected;
+    if (variant == 0) {skip.gate_result.reject_measurement = false;}
+    if (variant == 1) {skip.gate_result.status_message = "fitness_score_over_threshold_rejected";}
+    if (variant == 2) {skip.selected_attempt.accepted_gap_sec = 1.01;}
+    if (variant == 3) {skip.selected_attempt.accepted_gap_sec = std::numeric_limits<double>::quiet_NaN();}
+    if (variant == 4) {skip.should_continue = false;}
+    if (variant == 5) {skip.selected_attempt.accepted_gap_sec = -0.1;}
+    calls = 0;
+    (void)ll::runRejectedAlignmentFallback(skip, fallback, accept);
+    assert(calls == 0);
+  }
+  for (int variant = 0; variant < 6; ++variant) {
+    auto bad = good;
+    if (variant == 0) {bad.target_ready = false;}  // Includes invalidated initial-pose generation.
+    if (variant == 1) {bad.has_converged = false;}
+    if (variant == 2) {bad.fitness_score = std::numeric_limits<double>::quiet_NaN();}
+    if (variant == 3) {bad.final_transformation(0, 0) = std::numeric_limits<float>::infinity();}
+    if (variant == 4) {bad.correction_yaw_deg = std::numeric_limits<double>::quiet_NaN();}
+    if (variant == 5) {bad.correction_translation_m = std::numeric_limits<double>::quiet_NaN();}
+    result = ll::runRejectedAlignmentFallback(rejected, [&]() {return bad;}, accept);
+    assert(result.gate_result.reject_measurement);
+    assert(result.selected_attempt.fitness_score == rejected.selected_attempt.fitness_score);
+    assert(result.selected_attempt.alignment_time_sec == 0.5);
+  }
+  result = ll::runRejectedAlignmentFallback(rejected, fallback,
+    [&](const ll::AlignmentAttempt &) {return rejected.gate_result;});
+  assert(result.gate_result.reject_measurement);
+  assert(result.selected_attempt.final_transformation == rejected.selected_attempt.final_transformation);
+}
+
 int main()
 {
+  test_guarded_backend_fallback();
   test_target_missing_terminal_failure_when_retry_unavailable();
   test_not_converged_terminal_failure_when_retry_disabled();
   test_fitness_reject_remains_rejected_when_retry_denied();
