@@ -93,6 +93,8 @@ void PCLLocalization::initializeRegistration()
   pcl_registration_.reset();
   ndt_omp_registration_.reset();
   gicp_omp_registration_.reset();
+  fallback_gicp_.reset();
+  fallback_target_input_.reset();
 #ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
   small_gicp_registration_.reset();
 #endif

@@ -27,6 +27,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("ndt_num_threads", 4);
   declare_parameter("gicp_corr_randomness", 20);
   declare_parameter("gicp_max_correspondence_distance", 2.0);
+  declare_parameter("enable_ndt_gicp_fallback", false);
   declare_parameter("vgicp_voxel_resolution", 1.0);
   declare_parameter("transform_epsilon", 0.01);
   declare_parameter("voxel_leaf_size", 0.2);
@@ -405,6 +406,8 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   pcl_registration_.reset();
   ndt_omp_registration_.reset();
   gicp_omp_registration_.reset();
+  fallback_gicp_.reset();
+  fallback_target_input_.reset();
 #ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
   small_gicp_registration_.reset();
 #endif

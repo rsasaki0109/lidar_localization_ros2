@@ -177,6 +177,7 @@ void PCLLocalization::initializeParameters()
   get_parameter("ndt_step_size", ndt_step_size_);
   get_parameter("ndt_num_threads", ndt_num_threads_);
   get_parameter("ndt_max_iterations", ndt_max_iterations_);
+  get_parameter("enable_ndt_gicp_fallback", enable_ndt_gicp_fallback_);
   get_parameter("gicp_corr_randomness", gicp_corr_randomness_);
   get_parameter("gicp_max_correspondence_distance", gicp_max_correspondence_distance_);
   get_parameter("vgicp_voxel_resolution", vgicp_voxel_resolution_);
@@ -509,6 +510,7 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(),"ndt_resolution: %lf", ndt_resolution_);
   RCLCPP_INFO(get_logger(),"ndt_step_size: %lf", ndt_step_size_);
   RCLCPP_INFO(get_logger(),"ndt_num_threads: %d", ndt_num_threads_);
+  RCLCPP_INFO(get_logger(), "enable_ndt_gicp_fallback: %d", enable_ndt_gicp_fallback_);
   RCLCPP_INFO(get_logger(),"gicp_corr_randomness: %d", gicp_corr_randomness_);
   RCLCPP_INFO(get_logger(),"gicp_max_correspondence_distance: %lf", gicp_max_correspondence_distance_);
   RCLCPP_INFO(get_logger(),"vgicp_voxel_resolution: %lf", vgicp_voxel_resolution_);

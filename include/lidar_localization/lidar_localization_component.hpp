@@ -241,6 +241,8 @@ public:
 #ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
   small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>::Ptr small_gicp_registration_;
 #endif
+  pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr fallback_gicp_;
+  pcl::PointCloud<pcl::PointXYZI>::ConstPtr fallback_target_input_;
   pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter_;
 
   // --- Shared callback state ---
@@ -372,6 +374,7 @@ public:
   double transform_epsilon_;
   double voxel_leaf_size_;
   bool enable_scan_voxel_filter_{true};
+  bool enable_ndt_gicp_fallback_{false};
   int gicp_corr_randomness_;
   double gicp_max_correspondence_distance_;
   double vgicp_voxel_resolution_;
@@ -537,7 +540,8 @@ public:
     const Eigen::Matrix4f & crop_center_pose_matrix,
     double scan_stamp_sec,
     lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
-    std::uint64_t seed_generation);
+    std::uint64_t seed_generation,
+    pcl::Registration<pcl::PointXYZI, pcl::PointXYZI> * backend = nullptr);
   lidar_localization::AlignmentPipelineResult runAlignmentPipelineForScan(
     const Eigen::Matrix4f & init_guess,
     double scan_stamp_sec,

@@ -14,6 +14,7 @@
     ndt_max_iterations: 35
     gicp_corr_randomness: 20
     gicp_max_correspondence_distance: 2.0
+    enable_ndt_gicp_fallback: false
     vgicp_voxel_resolution: 1.0
     transform_epsilon: 0.01
     voxel_leaf_size: 0.1

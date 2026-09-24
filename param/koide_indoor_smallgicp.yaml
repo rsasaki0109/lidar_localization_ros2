@@ -15,6 +15,7 @@
     gicp_corr_randomness: 20
     # Indoor: correspondence distance must be generous for depth camera noise
     gicp_max_correspondence_distance: 5.0
+    enable_ndt_gicp_fallback: false
     vgicp_voxel_resolution: 0.5
     transform_epsilon: 0.01
     voxel_leaf_size: 0.1

@@ -152,3 +152,14 @@ commands, see [benchmarking](docs/benchmarking.md).
 ROS 2 Jazzy is the primary target; Humble remains supported for existing deployments.
 [ndt_omp_ros2](https://github.com/rsasaki0109/ndt_omp_ros2) is required and
 [small_gicp](https://github.com/koide3/small_gicp) is optional.
+
+### Experimental NDT rejection fallback
+
+`enable_ndt_gicp_fallback` defaults to false. When enabled with NDT_OMP, a
+seed-correction rejection within one second of the last accepted pose can try
+GICP from the original seed. The existing measurement gates still apply.
+`gicp_corr_randomness` and `gicp_max_correspondence_distance` configure this
+attempt. Accepted NDT results are unchanged. The fallback target is voxel-filtered
+and cached until the primary target changes; cleanup discards it.
+This experiment requires the corrected GICP gradient callback dependency and
+has not yet passed real-time trajectory validation. Do not enable it in presets.

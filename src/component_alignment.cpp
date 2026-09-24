@@ -382,11 +382,13 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   const Eigen::Matrix4f & crop_center_pose_matrix,
   double scan_stamp_sec,
   lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
-  std::uint64_t seed_generation)
+  std::uint64_t seed_generation,
+  pcl::Registration<pcl::PointXYZI, pcl::PointXYZI> * backend)
 {
+  auto * active_registration = backend ? backend : registration_;
   lidar_localization::AlignmentAttempt attempt;
   attempt.init_guess = attempt_init_guess;
-  if (!setInputTargetForPose(crop_center_pose_matrix)) {
+  if (!backend && !setInputTargetForPose(crop_center_pose_matrix)) {
     return attempt;
   }
   attempt.target_ready = true;
@@ -401,7 +403,7 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   try {
     auto registration_execution_lock =
       callback_state_coordinator_.lockRegistrationExecution();
-    registration_->align(output_cloud, attempt_init_guess);
+    active_registration->align(output_cloud, attempt_init_guess);
   } catch (...) {
     state_lock.lock();
     throw;
@@ -416,10 +418,10 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
     attempt.target_ready = false;
     return attempt;
   }
-  attempt.has_converged = registration_->hasConverged();
-  attempt.fitness_score = registration_->getFitnessScore();
+  attempt.has_converged = active_registration->hasConverged();
+  attempt.fitness_score = active_registration->getFitnessScore();
 
-  if (enable_registration_localizability_diagnostics_ && ndt_omp_registration_) {
+  if (!backend && enable_registration_localizability_diagnostics_ && ndt_omp_registration_) {
     Eigen::Matrix<double, 6, 6> hessian;
     std::size_t correspondence_count = 0;
     ndt_omp_registration_->evaluateFinalScoreHessian(
@@ -439,7 +441,7 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   attempt.accepted_gap_sec = seed_metrics.accepted_gap_sec;
 
   if (attempt.has_converged) {
-    attempt.final_transformation = registration_->getFinalTransformation();
+    attempt.final_transformation = active_registration->getFinalTransformation();
     const auto correction_metrics =
       lidar_localization::computeAlignmentCorrectionMetrics(
       attempt_init_guess,
@@ -478,7 +480,7 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
         primary_attempt.correction_translation_m,
         primary_attempt.correction_yaw_deg,
         imu_guard_warmup_accepts_remaining});
-  return lidar_localization::runAlignmentPipeline(
+  auto result = lidar_localization::runAlignmentPipeline(
     primary_attempt,
     lidar_localization::AlignmentPipelineInput{
       have_last_accepted_pose_,
@@ -492,6 +494,49 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
       return runAlignmentAttempt(
         last_accepted_pose_matrix_, last_accepted_pose_matrix_, scan_stamp_sec,
         state_lock, seed_generation);
+    },
+    [this, seed_source](const lidar_localization::AlignmentAttempt & attempt) {
+      return evaluateMeasurementGateForAttempt(attempt, seed_source);
+    });
+  if (!enable_ndt_gicp_fallback_ || !ndt_omp_registration_ || force_retry_from_last_pose ||
+    shutting_down_.load(std::memory_order_acquire) ||
+    !callback_state_coordinator_.initialPoseGenerationMatches(seed_generation))
+  {
+    return result;
+  }
+  return lidar_localization::runRejectedAlignmentFallback(
+    result,
+    [&]() {
+      rclcpp::Clock fallback_clock;
+      const auto fallback_start = fallback_clock.now();
+      const auto target = registration_->getInputTarget();
+      if (!target || target->empty()) {
+        return lidar_localization::AlignmentAttempt{};
+      }
+      if (!fallback_gicp_ || fallback_target_input_ != target) {
+        auto filtered = std::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
+        voxel_grid_filter_.setInputCloud(target);
+        voxel_grid_filter_.filter(*filtered);
+        fallback_gicp_.reset(new pclomp::GeneralizedIterativeClosestPoint<
+            pcl::PointXYZI, pcl::PointXYZI>());
+        fallback_gicp_->setInputTarget(filtered);
+        fallback_gicp_->setTransformationEpsilon(transform_epsilon_);
+        fallback_gicp_->setMaximumIterations(ndt_max_iterations_);
+        fallback_gicp_->setCorrespondenceRandomness(gicp_corr_randomness_);
+        fallback_gicp_->setMaxCorrespondenceDistance(gicp_max_correspondence_distance_);
+        fallback_target_input_ = target;
+      }
+      // Keep the backend alive if cleanup runs while align releases the state lock.
+      const auto fallback = fallback_gicp_;
+      fallback->setInputSource(registration_->getInputSource());
+      auto attempt = runAlignmentAttempt(
+        init_guess, init_guess, scan_stamp_sec, state_lock, seed_generation, fallback.get());
+      attempt.alignment_time_sec = (fallback_clock.now() - fallback_start).seconds();
+      RCLCPP_INFO(get_logger(),
+        "GICP fallback: scan=%.9f converged=%d fitness=%.6f correction=%.6f yaw=%.6f time=%.6f",
+        scan_stamp_sec, attempt.has_converged, attempt.fitness_score,
+        attempt.correction_translation_m, attempt.correction_yaw_deg, attempt.alignment_time_sec);
+      return attempt;
     },
     [this, seed_source](const lidar_localization::AlignmentAttempt & attempt) {
       return evaluateMeasurementGateForAttempt(attempt, seed_source);
