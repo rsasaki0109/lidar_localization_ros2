@@ -73,7 +73,11 @@ inline double clampPredictionDt(
   double max_prediction_dt_sec)
 {
   const double raw_dt = scan_stamp_sec - predicted_pose_time_sec;
-  if (!std::isfinite(raw_dt) || max_prediction_dt_sec <= 0.0) {
+  // An initial pose stamped before the first simulated clock has no time
+  // anchor. Do not extrapolate it by the maximum interval on the first scan.
+  if (predicted_pose_time_sec <= 0.0 || !std::isfinite(raw_dt) ||
+    !std::isfinite(max_prediction_dt_sec) || max_prediction_dt_sec <= 0.0)
+  {
     return 0.0;
   }
   return std::clamp(raw_dt, 0.0, max_prediction_dt_sec);
