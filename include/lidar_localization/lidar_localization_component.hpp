@@ -573,6 +573,7 @@ public:
   // --- Prediction state ---
 
   Eigen::Matrix4f currentPoseMatrix() const;
+  bool hasUsableTwistPrediction(double stamp_sec) const;
   Eigen::Matrix4f applyTwistPrediction(const Eigen::Matrix4f & pose_matrix, double dt_sec) const;
   void resetPredictionState(const Eigen::Matrix4f & pose_matrix, double stamp_sec);
   void updatePredictionState(const Eigen::Matrix4f & accepted_pose_matrix, double stamp_sec);

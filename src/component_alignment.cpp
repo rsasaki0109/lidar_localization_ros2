@@ -130,7 +130,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       twist_ekf_.isInitialized(),
       use_twist_prediction_,
       have_last_accepted_pose_,
-      static_cast<bool>(latest_twist_msg_),
+      hasUsableTwistPrediction(scan_stamp_sec),
       predict_pose_from_previous_delta_,
       use_odom_tf_prediction_,
       odom_tf_bridge_available});
@@ -665,4 +665,3 @@ void PCLLocalization::printAlignmentDebugInfo(
   std::cout << "delta_angle:" << delta_angle * 180 / M_PI << "[deg]" << std::endl;
   std::cout << "-----------------------------------------------------" << std::endl;
 }
-

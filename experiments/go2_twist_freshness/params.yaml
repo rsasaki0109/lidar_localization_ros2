@@ -1,0 +1,4 @@
+# Experimental overlay; no change to ordinary presets until replay passes.
+/**:
+  ros__parameters:
+    max_twist_prediction_dt: 0.25

@@ -2,10 +2,30 @@
 #define LIDAR_LOCALIZATION_REGISTRATION_SEED_POLICY_HPP_
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace lidar_localization
 {
+
+inline bool isUsableTwistPredictionSample(
+  double scan_stamp_sec, double twist_stamp_sec,
+  double max_age_sec, double max_future_sec,
+  const std::array<double, 6> & velocity, bool use_angular_velocity,
+  bool frame_matches)
+{
+  const double age = scan_stamp_sec - twist_stamp_sec;
+  if (!frame_matches || scan_stamp_sec <= 0.0 || twist_stamp_sec <= 0.0 ||
+    !std::isfinite(age) || !std::isfinite(max_age_sec) || max_age_sec <= 0.0 ||
+    !std::isfinite(max_future_sec) || max_future_sec < 0.0 ||
+    age > max_age_sec || age < -max_future_sec)
+  {
+    return false;
+  }
+  const std::size_t count = use_angular_velocity ? 6 : 3;
+  return std::all_of(velocity.begin(), velocity.begin() + count,
+    [](double value) {return std::isfinite(value);});
+}
 
 enum class RegistrationSeedSource
 {

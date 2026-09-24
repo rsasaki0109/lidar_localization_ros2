@@ -209,8 +209,31 @@ void test_registration_seed_source_names_are_stable_for_diagnostics()
     "odom_tf_prediction");
 }
 
+void test_twist_prediction_sample_admission()
+{
+  const std::array<double, 6> velocity{0.5, 0.0, 0.0, 0.0, 0.0, 0.1};
+  assert(ll::isUsableTwistPredictionSample(10.0, 9.9, 0.25, 0.1, velocity, true, true));
+  // A scan is stamped at acquisition start; a slightly later twist can arrive first.
+  assert(ll::isUsableTwistPredictionSample(10.0, 10.05, 0.25, 0.1, velocity, true, true));
+  for (double stamp : std::array<double, 5>{0.0, 9.0, 10.2, NAN, INFINITY}) {
+    assert(!ll::isUsableTwistPredictionSample(10.0, stamp, 0.25, 0.1, velocity, true, true));
+  }
+  for (double limit : std::array<double, 4>{0.0, -1.0, NAN, INFINITY}) {
+    assert(!ll::isUsableTwistPredictionSample(10.0, 9.9, limit, 0.1, velocity, true, true));
+  }
+  assert(!ll::isUsableTwistPredictionSample(10.0, 9.9, 0.25, 0.1, velocity, true, false));
+  auto invalid = velocity;
+  invalid[0] = NAN;
+  assert(!ll::isUsableTwistPredictionSample(10.0, 9.9, 0.25, 0.1, invalid, false, true));
+  invalid = velocity;
+  invalid[5] = NAN;
+  assert(!ll::isUsableTwistPredictionSample(10.0, 9.9, 0.25, 0.1, invalid, true, true));
+  assert(ll::isUsableTwistPredictionSample(10.0, 9.9, 0.25, 0.1, invalid, false, true));
+}
+
 int main()
 {
+  test_twist_prediction_sample_admission();
   test_imu_preintegration_has_highest_priority_when_finite();
   test_non_finite_imu_prediction_blocks_lower_priority_sources();
   test_fallback_order_without_imu_candidate();
