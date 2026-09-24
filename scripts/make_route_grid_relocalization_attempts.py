@@ -10,66 +10,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-ATTEMPT_FIELDNAMES = [
-    "attempt_id",
-    "trigger_stamp_sec",
-    "start_stamp_sec",
-    "end_stamp_sec",
-    "source",
-    "mode",
-    "roi_type",
-    "candidate_count",
-    "accepted",
-    "accepted_candidate_rank",
-    "rejection_reason",
-    "best_score",
-    "second_score",
-    "candidate_margin",
-    "overlap",
-    "converged",
-    "refinement_delta_m",
-    "refinement_delta_yaw_rad",
-    "runtime_sec",
-    "post_reset_ok_rows",
-    "post_reset_window_sec",
-    "false_recovery",
-    "request_reason",
-    "request_score",
-    "request_window_rows",
-    "request_window_duration_sec",
-    "generated_at",
-    "reference_pose_count",
-    "route_time_radius_sec",
-    "route_min_spacing_m",
-    "route_window_start_stamp_sec",
-    "route_window_end_stamp_sec",
-    "nearest_reference_stamp_sec",
-    "nearest_reference_time_delta_sec",
-    "yaw_offsets_deg",
-    "lateral_offsets_m",
-    "longitudinal_offsets_m",
-    "candidates_csv",
-]
-
-
-CANDIDATE_FIELDNAMES = [
-    "attempt_id",
-    "candidate_index",
-    "source",
-    "pose_x",
-    "pose_y",
-    "pose_z",
-    "yaw_rad",
-    "route_stamp_sec",
-    "route_time_delta_sec",
-    "route_position_x",
-    "route_position_y",
-    "route_position_z",
-    "route_yaw_rad",
-    "longitudinal_offset_m",
-    "lateral_offset_m",
-    "yaw_offset_deg",
-]
+from relocalization_attempt_common import (
+    ATTEMPT_FIELDNAMES,
+    CANDIDATE_FIELDNAMES,
+    request_windows,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -229,31 +174,6 @@ def load_reference_rows(path: Path) -> list[dict[str, float]]:
         raise RuntimeError(f"reference CSV has no rows: {path}")
     rows.sort(key=lambda row: row["stamp_sec"])
     return rows
-
-
-def request_windows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    windows: list[dict[str, Any]] = []
-    index = 0
-    while index < len(rows):
-        if not rows[index]["requested"]:
-            index += 1
-            continue
-        start = index
-        while index < len(rows) and rows[index]["requested"]:
-            index += 1
-        end = index - 1
-        windows.append(
-            {
-                "start_index": start,
-                "end_index": end,
-                "start_stamp_sec": rows[start]["stamp_sec"],
-                "end_stamp_sec": rows[end]["stamp_sec"],
-                "row_count": end - start + 1,
-                "reason": rows[start]["reason"],
-                "score": rows[start]["score"],
-            }
-        )
-    return windows
 
 
 def _distance_xy(a: dict[str, float], b: dict[str, float]) -> float:
