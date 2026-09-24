@@ -9,7 +9,9 @@
   uses the same time validation as registration seeds.
 - Twist prediction no longer counts the inter-scan motion twice: after an accepted
   update the stored prediction was already extrapolated by the previous delta, and the
-  twist seed then integrated the same motion again on top of it.
+  twist seed then integrated the same motion again on top of it. The stored pose
+  now consistently refers to its timestamp, including when twist becomes available
+  after previous-delta fallback; previous-delta extrapolation happens at seed selection.
 - The first scan after map load no longer stalls for ~1 s: `pcl::Registration` builds
   its target search tree lazily in the first `align()` (even for NDT, which does not use
   it). The full-map target is now warmed up at map load, so the scans that follow are
