@@ -1,4 +1,6 @@
 #include "component_internal.hpp"
+#include <pcl/io/pcd_io.h>
+#include <pcl/io/ply_io.h>
 PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("lidar_localization", options),
   clock_(RCL_ROS_TIME),
@@ -479,4 +481,3 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   map_recieved_ = false;
   initialpose_recieved_ = false;
 }
-
