@@ -7,7 +7,7 @@ int main(int argc, char * argv[])
   rclcpp::init(argc, argv);
   {
     // The default callback group remains mutually-exclusive. IMU preintegration
-    // and opt-in timer publication use dedicated guarded groups so neither is
+    // twist reception and opt-in timer publication use dedicated guarded groups so none is
     // starved by long cloud registration callbacks during bag replay.
     rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 3);
     rclcpp::NodeOptions options;

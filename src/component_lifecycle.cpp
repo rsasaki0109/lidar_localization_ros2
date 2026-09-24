@@ -377,6 +377,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   initial_pose_callback_group_.reset();
   pose_publish_callback_group_.reset();
   imu_callback_group_.reset();
+  twist_callback_group_.reset();
 
   twist_history_.clear();
   last_scan_ptr_.reset();
