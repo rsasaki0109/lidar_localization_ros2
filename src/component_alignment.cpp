@@ -153,6 +153,13 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       const double dt = lidar_localization::clampPredictionDt(
         scan_stamp_sec, predicted_pose_time_sec_, max_twist_prediction_dt_);
       selected_seed.init_guess = applyTwistPrediction(predicted_pose_matrix_, dt, *twist);
+      RCLCPP_INFO(get_logger(),
+        "JEPLO_SEED scan=%.9f twist=%.9f predicted_time=%.9f dt=%.9f "
+        "v=%.9f,%.9f,%.9f w=%.9f,%.9f,%.9f rejects=%zu",
+        scan_stamp_sec, twist->stamp_sec, predicted_pose_time_sec_, dt,
+        twist->linear.x(), twist->linear.y(), twist->linear.z(),
+        twist->angular.x(), twist->angular.y(), twist->angular.z(),
+        consecutive_rejected_updates_);
       break;
     }
     case lidar_localization::RegistrationSeedSource::kPreviousDelta:
@@ -449,6 +456,18 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
     attempt.correction_yaw_deg = correction_metrics.yaw_deg;
   }
 
+  RCLCPP_INFO(get_logger(),
+    "JEPLO_ATTEMPT scan=%.9f converged=%d seed=%.9f,%.9f,%.9f "
+    "result=%.9f,%.9f,%.9f fitness=%.9f correction=%.9f yaw=%.9f gap=%.9f",
+    scan_stamp_sec, static_cast<int>(attempt.has_converged),
+    static_cast<double>(attempt.init_guess(0, 3)),
+    static_cast<double>(attempt.init_guess(1, 3)),
+    static_cast<double>(attempt.init_guess(2, 3)),
+    static_cast<double>(attempt.final_transformation(0, 3)),
+    static_cast<double>(attempt.final_transformation(1, 3)),
+    static_cast<double>(attempt.final_transformation(2, 3)),
+    attempt.fitness_score, attempt.correction_translation_m,
+    attempt.correction_yaw_deg, attempt.accepted_gap_sec);
   return attempt;
 }
 
@@ -519,6 +538,11 @@ lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurement
       get_logger(), "The fitness score is over %lf.", gate.effective_score_threshold);
   }
 
+  RCLCPP_INFO(get_logger(),
+    "JEPLO_GATE rejected=%d reason=%s fitness=%.9f correction=%.9f rejects=%zu",
+    static_cast<int>(gate.reject_measurement), gate.status_message.c_str(),
+    attempt.fitness_score, attempt.correction_translation_m,
+    consecutive_rejected_updates_);
   return gate;
 }
 
