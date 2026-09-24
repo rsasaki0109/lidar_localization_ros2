@@ -486,6 +486,8 @@ public:
   double last_accepted_pose_time_sec_{0.0};
   double predicted_pose_time_sec_{0.0};
   geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr latest_twist_msg_;
+  // Captured under the state lock for every admitted cloud callback.
+  geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr scan_twist_msg_;
   // Read by the dedicated IMU callback without taking the callback-state lock.
   std::atomic<bool> shutting_down_{false};
   bool reinitialization_requested_{false};

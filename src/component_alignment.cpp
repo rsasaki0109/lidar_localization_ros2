@@ -131,7 +131,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       twist_ekf_.isInitialized(),
       use_twist_prediction_,
       have_last_accepted_pose_,
-      static_cast<bool>(latest_twist_msg_),
+      static_cast<bool>(scan_twist_msg_),
       predict_pose_from_previous_delta_,
       use_odom_tf_prediction_,
       odom_tf_bridge_available});
@@ -155,7 +155,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       selected_seed.init_guess = applyTwistPrediction(predicted_pose_matrix_, dt);
       prediction_trace_experiment::record(
         "seed", scan_stamp_sec, predicted_pose_time_sec_, dt,
-        consecutive_rejected_updates_, latest_twist_msg_,
+        consecutive_rejected_updates_, scan_twist_msg_,
         predicted_pose_matrix_, selected_seed.init_guess);
       break;
     }
@@ -551,7 +551,7 @@ bool PCLLocalization::handleTerminalAlignmentPipelineResult(
 {
   prediction_trace_experiment::record(
     "result", scan_stamp_sec, predicted_pose_time_sec_, 0.0,
-    consecutive_rejected_updates_, latest_twist_msg_,
+    consecutive_rejected_updates_, scan_twist_msg_,
     predicted_pose_matrix_, pipeline_result.selected_attempt.final_transformation);
   const auto handling = lidar_localization::decideAlignmentPipelineHandling(pipeline_result);
   if (!handling.publish_terminal_status) {

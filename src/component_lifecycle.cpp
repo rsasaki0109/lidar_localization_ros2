@@ -380,6 +380,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   twist_callback_group_.reset();
 
   latest_twist_msg_.reset();
+  scan_twist_msg_.reset();
   last_scan_ptr_.reset();
   path_ptr_.reset();
   corrent_pose_with_cov_stamped_ptr_.reset();

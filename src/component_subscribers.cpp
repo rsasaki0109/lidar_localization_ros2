@@ -705,6 +705,10 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   if (!admitScanMessage(msg, &scan_stamp_sec)) {
     return;
   }
+  // A twist callback may run while alignment releases the state lock. Keep the
+  // seed and rejected advance on the same observation; receive fresh data for
+  // the next scan without changing this scan's prediction halfway through.
+  scan_twist_msg_ = latest_twist_msg_;
   // Odom bridge: keep map -> odom alive (re-stamped from the last accepted
   // match) on every admitted scan callback, whether or not this particular
   // scan ends up accepted below. See republishFrozenMapToOdomTransform and the
