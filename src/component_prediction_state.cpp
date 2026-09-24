@@ -12,22 +12,16 @@ Eigen::Matrix4f PCLLocalization::currentPoseMatrix() const
 
 Eigen::Matrix4f PCLLocalization::applyTwistPrediction(
   const Eigen::Matrix4f & pose_matrix,
-  double dt_sec) const
+  double dt_sec,
+  const lidar_localization::TimestampedTwist & twist) const
 {
-  if (!latest_twist_msg_ || dt_sec <= 0.0) {
+  if (dt_sec <= 0.0) {
     return pose_matrix;
   }
 
-  const auto & twist = latest_twist_msg_->twist.twist;
   Eigen::Affine3f affine(pose_matrix);
-  Eigen::Vector3f linear_velocity(
-    static_cast<float>(twist.linear.x),
-    static_cast<float>(twist.linear.y),
-    static_cast<float>(twist.linear.z));
-  Eigen::Vector3f angular_velocity(
-    static_cast<float>(twist.angular.x),
-    static_cast<float>(twist.angular.y),
-    static_cast<float>(twist.angular.z));
+  const Eigen::Vector3f linear_velocity = twist.linear.cast<float>();
+  const Eigen::Vector3f angular_velocity = twist.angular.cast<float>();
 
   const Eigen::Vector3f world_delta = affine.linear() * (linear_velocity * static_cast<float>(dt_sec));
   affine.translation() += world_delta;
@@ -97,16 +91,17 @@ void PCLLocalization::updatePredictionState(
 
 void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
 {
+  const auto * twist = twist_history_.atOrBefore(stamp_sec);
   const auto advance_mode = lidar_localization::choosePredictionAdvanceMode(
     have_last_accepted_pose_,
     use_twist_prediction_,
-    static_cast<bool>(latest_twist_msg_),
+    twist != nullptr,
     predict_pose_from_previous_delta_);
   Eigen::Matrix4f twist_predicted_pose_matrix = Eigen::Matrix4f::Identity();
   if (advance_mode == lidar_localization::PredictionAdvanceMode::kTwistPrediction) {
     const double dt = lidar_localization::clampPredictionDt(
       stamp_sec, predicted_pose_time_sec_, max_twist_prediction_dt_);
-    twist_predicted_pose_matrix = applyTwistPrediction(predicted_pose_matrix_, dt);
+    twist_predicted_pose_matrix = applyTwistPrediction(predicted_pose_matrix_, dt, *twist);
   }
   const auto state = lidar_localization::advancePredictionWithoutMeasurement(
     make_prediction_state_snapshot(

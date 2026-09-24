@@ -116,6 +116,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
   const bool odom_tf_bridge_available =
     use_odom_tf_prediction_ && lookupOdomBridgePoseMatrix(stamp, odom_tf_prediction);
 
+  const auto * twist = twist_history_.atOrBefore(scan_stamp_sec);
   const lidar_localization::RegistrationSeedPolicyDecision seed_decision =
     lidar_localization::chooseRegistrationSeed(
     lidar_localization::RegistrationSeedPolicyInput{
@@ -130,7 +131,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       twist_ekf_.isInitialized(),
       use_twist_prediction_,
       have_last_accepted_pose_,
-      static_cast<bool>(latest_twist_msg_),
+      twist != nullptr,
       predict_pose_from_previous_delta_,
       use_odom_tf_prediction_,
       odom_tf_bridge_available});
@@ -151,7 +152,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
     case lidar_localization::RegistrationSeedSource::kTwistPrediction: {
       const double dt = lidar_localization::clampPredictionDt(
         scan_stamp_sec, predicted_pose_time_sec_, max_twist_prediction_dt_);
-      selected_seed.init_guess = applyTwistPrediction(predicted_pose_matrix_, dt);
+      selected_seed.init_guess = applyTwistPrediction(predicted_pose_matrix_, dt, *twist);
       break;
     }
     case lidar_localization::RegistrationSeedSource::kPreviousDelta:

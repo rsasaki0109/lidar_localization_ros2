@@ -466,9 +466,12 @@ void PCLLocalization::twistReceived(
 {
   auto state_lock = callback_state_coordinator_.lockState();
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
-  latest_twist_msg_ = msg;
-
   double stamp_sec = stamp_to_sec(msg->header.stamp);
+  const auto & twist = msg->twist.twist;
+  twist_history_.insert(lidar_localization::TimestampedTwist{
+    stamp_sec,
+    Eigen::Vector3d(twist.linear.x, twist.linear.y, twist.linear.z),
+    Eigen::Vector3d(twist.angular.x, twist.angular.y, twist.angular.z)});
   double vx = msg->twist.twist.linear.x;
   double wz = msg->twist.twist.angular.z;
 

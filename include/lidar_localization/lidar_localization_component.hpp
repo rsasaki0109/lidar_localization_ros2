@@ -56,6 +56,7 @@
 
 #include "lidar_localization/lidar_undistortion.hpp"
 #include "lidar_localization/twist_ekf.hpp"
+#include "lidar_localization/causal_twist_history.hpp"
 #include "lidar_localization/twist_gtsam_smoother.hpp"
 #include "lidar_localization/imu_gtsam_smoother.hpp"
 #include "lidar_localization/imu_pose_history_deskew.hpp"
@@ -484,7 +485,7 @@ public:
   std::size_t consecutive_rejected_updates_{0};
   double last_accepted_pose_time_sec_{0.0};
   double predicted_pose_time_sec_{0.0};
-  geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr latest_twist_msg_;
+  lidar_localization::CausalTwistHistory twist_history_;
   // Read by the dedicated IMU callback without taking the callback-state lock.
   std::atomic<bool> shutting_down_{false};
   bool reinitialization_requested_{false};
@@ -573,7 +574,9 @@ public:
   // --- Prediction state ---
 
   Eigen::Matrix4f currentPoseMatrix() const;
-  Eigen::Matrix4f applyTwistPrediction(const Eigen::Matrix4f & pose_matrix, double dt_sec) const;
+  Eigen::Matrix4f applyTwistPrediction(
+    const Eigen::Matrix4f & pose_matrix, double dt_sec,
+    const lidar_localization::TimestampedTwist & twist) const;
   void resetPredictionState(const Eigen::Matrix4f & pose_matrix, double stamp_sec);
   void updatePredictionState(const Eigen::Matrix4f & accepted_pose_matrix, double stamp_sec);
   void advancePredictionWithoutMeasurement(double stamp_sec);
