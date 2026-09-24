@@ -113,6 +113,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("odom_tf_prediction_recovery_guard_translation_m", 5.0);
   declare_parameter("odom_tf_prediction_recovery_guard_yaw_deg", 30.0);
   declare_parameter("enable_seed_correction_guard", false);
+  declare_parameter("enable_bounded_seed_correction_growth", false);
   declare_parameter("seed_correction_guard_translation_m", 0.5);
   declare_parameter("seed_correction_guard_yaw_deg", 15.0);
   declare_parameter("seed_correction_guard_release_rejections", 10);

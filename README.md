@@ -152,3 +152,13 @@ commands, see [benchmarking](docs/benchmarking.md).
 ROS 2 Jazzy is the primary target; Humble remains supported for existing deployments.
 [ndt_omp_ros2](https://github.com/rsasaki0109/ndt_omp_ros2) is required and
 [small_gicp](https://github.com/koide3/small_gicp) is optional.
+
+### Experimental bounded seed correction allowance
+
+`enable_bounded_seed_correction_growth` defaults to false. When enabled, after at
+least one rejected update, a finite positive time since the last accepted pose
+increases the translation guard by 0.05 m/s, capped at max(configured base, 0.5 m).
+The first rejection, yaw and fitness gates, warmup and existing rejection-count
+release are unchanged. Nonfinite/nonpositive time or base leaves the base limit.
+Two recorded Go2 traces support an experimental replay, not a validated preset or
+robustness claim. Larger allowance growth admitted incorrect matches in screening.

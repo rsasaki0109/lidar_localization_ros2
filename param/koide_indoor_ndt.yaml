@@ -4,6 +4,7 @@
 /**:
   ros__parameters:
     registration_method: NDT_OMP
+    enable_bounded_seed_correction_growth: false
     # Indoor depth camera: fitness scores are inherently higher (min ~7.9).
     # Threshold must be well above that to accept registrations.
     score_threshold: 15.0

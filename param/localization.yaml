@@ -4,6 +4,7 @@
 /**:
     ros__parameters:
       registration_method: "NDT_OMP"
+      enable_bounded_seed_correction_growth: false
       score_threshold: 2.0
       ndt_resolution: 1.0
       ndt_step_size: 0.1

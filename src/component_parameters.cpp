@@ -339,6 +339,9 @@ void PCLLocalization::initializeParameters()
   get_parameter(
     "enable_seed_correction_guard", measurement_gate_config_.enable_seed_correction_guard);
   get_parameter(
+    "enable_bounded_seed_correction_growth",
+    measurement_gate_config_.enable_bounded_seed_correction_growth);
+  get_parameter(
     "seed_correction_guard_translation_m",
     measurement_gate_config_.seed_correction_guard_translation_m);
   get_parameter(
@@ -635,6 +638,9 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "rejected_seed_update_max_correction_yaw_deg: %lf",
     measurement_gate_config_.rejected_seed_update_max_correction_yaw_deg);
+  RCLCPP_INFO(
+    get_logger(), "bounded_seed_correction_growth: enabled=%d rate=0.05m/s cap=max(base,0.5)m",
+    measurement_gate_config_.enable_bounded_seed_correction_growth);
   RCLCPP_INFO(
     get_logger(), "seed_correction_guard: enabled=%d translation_m=%lf yaw_deg=%lf "
     "release_rejections=%d warmup_accepts=%d",

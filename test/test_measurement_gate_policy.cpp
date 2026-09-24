@@ -324,8 +324,45 @@ void test_rejected_seed_update_marks_rejection_for_prediction_update()
   assert(gate.status_message == "fitness_score_over_threshold_rejected_seeded");
 }
 
+void test_bounded_seed_growth()
+{
+  ll::MeasurementGateParamConfig config;
+  config.enable_seed_correction_guard = true;
+  config.seed_correction_guard_translation_m = .3;
+  config.seed_correction_guard_release_rejections = 30;
+  config.score_threshold = 6.;
+  auto p = ll::makeMeasurementGateParams(config);
+  auto in = ll::makeMeasurementGateInput(.02, .7, 0., .326, 1., 6, false, 5);
+  assert(ll::evaluateMeasurementGate(p, in).reject_measurement);
+  config.enable_bounded_seed_correction_growth = true;
+  p = ll::makeMeasurementGateParams(config);
+  assert(p.enable_bounded_seed_correction_growth);
+  assert(!ll::evaluateMeasurementGate(p, in).reject_measurement);
+  in.consecutive_rejected_updates = 0;
+  assert(ll::evaluateMeasurementGate(p, in).reject_measurement);
+  in.consecutive_rejected_updates = 6;
+  for (double gap : {0., -1., std::numeric_limits<double>::quiet_NaN(),
+    std::numeric_limits<double>::infinity()})
+  {
+    in.accepted_gap_sec = gap;
+    assert(ll::evaluateMeasurementGate(p, in).reject_measurement);
+  }
+  in.accepted_gap_sec = 100.; in.correction_translation_m = .51;
+  assert(ll::evaluateMeasurementGate(p, in).reject_measurement);
+  in.accepted_gap_sec = .7; in.correction_translation_m = .326; in.correction_yaw_deg = 16.;
+  assert(ll::evaluateMeasurementGate(p, in).reject_measurement);
+  in.correction_yaw_deg = 1.; in.fitness_score = 7.;
+  assert(ll::evaluateMeasurementGate(p, in).reject_measurement);
+  in.fitness_score = .02; in.correction_translation_m = 1.; in.consecutive_rejected_updates = 30;
+  assert(!ll::evaluateMeasurementGate(p, in).reject_measurement);
+  // Existing larger configured limits must never shrink when enabled.
+  p.seed_correction_guard_translation_m = .8; in.consecutive_rejected_updates = 6;
+  assert(ll::seedCorrectionTranslationLimit(p, in) == .8);
+}
+
 int main()
 {
+  test_bounded_seed_growth();
   test_seed_correction_guard_rejects_jumps_until_release();
   test_param_and_input_builders_map_fields();
   test_default_ok_gate();

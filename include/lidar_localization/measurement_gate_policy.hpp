@@ -2,6 +2,7 @@
 #define LIDAR_LOCALIZATION_MEASUREMENT_GATE_POLICY_HPP_
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <limits>
 #include <cstdint>
@@ -62,6 +63,7 @@ struct MeasurementGateParams
   // release_rejections consecutive rejections the guard stops applying so a
   // genuinely drifted seed can still re-lock.
   bool enable_seed_correction_guard{false};
+  bool enable_bounded_seed_correction_growth{false};
   double seed_correction_guard_translation_m{0.5};
   double seed_correction_guard_yaw_deg{15.0};
   int seed_correction_guard_release_rejections{10};
@@ -134,6 +136,7 @@ struct MeasurementGateParamConfig
   // release_rejections consecutive rejections the guard stops applying so a
   // genuinely drifted seed can still re-lock.
   bool enable_seed_correction_guard{false};
+  bool enable_bounded_seed_correction_growth{false};
   double seed_correction_guard_translation_m{0.5};
   double seed_correction_guard_yaw_deg{15.0};
   int seed_correction_guard_release_rejections{10};
@@ -219,6 +222,7 @@ inline MeasurementGateParams makeMeasurementGateParams(
   params.odom_tf_prediction_recovery_guard_yaw_deg =
     config.odom_tf_prediction_recovery_guard_yaw_deg;
   params.enable_seed_correction_guard = config.enable_seed_correction_guard;
+  params.enable_bounded_seed_correction_growth = config.enable_bounded_seed_correction_growth;
   params.seed_correction_guard_translation_m = config.seed_correction_guard_translation_m;
   params.seed_correction_guard_yaw_deg = config.seed_correction_guard_yaw_deg;
   params.seed_correction_guard_release_rejections =
@@ -301,6 +305,20 @@ inline bool isBorderlineSeedGateActive(
          params.borderline_seed_gate_min_seed_translation_m;
 }
 
+// Experimental conservative allowance for drift while measurements are rejected.
+inline double seedCorrectionTranslationLimit(
+  const MeasurementGateParams & params, const MeasurementGateInput & input)
+{
+  const double base = params.seed_correction_guard_translation_m;
+  if (!params.enable_bounded_seed_correction_growth ||
+    input.consecutive_rejected_updates == 0 || !std::isfinite(input.accepted_gap_sec) ||
+    input.accepted_gap_sec <= 0.0 || !std::isfinite(base) || base <= 0.0)
+  {
+    return base;
+  }
+  return std::min(std::max(base, 0.5), base + 0.05 * input.accepted_gap_sec);
+}
+
 inline MeasurementGateDecision evaluateMeasurementGate(
   const MeasurementGateParams & params,
   const MeasurementGateInput & input)
@@ -342,7 +360,7 @@ inline MeasurementGateDecision evaluateMeasurementGate(
     static_cast<std::size_t>(std::max(0, params.seed_correction_guard_warmup_accepts)) &&
     static_cast<int>(input.consecutive_rejected_updates) <
     params.seed_correction_guard_release_rejections &&
-    ((input.correction_translation_m > params.seed_correction_guard_translation_m) ||
+    ((input.correction_translation_m > seedCorrectionTranslationLimit(params, input)) ||
     (input.correction_yaw_deg > params.seed_correction_guard_yaw_deg));
   if (seed_correction_guard_active) {
     gate.status_level = kMeasurementGateWarn;
