@@ -1,6 +1,10 @@
 #include "component_internal.hpp"
 #include <pcl/registration/gicp.h>
 #include <pcl/registration/ndt.h>
+#include <pcl/io/pcd_io.h>
+#include <cstdlib>
+#include <fstream>
+#include <iomanip>
 void PCLLocalization::initializePubSub()
 {
   RCLCPP_INFO(get_logger(), "initializePubSub");
@@ -743,6 +747,25 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     RCLCPP_INFO(get_logger(), "Scan history: scan=%.9f past=%zu current=%zu combined=%zu time=%.6f",
       scan_stamp_sec, accepted_scan_history_.size(), tmp_ptr->size(), filtered_point_count,
       history_preparation_sec);
+  }
+  // Experiment-only capture of the Box rejection window. Never promote this
+  // dataset-specific instrumentation. Synchronous I/O may perturb callback timing.
+  const char * trace_directory = std::getenv("JEPLO_SCAN_HISTORY_TRACE_DIR");
+  if (trace_directory && scan_stamp_sec >= 1787732268.6 && scan_stamp_sec <= 1787732269.7) {
+    const std::string prefix = std::string(trace_directory) + "/" +
+      std::to_string(rclcpp::Time(msg->header.stamp).nanoseconds());
+    try {
+      const int current_result = pcl::io::savePCDFileBinary(prefix + ".current.pcd", *tmp_ptr);
+      const int combined_result = pcl::io::savePCDFileBinary(
+        prefix + ".combined.pcd", *registration_->getInputSource());
+      std::ofstream seed_file(prefix + ".seed");
+      seed_file << std::setprecision(9) << init_guess << "\n";
+      seed_file.close();
+      RCLCPP_INFO(get_logger(), "History trace: prefix=%s current=%d combined=%d seed_ok=%d",
+        prefix.c_str(), current_result, combined_result, static_cast<int>(!seed_file.fail()));
+    } catch (const std::exception & error) {
+      RCLCPP_ERROR(get_logger(), "History trace failed: %s", error.what());
+    }
   }
   auto pipeline_result = runAlignmentPipelineForScan(
     init_guess,
