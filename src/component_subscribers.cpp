@@ -1,4 +1,6 @@
 #include "component_internal.hpp"
+#include <pcl/registration/gicp.h>
+#include <pcl/registration/ndt.h>
 void PCLLocalization::initializePubSub()
 {
   RCLCPP_INFO(get_logger(), "initializePubSub");
@@ -756,4 +758,3 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
 
   printAlignmentDebugInfo(init_guess, pipeline_result.selected_attempt, filtered_point_count);
 }
-

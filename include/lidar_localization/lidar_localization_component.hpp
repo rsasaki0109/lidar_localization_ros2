@@ -21,10 +21,8 @@
 
 #include <Eigen/Geometry>
 #include <pcl/PCLPointCloud2.h>
-#include <pcl/io/pcd_io.h>
-#include <pcl/registration/ndt.h>
-#include <pcl/registration/gicp.h>
-#include <pcl/io/ply_io.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/registration/registration.h>
 
 #include <tf2/transform_datatypes.h>
 #include <tf2/utils.h>
@@ -50,11 +48,7 @@
 #include "std_msgs/msg/bool.hpp"
 
 #include <pclomp/ndt_omp.h>
-#include <pclomp/ndt_omp_impl.hpp>
-#include <pclomp/voxel_grid_covariance_omp.h>
-#include <pclomp/voxel_grid_covariance_omp_impl.hpp>
 #include <pclomp/gicp_omp.h>
-#include <pclomp/gicp_omp_impl.hpp>
 
 #ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
 #include <small_gicp/pcl/pcl_registration.hpp>
