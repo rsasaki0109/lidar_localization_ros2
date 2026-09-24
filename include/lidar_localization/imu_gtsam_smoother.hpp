@@ -7,6 +7,7 @@
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
+#include <Eigen/SparseCholesky>
 #include <deque>
 #include <iostream>
 
@@ -488,7 +489,19 @@ private:
       }
 
       // --- Solve ---
-      Eigen::VectorXd delta = H.ldlt().solve(-b);
+      // Adjacent pose factors and shared biases leave most entries zero.
+      // Dense LDLT is cheaper for small windows; retain it as a fallback.
+      Eigen::VectorXd delta;
+      if (n >= 25) {
+        Eigen::SparseMatrix<double> sparse_H = H.sparseView();
+        Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver(sparse_H);
+        if (solver.info() == Eigen::Success) {
+          delta = solver.solve(-b);
+        }
+      }
+      if (delta.size() != total_dim || !delta.allFinite()) {
+        delta = H.ldlt().solve(-b);
+      }
 
       // Apply pose updates
       for (int i = 0; i < n; ++i) {

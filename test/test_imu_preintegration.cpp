@@ -378,7 +378,9 @@ void test_smoother_estimates_nonzero_initial_velocity_from_pose_updates()
     0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
     0.0, 0.0, 0.0, 0.0);
 
-  for (int interval = 1; interval <= 3; ++interval) {
+  // Keep correcting after the window fills and older poses are removed.
+  const int intervals = smoother.params_.window_size + 5;
+  for (int interval = 1; interval <= intervals; ++interval) {
     for (int tick = 0; tick < 20; ++tick) {
       smoother.integrateImu(
         Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), 0.005);
@@ -388,7 +390,8 @@ void test_smoother_estimates_nonzero_initial_velocity_from_pose_updates()
       0.0, 0.0, 0.0, 0.1, 0.1 * interval));
   }
 
-  assert(smoother.poseCount() == 4);
+  assert(smoother.poseCount() == static_cast<std::size_t>(smoother.params_.window_size));
+  assert(std::abs(smoother.position().x() - 0.1 * intervals) < 1e-2);
   assert(std::abs(smoother.velocity().x() - 1.0) < 1e-2);
   assert(std::abs(smoother.velocity().y()) < 1e-6);
   assert(std::abs(smoother.velocity().z()) < 1e-6);
