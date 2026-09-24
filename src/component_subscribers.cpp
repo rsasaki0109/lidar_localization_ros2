@@ -466,6 +466,18 @@ void PCLLocalization::twistReceived(
 {
   auto state_lock = callback_state_coordinator_.lockState();
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
+  const auto & twist = msg->twist.twist;
+  const double velocity[] = {
+    twist.linear.x, twist.linear.y, twist.linear.z,
+    twist.angular.x, twist.angular.y, twist.angular.z};
+  for (const double value : velocity) {
+    if (!std::isfinite(value)) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "Ignoring non-finite twist; retaining the last valid velocity");
+      return;
+    }
+  }
   latest_twist_msg_ = msg;
 
   double stamp_sec = stamp_to_sec(msg->header.stamp);
