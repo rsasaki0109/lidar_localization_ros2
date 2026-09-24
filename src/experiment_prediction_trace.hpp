@@ -37,6 +37,8 @@ inline void record(
     }
   }
   stream << '\n';
-  // Buffering avoids a flush on every scan; only complete rows are accepted by audit.
+  // Replay cleanup can terminate the process without running static destructors.
+  stream.flush();
+  if (!stream) {throw std::runtime_error("Failed to flush JEPLO_PREDICTION_TRACE");}
 }
 }  // namespace prediction_trace_experiment
