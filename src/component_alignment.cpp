@@ -289,6 +289,16 @@ bool PCLLocalization::setInputTargetForPose(const Eigen::Matrix4f & center_pose_
     return false;
   }
 
+  if (lidar_localization::shouldReuseLocalMapTarget(
+      local_map_target_cached_, local_map_target_center_x_, local_map_target_center_y_,
+      cx, cy, local_map_update_distance_))
+  {
+    const auto reuse_decision = lidar_localization::handleLocalMapTargetSuccess();
+    consecutive_crop_failures_ = reuse_decision.consecutive_crop_failures;
+    crop_failure_guard_active_ = reuse_decision.crop_failure_guard_active;
+    return true;
+  }
+
   pcl::PointCloud<pcl::PointXYZI>::Ptr local_map =
     lidar_localization::cropLocalMapByRadius(
       *full_map_cloud_ptr_,
@@ -330,6 +340,9 @@ bool PCLLocalization::setInputTargetForPose(const Eigen::Matrix4f & center_pose_
     lidar_localization::keepRegistrationCloudAlive(
       recent_target_clouds_, local_map, registration_target_cloud_keep_alive_count_);
   }
+  local_map_target_cached_ = true;
+  local_map_target_center_x_ = cx;
+  local_map_target_center_y_ = cy;
 
   const auto success_decision = lidar_localization::handleLocalMapTargetSuccess();
   consecutive_crop_failures_ = success_decision.consecutive_crop_failures;

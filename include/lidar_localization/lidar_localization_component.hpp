@@ -277,6 +277,10 @@ public:
   bool enable_local_map_crop_{false};
   double local_map_radius_{150.0};
   std::size_t local_map_min_points_{100};
+  double local_map_update_distance_{0.0};
+  bool local_map_target_cached_{false};
+  float local_map_target_center_x_{0.0f};
+  float local_map_target_center_y_{0.0f};
   int consecutive_crop_failures_{0};
   bool crop_failure_guard_active_{false};
   std::chrono::steady_clock::time_point last_crop_out_of_bounds_log_time_{};

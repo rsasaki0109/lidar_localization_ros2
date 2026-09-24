@@ -365,6 +365,8 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
       recent_target_clouds_, map_cloud_ptr, registration_target_cloud_keep_alive_count_);
   }
 
+  // The map topic replaces the whole registration target.
+  local_map_target_cached_ = false;
   map_recieved_ = true;
   RCLCPP_INFO(get_logger(), "mapReceived end");
 }

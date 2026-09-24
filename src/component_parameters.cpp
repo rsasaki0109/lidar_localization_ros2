@@ -261,6 +261,7 @@ void PCLLocalization::initializeParameters()
   get_parameter("predict_pose_from_previous_delta", predict_pose_from_previous_delta_);
   get_parameter("enable_local_map_crop", enable_local_map_crop_);
   get_parameter("local_map_radius", local_map_radius_);
+  get_parameter("local_map_update_distance", local_map_update_distance_);
   int requested_local_map_min_points = static_cast<int>(local_map_min_points_);
   get_parameter("local_map_min_points", requested_local_map_min_points);
   const auto local_map_min_points =
@@ -559,6 +560,8 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(), "local_map_radius: %lf", local_map_radius_);
   RCLCPP_INFO(
     get_logger(), "local_map_min_points: %zu", local_map_min_points_);
+  RCLCPP_INFO(
+    get_logger(), "local_map_update_distance: %lf", local_map_update_distance_);
   RCLCPP_INFO(
     get_logger(), "reject_above_score_threshold: %d", measurement_gate_config_.reject_above_score_threshold);
   RCLCPP_INFO(

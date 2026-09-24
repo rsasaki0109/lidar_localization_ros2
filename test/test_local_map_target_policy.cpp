@@ -158,12 +158,25 @@ void test_target_success_resets_runtime_guard_state()
   assert(!success.crop_failure_guard_active);
 }
 
+void test_local_map_target_reuse_distance()
+{
+  // Disabled (non-positive distance) or no cached target: always re-crop.
+  assert(!ll::shouldReuseLocalMapTarget(true, 0.0f, 0.0f, 0.0f, 0.0f, 0.0));
+  assert(!ll::shouldReuseLocalMapTarget(true, 0.0f, 0.0f, 0.0f, 0.0f, -1.0));
+  assert(!ll::shouldReuseLocalMapTarget(false, 0.0f, 0.0f, 0.0f, 0.0f, 5.0));
+  // Reused strictly inside the horizontal update distance.
+  assert(ll::shouldReuseLocalMapTarget(true, 1.0f, 2.0f, 4.0f, 5.0f, 5.0));
+  assert(!ll::shouldReuseLocalMapTarget(true, 0.0f, 0.0f, 3.0f, 4.0f, 5.0));
+  assert(!ll::shouldReuseLocalMapTarget(true, 0.0f, 0.0f, 10.0f, 0.0f, 5.0));
+}
+
 int main()
 {
   test_crop_bounds_are_optional_and_radius_expanded();
   test_crop_local_map_by_horizontal_radius();
   test_min_points_and_target_choice();
   test_crop_request_validation();
+  test_local_map_target_reuse_distance();
   test_map_subscription_target_choice();
   test_crop_failure_count_and_log_throttles();
   test_target_failure_handling_decision();

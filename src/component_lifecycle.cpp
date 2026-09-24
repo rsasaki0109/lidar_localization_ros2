@@ -79,6 +79,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("enable_local_map_crop", false);
   declare_parameter("local_map_radius", 150.0);
   declare_parameter("local_map_min_points", 100);
+  declare_parameter("local_map_update_distance", 0.0);
   declare_parameter(
     "registration_source_cloud_keep_alive_count",
     static_cast<int>(lidar_localization::kDefaultRegistrationSourceCloudKeepAliveCount));
@@ -256,6 +257,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     if (use_local_map_crop_) {
       // Keep the raw full map and only voxel-filter the cropped local target per scan.
       full_map_cloud_ptr_ = map_cloud_ptr;
+      local_map_target_cached_ = false;
       RCLCPP_INFO(
         get_logger(), "Local map cropping enabled. Full map: %ld pts, radius: %.0fm",
         full_map_cloud_ptr_->size(), local_map_radius_);

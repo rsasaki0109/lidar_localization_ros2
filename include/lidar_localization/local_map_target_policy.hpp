@@ -118,6 +118,28 @@ inline LocalMapTargetSelectionDecision validateLocalMapCropSize(
   return {};
 }
 
+// Cropping, voxel-filtering and handing a new target to the registration
+// backend rebuilds its search structure (the NDT voxel grid), which dominates
+// the per-scan cost on dense maps. A target cropped around a nearby center is
+// still valid, so it is reused until the crop center has moved at least
+// update_distance_m. A non-positive distance keeps the re-crop-every-scan
+// behavior.
+inline bool shouldReuseLocalMapTarget(
+  bool has_cached_target,
+  float cached_center_x,
+  float cached_center_y,
+  float center_x,
+  float center_y,
+  double update_distance_m)
+{
+  if (!has_cached_target || !(update_distance_m > 0.0)) {
+    return false;
+  }
+  const double dx = static_cast<double>(center_x) - static_cast<double>(cached_center_x);
+  const double dy = static_cast<double>(center_y) - static_cast<double>(cached_center_y);
+  return dx * dx + dy * dy < update_distance_m * update_distance_m;
+}
+
 inline std::size_t localMapReserveCapacity(std::size_t full_map_points)
 {
   return full_map_points / 10;
