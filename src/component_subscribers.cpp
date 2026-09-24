@@ -49,9 +49,15 @@ void PCLLocalization::initializePubSub()
     "odom", rclcpp::SensorDataQoS(),
     std::bind(&PCLLocalization::odomReceived, this, std::placeholders::_1));
 
+  // Registration releases the state lock while aligning. Allow velocity reception
+  // during that interval without changing prediction or bypassing the state lock.
+  rclcpp::SubscriptionOptions twist_subscription_options;
+  twist_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  twist_subscription_options.callback_group = twist_callback_group_;
   twist_sub_ = create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(
     "twist", rclcpp::SensorDataQoS(),
-    std::bind(&PCLLocalization::twistReceived, this, std::placeholders::_1));
+    std::bind(&PCLLocalization::twistReceived, this, std::placeholders::_1),
+    twist_subscription_options);
 
   cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
     "cloud", rclcpp::SensorDataQoS().keep_last(cloud_queue_depth_),

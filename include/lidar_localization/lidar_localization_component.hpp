@@ -230,6 +230,7 @@ public:
   rclcpp::Subscription<sensor_msgs::msg::Imu>::ConstSharedPtr
     imu_sub_;
   rclcpp::CallbackGroup::SharedPtr imu_callback_group_;
+  rclcpp::CallbackGroup::SharedPtr twist_callback_group_;
 
   // --- Registration backends ---
 
