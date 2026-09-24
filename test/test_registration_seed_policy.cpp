@@ -209,6 +209,30 @@ void test_registration_seed_source_names_are_stable_for_diagnostics()
     "odom_tf_prediction");
 }
 
+void test_twist_prior_requires_fresh_finite_observations()
+{
+  std::array<double, 6> velocity{0.5, 0.0, 0.0, 0.0, 0.0, 0.1};
+  std::array<double, 36> covariance{};
+  for (std::size_t i = 0; i < 6; ++i) {covariance[7 * i] = 0.01;}
+  assert(ll::isTrustedTwistPriorSample(10.0, 9.95, velocity, covariance, true));
+  assert(ll::isTrustedTwistPriorSample(10.0, 10.05, velocity, covariance, true));
+  assert(!ll::isTrustedTwistPriorSample(10.0, 9.0, velocity, covariance, true));
+  assert(!ll::isTrustedTwistPriorSample(10.0, 10.3, velocity, covariance, true));
+  assert(!ll::isTrustedTwistPriorSample(10.0, 0.0, velocity, covariance, true));
+  assert(!ll::isTrustedTwistPriorSample(10.0, NAN, velocity, covariance, true));
+  assert(!ll::isTrustedTwistPriorSample(10.0, 9.95, velocity, covariance, false));
+  velocity[0] = NAN;
+  assert(!ll::isTrustedTwistPriorSample(10.0, 9.95, velocity, covariance, true));
+  velocity[0] = 0.5;
+  for (double invalid : std::array<double, 5>{0.0, -0.01, 1.0, NAN, INFINITY}) {
+    covariance[0] = invalid;
+    assert(!ll::isTrustedTwistPriorSample(10.0, 9.95, velocity, covariance, true));
+  }
+  covariance[0] = 0.01;
+  covariance[1] = NAN;
+  assert(!ll::isTrustedTwistPriorSample(10.0, 9.95, velocity, covariance, true));
+}
+
 int main()
 {
   test_imu_preintegration_has_highest_priority_when_finite();
@@ -221,5 +245,6 @@ int main()
   test_odom_tf_prediction_falls_back_to_twist_when_unavailable_and_tracking();
   test_imu_sample_and_dt_helpers();
   test_registration_seed_source_names_are_stable_for_diagnostics();
+  test_twist_prior_requires_fresh_finite_observations();
   return 0;
 }

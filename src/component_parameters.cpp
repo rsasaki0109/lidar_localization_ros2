@@ -1,4 +1,5 @@
 #include "component_internal.hpp"
+#include <stdexcept>
 void PCLLocalization::declareImuPreintegrationParameters()
 {
   // Backend and input units.
@@ -176,6 +177,16 @@ void PCLLocalization::initializeParameters()
   get_parameter("ndt_resolution", ndt_resolution_);
   get_parameter("ndt_step_size", ndt_step_size_);
   get_parameter("ndt_num_threads", ndt_num_threads_);
+  get_parameter("ndt_twist_prior_weight", ndt_twist_prior_weight_);
+  if (!std::isfinite(ndt_twist_prior_weight_) || ndt_twist_prior_weight_ < 0.0 ||
+    ndt_twist_prior_weight_ > 100.0)
+  {
+    throw std::invalid_argument("ndt_twist_prior_weight must be finite and in [0, 100]");
+  }
+  RCLCPP_INFO(get_logger(), "ndt_twist_prior_weight: %.6f", ndt_twist_prior_weight_);
+  if (ndt_twist_prior_weight_ > 0.0 && registration_method_ != "NDT_OMP") {
+    throw std::invalid_argument("ndt_twist_prior_weight requires NDT_OMP");
+  }
   get_parameter("ndt_max_iterations", ndt_max_iterations_);
   get_parameter("gicp_corr_randomness", gicp_corr_randomness_);
   get_parameter("gicp_max_correspondence_distance", gicp_max_correspondence_distance_);
@@ -721,4 +732,3 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(),"enable_timer_publishing: %d", enable_timer_publishing_);
   RCLCPP_INFO(get_logger(),"pose_publish_frequency: %lf", pose_publish_frequency_);
 }
-

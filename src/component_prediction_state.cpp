@@ -1,4 +1,15 @@
 #include "component_internal.hpp"
+bool PCLLocalization::hasUsableTwistPrediction(double stamp_sec) const
+{
+  if (!latest_twist_msg_) {return false;}
+  if (ndt_twist_prior_weight_ <= 0.0) {return true;}
+  const auto & msg = *latest_twist_msg_;
+  const auto & v = msg.twist.twist;
+  return lidar_localization::isTrustedTwistPriorSample(
+    stamp_sec, stamp_to_sec(msg.header.stamp),
+    {v.linear.x, v.linear.y, v.linear.z, v.angular.x, v.angular.y, v.angular.z},
+    msg.twist.covariance, msg.header.frame_id == base_frame_id_);
+}
 Eigen::Matrix4f PCLLocalization::currentPoseMatrix() const
 {
   if (!corrent_pose_with_cov_stamped_ptr_) {
@@ -66,13 +77,8 @@ void PCLLocalization::updatePredictionState(
 {
   const double accepted_interval_sec = have_last_accepted_pose_ ?
     stamp_sec - last_accepted_pose_time_sec_ : 0.0;
-  // Twist prediction integrates the motion itself; only previous-delta mode
-  // stores a one-step extrapolated prediction.
-  const bool extrapolate_previous_delta =
-    lidar_localization::choosePredictionAdvanceMode(
-    true, use_twist_prediction_, static_cast<bool>(latest_twist_msg_),
-    predict_pose_from_previous_delta_) !=
-    lidar_localization::PredictionAdvanceMode::kTwistPrediction;
+  // Store the pose at its timestamp in every prediction mode. Extrapolating
+  // here makes a later switch to twist integrate the same interval twice.
   const auto state = lidar_localization::updatePredictionStateFromAcceptedMeasurement(
     make_prediction_state_snapshot(
       have_last_accepted_pose_,
@@ -84,7 +90,7 @@ void PCLLocalization::updatePredictionState(
       predicted_pose_time_sec_),
     accepted_pose_matrix,
     stamp_sec,
-    extrapolate_previous_delta);
+    false);
   have_last_accepted_pose_ = state.have_last_accepted_pose;
   last_accepted_pose_matrix_ = state.last_accepted_pose_matrix;
   predicted_pose_matrix_ = state.predicted_pose_matrix;
@@ -105,7 +111,7 @@ void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
   const auto advance_mode = lidar_localization::choosePredictionAdvanceMode(
     have_last_accepted_pose_,
     use_twist_prediction_,
-    static_cast<bool>(latest_twist_msg_),
+    hasUsableTwistPrediction(stamp_sec),
     predict_pose_from_previous_delta_);
   Eigen::Matrix4f twist_predicted_pose_matrix = Eigen::Matrix4f::Identity();
   if (advance_mode == lidar_localization::PredictionAdvanceMode::kTwistPrediction) {

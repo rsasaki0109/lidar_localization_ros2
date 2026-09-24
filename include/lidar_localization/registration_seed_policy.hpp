@@ -2,10 +2,38 @@
 #define LIDAR_LOCALIZATION_REGISTRATION_SEED_POLICY_HPP_
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace lidar_localization
 {
+
+// Experimental 3-D twist prior admission. Unknown covariance (zero diagonal)
+// does not justify constraining registration. A small future allowance covers
+// scan acquisition preceding its delivery; larger clock skew is rejected.
+inline bool isTrustedTwistPriorSample(
+  double scan_stamp_sec, double twist_stamp_sec,
+  const std::array<double, 6> & velocity,
+  const std::array<double, 36> & covariance, bool frame_matches)
+{
+  const double age = scan_stamp_sec - twist_stamp_sec;
+  if (!frame_matches || twist_stamp_sec <= 0.0 || !std::isfinite(age) ||
+    age < -0.1 || age > 0.25)
+  {
+    return false;
+  }
+  for (double value : velocity) {
+    if (!std::isfinite(value)) {return false;}
+  }
+  for (double value : covariance) {
+    if (!std::isfinite(value)) {return false;}
+  }
+  for (std::size_t i = 0; i < 6; ++i) {
+    // Standard deviation must be positive and <= 0.5 m/s or rad/s.
+    if (covariance[7 * i] <= 0.0 || covariance[7 * i] > 0.25) {return false;}
+  }
+  return true;
+}
 
 enum class RegistrationSeedSource
 {

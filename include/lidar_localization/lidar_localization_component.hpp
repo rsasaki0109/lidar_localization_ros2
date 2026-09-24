@@ -454,6 +454,7 @@ public:
   lidar_localization::ErrorFloorCovarianceParams error_floor_covariance_params_;
 
   int ndt_num_threads_;
+  double ndt_twist_prior_weight_{0.0};
   int ndt_max_iterations_;
 
   double pose_publish_frequency_;
@@ -574,6 +575,7 @@ public:
 
   Eigen::Matrix4f currentPoseMatrix() const;
   Eigen::Matrix4f applyTwistPrediction(const Eigen::Matrix4f & pose_matrix, double dt_sec) const;
+  bool hasUsableTwistPrediction(double stamp_sec) const;
   void resetPredictionState(const Eigen::Matrix4f & pose_matrix, double stamp_sec);
   void updatePredictionState(const Eigen::Matrix4f & accepted_pose_matrix, double stamp_sec);
   void advancePredictionWithoutMeasurement(double stamp_sec);

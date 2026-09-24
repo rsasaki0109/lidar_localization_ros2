@@ -1,0 +1,4 @@
+# Experimental overlay on the validated JEPLO leg-twist preset, not a default.
+/**:
+  ros__parameters:
+    ndt_twist_prior_weight: 1.0

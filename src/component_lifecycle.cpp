@@ -25,6 +25,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("ndt_step_size", 0.1);
   declare_parameter("ndt_max_iterations", 35);
   declare_parameter("ndt_num_threads", 4);
+  declare_parameter("ndt_twist_prior_weight", 0.0);
   declare_parameter("gicp_corr_randomness", 20);
   declare_parameter("gicp_max_correspondence_distance", 2.0);
   declare_parameter("vgicp_voxel_resolution", 1.0);

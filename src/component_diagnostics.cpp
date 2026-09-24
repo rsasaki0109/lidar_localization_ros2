@@ -130,6 +130,10 @@ diagnostic_msgs::msg::DiagnosticStatus PCLLocalization::makeAlignmentDiagnosticS
   status.name = "lidar_localization_ros2/alignment";
   status.message = status_input.message;
   status.hardware_id = status_input.registration_method;
+  diagnostic_msgs::msg::KeyValue prior_weight;
+  prior_weight.key = "ndt_twist_prior_weight";
+  prior_weight.value = std::to_string(ndt_twist_prior_weight_);
+  status.values.push_back(prior_weight);
   return status;
 }
 
@@ -307,4 +311,3 @@ void PCLLocalization::publishAlignmentDiagnosticStatus(
 {
   status_pub_->publish(makeAlignmentDiagnosticArray(stamp, status));
 }
-

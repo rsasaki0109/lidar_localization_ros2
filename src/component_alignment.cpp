@@ -130,7 +130,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       twist_ekf_.isInitialized(),
       use_twist_prediction_,
       have_last_accepted_pose_,
-      static_cast<bool>(latest_twist_msg_),
+      hasUsableTwistPrediction(scan_stamp_sec),
       predict_pose_from_previous_delta_,
       use_odom_tf_prediction_,
       odom_tf_bridge_available});
@@ -164,7 +164,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
           latest_horizontal_localizability_.eigenvalue_ratio,
           localizability_min_xy_eigen_ratio_);
       } else {
-        selected_seed.init_guess = predicted_pose_matrix_;
+        selected_seed.init_guess = predicted_pose_matrix_ * last_relative_motion_matrix_;
       }
       break;
     case lidar_localization::RegistrationSeedSource::kLocalizabilityGuard:
@@ -173,6 +173,19 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
     case lidar_localization::RegistrationSeedSource::kOdomTfPrediction:
       selected_seed.init_guess = odom_tf_prediction;
       break;
+  }
+
+  if (ndt_omp_registration_) {
+    ndt_omp_registration_->clearTranslationPrior();
+    const auto source = ndt_omp_registration_->getInputSource();
+    if (ndt_twist_prior_weight_ > 0.0 && source && !source->empty() &&
+      accepted_updates_since_reset_ > 0 &&
+      selected_seed.source == lidar_localization::RegistrationSeedSource::kTwistPrediction)
+    {
+      ndt_omp_registration_->setTranslationPrior(
+        selected_seed.init_guess.block<3, 1>(0, 3).cast<double>(),
+        Eigen::Vector3d::Constant(ndt_twist_prior_weight_ * source->size()));
+    }
   }
 
   if (seed_decision.ignored_non_finite_imu_prediction) {
@@ -665,4 +678,3 @@ void PCLLocalization::printAlignmentDebugInfo(
   std::cout << "delta_angle:" << delta_angle * 180 / M_PI << "[deg]" << std::endl;
   std::cout << "-----------------------------------------------------" << std::endl;
 }
-
