@@ -196,14 +196,20 @@ inline bool pointFieldFitsPointStep(
          static_cast<std::size_t>(point_step);
 }
 
+inline bool isFloatingPointField(const sensor_msgs::msg::PointField & field)
+{
+  return field.datatype == sensor_msgs::msg::PointField::FLOAT32 ||
+         field.datatype == sensor_msgs::msg::PointField::FLOAT64;
+}
+
 inline double pointTimeFieldScaleToSeconds(const sensor_msgs::msg::PointField & field)
 {
-  if (field.name == "offset_time" || field.name == "t") {
-    return 1.0e-9;
-  }
-  if (field.name == "timestamp" &&
-    field.datatype != sensor_msgs::msg::PointField::FLOAT32 &&
-    field.datatype != sensor_msgs::msg::PointField::FLOAT64)
+  // Integer "t" / "offset_time" / "timestamp" fields are nanoseconds (Ouster,
+  // Livox).  Floating-point time fields are seconds; converted Livox clouds
+  // commonly carry an absolute float64 "t" in seconds, and scaling that by
+  // 1e-9 collapses the scan duration to ~0 and silently disables deskew.
+  if ((field.name == "offset_time" || field.name == "t" || field.name == "timestamp") &&
+    !isFloatingPointField(field))
   {
     return 1.0e-9;
   }
