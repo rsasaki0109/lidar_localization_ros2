@@ -97,11 +97,16 @@ inline PredictionStateSnapshot advancePredictionWithoutMeasurement(
   PredictionAdvanceMode mode,
   const Eigen::Matrix4f & twist_predicted_pose_matrix = Eigen::Matrix4f::Identity())
 {
-  if (!current.have_last_accepted_pose || mode == PredictionAdvanceMode::kNone) {
+  if (!current.have_last_accepted_pose) {
     return current;
   }
 
   PredictionStateSnapshot next = current;
+  if (mode == PredictionAdvanceMode::kNone) {
+    // Rejection accounting is independent of advancing the motion prediction.
+    ++next.consecutive_rejected_updates;
+    return next;
+  }
   if (mode == PredictionAdvanceMode::kTwistPrediction) {
     next.predicted_pose_matrix = twist_predicted_pose_matrix;
   } else if (mode == PredictionAdvanceMode::kPreviousDelta) {

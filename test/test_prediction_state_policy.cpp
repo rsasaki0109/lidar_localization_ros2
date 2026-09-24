@@ -103,10 +103,17 @@ void test_advance_prediction_without_measurement()
   assert(advanced.predicted_pose_time_sec == 3.0);
   assert(advanced.consecutive_rejected_updates == 1);
 
-  const auto unchanged = ll::advancePredictionWithoutMeasurement(
-    state, 4.0, ll::PredictionAdvanceMode::kNone);
-  assert(near(unchanged.predicted_pose_matrix(0, 3), 3.0f));
-  assert(unchanged.consecutive_rejected_updates == 0);
+  auto held = state;
+  for (std::size_t rejects = 1; rejects <= 12; ++rejects) {
+    held = ll::advancePredictionWithoutMeasurement(
+      held, 4.0 + rejects, ll::PredictionAdvanceMode::kNone);
+    assert(near(held.predicted_pose_matrix(0, 3), 3.0f));
+    assert(held.predicted_pose_time_sec == state.predicted_pose_time_sec);
+    assert(held.last_accepted_pose_time_sec == state.last_accepted_pose_time_sec);
+    assert(held.consecutive_rejected_updates == rejects);
+  }
+  held = ll::updatePredictionStateFromAcceptedMeasurement(held, pose_x(4.0f), 20.0, false);
+  assert(held.consecutive_rejected_updates == 0);
 }
 
 void test_rejected_measurement_updates_prediction_only()
