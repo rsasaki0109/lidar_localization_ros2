@@ -1,5 +1,6 @@
 #include "lidar_localization/prediction_state_policy.hpp"
 #include "lidar_localization/alignment_retry_policy.hpp"
+#include "lidar_localization/registration_seed_policy.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -170,9 +171,34 @@ void test_rejections_without_prediction_enable_retry_and_preserve_motion()
   assert(unchanged.consecutive_rejected_updates == 0);
 }
 
+void test_twist_dropout_and_return_keep_a_single_time_anchor()
+{
+  // Constant 1 m/s motion. Keep the stored pose at the last processed scan,
+  // even when the next seed must use previous-delta rather than twist.
+  auto state = ll::resetPredictionState(pose_x(0.0f), 10.0);
+  state = ll::updatePredictionStateFromAcceptedMeasurement(state, pose_x(0.1f), 10.1, false);
+  const Eigen::Matrix4f delta_seed =
+    state.predicted_pose_matrix * state.last_relative_motion_matrix;
+  assert(near(delta_seed(0, 3), 0.2f));
+  state = ll::advancePredictionWithoutMeasurement(
+    state, 10.2, ll::PredictionAdvanceMode::kPreviousDelta);
+  assert(near(state.predicted_pose_matrix(0, 3), 0.2f));
+  // Twist returns after a rejected dropout scan: advance only 10.2 -> 10.3.
+  double dt = ll::clampPredictionDt(10.3, state.predicted_pose_time_sec, 1.5);
+  assert(near(state.predicted_pose_matrix(0, 3) + dt, 0.3f));
+  state = ll::updatePredictionStateFromAcceptedMeasurement(state, pose_x(0.3f), 10.3, false);
+  // Twist also returns after an accepted fallback scan: no stored future delta.
+  dt = ll::clampPredictionDt(10.4, state.predicted_pose_time_sec, 1.5);
+  assert(near(state.predicted_pose_matrix(0, 3) + dt, 0.4f));
+  const Eigen::Matrix4f next_delta_seed =
+    state.predicted_pose_matrix * state.last_relative_motion_matrix;
+  assert(near(next_delta_seed(0, 3), 0.4f));
+}
+
 int main()
 {
   test_rejections_without_prediction_enable_retry_and_preserve_motion();
+  test_twist_dropout_and_return_keep_a_single_time_anchor();
   test_accepted_measurement_without_previous_delta_extrapolation();
   test_reset_prediction_state();
   test_accepted_measurement_initializes_when_empty();
