@@ -261,6 +261,7 @@ void PCLLocalization::initializeParameters()
   get_parameter("predict_pose_from_previous_delta", predict_pose_from_previous_delta_);
   get_parameter("enable_local_map_crop", enable_local_map_crop_);
   get_parameter("local_map_radius", local_map_radius_);
+  get_parameter("local_map_update_distance", local_map_update_distance_);
   int requested_local_map_min_points = static_cast<int>(local_map_min_points_);
   get_parameter("local_map_min_points", requested_local_map_min_points);
   const auto local_map_min_points =
@@ -335,6 +336,19 @@ void PCLLocalization::initializeParameters()
   get_parameter(
     "borderline_seed_gate_min_seed_translation_m",
     measurement_gate_config_.borderline_seed_gate_min_seed_translation_m);
+  get_parameter(
+    "enable_seed_correction_guard", measurement_gate_config_.enable_seed_correction_guard);
+  get_parameter(
+    "seed_correction_guard_translation_m",
+    measurement_gate_config_.seed_correction_guard_translation_m);
+  get_parameter(
+    "seed_correction_guard_yaw_deg", measurement_gate_config_.seed_correction_guard_yaw_deg);
+  get_parameter(
+    "seed_correction_guard_release_rejections",
+    measurement_gate_config_.seed_correction_guard_release_rejections);
+  get_parameter(
+    "seed_correction_guard_warmup_accepts",
+    measurement_gate_config_.seed_correction_guard_warmup_accepts);
   get_parameter(
     "enable_odom_tf_prediction_correction_guard",
     measurement_gate_config_.enable_odom_tf_prediction_correction_guard);
@@ -560,6 +574,8 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "local_map_min_points: %zu", local_map_min_points_);
   RCLCPP_INFO(
+    get_logger(), "local_map_update_distance: %lf", local_map_update_distance_);
+  RCLCPP_INFO(
     get_logger(), "reject_above_score_threshold: %d", measurement_gate_config_.reject_above_score_threshold);
   RCLCPP_INFO(
     get_logger(), "enable_consistency_recovery_gate: %d",
@@ -619,6 +635,14 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "rejected_seed_update_max_correction_yaw_deg: %lf",
     measurement_gate_config_.rejected_seed_update_max_correction_yaw_deg);
+  RCLCPP_INFO(
+    get_logger(), "seed_correction_guard: enabled=%d translation_m=%lf yaw_deg=%lf "
+    "release_rejections=%d warmup_accepts=%d",
+    measurement_gate_config_.enable_seed_correction_guard,
+    measurement_gate_config_.seed_correction_guard_translation_m,
+    measurement_gate_config_.seed_correction_guard_yaw_deg,
+    measurement_gate_config_.seed_correction_guard_release_rejections,
+    measurement_gate_config_.seed_correction_guard_warmup_accepts);
   RCLCPP_INFO(
     get_logger(), "enable_odom_tf_prediction_correction_guard: %d",
     measurement_gate_config_.enable_odom_tf_prediction_correction_guard);
