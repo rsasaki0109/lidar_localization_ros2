@@ -13,7 +13,7 @@ import yaml
 
 def iter_tum_poses(
     path: Path,
-) -> Iterator[tuple[float, float, float, float, float, float, float]]:
+) -> Iterator[tuple[float, float, float, float, float, float, float, float]]:
     with path.open("r", encoding="utf-8", errors="replace") as stream:
         for line in stream:
             line = line.strip()
@@ -54,6 +54,46 @@ def export_initial_pose_yaml(
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+
+def write_reference_csv(
+    rows: list[tuple[float, float, float, float, float, float, float, float]],
+    output_csv: Path,
+) -> None:
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    with output_csv.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(
+            [
+                "message_index",
+                "stamp_sec",
+                "frame_id",
+                "position_x",
+                "position_y",
+                "position_z",
+                "orientation_x",
+                "orientation_y",
+                "orientation_z",
+                "orientation_w",
+                "covariance",
+            ]
+        )
+        for index, (t, x, y, z, qx, qy, qz, qw) in enumerate(rows):
+            writer.writerow(
+                [
+                    index,
+                    f"{t:.9f}",
+                    "map",
+                    f"{x:.10f}",
+                    f"{y:.10f}",
+                    f"{z:.10f}",
+                    f"{qx:.10f}",
+                    f"{qy:.10f}",
+                    f"{qz:.10f}",
+                    f"{qw:.10f}",
+                    "",
+                ]
+            )
 
 
 def main() -> int:
@@ -103,40 +143,7 @@ def main() -> int:
 
     first_t = rows[0][0]
 
-    args.output_csv.parent.mkdir(parents=True, exist_ok=True)
-    with args.output_csv.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.writer(stream)
-        writer.writerow(
-            [
-                "message_index",
-                "stamp_sec",
-                "frame_id",
-                "position_x",
-                "position_y",
-                "position_z",
-                "orientation_x",
-                "orientation_y",
-                "orientation_z",
-                "orientation_w",
-                "covariance",
-            ]
-        )
-        for i, (t, x, y, z, qx, qy, qz, qw) in enumerate(rows):
-            writer.writerow(
-                [
-                    i,
-                    f"{t:.9f}",
-                    "map",
-                    f"{x:.10f}",
-                    f"{y:.10f}",
-                    f"{z:.10f}",
-                    f"{qx:.10f}",
-                    f"{qy:.10f}",
-                    f"{qz:.10f}",
-                    f"{qw:.10f}",
-                    "",
-                ]
-            )
+    write_reference_csv(rows, args.output_csv)
 
     if args.output_initial_pose_yaml:
         if args.initial_pose_skip_sec and args.initial_pose_skip_sec > 0.0:

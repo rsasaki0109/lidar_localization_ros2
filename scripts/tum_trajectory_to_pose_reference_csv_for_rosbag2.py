@@ -4,25 +4,15 @@
 from __future__ import annotations
 
 import argparse
-import csv
-from collections.abc import Iterator
 from pathlib import Path
 
 import yaml
 
-
-def iter_tum_poses(
-    path: Path,
-) -> Iterator[tuple[float, float, float, float, float, float, float, float]]:
-    with path.open("r", encoding="utf-8", errors="replace") as stream:
-        for line in stream:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = line.split()
-            if len(parts) < 8:
-                continue
-            yield tuple(float(part) for part in parts[:8])  # type: ignore[return-value]
+from tum_trajectory_to_pose_reference_csv import (
+    export_initial_pose_yaml,
+    iter_tum_poses,
+    write_reference_csv,
+)
 
 
 def resolve_bag_metadata_path(bag_path: Path) -> Path:
@@ -67,69 +57,6 @@ def load_bag_time_window(
         else min(start_sec + bag_duration, bag_full_end)
     )
     return start_sec, end_sec
-
-
-def export_initial_pose_yaml(
-    path: Path,
-    position: tuple[float, float, float],
-    quaternion: tuple[float, float, float, float],
-) -> None:
-    data = {
-        "/**": {
-            "ros__parameters": {
-                "set_initial_pose": True,
-                "initial_pose_x": position[0],
-                "initial_pose_y": position[1],
-                "initial_pose_z": position[2],
-                "initial_pose_qx": quaternion[0],
-                "initial_pose_qy": quaternion[1],
-                "initial_pose_qz": quaternion[2],
-                "initial_pose_qw": quaternion[3],
-            }
-        }
-    }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-
-
-def write_reference_csv(
-    rows: list[tuple[float, float, float, float, float, float, float, float]],
-    output_csv: Path,
-) -> None:
-    output_csv.parent.mkdir(parents=True, exist_ok=True)
-    with output_csv.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.writer(stream)
-        writer.writerow(
-            [
-                "message_index",
-                "stamp_sec",
-                "frame_id",
-                "position_x",
-                "position_y",
-                "position_z",
-                "orientation_x",
-                "orientation_y",
-                "orientation_z",
-                "orientation_w",
-                "covariance",
-            ]
-        )
-        for index, (t, x, y, z, qx, qy, qz, qw) in enumerate(rows):
-            writer.writerow(
-                [
-                    index,
-                    f"{t:.9f}",
-                    "map",
-                    f"{x:.10f}",
-                    f"{y:.10f}",
-                    f"{z:.10f}",
-                    f"{qx:.10f}",
-                    f"{qy:.10f}",
-                    f"{qz:.10f}",
-                    f"{qw:.10f}",
-                    "",
-                ]
-            )
 
 
 def main() -> int:
