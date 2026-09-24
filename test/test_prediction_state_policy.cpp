@@ -126,8 +126,23 @@ void test_rejected_measurement_updates_prediction_only()
   assert(near(unchanged.predicted_pose_matrix(0, 3), 0.0f));
 }
 
+void test_accepted_measurement_without_previous_delta_extrapolation()
+{
+  Eigen::Matrix4f first = Eigen::Matrix4f::Identity();
+  Eigen::Matrix4f second = Eigen::Matrix4f::Identity();
+  second(0, 3) = 1.0f;
+  auto state = ll::resetPredictionState(first, 0.0);
+  state = ll::updatePredictionStateFromAcceptedMeasurement(state, second, 0.1, false);
+  // Twist prediction starts from the accepted pose; the delta is still kept.
+  assert(near(state.predicted_pose_matrix(0, 3), 1.0f));
+  assert(near(state.last_relative_motion_matrix(0, 3), 1.0f));
+  state = ll::updatePredictionStateFromAcceptedMeasurement(state, second, 0.2);
+  assert(near(state.predicted_pose_matrix(0, 3), 1.0f));  // zero delta now
+}
+
 int main()
 {
+  test_accepted_measurement_without_previous_delta_extrapolation();
   test_reset_prediction_state();
   test_accepted_measurement_initializes_when_empty();
   test_accepted_measurement_updates_relative_motion_without_reject_streak();

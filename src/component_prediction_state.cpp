@@ -65,6 +65,13 @@ void PCLLocalization::updatePredictionState(
 {
   const double accepted_interval_sec = have_last_accepted_pose_ ?
     stamp_sec - last_accepted_pose_time_sec_ : 0.0;
+  // Twist prediction integrates the motion itself; only previous-delta mode
+  // stores a one-step extrapolated prediction.
+  const bool extrapolate_previous_delta =
+    lidar_localization::choosePredictionAdvanceMode(
+    true, use_twist_prediction_, static_cast<bool>(latest_twist_msg_),
+    predict_pose_from_previous_delta_) !=
+    lidar_localization::PredictionAdvanceMode::kTwistPrediction;
   const auto state = lidar_localization::updatePredictionStateFromAcceptedMeasurement(
     make_prediction_state_snapshot(
       have_last_accepted_pose_,
@@ -75,7 +82,8 @@ void PCLLocalization::updatePredictionState(
       last_accepted_pose_time_sec_,
       predicted_pose_time_sec_),
     accepted_pose_matrix,
-    stamp_sec);
+    stamp_sec,
+    extrapolate_previous_delta);
   have_last_accepted_pose_ = state.have_last_accepted_pose;
   last_accepted_pose_matrix_ = state.last_accepted_pose_matrix;
   predicted_pose_matrix_ = state.predicted_pose_matrix;
