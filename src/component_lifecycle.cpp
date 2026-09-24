@@ -110,6 +110,11 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("odom_tf_prediction_recovery_max_fitness", 1.5);
   declare_parameter("odom_tf_prediction_recovery_guard_translation_m", 5.0);
   declare_parameter("odom_tf_prediction_recovery_guard_yaw_deg", 30.0);
+  declare_parameter("enable_seed_correction_guard", false);
+  declare_parameter("seed_correction_guard_translation_m", 0.5);
+  declare_parameter("seed_correction_guard_yaw_deg", 15.0);
+  declare_parameter("seed_correction_guard_release_rejections", 10);
+  declare_parameter("seed_correction_guard_warmup_accepts", 5);
   declare_parameter("enable_rejected_seed_update", false);
   declare_parameter("rejected_seed_update_min_rejections", 0);
   declare_parameter("rejected_seed_update_max_fitness", 10.0);

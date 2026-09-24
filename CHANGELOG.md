@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Fixed
+
+- Twist prediction no longer counts the inter-scan motion twice: after an accepted
+  update the stored prediction was already extrapolated by the previous delta, and the
+  twist seed then integrated the same motion again on top of it.
+- Floating-point per-point time fields named `t` / `offset_time` / `timestamp` are now
+  read as seconds; only integer ones are nanoseconds. An absolute float64 `t` (e.g.
+  converted Livox clouds) was scaled by 1e-9, collapsing the scan duration to ~0.
+
+### Added
+
+- `local_map_update_distance` reuses the cropped local-map registration target until
+  the crop center has moved that far (default `0` keeps re-cropping every scan).
+- Opt-in seed-agnostic jump guard: `enable_seed_correction_guard`,
+  `seed_correction_guard_translation_m`, `seed_correction_guard_yaw_deg`,
+  `seed_correction_guard_release_rejections`, `seed_correction_guard_warmup_accepts`.
+  Rejections report `seed_correction_guard_rejected` and count as rejected measurements
+  for recovery/reinitialization.
+
 ### Changed
 
 - Continuous-time deskew now defaults on in the component, launch files, and shipped

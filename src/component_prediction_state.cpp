@@ -57,6 +57,7 @@ void PCLLocalization::resetPredictionState(const Eigen::Matrix4f & pose_matrix, 
   last_accepted_pose_time_sec_ = state.last_accepted_pose_time_sec;
   predicted_pose_time_sec_ = state.predicted_pose_time_sec;
   last_relative_motion_duration_sec_ = 0.0;
+  accepted_updates_since_reset_ = 0;
 }
 
 void PCLLocalization::updatePredictionState(
@@ -93,6 +94,9 @@ void PCLLocalization::updatePredictionState(
   predicted_pose_time_sec_ = state.predicted_pose_time_sec;
   if (std::isfinite(accepted_interval_sec) && accepted_interval_sec > 0.0) {
     last_relative_motion_duration_sec_ = accepted_interval_sec;
+  }
+  if (accepted_updates_since_reset_ < std::numeric_limits<std::size_t>::max()) {
+    ++accepted_updates_since_reset_;
   }
 }
 

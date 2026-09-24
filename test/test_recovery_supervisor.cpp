@@ -215,8 +215,15 @@ void test_state_names_are_stable_diagnostic_contract()
     "reinitialization_requested");
 }
 
+void test_seed_correction_guard_counts_as_rejected_measurement()
+{
+  assert(ll::isRecoveryFailureStatus("seed_correction_guard_rejected"));
+  assert(ll::isRejectedMeasurementStatus("seed_correction_guard_rejected"));
+}
+
 int main()
 {
+  test_seed_correction_guard_counts_as_rejected_measurement();
   test_reinitialization_builders_map_fields();
   test_non_failure_does_not_request_reinitialization();
   test_target_unavailable_can_request_reinitialization();

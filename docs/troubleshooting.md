@@ -99,7 +99,7 @@ default registration path remains scan-to-map NDT/GICP.
 | Key | Meaning |
 | --- | --- |
 | `scan_time_status` | one of `scan_time_range_ready`, `scan_time_field_missing`, `scan_time_field_invalid`, or `scan_time_range_too_large` |
-| `scan_time_field` | field selected from `time`, `t`, `timestamp`, or `offset_time` |
+| `scan_time_field` | field selected from `time`, `t`, `timestamp`, or `offset_time`; integer `t` / `offset_time` / `timestamp` are nanoseconds, floating-point time fields are seconds (absolute or relative) |
 | `scan_time_duration_sec` | observed scan span after normalizing per-point times |
 | `scan_time_valid_point_count` / `scan_time_invalid_point_count` | points with readable vs unreadable timing |
 | `deskew_ready` | `true` only when scan timing and IMU preintegration are both ready for a future deskew stage |
@@ -167,6 +167,7 @@ These keys are diagnostics only — they never change acceptance behavior.
 | `local_map_crop_too_small` | predicted pose is outside local map crop | wrong initial pose or map frame offset; re-send `/initialpose` |
 | `registration_not_converged` | NDT/GICP did not converge | initial pose too far from truth; try closer seed |
 | `fitness_score_over_threshold_rejected` | match quality too poor | fix initial pose, map alignment, or sensor frame |
+| `seed_correction_guard_rejected` | result jumped more than `seed_correction_guard_translation_m` / `_yaw_deg` from the seed (opt-in guard) | expected while an aliased match is suppressed; persistent streaks mean the seed itself drifted |
 | `fitness_score_over_threshold_consistency_recovered` | borderline reject overridden by consistency gate | monitor; may recover if environment is consistent |
 | `recovery_retry_from_last_pose_recovered` | retry from last good pose succeeded | transient glitch; usually OK |
 | `gtsam_update_rejected` / `ekf_update_rejected` | backend smoother rejected the update | often follows repeated measurement rejects |
@@ -206,6 +207,31 @@ For benchmark runs, record diagnostics to CSV with `benchmark_diagnostic_recorde
 
 Do not expect automatic relocalization in v1.1 runtime; use a new `/initialpose`
 when `reinitialization_requested` stays true.
+
+## Symptom: Pose Rate Drops or Tracking Is Lost on Dense Maps
+
+With `enable_local_map_crop: true` (and always for GICP/small_gicp backends) the
+target is cropped, voxel-filtered, and handed to the registration backend on every
+scan, which rebuilds its search structure. On dense maps this can cost 0.1-0.25 s per
+scan, so `cloud_queue_depth: 1` drops scans and fast turns lose track.
+
+- set `local_map_update_distance` (m, default `0` = re-crop every scan) to reuse the
+  target until the crop center has moved that far, e.g. `5.0` for a `30`-`80` m radius
+- or, when the full map fits in memory, disable the crop for NDT backends
+
+## Symptom: Pose Jumps Along a Corridor-Like Axis
+
+In scenes that constrain one horizontal axis weakly (long rooms, corridors) a scan with
+unmapped structure can make NDT slide by meters in one update while the fitness still
+looks good; previous-delta prediction then extrapolates the jump.
+
+- feed a motion prior (`use_twist_prediction` with wheel/leg odometry twist)
+- enable `enable_seed_correction_guard` to reject results that land more than
+  `seed_correction_guard_translation_m` (default `0.5`) / `seed_correction_guard_yaw_deg`
+  (default `15`) from the seed. The guard is inactive for the first
+  `seed_correction_guard_warmup_accepts` (default `5`) accepts after an initial pose and
+  releases after `seed_correction_guard_release_rejections` (default `10`) consecutive
+  rejects so a drifted seed can re-lock. Only use it with a seed you trust per scan.
 
 ## Symptom: Map Not Visible in RViz (#43, #48)
 

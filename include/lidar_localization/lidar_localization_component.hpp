@@ -486,6 +486,7 @@ public:
   Eigen::Matrix4f predicted_pose_matrix_{Eigen::Matrix4f::Identity()};
   Eigen::Matrix4f last_relative_motion_matrix_{Eigen::Matrix4f::Identity()};
   double last_relative_motion_duration_sec_{0.0};
+  std::size_t accepted_updates_since_reset_{0};
   std::size_t consecutive_rejected_updates_{0};
   double last_accepted_pose_time_sec_{0.0};
   double predicted_pose_time_sec_{0.0};

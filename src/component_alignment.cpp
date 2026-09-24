@@ -482,7 +482,8 @@ lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurement
     attempt.correction_translation_m,
     attempt.correction_yaw_deg,
     consecutive_rejected_updates_,
-    use_odom_tf_prediction_ && has_last_good_map_to_odom_);
+    use_odom_tf_prediction_ && has_last_good_map_to_odom_,
+    accepted_updates_since_reset_);
   auto gate =
     lidar_localization::evaluateMeasurementGate(measurementGateParams(), gate_input);
   if (gate.status_level == lidar_localization::kMeasurementGateWarn) {
