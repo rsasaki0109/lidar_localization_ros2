@@ -7,6 +7,10 @@
 - Twist prediction no longer counts the inter-scan motion twice: after an accepted
   update the stored prediction was already extrapolated by the previous delta, and the
   twist seed then integrated the same motion again on top of it.
+- The first scan after map load no longer stalls for ~1 s: `pcl::Registration` builds
+  its target search tree lazily in the first `align()` (even for NDT, which does not use
+  it). The full-map target is now warmed up at map load, so the scans that follow are
+  not dropped while the robot keeps moving.
 - Floating-point per-point time fields named `t` / `offset_time` / `timestamp` are now
   read as seconds; only integer ones are nanoseconds. An absolute float64 `t` (e.g.
   converted Livox clouds) was scaled by 1e-9, collapsing the scan duration to ~0.

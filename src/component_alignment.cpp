@@ -220,6 +220,33 @@ Eigen::Matrix4f PCLLocalization::refineSeedWithNdtInitializer(
   return refined_seed;
 }
 
+void PCLLocalization::warmUpRegistrationTarget(
+  const pcl::PointCloud<pcl::PointXYZI>::Ptr & target)
+{
+  // pcl::Registration builds its target search tree lazily inside the first
+  // align() call (even for NDT, which does not use it).  On a large map that
+  // takes about a second and stalls the first scan, dropping the following
+  // ones while the robot keeps moving.  Pay that cost at map load instead by
+  // aligning a small probe cloud once.
+  if (!registration_ || !target || target->empty()) {
+    return;
+  }
+  pcl::PointCloud<pcl::PointXYZI>::Ptr probe(new pcl::PointCloud<pcl::PointXYZI>());
+  const std::size_t stride = std::max<std::size_t>(1, target->size() / 100);
+  for (std::size_t i = 0; i < target->size(); i += stride) {
+    probe->push_back(target->points[i]);
+  }
+  const auto start = std::chrono::steady_clock::now();
+  registration_->setInputSource(probe);
+  lidar_localization::keepRegistrationCloudAlive(
+    recent_source_clouds_, probe, registration_source_cloud_keep_alive_count_);
+  pcl::PointCloud<pcl::PointXYZI> output;
+  registration_->align(output, Eigen::Matrix4f::Identity());
+  RCLCPP_INFO(
+    get_logger(), "Registration target warm-up took %.3f s",
+    std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
+}
+
 bool PCLLocalization::setInputTargetForPose(const Eigen::Matrix4f & center_pose_matrix)
 {
   if (!use_local_map_crop_ || !full_map_cloud_ptr_) {

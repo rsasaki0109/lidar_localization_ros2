@@ -287,6 +287,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
       }
     } else if (target_setup.set_full_map_as_registration_target) {
       registration_->setInputTarget(map_cloud_ptr);
+      warmUpRegistrationTarget(map_cloud_ptr);
     }
 
     map_recieved_ = true;

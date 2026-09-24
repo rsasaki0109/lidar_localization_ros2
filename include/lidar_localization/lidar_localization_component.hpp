@@ -537,6 +537,7 @@ public:
     const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud,
     const Eigen::Matrix4f & init_guess);
   bool setInputTargetForPose(const Eigen::Matrix4f & center_pose_matrix);
+  void warmUpRegistrationTarget(const pcl::PointCloud<pcl::PointXYZI>::Ptr & target);
   lidar_localization::AlignmentAttempt runAlignmentAttempt(
     const Eigen::Matrix4f & attempt_init_guess,
     const Eigen::Matrix4f & crop_center_pose_matrix,
