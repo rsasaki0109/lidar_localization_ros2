@@ -466,8 +466,19 @@ void PCLLocalization::twistReceived(
 {
   auto state_lock = callback_state_coordinator_.lockState();
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
-  double stamp_sec = stamp_to_sec(msg->header.stamp);
   const auto & twist = msg->twist.twist;
+  const double velocity[] = {
+    twist.linear.x, twist.linear.y, twist.linear.z,
+    twist.angular.x, twist.angular.y, twist.angular.z};
+  for (const double value : velocity) {
+    if (!std::isfinite(value)) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "Ignoring non-finite twist; retaining the last valid velocity");
+      return;
+    }
+  }
+  double stamp_sec = stamp_to_sec(msg->header.stamp);
   twist_history_.insert(lidar_localization::TimestampedTwist{
     stamp_sec,
     Eigen::Vector3d(twist.linear.x, twist.linear.y, twist.linear.z),
