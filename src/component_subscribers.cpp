@@ -1,3 +1,4 @@
+#include "../experiments/tf_single_wait.hpp"
 #include "component_internal.hpp"
 #include <pcl/registration/gicp.h>
 #include <pcl/registration/ndt.h>
@@ -710,6 +711,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   if (!admitScanMessage(msg, &scan_stamp_sec)) {
     return;
   }
+  tf_single_wait::Scope odom_lookup_wait_scope;
   // A twist callback may run while alignment releases the state lock. Keep the
   // seed and rejected advance on the same observation; receive fresh data for
   // the next scan without changing this scan's prediction halfway through.
