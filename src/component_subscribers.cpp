@@ -1,3 +1,4 @@
+#include "../experiments/tf_shared_wait.hpp"
 #include "component_internal.hpp"
 #include <pcl/registration/gicp.h>
 #include <pcl/registration/ndt.h>
@@ -714,6 +715,21 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   // seed and rejected advance on the same observation; receive fresh data for
   // the next scan without changing this scan's prediction halfway through.
   scan_twist_msg_ = latest_twist_msg_;
+  const bool share_odom_wait =
+    enable_map_odom_tf_ && use_odom_tf_prediction_ && has_last_good_map_to_odom_;
+  tf_shared_wait::Scope odom_wait_scope(share_odom_wait);
+  if (share_odom_wait) {
+    // Keep the twist snapshot above fixed while allowing the odometry needed by
+    // prediction to arrive. Existing callers recheck availability without waiting.
+    try {
+      (void)tfbuffer_.canTransform(
+        odom_frame_id_, base_frame_id_, msg->header.stamp,
+        rclcpp::Duration::from_seconds(tf_shared_wait::shared_timeout_sec));
+    } catch (const tf2::TransformException &) {
+      // Existing lookup callers report transform errors and select the fallback.
+    }
+  }
+
   // Odom bridge: keep map -> odom alive (re-stamped from the last accepted
   // match) on every admitted scan callback, whether or not this particular
   // scan ends up accepted below. See republishFrozenMapToOdomTransform and the
