@@ -1,4 +1,6 @@
 #include "component_internal.hpp"
+#include "experiment_prediction_trace.hpp"
+#include "../experiments/box_boundary_delay.hpp"
 PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSeed(
   const builtin_interfaces::msg::Time & stamp, double scan_stamp_sec)
 {
@@ -152,6 +154,10 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       const double dt = lidar_localization::clampPredictionDt(
         scan_stamp_sec, predicted_pose_time_sec_, max_twist_prediction_dt_);
       selected_seed.init_guess = applyTwistPrediction(predicted_pose_matrix_, dt);
+      prediction_trace_experiment::record(
+        "seed", scan_stamp_sec, predicted_pose_time_sec_, dt,
+        consecutive_rejected_updates_, scan_twist_msg_,
+        predicted_pose_matrix_, selected_seed.init_guess);
       break;
     }
     case lidar_localization::RegistrationSeedSource::kPreviousDelta:
@@ -402,6 +408,7 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
     auto registration_execution_lock =
       callback_state_coordinator_.lockRegistrationExecution();
     registration_->align(output_cloud, attempt_init_guess);
+    box_boundary_experiment::inject(scan_stamp_sec);
   } catch (...) {
     state_lock.lock();
     throw;
@@ -544,6 +551,10 @@ bool PCLLocalization::handleTerminalAlignmentPipelineResult(
   bool imu_prediction_ready,
   const std::string & registration_seed_source)
 {
+  prediction_trace_experiment::record(
+    "result", scan_stamp_sec, predicted_pose_time_sec_, 0.0,
+    consecutive_rejected_updates_, scan_twist_msg_,
+    predicted_pose_matrix_, pipeline_result.selected_attempt.final_transformation);
   const auto handling = lidar_localization::decideAlignmentPipelineHandling(pipeline_result);
   if (!handling.publish_terminal_status) {
     return false;
