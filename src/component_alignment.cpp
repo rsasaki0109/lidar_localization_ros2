@@ -130,7 +130,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       twist_ekf_.isInitialized(),
       use_twist_prediction_,
       have_last_accepted_pose_,
-      static_cast<bool>(latest_twist_msg_),
+      static_cast<bool>(scan_twist_msg_),
       predict_pose_from_previous_delta_,
       use_odom_tf_prediction_,
       odom_tf_bridge_available});

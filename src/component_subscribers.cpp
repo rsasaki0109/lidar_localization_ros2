@@ -49,9 +49,15 @@ void PCLLocalization::initializePubSub()
     "odom", rclcpp::SensorDataQoS(),
     std::bind(&PCLLocalization::odomReceived, this, std::placeholders::_1));
 
+  // Registration releases the state lock while aligning. Allow velocity reception
+  // during that interval without changing prediction or bypassing the state lock.
+  rclcpp::SubscriptionOptions twist_subscription_options;
+  twist_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  twist_subscription_options.callback_group = twist_callback_group_;
   twist_sub_ = create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(
     "twist", rclcpp::SensorDataQoS(),
-    std::bind(&PCLLocalization::twistReceived, this, std::placeholders::_1));
+    std::bind(&PCLLocalization::twistReceived, this, std::placeholders::_1),
+    twist_subscription_options);
 
   cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
     "cloud", rclcpp::SensorDataQoS().keep_last(cloud_queue_depth_),
@@ -699,6 +705,10 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   if (!admitScanMessage(msg, &scan_stamp_sec)) {
     return;
   }
+  // A twist callback may run while alignment releases the state lock. Keep the
+  // seed and rejected advance on the same observation; receive fresh data for
+  // the next scan without changing this scan's prediction halfway through.
+  scan_twist_msg_ = latest_twist_msg_;
   // Odom bridge: keep map -> odom alive (re-stamped from the last accepted
   // match) on every admitted scan callback, whether or not this particular
   // scan ends up accepted below. See republishFrozenMapToOdomTransform and the
