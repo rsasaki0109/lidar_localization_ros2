@@ -27,6 +27,7 @@
 #include <tf2/transform_datatypes.h>
 #include <tf2/utils.h>
 #include <tf2_ros/buffer.h>
+#include "../../experiments/tf_source_progress/source_wait_lookup.hpp"
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -194,6 +195,7 @@ public:
   tf2_ros::TransformBroadcaster broadcaster_;
   rclcpp::Clock clock_;
   tf2_ros::Buffer tfbuffer_;
+  lidar_localization::SourceWaitLookup odom_source_wait_;
   tf2_ros::TransformListener tflistener_;
 
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::ConstSharedPtr

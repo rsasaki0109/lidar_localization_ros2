@@ -225,6 +225,7 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
       get_logger(),
       "initial pose accepted before map is ready; scans will wait until map load completes");
   }
+  odom_source_wait_.reset();
   initialpose_recieved_ = true;
   last_initial_pose_stamp_sec_ = stamp_to_sec(msg->header.stamp);
   callback_state_coordinator_.advanceInitialPoseGeneration();
@@ -351,6 +352,7 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
 {
   auto state_lock = callback_state_coordinator_.lockState();
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
+  odom_source_wait_.reset();
   RCLCPP_INFO(get_logger(), "mapReceived");
   pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
 

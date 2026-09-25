@@ -94,8 +94,8 @@ bool PCLLocalization::publishMapToOdomTransform(
 {
   geometry_msgs::msg::TransformStamped odom_to_base_link_msg;
   try {
-    odom_to_base_link_msg = tfbuffer_.lookupTransform(
-      odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(0.1));
+    odom_to_base_link_msg = odom_source_wait_.lookup(
+      tfbuffer_, odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(0.2));
   } catch (tf2::TransformException & ex) {
     RCLCPP_WARN(
       this->get_logger(), "Could not get transform %s to %s: %s",
@@ -169,8 +169,8 @@ void PCLLocalization::publishOdomBridgePose(
   }
   geometry_msgs::msg::TransformStamped odom_to_base_link_msg;
   try {
-    odom_to_base_link_msg = tfbuffer_.lookupTransform(
-      odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(0.1));
+    odom_to_base_link_msg = odom_source_wait_.lookup(
+      tfbuffer_, odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(0.2));
   } catch (tf2::TransformException & ex) {
     // No live odom right now (external front end down/lagging): the odom
     // bridge is simply unavailable this tick, exactly like any other TF-chain
@@ -241,8 +241,8 @@ bool PCLLocalization::lookupOdomBridgePoseMatrix(
       odom_to_base_link_msg = tfbuffer_.lookupTransform(
         odom_frame_id_, base_frame_id_, tf2::TimePointZero);
     } else {
-      odom_to_base_link_msg = tfbuffer_.lookupTransform(
-        odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(0.1));
+      odom_to_base_link_msg = odom_source_wait_.lookup(
+        tfbuffer_, odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(0.2));
     }
   } catch (tf2::TransformException &) {
     return false;
