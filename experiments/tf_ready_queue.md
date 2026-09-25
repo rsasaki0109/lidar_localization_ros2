@@ -1,6 +1,6 @@
 # TF readiness queue experiment
 
-Not connected to ROS and not a measured localization improvement. Base92252eb.
+Native integration is experimental and not yet replay-validated. Base92252eb.
 The shared200ms blocking-wait experiment retained external prediction but did
 not solve queue1 delivery or fault freshness. This candidate separates pending
 TF readiness from scan execution without creating a thread per cloud.
@@ -19,7 +19,7 @@ and synthetic readiness, not real TF interpolation or NDT execution. Separate
 checks cover blocked-worker overflow/staleness, order, duplicates, reset,
 payload lifetime, shutdown, and errors. No new production settings are added.
 
-## Required native integration before evaluating efficacy
+## Native integration contract and review notes
 
 - Enqueue in a dedicated callback group and serialize queue access. The worker
   belongs to the existing mutually exclusive cloud/map group, so registrations
@@ -49,3 +49,15 @@ run all required checks, then frozen savedTF gap/delay plus normal controls.
 Only passing that screen permits live/front-end and broader regression work.
 Avoid promoting this helper alone: passing queue assertions is not evidence
 that the requested localization robustness has improved.
+
+Native path added: external-prediction mode uses a dedicated intake group plus
+5ms wall timer in the default group. Startup is timer-dispatched but does not
+wait for TF until anchored. Disabled external prediction remains direct and
+keeps admission-time twist capture. Anchored queued scans use receive-time
+capture. Queue capacity4/wait250ms/max_age400ms are internal experiment values,
+independent of DDS cloud_queue_depth. Epoch checks invalidate pending/inflight
+results on initialpose, map receipt and observed backward ROS clock at intake.
+Clock rewind does not reset the rest of localization state and is not claimed
+as full playback-loop support. Lifecycle close logs cumulative drop counters.
+Native65 CTest,234Python+69subtests,helps2 and queue fixture passed in build77622.
+Native replay and lifecycle/reconfiguration stress remain necessary before adoption.

@@ -187,6 +187,15 @@ public:
   void twistReceived(const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg);
   void imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr msg);
   void cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
+  void dispatchReadyCloud();
+  void processReadyCloud(
+    const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg,
+    const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr twist,
+    std::uint64_t epoch, bool nonblocking);
+  struct TfReadyState;
+  std::unique_ptr<TfReadyState> tf_ready_state_;
+  rclcpp::CallbackGroup::SharedPtr cloud_intake_group_;
+  rclcpp::TimerBase::SharedPtr cloud_dispatch_timer_;
   // void gnssReceived();
 
   // --- TF infrastructure, publishers, and subscriptions ---

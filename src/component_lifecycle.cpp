@@ -366,6 +366,15 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   bond_.reset();
 #endif
 
+  if (cloud_dispatch_timer_) {cloud_dispatch_timer_->cancel();}
+  cloud_dispatch_timer_.reset();
+  if (tf_ready_state_) {
+    tf_ready_state_->queue.close();
+    const auto counts = tf_ready_state_->queue.counts();
+    RCLCPP_INFO(get_logger(), "TF_READY_QUEUE final overflow=%zu unordered=%zu stale=%zu invalidated=%zu",
+      counts.overflow, counts.unordered, counts.stale, counts.invalidated);
+  }
+  cloud_intake_group_.reset();
   pose_publish_timer_.reset();
 
   initial_pose_sub_.reset();

@@ -60,7 +60,16 @@ void PCLLocalization::initializePubSub()
     std::bind(&PCLLocalization::twistReceived, this, std::placeholders::_1),
     twist_subscription_options);
 
+  tf_ready_state_ = std::make_unique<TfReadyState>();
+  // Intake never performs registration; the timer retains the original default
+  // mutually-exclusive cloud/map executor group.
+  if (enable_map_odom_tf_ && use_odom_tf_prediction_) {
+    cloud_intake_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    cloud_dispatch_timer_ = create_wall_timer(
+      std::chrono::milliseconds(5), std::bind(&PCLLocalization::dispatchReadyCloud, this));
+  }
   rclcpp::SubscriptionOptions cloud_subscription_options;
+  cloud_subscription_options.callback_group = cloud_intake_group_;
   cloud_subscription_options.qos_overriding_options =
     rclcpp::QosOverridingOptions({rclcpp::QosPolicyKind::Reliability});
   cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
@@ -228,6 +237,7 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   initialpose_recieved_ = true;
   last_initial_pose_stamp_sec_ = stamp_to_sec(msg->header.stamp);
   callback_state_coordinator_.advanceInitialPoseGeneration();
+  if (tf_ready_state_) {tf_ready_state_->reset();}
   corrent_pose_with_cov_stamped_ptr_ = msg;
   {
     std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
@@ -352,6 +362,7 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
   auto state_lock = callback_state_coordinator_.lockState();
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
   RCLCPP_INFO(get_logger(), "mapReceived");
+  if (tf_ready_state_) {tf_ready_state_->reset();}
   pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
 
   if (msg->header.frame_id != global_frame_id_) {
@@ -704,8 +715,65 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
 
 void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
 {
+  auto lock = callback_state_coordinator_.lockState();
+  if (shutting_down_.load(std::memory_order_acquire) || !tf_ready_state_ || !msg) {return;}
+  auto &state = *tf_ready_state_;
+  if (!cloud_dispatch_timer_) {
+    const auto epoch = state.epoch;
+    lock.unlock();
+    processReadyCloud(msg, nullptr, epoch, false);
+    return;
+  }
+  const auto clock_now = now().nanoseconds();
+  if (state.last_clock && clock_now < *state.last_clock) {state.reset();}
+  state.last_clock = clock_now;
+  const auto stamp = rclcpp::Time(msg->header.stamp).nanoseconds();
+  const auto before = state.queue.counts();
+  state.queue.push(stamp, TfReadyState::Queue::Clock::now(),
+    {msg, latest_twist_msg_, state.epoch});
+  const auto after = state.queue.counts();
+  if (before.overflow != after.overflow || before.unordered != after.unordered) {
+    RCLCPP_WARN(get_logger(), "TF_READY_QUEUE overflow=%zu unordered=%zu stale=%zu invalidated=%zu",
+      after.overflow, after.unordered, after.stale, after.invalidated);
+  }
+}
+
+void PCLLocalization::dispatchReadyCloud()
+{
+  auto lock = callback_state_coordinator_.lockState();
+  if (shutting_down_.load(std::memory_order_acquire) || !tf_ready_state_) {return;}
+  auto &state = *tf_ready_state_;
+  const auto before = state.queue.counts();
+  // Availability is checked for the oldest stamp only. Non-anchored startup
+  // must not wait for external TF; recheck current anchor under the same lock.
+  const bool eligible = enable_map_odom_tf_ && use_odom_tf_prediction_ && has_last_good_map_to_odom_;
+  auto result = state.queue.take(TfReadyState::Queue::Clock::now(), [&](std::int64_t stamp) {
+    if (!eligible) {return true;}
+    try {
+      return tfbuffer_.canTransform(odom_frame_id_, base_frame_id_,
+        rclcpp::Time(stamp, get_clock()->get_clock_type()), rclcpp::Duration::from_seconds(0.0));
+    } catch (const tf2::TransformException &) {return false;}
+  });
+  const auto counts = state.queue.counts();
+  if (before.stale != counts.stale) {
+    RCLCPP_WARN(get_logger(), "TF_READY_QUEUE overflow=%zu unordered=%zu stale=%zu invalidated=%zu",
+      counts.overflow, counts.unordered, counts.stale, counts.invalidated);
+  }
+  if (!result) {return;}
+  const auto payload = std::move(result->entry.payload);
+  lock.unlock();
+  processReadyCloud(payload.cloud, payload.twist, payload.epoch, eligible);
+}
+
+void PCLLocalization::processReadyCloud(
+  const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg,
+  const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr twist,
+  std::uint64_t epoch, bool nonblocking)
+{
   auto state_lock = callback_state_coordinator_.lockState();
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
+  if (!tf_ready_state_ || tf_ready_state_->epoch != epoch) {return;}
+  tf_lookup_scope::Scope lookup_scope(nonblocking);
   double scan_stamp_sec = 0.0;
   if (!admitScanMessage(msg, &scan_stamp_sec)) {
     return;
@@ -713,7 +781,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   // A twist callback may run while alignment releases the state lock. Keep the
   // seed and rejected advance on the same observation; receive fresh data for
   // the next scan without changing this scan's prediction halfway through.
-  scan_twist_msg_ = latest_twist_msg_;
+  scan_twist_msg_ = nonblocking ? twist : latest_twist_msg_;
   // Odom bridge: keep map -> odom alive (re-stamped from the last accepted
   // match) on every admitted scan callback, whether or not this particular
   // scan ends up accepted below. See republishFrozenMapToOdomTransform and the
@@ -748,7 +816,8 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
 
   if (
     shutting_down_.load(std::memory_order_acquire) ||
-    !callback_state_coordinator_.initialPoseGenerationMatches(seed_generation))
+    !callback_state_coordinator_.initialPoseGenerationMatches(seed_generation) ||
+    !tf_ready_state_ || tf_ready_state_->epoch != epoch)
   {
     // An /initialpose was accepted while this scan was being aligned; the seed
     // (and therefore the result) belongs to the pre-reset belief, so applying

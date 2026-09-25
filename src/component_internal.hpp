@@ -7,6 +7,21 @@
 // interface.
 
 #include <lidar_localization/lidar_localization_component.hpp>
+#include "../experiments/tf_ready_queue.hpp"
+#include "../experiments/tf_lookup_scope.hpp"
+struct PCLLocalization::TfReadyState {
+  struct Payload {
+    sensor_msgs::msg::PointCloud2::ConstSharedPtr cloud;
+    geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr twist;
+    std::uint64_t epoch;
+  };
+  using Queue = tf_ready_queue::Queue<Payload>;
+  Queue queue{4, std::chrono::milliseconds(250), std::chrono::milliseconds(400)};
+  std::uint64_t epoch = 0;
+  std::optional<std::int64_t> last_clock;
+  void reset() {queue.reset(); ++epoch;}
+};
+
 
 #include "lidar_localization/alignment_attempt_policy.hpp"
 #include "lidar_localization/alignment_diagnostic_ros_adapter.hpp"
