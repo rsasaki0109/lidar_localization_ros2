@@ -14,11 +14,11 @@ Eigen::Matrix4f PCLLocalization::applyTwistPrediction(
   const Eigen::Matrix4f & pose_matrix,
   double dt_sec) const
 {
-  if (!latest_twist_msg_ || dt_sec <= 0.0) {
+  if (!scan_twist_msg_ || dt_sec <= 0.0) {
     return pose_matrix;
   }
 
-  const auto & twist = latest_twist_msg_->twist.twist;
+  const auto & twist = scan_twist_msg_->twist.twist;
   Eigen::Affine3f affine(pose_matrix);
   Eigen::Vector3f linear_velocity(
     static_cast<float>(twist.linear.x),
@@ -105,7 +105,7 @@ void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
   const auto advance_mode = lidar_localization::choosePredictionAdvanceMode(
     have_last_accepted_pose_,
     use_twist_prediction_,
-    static_cast<bool>(latest_twist_msg_),
+    static_cast<bool>(scan_twist_msg_),
     predict_pose_from_previous_delta_);
   Eigen::Matrix4f twist_predicted_pose_matrix = Eigen::Matrix4f::Identity();
   if (advance_mode == lidar_localization::PredictionAdvanceMode::kTwistPrediction) {
