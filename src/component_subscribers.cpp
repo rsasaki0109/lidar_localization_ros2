@@ -1,3 +1,4 @@
+#include "../experiments/tf_wait_trace.hpp"
 #include "component_internal.hpp"
 #include <pcl/registration/gicp.h>
 #include <pcl/registration/ndt.h>
@@ -704,6 +705,9 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
 
 void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
 {
+  tf_wait_trace::Span callback_trace(
+    "cloud_callback", msg ? msg->header.stamp : builtin_interfaces::msg::Time{});
+  callback_trace.success = true;
   auto state_lock = callback_state_coordinator_.lockState();
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
   double scan_stamp_sec = 0.0;

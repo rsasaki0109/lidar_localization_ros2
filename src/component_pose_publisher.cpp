@@ -1,4 +1,5 @@
 #include "component_internal.hpp"
+#include "../experiments/tf_wait_trace.hpp"
 void PCLLocalization::setCurrentPoseFromMatrix(
   const Eigen::Matrix4f & pose_matrix,
   const builtin_interfaces::msg::Time & stamp)
@@ -94,8 +95,10 @@ bool PCLLocalization::publishMapToOdomTransform(
 {
   geometry_msgs::msg::TransformStamped odom_to_base_link_msg;
   try {
-    odom_to_base_link_msg = tfbuffer_.lookupTransform(
+    odom_to_base_link_msg = tf_wait_trace::lookup("map_anchor", stamp, [&]() {
+      return tfbuffer_.lookupTransform(
       odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(0.1));
+    });
   } catch (tf2::TransformException & ex) {
     RCLCPP_WARN(
       this->get_logger(), "Could not get transform %s to %s: %s",
@@ -169,8 +172,10 @@ void PCLLocalization::publishOdomBridgePose(
   }
   geometry_msgs::msg::TransformStamped odom_to_base_link_msg;
   try {
-    odom_to_base_link_msg = tfbuffer_.lookupTransform(
+    odom_to_base_link_msg = tf_wait_trace::lookup("rejected_bridge", stamp, [&]() {
+      return tfbuffer_.lookupTransform(
       odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(0.1));
+    });
   } catch (tf2::TransformException & ex) {
     // No live odom right now (external front end down/lagging): the odom
     // bridge is simply unavailable this tick, exactly like any other TF-chain
@@ -238,11 +243,15 @@ bool PCLLocalization::lookupOdomBridgePoseMatrix(
   geometry_msgs::msg::TransformStamped odom_to_base_link_msg;
   try {
     if (use_latest_odom_transform) {
-      odom_to_base_link_msg = tfbuffer_.lookupTransform(
+      odom_to_base_link_msg = tf_wait_trace::lookup("prediction_latest", stamp, [&]() {
+      return tfbuffer_.lookupTransform(
         odom_frame_id_, base_frame_id_, tf2::TimePointZero);
+    });
     } else {
-      odom_to_base_link_msg = tfbuffer_.lookupTransform(
+      odom_to_base_link_msg = tf_wait_trace::lookup("prediction", stamp, [&]() {
+      return tfbuffer_.lookupTransform(
         odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(0.1));
+    });
     }
   } catch (tf2::TransformException &) {
     return false;
