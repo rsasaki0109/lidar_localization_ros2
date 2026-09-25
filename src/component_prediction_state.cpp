@@ -15,36 +15,11 @@ Eigen::Matrix4f PCLLocalization::applyTwistPrediction(
   const Eigen::Matrix4f & pose_matrix,
   double dt_sec) const
 {
-  if (!scan_twist_msg_ || dt_sec <= 0.0) {
-    return pose_matrix;
-  }
-
-  const auto & twist = scan_twist_msg_->twist.twist;
-  Eigen::Affine3f affine(pose_matrix);
-  Eigen::Vector3f linear_velocity(
-    static_cast<float>(twist.linear.x),
-    static_cast<float>(twist.linear.y),
-    static_cast<float>(twist.linear.z));
-  Eigen::Vector3f angular_velocity(
-    static_cast<float>(twist.angular.x),
-    static_cast<float>(twist.angular.y),
-    static_cast<float>(twist.angular.z));
-
-  const Eigen::Vector3f world_delta = affine.linear() * (linear_velocity * static_cast<float>(dt_sec));
-  affine.translation() += world_delta;
-
-  if (twist_prediction_use_angular_velocity_) {
-    const float roll = angular_velocity.x() * static_cast<float>(dt_sec);
-    const float pitch = angular_velocity.y() * static_cast<float>(dt_sec);
-    const float yaw = angular_velocity.z() * static_cast<float>(dt_sec);
-    const Eigen::Matrix3f delta_rotation =
-      (Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX()) *
-      Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) *
-      Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ())).toRotationMatrix();
-    affine.linear() = affine.linear() * delta_rotation;
-  }
-
-  return affine.matrix();
+  // The whole interval plan was captured before alignment released the lock.
+  // Incomplete history holds pose; it never substitutes a future/latest sample.
+  if (!scan_twist_plan_ || dt_sec <= 0.0) {return pose_matrix;}
+  return twist_interval_experiment::integrate(
+    pose_matrix, *scan_twist_plan_, twist_prediction_use_angular_velocity_);
 }
 
 void PCLLocalization::resetPredictionState(const Eigen::Matrix4f & pose_matrix, double stamp_sec)

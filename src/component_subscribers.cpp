@@ -1,4 +1,5 @@
 #include "component_internal.hpp"
+#include "experiment_prediction_trace.hpp"
 #include <pcl/registration/gicp.h>
 #include <pcl/registration/ndt.h>
 #include <rclcpp/qos_overriding_options.hpp>
@@ -490,6 +491,12 @@ void PCLLocalization::twistReceived(
     }
   }
   latest_twist_msg_ = msg;
+  twist_history_.insert({
+    msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9,
+    {static_cast<float>(twist.linear.x), static_cast<float>(twist.linear.y),
+      static_cast<float>(twist.linear.z)},
+    {static_cast<float>(twist.angular.x), static_cast<float>(twist.angular.y),
+      static_cast<float>(twist.angular.z)}});
 
   double stamp_sec = stamp_to_sec(msg->header.stamp);
   double vx = msg->twist.twist.linear.x;
@@ -714,6 +721,12 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   // seed and rejected advance on the same observation; receive fresh data for
   // the next scan without changing this scan's prediction halfway through.
   scan_twist_msg_ = latest_twist_msg_;
+  const double prediction_dt = lidar_localization::clampPredictionDt(
+    scan_stamp_sec, predicted_pose_time_sec_, max_twist_prediction_dt_);
+  scan_twist_plan_ = twist_history_.plan(
+    scan_stamp_sec - prediction_dt, scan_stamp_sec, max_twist_prediction_dt_);
+  prediction_trace_experiment::recordPlan(
+    scan_stamp_sec, scan_stamp_sec - prediction_dt, scan_twist_plan_);
   // Odom bridge: keep map -> odom alive (re-stamped from the last accepted
   // match) on every admitted scan callback, whether or not this particular
   // scan ends up accepted below. See republishFrozenMapToOdomTransform and the

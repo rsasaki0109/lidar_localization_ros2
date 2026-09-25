@@ -42,3 +42,26 @@ inline void record(
   if (!stream) {throw std::runtime_error("Failed to flush JEPLO_PREDICTION_TRACE");}
 }
 }  // namespace prediction_trace_experiment
+
+// Candidate-only plan log. Legacy twist columns describe the latest received
+// observation for comparison; the rows below are the actual integration inputs.
+namespace prediction_trace_experiment {
+inline void recordPlan(double end, double start,
+  const std::optional<twist_interval_experiment::Plan> & plan) {
+  static const char * path = std::getenv("JEPLO_INTERVAL_TRACE");
+  if (!path || !*path) {return;}
+  static std::mutex mutex; std::lock_guard<std::mutex> lock(mutex);
+  static std::ofstream stream(path, std::ios::app);
+  if (!stream) {throw std::runtime_error("Cannot open interval trace");}
+  stream << std::setprecision(17) << "plan," << end << ',' << start << ','
+    << static_cast<bool>(plan) << ',' << (plan ? plan->size() : 0) << '\n';
+  if (plan) for (const auto & interval : *plan) {
+    stream << "interval," << end << ',' << interval.sample.stamp << ',' << interval.duration;
+    for (const auto * velocity : {&interval.sample.linear, &interval.sample.angular}) {
+      for (int i=0; i<3; ++i) {stream << ',' << (*velocity)[i];}
+    }
+    stream << '\n';
+  }
+  stream.flush(); if (!stream) {throw std::runtime_error("Cannot flush interval trace");}
+}
+}

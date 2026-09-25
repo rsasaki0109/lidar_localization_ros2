@@ -4,6 +4,7 @@
 // implementation is split by concern into src/component_*.cpp translation
 // units; src/component_internal.hpp carries their shared include set.
 
+#include "lidar_localization/experimental_twist_interval.hpp"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -488,6 +489,8 @@ public:
   geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr latest_twist_msg_;
   // Captured under the state lock for every admitted cloud callback.
   geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr scan_twist_msg_;
+  twist_interval_experiment::History twist_history_;
+  std::optional<twist_interval_experiment::Plan> scan_twist_plan_;
   // Read by the dedicated IMU callback without taking the callback-state lock.
   std::atomic<bool> shutting_down_{false};
   bool reinitialization_requested_{false};

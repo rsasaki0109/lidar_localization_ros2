@@ -381,6 +381,8 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
 
   latest_twist_msg_.reset();
   scan_twist_msg_.reset();
+  scan_twist_plan_.reset();
+  twist_history_.clear();
   last_scan_ptr_.reset();
   path_ptr_.reset();
   corrent_pose_with_cov_stamped_ptr_.reset();
