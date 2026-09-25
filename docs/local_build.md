@@ -33,6 +33,11 @@ The script:
 
 Override paths if needed:
 
+The default workspace root is the repository's parent directory. For checkouts
+under `src/` or `worktrees/`, it is their parent instead. An explicit
+`LIDAR_LOCALIZATION_WS_ROOT` takes precedence even before an overlay is built;
+both `install/setup.bash` and the legacy `build_ws/install/setup.bash` are supported.
+
 ```bash
 export LIDAR_LOCALIZATION_WS_ROOT=/path/to/lidarloc_ws
 export LIDAR_LOCALIZATION_LOCAL_PREFIX=/path/to/custom_prefix
