@@ -67,3 +67,39 @@
 - leading comparator: `peak_innovation` at `74.82`
 - reason: No candidate passes every repeated closed-loop fixture: correction-budget variants false-trigger on indoor_easy_02_live_r02 and miss indoor_kidnap_01_live_r02, while peak and fitness variants miss kidnaps.
 - generated_from: `scripts/run_startup_integrity_experiments.py`
+
+## Go2 Twist Reception and Per-Scan Prediction (2026-09-25)
+
+Adopt `631bb51`: receive twist in a dedicated mutually exclusive callback group,
+using the existing state lock, and retain one immutable twist observation for
+each admitted scan. Registration can release the lock without blocking velocity
+reception or changing the observation between seed prediction and rejected-scan
+advancement. No parameters, prediction arithmetic, or acceptance thresholds change.
+
+The callback-only alternative regressed the normal Box output gap from 0.60 to
+3.10 seconds. Its traces showed different seed/advance velocities in 56/56 rejected
+scans. The per-scan snapshot removes that inconsistency; an actual-method fixture
+also verifies that an intervening velocity update affects only the next scan.
+
+The trace-free candidate passed the five indoor leave-one-out Go2 runs, Box and
+Mask2 ten times each, and twelve synthetic-fault runs. All normal scans were
+processed; normal output gaps and coverage matched the baseline. Required Release
+checks passed: 65 CTest tests, 232 Python tests with 66 subtests, and two bringup
+help checks. These experiments use local data, GT initialization/map alignment,
+IMU/EKF disabled, and fixed inputs/settings; they are not an open-benchmark claim.
+
+This is a concurrency correctness fix with observed throughput benefit, not a
+solution to overload or slipping. With the node restricted to one CPU and replay
+at four times real time, a trace-disabled paired run improved input processing
+from 37.9% to 78.9% and output coverage from 7.5% to 68.2%, but maximum error was
+still 2.66 m and the maximum output gap worsened from 9.80 to 10.10 seconds.
+Both arms failed the absolute accuracy target. Biased-twist Box faults retain a
+3.10-second gap. Historical repeat-failure causality is unproven; single stress
+runs do not establish statistical superiority. Recovery improvements remain open.
+
+Local evidence lives under `/media/sasaki/aiueo2/jeplo_data/experiments/`:
+`go2_scan_twist_production`, `go2_scan_twist_production_repeats`,
+`go2_scan_twist_production_faults`, and `go2_scan_twist_production_stress` contain
+source/runtime/input hashes, metrics, and completion records. Preserve the
+isolated candidate and baseline runtimes. Main-workspace rebuild and replay are
+recorded separately in `go2_scan_twist_adoption`.
