@@ -3,12 +3,12 @@
 
 namespace
 {
-// Experiment-only trace for the known Box rejection window; no persistent state.
+// Experiment-only trace for the Box fault transition window; no persistent state.
 void traceBoxAttempt(
   rclcpp::Logger logger, const char * label, double stamp,
   const lidar_localization::AlignmentAttempt & attempt)
 {
-  if (stamp < 1787732268.5 || stamp > 1787732270.0) {
+  if (stamp < 1787732248.0 || stamp > 1787732252.7) {
     return;
   }
   std::ostringstream out;
@@ -208,6 +208,28 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
     RCLCPP_WARN(
       get_logger(),
       "Ignoring non-finite IMU predicted pose and falling back to non-IMU seed.");
+  }
+  if (scan_stamp_sec >= 1787732248.0 && scan_stamp_sec <= 1787732252.7) {
+    std::ostringstream out;
+    out.precision(17);
+    out << "BOX_SEED " << scan_stamp_sec << " " << now().seconds() << " "
+        << static_cast<int>(selected_seed.source) << " " << odom_tf_bridge_available << " "
+        << consecutive_rejected_updates_ << " " << last_accepted_pose_time_sec_ << " "
+        << predicted_pose_time_sec_ << " " << static_cast<bool>(scan_twist_msg_);
+    if (scan_twist_msg_) {
+      const auto & t = scan_twist_msg_->twist.twist;
+      out << " " << stamp_to_sec(scan_twist_msg_->header.stamp)
+          << " " << t.linear.x << " " << t.linear.y << " " << t.linear.z
+          << " " << t.angular.x << " " << t.angular.y << " " << t.angular.z;
+    }
+    for (const auto * matrix : {&predicted_pose_matrix_, &selected_seed.init_guess}) {
+      for (int row = 0; row < 4; ++row) {
+        for (int col = 0; col < 4; ++col) {
+          out << " " << (*matrix)(row, col);
+        }
+      }
+    }
+    RCLCPP_INFO(get_logger(), "%s", out.str().c_str());
   }
   return selected_seed;
 }
@@ -508,6 +530,23 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
         primary_attempt.correction_translation_m,
         primary_attempt.correction_yaw_deg,
         imu_guard_warmup_accepts_remaining});
+  if (scan_stamp_sec >= 1787732248.0 && scan_stamp_sec <= 1787732252.7) {
+    const auto config = recoveryRetryFromLastPoseParams();
+    const auto effective_rejections = force_retry_from_last_pose ?
+      std::max(consecutive_rejected_updates_,
+      static_cast<std::size_t>(std::max(0, config.min_rejections))) :
+      consecutive_rejected_updates_;
+    const auto decision = lidar_localization::decideRecoveryRetryFromLastPose(
+      config, lidar_localization::makeRecoveryRetryFromLastPoseInput(
+        have_last_accepted_pose_, effective_rejections, primary_attempt.accepted_gap_sec,
+        lidar_localization::computeRecoveryRetryFallbackAcceptedGapSec(
+          have_last_accepted_pose_, scan_stamp_sec, last_accepted_pose_time_sec_),
+        primary_attempt.seed_translation_since_accept_m));
+    RCLCPP_INFO(
+      get_logger(), "BOX_RETRY_ELIGIBILITY %.9f %d %s %.9f %d", scan_stamp_sec,
+      static_cast<int>(decision.should_retry), decision.reason.c_str(), decision.accepted_gap_sec,
+      static_cast<int>(force_retry_from_last_pose));
+  }
   return lidar_localization::runAlignmentPipeline(
     primary_attempt,
     lidar_localization::AlignmentPipelineInput{
@@ -527,7 +566,7 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
     },
     [this, seed_source, scan_stamp_sec](const lidar_localization::AlignmentAttempt & attempt) {
       const auto gate = evaluateMeasurementGateForAttempt(attempt, seed_source);
-      if (scan_stamp_sec >= 1787732268.5 && scan_stamp_sec <= 1787732270.0) {
+      if (scan_stamp_sec >= 1787732248.0 && scan_stamp_sec <= 1787732252.7) {
         RCLCPP_INFO(
           get_logger(), "BOX_GATE %.9f %d %s", scan_stamp_sec,
           static_cast<int>(gate.reject_measurement), gate.status_message.c_str());
