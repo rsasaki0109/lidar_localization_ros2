@@ -1,7 +1,24 @@
 #include "component_internal.hpp"
+#include <iomanip>
+#include <sstream>
 #include <pcl/registration/gicp.h>
 #include <pcl/registration/ndt.h>
 #include <rclcpp/qos_overriding_options.hpp>
+
+namespace
+{
+std::int64_t callbackTraceNowNs()
+{
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(
+    std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+bool callbackTraceWindow(double stamp_sec)
+{
+  return stamp_sec >= 1787732247.0 && stamp_sec <= 1787732254.0;
+}
+}  // namespace
+
 void PCLLocalization::initializePubSub()
 {
   RCLCPP_INFO(get_logger(), "initializePubSub");
@@ -477,7 +494,9 @@ void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr
 void PCLLocalization::twistReceived(
   const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg)
 {
+  const auto entry_ns = callbackTraceNowNs();
   auto state_lock = callback_state_coordinator_.lockState();
+  const auto locked_ns = callbackTraceNowNs();
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
   const auto & twist = msg->twist.twist;
   const double velocity[] = {
@@ -495,6 +514,13 @@ void PCLLocalization::twistReceived(
   twist_history_.insert(lidar_localization::TimestampedTwist{
     stamp_sec, Eigen::Vector3d(twist.linear.x, twist.linear.y, twist.linear.z),
     Eigen::Vector3d(twist.angular.x, twist.angular.y, twist.angular.z)});
+  const auto inserted_ns = callbackTraceNowNs();
+  if (callbackTraceWindow(stamp_sec)) {
+    std::ostringstream out;
+    out << std::setprecision(17) << "TWIST_RECEIVE " << stamp_sec << " "
+        << entry_ns << " " << locked_ns << " " << inserted_ns;
+    RCLCPP_INFO(get_logger(), "%s", out.str().c_str());
+  }
   double vx = msg->twist.twist.linear.x;
   double wz = msg->twist.twist.angular.z;
 
@@ -707,7 +733,9 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
 
 void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
 {
+  const auto entry_ns = callbackTraceNowNs();
   auto state_lock = callback_state_coordinator_.lockState();
+  const auto locked_ns = callbackTraceNowNs();
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
   double scan_stamp_sec = 0.0;
   if (!admitScanMessage(msg, &scan_stamp_sec)) {
@@ -717,6 +745,14 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   // seed and rejected advance on the same observation; receive fresh data for
   // the next scan without changing this scan's prediction halfway through.
   scan_twist_ = twist_history_.atOrBefore(scan_stamp_sec);
+  const auto selected_ns = callbackTraceNowNs();
+  if (callbackTraceWindow(scan_stamp_sec)) {
+    std::ostringstream out;
+    out << std::setprecision(17) << "SCAN_RECEIVE " << scan_stamp_sec << " "
+        << entry_ns << " " << locked_ns << " " << selected_ns << " "
+        << (scan_twist_ ? scan_twist_->stamp_sec : -1.0);
+    RCLCPP_INFO(get_logger(), "%s", out.str().c_str());
+  }
   // Odom bridge: keep map -> odom alive (re-stamped from the last accepted
   // match) on every admitted scan callback, whether or not this particular
   // scan ends up accepted below. See republishFrozenMapToOdomTransform and the
