@@ -488,9 +488,9 @@ public:
   std::size_t consecutive_rejected_updates_{0};
   double last_accepted_pose_time_sec_{0.0};
   double predicted_pose_time_sec_{0.0};
-  CausalTwistHistory twist_history_;
+  lidar_localization::CausalTwistHistory twist_history_;
   // Captured under the state lock for every admitted cloud callback.
-  std::optional<TimestampedTwist> scan_twist_;
+  std::optional<lidar_localization::TimestampedTwist> scan_twist_;
   // Read by the dedicated IMU callback without taking the callback-state lock.
   std::atomic<bool> shutting_down_{false};
   bool reinitialization_requested_{false};

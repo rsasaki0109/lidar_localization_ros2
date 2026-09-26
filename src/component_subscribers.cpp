@@ -492,7 +492,7 @@ void PCLLocalization::twistReceived(
     }
   }
   double stamp_sec = stamp_to_sec(msg->header.stamp);
-  twist_history_.insert(TimestampedTwist{
+  twist_history_.insert(lidar_localization::TimestampedTwist{
     stamp_sec, Eigen::Vector3d(twist.linear.x, twist.linear.y, twist.linear.z),
     Eigen::Vector3d(twist.angular.x, twist.angular.y, twist.angular.z)});
   double vx = msg->twist.twist.linear.x;
