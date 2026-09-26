@@ -67,14 +67,17 @@ void PCLLocalization::initializePubSub()
     "odom", rclcpp::SensorDataQoS(),
     std::bind(&PCLLocalization::odomReceived, this, std::placeholders::_1));
 
-  // Registration releases the state lock while aligning. Allow velocity reception
-  // during that interval without changing prediction or bypassing the state lock.
+  // Direct twist history reception uses only its short mutex. Optional pose
+  // backends retain state locking; capture that routing choice at configuration.
   rclcpp::SubscriptionOptions twist_subscription_options;
   twist_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   twist_subscription_options.callback_group = twist_callback_group_;
   twist_sub_ = create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(
     "twist", rclcpp::SensorDataQoS(),
-    std::bind(&PCLLocalization::twistReceived, this, std::placeholders::_1),
+    [this, update_pose_backends = use_twist_ekf_ || use_gtsam_smoother_](
+      const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg) {
+      twistReceived(msg, update_pose_backends);
+    },
     twist_subscription_options);
 
   rclcpp::SubscriptionOptions cloud_subscription_options;
@@ -492,11 +495,14 @@ void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr
 }
 
 void PCLLocalization::twistReceived(
-  const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg)
+  const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg,
+  bool update_pose_backends)
 {
   const auto entry_ns = callbackTraceNowNs();
-  auto state_lock = callback_state_coordinator_.lockState();
-  const auto locked_ns = callbackTraceNowNs();
+  lidar_localization::CallbackStateCoordinator::StateLock state_lock;
+  if (update_pose_backends) {
+    state_lock = callback_state_coordinator_.lockState();
+  }
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
   const auto & twist = msg->twist.twist;
   const double velocity[] = {
@@ -511,16 +517,25 @@ void PCLLocalization::twistReceived(
     }
   }
   double stamp_sec = stamp_to_sec(msg->header.stamp);
-  twist_history_.insert(lidar_localization::TimestampedTwist{
-    stamp_sec, Eigen::Vector3d(twist.linear.x, twist.linear.y, twist.linear.z),
-    Eigen::Vector3d(twist.angular.x, twist.angular.y, twist.angular.z)});
-  const auto inserted_ns = callbackTraceNowNs();
+  std::int64_t history_locked_ns;
+  std::int64_t inserted_ns;
+  {
+    std::lock_guard<std::mutex> history_lock(twist_history_mutex_);
+    history_locked_ns = callbackTraceNowNs();
+    // Shutdown sets the flag before clearing history under this same mutex.
+    if (shutting_down_.load(std::memory_order_acquire)) {return;}
+    twist_history_.insert(lidar_localization::TimestampedTwist{
+      stamp_sec, Eigen::Vector3d(twist.linear.x, twist.linear.y, twist.linear.z),
+      Eigen::Vector3d(twist.angular.x, twist.angular.y, twist.angular.z)});
+    inserted_ns = callbackTraceNowNs();
+  }
   if (callbackTraceWindow(stamp_sec)) {
     std::ostringstream out;
-    out << std::setprecision(17) << "TWIST_RECEIVE " << stamp_sec << " "
-        << entry_ns << " " << locked_ns << " " << inserted_ns;
+    out << std::setprecision(17) << "TWIST_BUFFER " << stamp_sec << " "
+        << entry_ns << " " << history_locked_ns << " " << inserted_ns;
     RCLCPP_INFO(get_logger(), "%s", out.str().c_str());
   }
+  if (!update_pose_backends) {return;}
   double vx = msg->twist.twist.linear.x;
   double wz = msg->twist.twist.angular.z;
 
@@ -744,7 +759,10 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   // Select by source time, then copy before alignment releases the state lock. Keep the
   // seed and rejected advance on the same observation; receive fresh data for
   // the next scan without changing this scan's prediction halfway through.
-  scan_twist_ = twist_history_.atOrBefore(scan_stamp_sec);
+  {
+    std::lock_guard<std::mutex> history_lock(twist_history_mutex_);
+    scan_twist_ = twist_history_.atOrBefore(scan_stamp_sec);
+  }
   const auto selected_ns = callbackTraceNowNs();
   if (callbackTraceWindow(scan_stamp_sec)) {
     std::ostringstream out;

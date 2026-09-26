@@ -20,3 +20,19 @@ on a lock can also delay the entry of subsequent messages.
 Logging happens after captured events and can perturb later callbacks. Compare
 with the parent candidate; never claim zero overhead or production readiness.
 Fixed dataset timestamps and these logs must not be promoted to main.
+
+## Independent reception candidate
+
+`TWIST_BUFFER` replaces `TWIST_RECEIVE`: the middle timestamp now measures
+acquisition of the short history mutex, not localization state. Direct prediction
+callbacks never acquire localization state. EKF/GTSAM callbacks retain the old
+state lock before history insertion/backend updates; configuration captures that
+route at subscription creation. No new parameter or queue/QoS change.
+
+The only lock order is localization state (optional) then history. No callback
+holds history while acquiring localization state. Shutdown sets its atomic flag
+before taking state and history locks; insertion rechecks the flag under history
+lock, so clearing cannot be followed by a late insert during shutdown. Scan
+snapshots remain copies under the state lock and survive later history changes.
+The lifecycle reconfiguration/old callback boundary needs integration coverage
+before adoption, as do both enabled pose backends.

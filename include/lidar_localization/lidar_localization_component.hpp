@@ -186,7 +186,9 @@ public:
   void initialPoseReceived(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
   void odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr msg);
-  void twistReceived(const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg);
+  void twistReceived(
+    const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg,
+    bool update_pose_backends);
   void imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr msg);
   void cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
   // void gnssReceived();
@@ -488,6 +490,8 @@ public:
   std::size_t consecutive_rejected_updates_{0};
   double last_accepted_pose_time_sec_{0.0};
   double predicted_pose_time_sec_{0.0};
+  // Lock order: localization state (when needed), then short twist history lock.
+  std::mutex twist_history_mutex_;
   lidar_localization::CausalTwistHistory twist_history_;
   // Captured under the state lock for every admitted cloud callback.
   std::optional<lidar_localization::TimestampedTwist> scan_twist_;

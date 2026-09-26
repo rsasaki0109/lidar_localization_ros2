@@ -379,7 +379,10 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   imu_callback_group_.reset();
   twist_callback_group_.reset();
 
-  twist_history_.clear();
+  {
+    std::lock_guard<std::mutex> history_lock(twist_history_mutex_);
+    twist_history_.clear();
+  }
   scan_twist_.reset();
   last_scan_ptr_.reset();
   path_ptr_.reset();
