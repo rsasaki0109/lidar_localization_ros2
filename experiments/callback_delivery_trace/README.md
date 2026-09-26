@@ -41,3 +41,17 @@ before adoption, as do both enabled pose backends.
 history lock acquired, selection complete (monotonic nanoseconds), selected
 twist source stamp. Selection completion is captured while holding history lock
 to keep its interval comparable with `TWIST_BUFFER` insertion intervals.
+
+## Subscription lifetime guard
+
+Cleanup increments `twist_subscription_generation_` while clearing history under
+its mutex. Each subscription captures its generation. Insert checks both shutdown
+and generation under the same mutex, including when an old saved callback runs
+after configure makes shutdown false again. Optional backend calls return before
+prediction if the generation is obsolete. No new runtime parameter.
+
+`test_twist_subscription_lifecycle` invokes actual subscription closures and
+actual configure/cleanup transitions for direct, EKF, and GTSAM routes. It checks
+progress under a held localization-state lock, guarded backend updates, obsolete
+callbacks after cleanup/reconfigure, and fresh subscription acceptance. It is a
+deterministic callback/lifecycle integration test, not a DDS scheduling test.

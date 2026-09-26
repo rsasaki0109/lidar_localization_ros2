@@ -381,6 +381,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
 
   {
     std::lock_guard<std::mutex> history_lock(twist_history_mutex_);
+    ++twist_subscription_generation_;
     twist_history_.clear();
   }
   scan_twist_.reset();

@@ -72,11 +72,17 @@ void PCLLocalization::initializePubSub()
   rclcpp::SubscriptionOptions twist_subscription_options;
   twist_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   twist_subscription_options.callback_group = twist_callback_group_;
+  std::uint64_t subscription_generation;
+  {
+    std::lock_guard<std::mutex> history_lock(twist_history_mutex_);
+    subscription_generation = twist_subscription_generation_;
+  }
   twist_sub_ = create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(
     "twist", rclcpp::SensorDataQoS(),
-    [this, update_pose_backends = use_twist_ekf_ || use_gtsam_smoother_](
+    [this, subscription_generation,
+      update_pose_backends = use_twist_ekf_ || use_gtsam_smoother_](
       const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg) {
-      twistReceived(msg, update_pose_backends);
+      twistReceived(msg, update_pose_backends, subscription_generation);
     },
     twist_subscription_options);
 
@@ -496,7 +502,7 @@ void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr
 
 void PCLLocalization::twistReceived(
   const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg,
-  bool update_pose_backends)
+  bool update_pose_backends, std::uint64_t subscription_generation)
 {
   const auto entry_ns = callbackTraceNowNs();
   lidar_localization::CallbackStateCoordinator::StateLock state_lock;
@@ -523,7 +529,8 @@ void PCLLocalization::twistReceived(
     std::lock_guard<std::mutex> history_lock(twist_history_mutex_);
     history_locked_ns = callbackTraceNowNs();
     // Shutdown sets the flag before clearing history under this same mutex.
-    if (shutting_down_.load(std::memory_order_acquire)) {return;}
+    if (shutting_down_.load(std::memory_order_acquire) ||
+      subscription_generation != twist_subscription_generation_) {return;}
     twist_history_.insert(lidar_localization::TimestampedTwist{
       stamp_sec, Eigen::Vector3d(twist.linear.x, twist.linear.y, twist.linear.z),
       Eigen::Vector3d(twist.angular.x, twist.angular.y, twist.angular.z)});
