@@ -36,3 +36,8 @@ lock, so clearing cannot be followed by a late insert during shutdown. Scan
 snapshots remain copies under the state lock and survive later history changes.
 The lifecycle reconfiguration/old callback boundary needs integration coverage
 before adoption, as do both enabled pose backends.
+
+`SCAN_BUFFER`: source stamp, callback entry, localization-state lock acquired,
+history lock acquired, selection complete (monotonic nanoseconds), selected
+twist source stamp. Selection completion is captured while holding history lock
+to keep its interval comparable with `TWIST_BUFFER` insertion intervals.

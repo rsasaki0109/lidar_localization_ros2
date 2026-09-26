@@ -759,15 +759,19 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   // Select by source time, then copy before alignment releases the state lock. Keep the
   // seed and rejected advance on the same observation; receive fresh data for
   // the next scan without changing this scan's prediction halfway through.
+  std::int64_t history_locked_ns;
+  std::int64_t selected_ns;
   {
     std::lock_guard<std::mutex> history_lock(twist_history_mutex_);
+    history_locked_ns = callbackTraceNowNs();
     scan_twist_ = twist_history_.atOrBefore(scan_stamp_sec);
+    selected_ns = callbackTraceNowNs();
   }
-  const auto selected_ns = callbackTraceNowNs();
   if (callbackTraceWindow(scan_stamp_sec)) {
     std::ostringstream out;
-    out << std::setprecision(17) << "SCAN_RECEIVE " << scan_stamp_sec << " "
-        << entry_ns << " " << locked_ns << " " << selected_ns << " "
+    out << std::setprecision(17) << "SCAN_BUFFER " << scan_stamp_sec << " "
+        << entry_ns << " " << locked_ns << " " << history_locked_ns << " "
+        << selected_ns << " "
         << (scan_twist_ ? scan_twist_->stamp_sec : -1.0);
     RCLCPP_INFO(get_logger(), "%s", out.str().c_str());
   }
