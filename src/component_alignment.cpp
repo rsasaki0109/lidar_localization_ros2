@@ -159,7 +159,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       twist_ekf_.isInitialized(),
       use_twist_prediction_,
       have_last_accepted_pose_,
-      static_cast<bool>(scan_twist_msg_),
+      static_cast<bool>(scan_twist_),
       predict_pose_from_previous_delta_,
       use_odom_tf_prediction_,
       odom_tf_bridge_available});
@@ -215,12 +215,12 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
     out << "BOX_SEED " << scan_stamp_sec << " " << now().seconds() << " "
         << static_cast<int>(selected_seed.source) << " " << odom_tf_bridge_available << " "
         << consecutive_rejected_updates_ << " " << last_accepted_pose_time_sec_ << " "
-        << predicted_pose_time_sec_ << " " << static_cast<bool>(scan_twist_msg_);
-    if (scan_twist_msg_) {
-      const auto & t = scan_twist_msg_->twist.twist;
-      out << " " << stamp_to_sec(scan_twist_msg_->header.stamp)
-          << " " << t.linear.x << " " << t.linear.y << " " << t.linear.z
-          << " " << t.angular.x << " " << t.angular.y << " " << t.angular.z;
+        << predicted_pose_time_sec_ << " " << static_cast<bool>(scan_twist_);
+    if (scan_twist_) {
+      const auto & t = *scan_twist_;
+      out << " " << scan_twist_->stamp_sec
+          << " " << t.linear.x() << " " << t.linear.y() << " " << t.linear.z()
+          << " " << t.angular.x() << " " << t.angular.y() << " " << t.angular.z();
     }
     for (const auto * matrix : {&predicted_pose_matrix_, &selected_seed.init_guess}) {
       for (int row = 0; row < 4; ++row) {

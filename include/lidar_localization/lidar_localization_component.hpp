@@ -57,6 +57,7 @@
 
 #include "lidar_localization/lidar_undistortion.hpp"
 #include "lidar_localization/twist_ekf.hpp"
+#include "lidar_localization/causal_twist_history.hpp"
 #include "lidar_localization/twist_gtsam_smoother.hpp"
 #include "lidar_localization/imu_gtsam_smoother.hpp"
 #include "lidar_localization/imu_pose_history_deskew.hpp"
@@ -487,9 +488,9 @@ public:
   std::size_t consecutive_rejected_updates_{0};
   double last_accepted_pose_time_sec_{0.0};
   double predicted_pose_time_sec_{0.0};
-  geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr latest_twist_msg_;
+  CausalTwistHistory twist_history_;
   // Captured under the state lock for every admitted cloud callback.
-  geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr scan_twist_msg_;
+  std::optional<TimestampedTwist> scan_twist_;
   // Read by the dedicated IMU callback without taking the callback-state lock.
   std::atomic<bool> shutting_down_{false};
   bool reinitialization_requested_{false};
