@@ -1,4 +1,33 @@
 #include "component_internal.hpp"
+#include <sstream>
+
+namespace
+{
+// Experiment-only trace for the known Box rejection window; no persistent state.
+void traceBoxAttempt(
+  rclcpp::Logger logger, const char * label, double stamp,
+  const lidar_localization::AlignmentAttempt & attempt)
+{
+  if (stamp < 1787732268.5 || stamp > 1787732270.0) {
+    return;
+  }
+  std::ostringstream out;
+  out.precision(17);
+  out << "BOX_ATTEMPT " << label << " " << stamp << " "
+      << attempt.target_ready << " " << attempt.has_converged << " "
+      << attempt.fitness_score << " " << attempt.correction_translation_m << " "
+      << attempt.accepted_gap_sec;
+  for (const auto * matrix : {&attempt.init_guess, &attempt.final_transformation}) {
+    for (int row = 0; row < 4; ++row) {
+      for (int col = 0; col < 4; ++col) {
+        out << " " << (*matrix)(row, col);
+      }
+    }
+  }
+  RCLCPP_INFO(logger, "%s", out.str().c_str());
+}
+}  // namespace
+
 PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSeed(
   const builtin_interfaces::msg::Time & stamp, double scan_stamp_sec)
 {
@@ -461,6 +490,7 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
 {
   const lidar_localization::AlignmentAttempt primary_attempt =
     runAlignmentAttempt(init_guess, init_guess, scan_stamp_sec, state_lock, seed_generation);
+  traceBoxAttempt(get_logger(), "primary", scan_stamp_sec, primary_attempt);
   if (!callback_state_coordinator_.initialPoseGenerationMatches(seed_generation)) {
     lidar_localization::AlignmentPipelineResult interrupted_result;
     interrupted_result.selected_attempt = primary_attempt;
@@ -489,12 +519,20 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
       force_retry_from_last_pose,
       "imu_prediction_correction_guard_rejected"},
     [&]() {
-      return runAlignmentAttempt(
+      const auto retry = runAlignmentAttempt(
         last_accepted_pose_matrix_, last_accepted_pose_matrix_, scan_stamp_sec,
         state_lock, seed_generation);
+      traceBoxAttempt(get_logger(), "retry", scan_stamp_sec, retry);
+      return retry;
     },
-    [this, seed_source](const lidar_localization::AlignmentAttempt & attempt) {
-      return evaluateMeasurementGateForAttempt(attempt, seed_source);
+    [this, seed_source, scan_stamp_sec](const lidar_localization::AlignmentAttempt & attempt) {
+      const auto gate = evaluateMeasurementGateForAttempt(attempt, seed_source);
+      if (scan_stamp_sec >= 1787732268.5 && scan_stamp_sec <= 1787732270.0) {
+        RCLCPP_INFO(
+          get_logger(), "BOX_GATE %.9f %d %s", scan_stamp_sec,
+          static_cast<int>(gate.reject_measurement), gate.status_message.c_str());
+      }
+      return gate;
     });
 }
 
