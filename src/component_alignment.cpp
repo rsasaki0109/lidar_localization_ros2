@@ -1,4 +1,5 @@
 #include "component_internal.hpp"
+#include "../experiments/conditional_scan_recovery/feedback_trace.hpp"
 #include "../experiments/conditional_scan_recovery/accepted_scan_seed.hpp"
 #include "../experiments/conditional_scan_recovery/map_refiner.hpp"
 
@@ -452,6 +453,16 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
     attempt.correction_yaw_deg = correction_metrics.yaw_deg;
   }
 
+  if (enable_conditional_scan_recovery_) {
+    RCLCPP_INFO(get_logger(),
+      "RECOVERY_FEEDBACK attempt stamp=%.17g backend=ndt generation=%llu "
+      "converged=%d fitness=%.17g seed=%s final=%s crop=%s",
+      scan_stamp_sec, static_cast<unsigned long long>(seed_generation),
+      attempt.has_converged, attempt.fitness_score,
+      conditional_scan_recovery::traceMatrix(attempt.init_guess).c_str(),
+      conditional_scan_recovery::traceMatrix(attempt.final_transformation).c_str(),
+      conditional_scan_recovery::traceMatrix(crop_center_pose_matrix).c_str());
+  }
   return attempt;
 }
 
@@ -511,6 +522,13 @@ lidar_localization::AlignmentAttempt PCLLocalization::runConditionalMapAttempt(
     attempt.correction_translation_m = correction.translation_m;
     attempt.correction_yaw_deg = correction.yaw_deg;
   }
+  RCLCPP_INFO(get_logger(),
+    "RECOVERY_FEEDBACK attempt stamp=%.17g backend=map_gicp generation=%llu "
+    "converged=%d fitness=%.17g seed=%s final=%s",
+    stamp, static_cast<unsigned long long>(generation),
+    attempt.has_converged, attempt.fitness_score,
+    conditional_scan_recovery::traceMatrix(attempt.init_guess).c_str(),
+    conditional_scan_recovery::traceMatrix(attempt.final_transformation).c_str());
   return attempt;
 }
 

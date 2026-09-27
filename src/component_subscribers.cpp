@@ -1,4 +1,5 @@
 #include "component_internal.hpp"
+#include "../experiments/conditional_scan_recovery/feedback_trace.hpp"
 #include "../experiments/conditional_scan_recovery/accepted_scan_seed.hpp"
 #include <pcl/registration/gicp.h>
 #include <pcl/registration/ndt.h>
@@ -765,6 +766,28 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
 
   const std::uint64_t seed_generation =
     callback_state_coordinator_.initialPoseGeneration();
+  const auto trace_feedback_state = [&](const char * stage) {
+      if (!enable_conditional_scan_recovery_) {return;}
+      Eigen::Affine3d map_odom = Eigen::Affine3d::Identity();
+      if (has_last_good_map_to_odom_) {
+        tf2::fromMsg(last_good_map_to_odom_.transform, map_odom);
+      }
+      RCLCPP_INFO(get_logger(),
+        "RECOVERY_FEEDBACK state stamp=%.17g stage=%s generation=%llu "
+        "have_accepted=%d accepted_stamp=%.17g rejects=%zu accepted_count=%zu "
+        "predicted_stamp=%.17g have_map_odom=%d points=%zu "
+        "accepted=%s predicted=%s relative=%s map_odom=%s",
+        scan_stamp_sec, stage, static_cast<unsigned long long>(
+          callback_state_coordinator_.initialPoseGeneration()),
+        have_last_accepted_pose_, last_accepted_pose_time_sec_,
+        consecutive_rejected_updates_, accepted_updates_since_reset_,
+        predicted_pose_time_sec_, has_last_good_map_to_odom_, tmp_ptr->size(),
+        conditional_scan_recovery::traceMatrix(last_accepted_pose_matrix_).c_str(),
+        conditional_scan_recovery::traceMatrix(predicted_pose_matrix_).c_str(),
+        conditional_scan_recovery::traceMatrix(last_relative_motion_matrix_).c_str(),
+        conditional_scan_recovery::traceMatrix(map_odom.matrix().cast<float>()).c_str());
+    };
+  trace_feedback_state("before");
   const SelectedRegistrationSeed selected_seed =
     selectRegistrationSeed(msg->header.stamp, scan_stamp_sec);
   const bool imu_prediction_ready = selected_seed.imu_prediction_ready;
@@ -804,6 +827,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       registration_seed_source))
   {
     publishBridgePoseAsRejectedOutput(msg->header.stamp);
+    trace_feedback_state("rejected");
     return;
   }
   const auto accepted_count_before_backend = accepted_updates_since_reset_;
@@ -816,6 +840,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       registration_seed_source))
   {
     publishBridgePoseAsRejectedOutput(msg->header.stamp);
+    trace_feedback_state("rejected");
     return;
   }
 
@@ -834,7 +859,13 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       RCLCPP_WARN(get_logger(),
         "CONDITIONAL_RECOVERY reference_unavailable stamp=%.9f points=%zu frame=%s",
         scan_stamp_sec, tmp_ptr->size(), tmp_ptr->header.frame_id.c_str());
+    } else {
+      RCLCPP_INFO(get_logger(),
+        "RECOVERY_FEEDBACK reference stamp=%.17g generation=%llu pose=%s",
+        scan_stamp_sec, static_cast<unsigned long long>(seed_generation),
+        conditional_scan_recovery::traceMatrix(last_accepted_pose_matrix_).c_str());
     }
   }
+  trace_feedback_state("after");
   printAlignmentDebugInfo(init_guess, pipeline_result.selected_attempt, filtered_point_count);
 }

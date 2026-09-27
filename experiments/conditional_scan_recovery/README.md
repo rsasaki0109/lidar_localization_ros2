@@ -67,3 +67,19 @@ counterexamples, not observed live outputs or a reason to relax gates.
 The current map-GICP node needs package validation, real normal/fault and input
 drop replay, and in-flight reset testing. No dependency or guard threshold was
 added. The helper and its test remain intentionally discardable experiments.
+
+## Live rejection and diagnostic trace
+
+The e277 normal Box live screen failed: on/off absolute ATE .515461/.071925 m,
+maximum 2.205297/.325184 m, and 125/0 covered outputs above .5 m. All eight
+conditional outputs individually stayed below .5 m; drift developed afterward.
+Do not promote this candidate or infer closed-loop safety from fixed fixtures.
+Evidence: `go2_conditional_map_node/{SUMMARY,FEEDBACK_AUDIT}.md` in local experiments.
+
+The diagnostic continuation emits `RECOVERY_FEEDBACK` only while the experimental
+parameter is enabled. Matrices are 16 explicit row-major float round-trip values;
+stamps and fitness use 17 digits. It records normal/map attempts, scan state
+before/after application, and successful reference updates. Missing target,
+reset and exception exits may lack an attempt/after record: a consumer must not
+invent one. Map/odom is converted to float like registration seeds. Extra logging
+changes timing and is not a performance-neutral reproduction of the prior run.
