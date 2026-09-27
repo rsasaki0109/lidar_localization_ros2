@@ -533,7 +533,10 @@ lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurement
     lidar_localization::evaluateMeasurementGate(measurementGateParams(), gate_input);
   if (gate.status_level == lidar_localization::kMeasurementGateWarn) {
     RCLCPP_WARN(
-      get_logger(), "The fitness score is over %lf.", gate.effective_score_threshold);
+      get_logger(),
+      "Measurement gate: %s (fitness=%.6f, threshold=%.6f, correction=%.3f m/%.3f deg)",
+      gate.status_message.c_str(), attempt.fitness_score, gate.effective_score_threshold,
+      attempt.correction_translation_m, attempt.correction_yaw_deg);
   }
 
   return gate;
