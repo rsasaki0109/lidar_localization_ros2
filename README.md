@@ -152,3 +152,8 @@ commands, see [benchmarking](docs/benchmarking.md).
 ROS 2 Jazzy is the primary target; Humble remains supported for existing deployments.
 [ndt_omp_ros2](https://github.com/rsasaki0109/ndt_omp_ros2) is required and
 [small_gicp](https://github.com/koide3/small_gicp) is optional.
+
+### Go2 twist reception and TF outages
+
+See [behavior, verification and known limits](docs/go2_twist_reception.md) for
+source-time twist snapshots, lifecycle isolation and source-progress-aware TF waits.

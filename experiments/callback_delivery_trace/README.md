@@ -1,5 +1,9 @@
 # Experimental callback delivery trace
 
+Historical diagnostic documentation: all fixed-dataset traces were removed in
+`2d9d7bc`. Reception/lifecycle fixes were integrated after final-candidate tests;
+see [the integration record](../../docs/go2_twist_reception.md).
+
 Bounded diagnostic logs for Box source stamps 1787732247–1787732254.
 No decision, QoS, guard, prediction, or history policy changes.
 

@@ -1,6 +1,10 @@
 # Source-progress-aware TF wait experiment
 
-Base: `92252eb8c48c946c09fa9f29692d35982e8f9faa`. Not adopted.
+Historical base: `92252eb8c48c946c09fa9f29692d35982e8f9faa`.
+
+The validated final behavior was integrated on 2026-09-27. See
+[the integration record](../../docs/go2_twist_reception.md) for evidence and limits.
+The following describes the original experiment, before integration.
 
 The prediction, map-to-odom publication and auxiliary bridge publication paths
 currently each wait up to 100 ms for the same missing odometry. This candidate
