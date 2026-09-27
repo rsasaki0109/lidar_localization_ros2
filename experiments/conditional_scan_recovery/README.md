@@ -88,3 +88,19 @@ pipelines or invalid accepted references. Dispatch/eligibility, provider validit
 and elapsed steady-clock time, and NDT gate outcomes distinguish unused recovery
 from rejected candidates. This diagnostic run is not timing-equivalent to the
 previous trace-free screen. No prediction, numerical gate or seed changes.
+
+## Experimental map refinement helper (not wired)
+
+`MapRefiner` uses native GICP_OMP with the existing .2 m map voxel, 2 m
+correspondence limit, 20 neighbors, .01 transform epsilon and 30 iterations.
+It owns one immutable input-map reference and its filtered/covariance cache.
+A map change requires a new instance; callers must retain local ownership across
+unlocked computation and recheck reset generation/target identity before use.
+Normal measurement gates and backend acceptance remain required.
+
+Known-transform, repeated-call, invalid-input and replacement-map tests run with
+Release assertions enabled. All32 fixed GICP2m results (including corrupted seeds)
+match the preceding standalone probe exactly, not just within a tolerance.
+This proves extraction parity, not accuracy: translation-stress false passes
+remain, and prior full-rate GICP replacement failed. No ROS wiring, lifecycle
+integration or live recovery improvement is claimed for this helper.
