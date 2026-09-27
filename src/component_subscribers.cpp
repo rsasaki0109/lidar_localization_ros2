@@ -1,4 +1,5 @@
 #include "component_internal.hpp"
+#include "../experiments/conditional_scan_recovery/accepted_scan_seed.hpp"
 #include <pcl/registration/gicp.h>
 #include <pcl/registration/ndt.h>
 #include <rclcpp/qos_overriding_options.hpp>
@@ -755,6 +756,9 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   }
   const std::size_t filtered_point_count = prepared_scan.filtered_point_count;
   const pcl::PointCloud<pcl::PointXYZI>::Ptr tmp_ptr = prepared_scan.cloud;
+  // Range filtering reconstructs the PCL cloud without its header. Its points
+  // are already in base_frame_id_; retain that contract for the seed provider.
+  if (enable_conditional_scan_recovery_) {tmp_ptr->header.frame_id = base_frame_id_;}
   setRegistrationSourceCloud(tmp_ptr);
 
   const std::uint64_t seed_generation =
@@ -767,6 +771,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   Eigen::Matrix4f init_guess =
     refineSeedWithNdtInitializer(tmp_ptr, selected_seed.init_guess);
   const auto pipeline_result = runAlignmentPipelineForScan(
+    tmp_ptr,
     init_guess,
     scan_stamp_sec,
     selected_seed.source,
@@ -799,6 +804,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     publishBridgePoseAsRejectedOutput(msg->header.stamp);
     return;
   }
+  const auto accepted_count_before_backend = accepted_updates_since_reset_;
   if (!applyAcceptedAlignmentPipelineResult(
       msg->header.stamp,
       pipeline_result,
@@ -811,5 +817,17 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     return;
   }
 
+  if (enable_conditional_scan_recovery_ && !pipeline_result.gate_result.reject_measurement &&
+    accepted_updates_since_reset_ > accepted_count_before_backend &&
+    last_accepted_pose_time_sec_ == scan_stamp_sec)
+  {
+    if (!conditional_scan_seed_) {
+      conditional_scan_seed_ =
+        std::make_shared<conditional_scan_recovery::AcceptedScanSeed>(
+        recovery_retry_from_last_pose_config_.max_accepted_gap_sec);
+    }
+    conditional_scan_seed_->observeAccepted(
+      tmp_ptr, last_accepted_pose_matrix_, scan_stamp_sec, seed_generation);
+  }
   printAlignmentDebugInfo(init_guess, pipeline_result.selected_attempt, filtered_point_count);
 }

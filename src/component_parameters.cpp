@@ -382,6 +382,7 @@ void PCLLocalization::initializeParameters()
   get_parameter(
     "rejected_seed_update_max_correction_yaw_deg",
     measurement_gate_config_.rejected_seed_update_max_correction_yaw_deg);
+  get_parameter("enable_conditional_scan_recovery", enable_conditional_scan_recovery_);
   get_parameter(
     "enable_recovery_retry_from_last_pose",
     recovery_retry_from_last_pose_config_.enable);
@@ -667,6 +668,8 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "odom_tf_prediction_recovery_guard_yaw_deg: %lf",
     measurement_gate_config_.odom_tf_prediction_recovery_guard_yaw_deg);
+  RCLCPP_INFO(get_logger(), "enable_conditional_scan_recovery: %d",
+    enable_conditional_scan_recovery_);
   RCLCPP_INFO(
     get_logger(), "enable_recovery_retry_from_last_pose: %d",
     recovery_retry_from_last_pose_config_.enable);

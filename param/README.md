@@ -66,3 +66,8 @@ parameter parser behavior differs across distributions.
 [`benchmark/`](benchmark/) contains immutable comparison inputs, run manifests,
 and result-comparison specifications. See its README before adding a file.
 
+
+The experimental branch also provides a default-off
+`enable_conditional_scan_recovery` switch; see
+[conditional scan recovery](../experiments/conditional_scan_recovery/README.md).
+It inherits the existing last-pose retry bounds and is not enabled by these presets.

@@ -1,6 +1,7 @@
 # Conditional accepted-scan recovery candidate
 
-Experimental only; not wired into the ROS node, installed, or enabled by a preset.
+Experimental branch only; wired into the ROS node behind the default-off
+`enable_conditional_scan_recovery` parameter. No production preset enables it.
 The always-on scan-motion primary failed paced latest-pending tests (Box maximum
 error 3.70 m, Mask2 1.06 m); see the external `go2_motion_paced_latest` receipt.
 This candidate must pass those availability/false-acceptance constraints before
@@ -59,3 +60,25 @@ sweep, not stateful/live validation or a guarantee for arbitrary bad hints.
 GT is used only for labels. No new guard threshold, translation prior, sensor
 subscription or history was added. Next step remains conditional node dispatch
 and lifecycle integration followed by package build/paced regressions.
+
+## Node experiment
+
+Apply `override.yaml` after the fixed Go2 parameters for a candidate replay.
+This also requires the existing last-pose retry to be enabled. It inherits that
+retry's rejection count, accepted-gap and seed-distance eligibility; no gate
+threshold is relaxed. Primary and last-pose attempts run first. Only remaining
+failures call GICP, with primary orientation and zero relative translation as
+initialization, followed by NDT and the normal gates/backend.
+
+The prepared base-frame cloud is retained only after the backend accepts the
+measurement. Range filtering strips PCL metadata, so the opt-in callback restores
+its known base-frame name. A private provider snapshot lets initialpose/cleanup
+reset the live state during GICP. The callback checks shutdown and generation
+before retaining the cache or trying NDT, and again before applying the result.
+Provider exceptions preserve the original failed pipeline result. Diagnostics
+mark successful candidates `conditional_scan_recovery_recovered`; source labels
+continue to identify the original primary prediction.
+
+Package build, reset-in-flight behavior and paced normal/fault replay must pass
+before promotion. Fixed-pair success is insufficient. The one-second horizon is
+the existing retry limit, not a demonstrated safety bound.

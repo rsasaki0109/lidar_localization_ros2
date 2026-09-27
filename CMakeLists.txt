@@ -248,6 +248,12 @@ install(DIRECTORY
 )
 
 if(BUILD_TESTING)
+  add_executable(test_conditional_scan_seed
+    experiments/conditional_scan_recovery/test_seed.cpp)
+  ament_target_dependencies(test_conditional_scan_seed ndt_omp_ros2)
+  target_link_libraries(test_conditional_scan_seed Eigen3::Eigen ${PCL_LIBRARIES})
+  add_test(NAME conditional_scan_seed COMMAND test_conditional_scan_seed)
+  set_tests_properties(conditional_scan_seed PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=1")
   find_package(Threads REQUIRED)
   link_libraries(Eigen3::Eigen)
   add_executable(test_glim_prior_map_factor_policy

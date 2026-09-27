@@ -87,6 +87,8 @@
 #include "bondcpp/bond.hpp"
 #endif
 
+namespace conditional_scan_recovery {class AcceptedScanSeed;}
+
 class PCLLocalization : public rclcpp_lifecycle::LifecycleNode
 {
 public:
@@ -453,6 +455,8 @@ public:
   bool latest_localizability_guard_active_{false};
   lidar_localization::MeasurementGateParamConfig measurement_gate_config_;
   lidar_localization::RecoveryRetryFromLastPoseParams recovery_retry_from_last_pose_config_;
+  bool enable_conditional_scan_recovery_{false};
+  std::shared_ptr<conditional_scan_recovery::AcceptedScanSeed> conditional_scan_seed_;
   bool enable_reinitialization_request_output_{true};
   lidar_localization::ReinitializationTriggerParams reinitialization_trigger_config_;
   lidar_localization::AlignmentFailureTaxonomyParams failure_taxonomy_params_;
@@ -550,6 +554,7 @@ public:
     lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
     std::uint64_t seed_generation);
   lidar_localization::AlignmentPipelineResult runAlignmentPipelineForScan(
+    const pcl::PointCloud<pcl::PointXYZI>::ConstPtr & prepared_cloud,
     const Eigen::Matrix4f & init_guess,
     double scan_stamp_sec,
     lidar_localization::RegistrationSeedSource seed_source,

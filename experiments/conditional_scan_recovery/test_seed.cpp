@@ -41,7 +41,13 @@ int main()
   const auto second = seed.estimate(later, 1.2, 7);
   assert(second.valid && std::abs(second.seed(0, 3) - .1f) < .003f);
   assert(!seed.estimate(later, 2.01, 7).valid);
+  // An in-flight private snapshot survives a reset, but cannot be used for
+  // the new generation. The live reference stays empty after estimation.
+  Seed in_flight = seed;
   seed.reset();
+  assert(in_flight.estimate(current, 1.3, 7).valid);
+  assert(!in_flight.estimate(current, 1.3, 8).valid);
+  assert(!seed.estimate(current, 1.3, 7).valid);
   assert(!seed.estimate(current, 1.1, 7).valid);
   assert(seed.observeAccepted(reference, world, 4., 8));
   assert(!seed.estimate(current, 4.1, 7).valid);

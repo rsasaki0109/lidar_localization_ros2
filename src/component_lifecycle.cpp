@@ -122,6 +122,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("rejected_seed_update_max_fitness", 10.0);
   declare_parameter("rejected_seed_update_max_correction_translation_m", 2.0);
   declare_parameter("rejected_seed_update_max_correction_yaw_deg", 2.0);
+  declare_parameter("enable_conditional_scan_recovery", false);
   declare_parameter("enable_recovery_retry_from_last_pose", false);
   declare_parameter("recovery_retry_from_last_pose_min_rejections", 1);
   declare_parameter("recovery_retry_from_last_pose_max_accepted_gap_sec", 1.0);
@@ -384,6 +385,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
     ++twist_subscription_generation_;
     twist_history_.clear();
   }
+  conditional_scan_seed_.reset();
   scan_twist_.reset();
   last_scan_ptr_.reset();
   path_ptr_.reset();

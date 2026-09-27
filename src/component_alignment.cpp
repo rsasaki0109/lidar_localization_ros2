@@ -1,4 +1,5 @@
 #include "component_internal.hpp"
+#include "../experiments/conditional_scan_recovery/accepted_scan_seed.hpp"
 
 
 PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSeed(
@@ -454,6 +455,7 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
 }
 
 lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelineForScan(
+  const pcl::PointCloud<pcl::PointXYZI>::ConstPtr & prepared_cloud,
   const Eigen::Matrix4f & init_guess,
   double scan_stamp_sec,
   lidar_localization::RegistrationSeedSource seed_source,
@@ -480,7 +482,7 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
         primary_attempt.correction_translation_m,
         primary_attempt.correction_yaw_deg,
         imu_guard_warmup_accepts_remaining});
-  return lidar_localization::runAlignmentPipeline(
+  auto result = lidar_localization::runAlignmentPipeline(
     primary_attempt,
     lidar_localization::AlignmentPipelineInput{
       have_last_accepted_pose_,
@@ -498,6 +500,67 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
     [this, seed_source](const lidar_localization::AlignmentAttempt & attempt) {
       return evaluateMeasurementGateForAttempt(attempt, seed_source);
     });
+  if (!enable_conditional_scan_recovery_ || !conditional_scan_seed_ ||
+    shutting_down_.load(std::memory_order_acquire) ||
+    !callback_state_coordinator_.initialPoseGenerationMatches(seed_generation) ||
+    (result.should_continue && !result.gate_result.reject_measurement))
+  {
+    return result;
+  }
+  const auto eligibility = lidar_localization::decideRecoveryRetryFromLastPose(
+    recoveryRetryFromLastPoseParams(),
+    lidar_localization::makeRecoveryRetryFromLastPoseInput(
+      have_last_accepted_pose_, consecutive_rejected_updates_,
+      primary_attempt.accepted_gap_sec,
+      lidar_localization::computeRecoveryRetryFallbackAcceptedGapSec(
+        have_last_accepted_pose_, scan_stamp_sec, last_accepted_pose_time_sec_),
+      primary_attempt.seed_translation_since_accept_m));
+  if (!eligibility.should_retry) {return result;}
+
+  // Private snapshot: initialpose/cleanup may reset the live reference while
+  // GICP runs. Neither that reset nor a stale result may reanchor this scan.
+  auto snapshot = std::make_shared<conditional_scan_recovery::AcceptedScanSeed>(
+    *conditional_scan_seed_);
+  const Eigen::Matrix3f rotation_hint = init_guess.block<3, 3>(0, 0);
+  conditional_scan_recovery::AcceptedScanSeed::Result seed;
+  state_lock.unlock();
+  try {
+    seed = snapshot->estimate(prepared_cloud, scan_stamp_sec, seed_generation, &rotation_hint);
+  } catch (const std::exception & error) {
+    state_lock.lock();
+    RCLCPP_WARN(get_logger(), "Conditional scan recovery unavailable: %s", error.what());
+    return result;
+  } catch (...) {
+    state_lock.lock();
+    throw;
+  }
+  state_lock.lock();
+  if (shutting_down_.load(std::memory_order_acquire) ||
+    !callback_state_coordinator_.initialPoseGenerationMatches(seed_generation))
+  {
+    return result;
+  }
+  conditional_scan_seed_ = std::move(snapshot);
+  if (!seed.valid) {return result;}
+  const auto attempt = runAlignmentAttempt(
+    seed.seed, seed.seed, scan_stamp_sec, state_lock, seed_generation);
+  if (shutting_down_.load(std::memory_order_acquire) ||
+    !callback_state_coordinator_.initialPoseGenerationMatches(seed_generation) ||
+    !attempt.target_ready || !attempt.has_converged)
+  {
+    return result;
+  }
+  const auto gate = evaluateMeasurementGateForAttempt(attempt, seed_source);
+  if (gate.reject_measurement) {return result;}
+  result = lidar_localization::AlignmentPipelineResult{};
+  result.selected_attempt = attempt;
+  result.gate_result = gate;
+  result.gate_result.status_level = lidar_localization::kMeasurementGateWarn;
+  result.gate_result.status_message = "conditional_scan_recovery_recovered";
+  lidar_localization::syncPipelineStatusFromGate(result);
+  RCLCPP_INFO(get_logger(), "Conditional scan recovery passed measurement gate: fitness=%.6f",
+    attempt.fitness_score);
+  return result;
 }
 
 lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurementGateForAttempt(
