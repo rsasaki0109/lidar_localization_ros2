@@ -157,6 +157,7 @@ set(LIDAR_LOCALIZATION_DATA_SCRIPTS
   scripts/tum_trajectory_to_pose_reference_csv_for_rosbag2.py)
 
 set(LIDAR_LOCALIZATION_ROS_ADAPTER_SCRIPTS
+  scripts/start_lifecycle_node.py
   scripts/publish_cmd_vel_odom.py
   scripts/publish_identity_odom.py
   scripts/publish_odom_from_localization.py
