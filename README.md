@@ -157,3 +157,12 @@ ROS 2 Jazzy is the primary target; Humble remains supported for existing deploym
 
 See [behavior, verification and known limits](docs/go2_twist_reception.md) for
 source-time twist snapshots, lifecycle isolation and source-progress-aware TF waits.
+
+The standalone, Nav2 localization and MID-360 launch files activate the localizer
+through `GetState`/`ChangeState` services, without relying on transition events.
+The startup helper exits once the node is active; it does not monitor or restart
+the localizer afterward. Callback failure, unexpected state or a 60-second wall
+clock deadline produces an error and a nonzero helper exit. An already active
+node is left unchanged. For direct use, `ros2 run lidar_localization_ros2
+start_lifecycle_node.py <node_name> --timeout <seconds>` accepts a relative node
+name in the helper's ROS namespace.
