@@ -82,3 +82,9 @@ continue to identify the original primary prediction.
 Package build, reset-in-flight behavior and paced normal/fault replay must pass
 before promotion. Fixed-pair success is insufficient. The one-second horizon is
 the existing retry limit, not a demonstrated safety bound.
+
+The trace branch emits `CONDITIONAL_RECOVERY` records only for failed normal
+pipelines or invalid accepted references. Dispatch/eligibility, provider validity
+and elapsed steady-clock time, and NDT gate outcomes distinguish unused recovery
+from rejected candidates. This diagnostic run is not timing-equivalent to the
+previous trace-free screen. No prediction, numerical gate or seed changes.

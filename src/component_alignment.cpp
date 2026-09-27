@@ -500,13 +500,19 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
     [this, seed_source](const lidar_localization::AlignmentAttempt & attempt) {
       return evaluateMeasurementGateForAttempt(attempt, seed_source);
     });
-  if (!enable_conditional_scan_recovery_ || !conditional_scan_seed_ ||
+  if (!enable_conditional_scan_recovery_ ||
     shutting_down_.load(std::memory_order_acquire) ||
     !callback_state_coordinator_.initialPoseGenerationMatches(seed_generation) ||
     (result.should_continue && !result.gate_result.reject_measurement))
   {
     return result;
   }
+  RCLCPP_INFO(get_logger(),
+    "CONDITIONAL_RECOVERY dispatch stamp=%.9f generation=%llu reference=%d rejects=%zu accepted_stamp=%.9f primary_gap=%.6f points=%zu",
+    scan_stamp_sec, static_cast<unsigned long long>(seed_generation),
+    static_cast<bool>(conditional_scan_seed_), consecutive_rejected_updates_,
+    last_accepted_pose_time_sec_, primary_attempt.accepted_gap_sec, prepared_cloud->size());
+  if (!conditional_scan_seed_) {return result;}
   const auto eligibility = lidar_localization::decideRecoveryRetryFromLastPose(
     recoveryRetryFromLastPoseParams(),
     lidar_localization::makeRecoveryRetryFromLastPoseInput(
@@ -515,7 +521,11 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
       lidar_localization::computeRecoveryRetryFallbackAcceptedGapSec(
         have_last_accepted_pose_, scan_stamp_sec, last_accepted_pose_time_sec_),
       primary_attempt.seed_translation_since_accept_m));
-  if (!eligibility.should_retry) {return result;}
+  if (!eligibility.should_retry) {
+    RCLCPP_INFO(get_logger(), "CONDITIONAL_RECOVERY skip stamp=%.9f reason=%s",
+      scan_stamp_sec, eligibility.reason.c_str());
+    return result;
+  }
 
   // Private snapshot: initialpose/cleanup may reset the live reference while
   // GICP runs. Neither that reset nor a stale result may reanchor this scan.
@@ -523,6 +533,7 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
     *conditional_scan_seed_);
   const Eigen::Matrix3f rotation_hint = init_guess.block<3, 3>(0, 0);
   conditional_scan_recovery::AcceptedScanSeed::Result seed;
+  const auto seed_started = std::chrono::steady_clock::now();
   state_lock.unlock();
   try {
     seed = snapshot->estimate(prepared_cloud, scan_stamp_sec, seed_generation, &rotation_hint);
@@ -540,10 +551,20 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
   {
     return result;
   }
+  RCLCPP_INFO(get_logger(),
+    "CONDITIONAL_RECOVERY seed stamp=%.9f valid=%d reason=%s seconds=%.6f xyz=%.6f,%.6f,%.6f",
+    scan_stamp_sec, seed.valid, seed.reason,
+    std::chrono::duration<double>(std::chrono::steady_clock::now() - seed_started).count(),
+    seed.seed(0, 3), seed.seed(1, 3), seed.seed(2, 3));
   conditional_scan_seed_ = std::move(snapshot);
   if (!seed.valid) {return result;}
   const auto attempt = runAlignmentAttempt(
     seed.seed, seed.seed, scan_stamp_sec, state_lock, seed_generation);
+  RCLCPP_INFO(get_logger(),
+    "CONDITIONAL_RECOVERY aligned stamp=%.9f target=%d converged=%d current_generation=%d shutdown=%d",
+    scan_stamp_sec, attempt.target_ready, attempt.has_converged,
+    callback_state_coordinator_.initialPoseGenerationMatches(seed_generation),
+    shutting_down_.load(std::memory_order_acquire));
   if (shutting_down_.load(std::memory_order_acquire) ||
     !callback_state_coordinator_.initialPoseGenerationMatches(seed_generation) ||
     !attempt.target_ready || !attempt.has_converged)
@@ -551,6 +572,12 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
     return result;
   }
   const auto gate = evaluateMeasurementGateForAttempt(attempt, seed_source);
+  RCLCPP_INFO(get_logger(),
+    "CONDITIONAL_RECOVERY ndt stamp=%.9f rejected=%d reason=%s fitness=%.6f correction=%.6f,%.6f xyz=%.6f,%.6f,%.6f",
+    scan_stamp_sec, gate.reject_measurement, gate.status_message.c_str(), attempt.fitness_score,
+    attempt.correction_translation_m, attempt.correction_yaw_deg,
+    attempt.final_transformation(0, 3), attempt.final_transformation(1, 3),
+    attempt.final_transformation(2, 3));
   if (gate.reject_measurement) {return result;}
   result = lidar_localization::AlignmentPipelineResult{};
   result.selected_attempt = attempt;

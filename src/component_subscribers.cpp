@@ -826,8 +826,13 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
         std::make_shared<conditional_scan_recovery::AcceptedScanSeed>(
         recovery_retry_from_last_pose_config_.max_accepted_gap_sec);
     }
-    conditional_scan_seed_->observeAccepted(
-      tmp_ptr, last_accepted_pose_matrix_, scan_stamp_sec, seed_generation);
+    if (!conditional_scan_seed_->observeAccepted(
+        tmp_ptr, last_accepted_pose_matrix_, scan_stamp_sec, seed_generation))
+    {
+      RCLCPP_WARN(get_logger(),
+        "CONDITIONAL_RECOVERY reference_unavailable stamp=%.9f points=%zu frame=%s",
+        scan_stamp_sec, tmp_ptr->size(), tmp_ptr->header.frame_id.c_str());
+    }
   }
   printAlignmentDebugInfo(init_guess, pipeline_result.selected_attempt, filtered_point_count);
 }
