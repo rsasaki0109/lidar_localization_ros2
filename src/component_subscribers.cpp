@@ -1,3 +1,4 @@
+#include "../experiments/cost_trace/cost_trace.hpp"
 #include "component_internal.hpp"
 #include <pcl/registration/gicp.h>
 #include <pcl/registration/ndt.h>
@@ -729,8 +730,10 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
 
 void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
 {
+  jeplo_cost_trace::Scope cost("callback", msg ? msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9 : -1.0);
   auto state_lock = callback_state_coordinator_.lockState();
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
+  cost.mark("state_locked");
   double scan_stamp_sec = 0.0;
   if (!admitScanMessage(msg, &scan_stamp_sec)) {
     return;
@@ -747,7 +750,9 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   // scan ends up accepted below. See republishFrozenMapToOdomTransform and the
   // freeze_as_last_good guard on publishMapToOdomTransform.
   republishFrozenMapToOdomTransform(msg->header.stamp);
+  cost.mark("prepare_begin");
   const PreparedScanCloud prepared_scan = prepareScanForRegistration(msg, scan_stamp_sec);
+  cost.mark("prepare_end");
   if (!lidar_localization::isPreparedScanReady(prepared_scan.status)) {
     handleScanPreparationFailure(msg->header.stamp, prepared_scan, scan_stamp_sec);
     publishBridgePoseAsRejectedOutput(msg->header.stamp);
@@ -759,13 +764,16 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
 
   const std::uint64_t seed_generation =
     callback_state_coordinator_.initialPoseGeneration();
+  cost.mark("seed_begin");
   const SelectedRegistrationSeed selected_seed =
     selectRegistrationSeed(msg->header.stamp, scan_stamp_sec);
+  cost.mark("seed_end");
   const bool imu_prediction_ready = selected_seed.imu_prediction_ready;
   const std::string registration_seed_source =
     lidar_localization::registrationSeedSourceName(selected_seed.source);
   Eigen::Matrix4f init_guess =
     refineSeedWithNdtInitializer(tmp_ptr, selected_seed.init_guess);
+  cost.mark("pipeline_begin");
   const auto pipeline_result = runAlignmentPipelineForScan(
     init_guess,
     scan_stamp_sec,
@@ -773,6 +781,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     imu_prediction_ready,
     state_lock,
     seed_generation);
+  cost.mark("pipeline_end");
 
   if (
     shutting_down_.load(std::memory_order_acquire) ||

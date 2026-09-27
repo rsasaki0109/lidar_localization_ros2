@@ -1,3 +1,4 @@
+#include "../experiments/cost_trace/cost_trace.hpp"
 #include "component_internal.hpp"
 
 
@@ -386,12 +387,14 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
   std::uint64_t seed_generation)
 {
+  jeplo_cost_trace::Scope cost("attempt", scan_stamp_sec);
   lidar_localization::AlignmentAttempt attempt;
   attempt.init_guess = attempt_init_guess;
   if (!setInputTargetForPose(crop_center_pose_matrix)) {
     return attempt;
   }
   attempt.target_ready = true;
+  cost.mark("target_ready");
 
   pcl::PointCloud<pcl::PointXYZI> output_cloud;
   rclcpp::Clock system_clock;
@@ -400,15 +403,20 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   // recovery, and pose fields remain protected, while /initialpose can acquire
   // the lock and reset state during this expensive operation.
   state_lock.unlock();
+  cost.mark("registration_lock_begin");
   try {
     auto registration_execution_lock =
       callback_state_coordinator_.lockRegistrationExecution();
+    cost.mark("align_begin");
     registration_->align(output_cloud, attempt_init_guess);
+    cost.mark("align_end");
   } catch (...) {
     state_lock.lock();
     throw;
   }
+  cost.mark("state_lock_begin");
   state_lock.lock();
+  cost.mark("state_lock_end");
   const rclcpp::Time time_align_end = system_clock.now();
   attempt.alignment_time_sec = time_align_end.seconds() - time_align_start.seconds();
   if (
@@ -419,7 +427,9 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
     return attempt;
   }
   attempt.has_converged = registration_->hasConverged();
+  cost.mark("fitness_begin");
   attempt.fitness_score = registration_->getFitnessScore();
+  cost.mark("fitness_end");
 
   if (enable_registration_localizability_diagnostics_ && ndt_omp_registration_) {
     Eigen::Matrix<double, 6, 6> hessian;

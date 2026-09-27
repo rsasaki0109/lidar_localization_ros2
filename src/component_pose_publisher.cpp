@@ -1,3 +1,4 @@
+#include "../experiments/cost_trace/cost_trace.hpp"
 #include "component_internal.hpp"
 void PCLLocalization::setCurrentPoseFromMatrix(
   const Eigen::Matrix4f & pose_matrix,
@@ -229,12 +230,14 @@ bool PCLLocalization::lookupOdomBridgePoseMatrix(
   bool use_latest_odom_transform,
   builtin_interfaces::msg::Time * resolved_stamp)
 {
+  jeplo_cost_trace::Scope cost("odom_lookup", stamp.sec + stamp.nanosec * 1e-9);
   // Same composition as publishOdomBridgePose (frozen map -> odom x live
   // odom -> base_link(stamp)), but returning an Eigen matrix for use as an
   // NDT registration seed (see selectRegistrationSeed / use_odom_tf_prediction_).
   if (!enable_map_odom_tf_ || !has_last_good_map_to_odom_) {
     return false;
   }
+  cost.mark("lookup_begin");
   geometry_msgs::msg::TransformStamped odom_to_base_link_msg;
   try {
     if (use_latest_odom_transform) {
@@ -247,6 +250,7 @@ bool PCLLocalization::lookupOdomBridgePoseMatrix(
   } catch (tf2::TransformException &) {
     return false;
   }
+  cost.mark("lookup_end");
   if (use_latest_odom_transform) {
     const rclcpp::Time node_stamp(stamp);
     const bool source_advanced =
