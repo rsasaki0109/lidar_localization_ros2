@@ -1,106 +1,69 @@
-# Conditional accepted-scan recovery candidate
+# Conditional accepted-scan recovery experiment
 
-Experimental branch only; wired into the ROS node behind the default-off
+This isolated branch wires recovery behind the default-off
 `enable_conditional_scan_recovery` parameter. No production preset enables it.
-The always-on scan-motion primary failed paced latest-pending tests (Box maximum
-error 3.70 m, Mask2 1.06 m); see the external `go2_motion_paced_latest` receipt.
-This candidate must pass those availability/false-acceptance constraints before
-promotion. Synthetic helper tests do not prove recovery accuracy.
+It is not validated for promotion: bad motion seeds can still pass map gates,
+and previous always-on motion/GICP variants failed full-rate replay.
 
-`AcceptedScanSeed` retains one immutable prepared accepted scan, its accepted map
-pose/stamp/generation, and optionally its covariance. Healthy acceptance only
-updates that reference; it performs no registration. Estimation always registers
-the current scan against this accepted reference. Neither rejected motion nor an
-unaccepted current cloud moves the reference. Target covariance may be reused
-while the accepted reference is unchanged. A local registration object releases
-its current source on return, so rejected clouds cannot accumulate.
+## Current node path
 
-The proposed caller first runs normal prediction and the existing NDT/last-pose
-retry pipeline. Only a remaining rejected measurement may request this optional
-seed. Existing retry eligibility (including accepted-gap cap, currently 1 s in the
-fixed Go2 cases) must apply. A valid seed is not an accepted pose: run normal map
-registration and all existing measurement gates again. No guard relaxation and
-no standalone scan-odometry output. The provider does not implement dispatch,
-retry-count limits, a ROS parameter, or output publication.
+Apply `override.yaml` after the fixed Go2 parameters to test the candidate.
+Normal prediction, NDT and the existing last-pose retry run first. After a
+remaining failure, existing retry bounds (enable/count/gap/seed distance) decide
+whether to generate a candidate. The one-second Go2 gap cap is an inherited
+limit, not a demonstrated safety bound. Primary orientation initializes relative
+GICP; primary translation never enters that initialization.
 
-The caller must serialize access, supply immutable prepared clouds in the same
-frame, reset on initialization/lifecycle changes, and recheck initialization
-generation after expensive work. A stale generation request must not erase a
-newer accepted reference. The helper rejects unavailable/invalid/mismatched inputs;
-registration exceptions still propagate like the current native alignment call.
-Concurrent reset behavior and full lifecycle integration remain unimplemented.
+`AcceptedScanSeed` retains only the last backend-accepted prepared cloud and its
+map pose/stamp/generation. Healthy acceptance retains references without running
+GICP. Rejected estimates never move the anchor or extend its horizon. Reference
+GICP uses .5 m correspondence, 20 covariance neighbors, 5e-4 transform epsilon
+and 30 iterations; target covariance can be reused until the anchor changes.
 
-Fixed diagnostic GICP settings match the previous native screen: 20 covariance
-neighbors, maximum correspondence .5 m, transform epsilon 5e-4, 30 outer
-iterations, existing library rotation/covariance/BFGS defaults. The caller's
-prepared cloud is used directly, with no extra downsample path. No new dependency.
-A 1 s horizon is an existing retry limit, not a newly validated safety bound.
+The candidate is refined against the map with `MapRefiner` (GICP_OMP, 2 m
+correspondence, 20 neighbors, .01 transform epsilon, 30 iterations). Its map
+voxel size follows the node voxel parameter (.2 m in the tested Go2 preset).
+The target comes from the existing crop/target selection. A changed target
+pointer creates a new cache. Cache construction and registration occur only on
+the failed path; first-use cost is included in its alignment timer. Candidate
+seed time is logged separately. No scan-motion pose is published directly.
 
-`test_seed.cpp` checks the source-to-target direction with known transformed
-clouds, preservation of the accepted anchor across unaccepted estimates, time
-horizon, reset/generation handling, frame mismatch, and nonfinite points. Run with
-assertions enabled (`-UNDEBUG` after `-DNDEBUG`). Standalone test compilation is the
-current validation scope; no ROS package build or live replay has been performed
-because the experiment has not been connected to package targets.
+The ordinary measurement gates and pose backend still decide acceptance. Only
+when the gate passes and the backend advances its accepted count at this scan's
+stamp does the prepared cloud become the new reference. PCL range filtering
+strips frame metadata, so the opt-in path restores the known base-frame name.
 
-Next: fixed real Box accepted-reference/current pairs, followed by isolated node
-dispatch and reset tests, package build, and normal/fault paced replays. Preserve
-the existing cheap healthy path and compare latency, drops, and false acceptance.
+## State and diagnostics
 
-Optional rotation-only initialization is now available. A supplied world rotation
-is converted into the accepted-reference frame; translation remains zero.
-Nonfinite, non-orthogonal, or reflected rotations are rejected. This reuses
-existing primary orientation and is not independent angular evidence.
+Cloud callbacks serialize provider/refiner access. Private local ownership keeps
+in-flight objects alive while the state lock is released. Initialpose resets
+both live caches; shutdown/generation checks prevent stale results from being
+stored or applied. Map refinement also checks target pointer identity after
+alignment. Accepted map messages, deactivation and cleanup clear both caches.
+Actual concurrent reset/map-change replay remains required before promotion.
 
-Fixed real Box A/B (`go2_conditional_rotation_hint`): identity reproduces the prior
-seed/final matrices exactly. Primary rotation supplies gated correct candidates
-in both selected intervals (max accepted error about6cm); synthetic local-yaw
-+90deg hints yield no gate-passing eligible candidates. This is a small fixed
-sweep, not stateful/live validation or a guarantee for arbitrary bad hints.
-GT is used only for labels. No new guard threshold, translation prior, sensor
-subscription or history was added. Next step remains conditional node dispatch
-and lifecycle integration followed by package build/paced regressions.
+`CONDITIONAL_RECOVERY` logs distinguish dispatch, eligibility skips, provider
+validity/time, map alignment and `map_gicp` gate outcomes. Successful candidates
+use `conditional_scan_recovery_recovered`; prediction-source labels and the
+configured primary method continue to describe the normal pipeline. Trace
+replay has logging overhead and is not timing-equivalent to a trace-free run.
 
-## Node experiment
+## Evidence and limits
 
-Apply `override.yaml` after the fixed Go2 parameters for a candidate replay.
-This also requires the existing last-pose retry to be enabled. It inherits that
-retry's rejection count, accepted-gap and seed-distance eligibility; no gate
-threshold is relaxed. Primary and last-pose attempts run first. Only remaining
-failures call GICP, with primary orientation and zero relative translation as
-initialization, followed by NDT and the normal gates/backend.
+Synthetic helper tests cover transform direction, immutable accepted anchors,
+gap/generation/frame checks, rotation-hint validity, invalid map/source/seed,
+cache reuse and replacement-map independence. Release assertions stay enabled.
+`MapRefiner` reproduces all32 prior fixed GICP2m final matrices, fitness and
+convergence exactly, including poor seeds. This proves extraction parity only.
 
-The prepared base-frame cloud is retained only after the backend accepts the
-measurement. Range filtering strips PCL metadata, so the opt-in callback restores
-its known base-frame name. A private provider snapshot lets initialpose/cleanup
-reset the live state during GICP. The callback checks shutdown and generation
-before retaining the cache or trying NDT, and again before applying the result.
-Provider exceptions preserve the original failed pipeline result. Diagnostics
-mark successful candidates `conditional_scan_recovery_recovered`; source labels
-continue to identify the original primary prediction.
+The earlier NDT-refinement node completed eight normal/fault Box/Mask2 runs but
+adopted zero conditional candidates. Its diagnostic run generated11 seeds; NDT
+moved10 to wrong basins and rejected the remaining correct final for excess
+correction. The fixed map-GICP2m comparison passed5/6 primary-rotation candidates
+and rejected all corrupt-yaw90 candidates, but all6 artificial +2m translation
+seeds passed the numeric limits at wrong positions. Those are fixed
+counterexamples, not observed live outputs or a reason to relax gates.
 
-Package build, reset-in-flight behavior and paced normal/fault replay must pass
-before promotion. Fixed-pair success is insufficient. The one-second horizon is
-the existing retry limit, not a demonstrated safety bound.
-
-The trace branch emits `CONDITIONAL_RECOVERY` records only for failed normal
-pipelines or invalid accepted references. Dispatch/eligibility, provider validity
-and elapsed steady-clock time, and NDT gate outcomes distinguish unused recovery
-from rejected candidates. This diagnostic run is not timing-equivalent to the
-previous trace-free screen. No prediction, numerical gate or seed changes.
-
-## Experimental map refinement helper (not wired)
-
-`MapRefiner` uses native GICP_OMP with the existing .2 m map voxel, 2 m
-correspondence limit, 20 neighbors, .01 transform epsilon and 30 iterations.
-It owns one immutable input-map reference and its filtered/covariance cache.
-A map change requires a new instance; callers must retain local ownership across
-unlocked computation and recheck reset generation/target identity before use.
-Normal measurement gates and backend acceptance remain required.
-
-Known-transform, repeated-call, invalid-input and replacement-map tests run with
-Release assertions enabled. All32 fixed GICP2m results (including corrupted seeds)
-match the preceding standalone probe exactly, not just within a tolerance.
-This proves extraction parity, not accuracy: translation-stress false passes
-remain, and prior full-rate GICP replacement failed. No ROS wiring, lifecycle
-integration or live recovery improvement is claimed for this helper.
+The current map-GICP node needs package validation, real normal/fault and input
+drop replay, and in-flight reset testing. No dependency or guard threshold was
+added. The helper and its test remain intentionally discardable experiments.

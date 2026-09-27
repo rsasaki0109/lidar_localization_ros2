@@ -49,6 +49,7 @@ Eigen::Matrix4f PCLLocalization::applyTwistPrediction(
 void PCLLocalization::resetPredictionState(const Eigen::Matrix4f & pose_matrix, double stamp_sec)
 {
   conditional_scan_seed_.reset();
+  conditional_map_refiner_.reset();
   const auto state = lidar_localization::resetPredictionState(pose_matrix, stamp_sec);
   have_last_accepted_pose_ = state.have_last_accepted_pose;
   last_accepted_pose_matrix_ = state.last_accepted_pose_matrix;

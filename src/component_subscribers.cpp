@@ -374,6 +374,8 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
   }
 
   pcl::fromROSMsg(*msg, *map_cloud_ptr);
+  conditional_scan_seed_.reset();
+  conditional_map_refiner_.reset();
 
   const auto map_target_choice = lidar_localization::chooseMapSubscriptionTargetCloud(
     lidar_localization::usesFilteredTarget(registration_method_));

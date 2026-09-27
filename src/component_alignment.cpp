@@ -1,5 +1,6 @@
 #include "component_internal.hpp"
 #include "../experiments/conditional_scan_recovery/accepted_scan_seed.hpp"
+#include "../experiments/conditional_scan_recovery/map_refiner.hpp"
 
 
 PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSeed(
@@ -454,6 +455,65 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   return attempt;
 }
 
+lidar_localization::AlignmentAttempt PCLLocalization::runConditionalMapAttempt(
+  const pcl::PointCloud<pcl::PointXYZI>::ConstPtr & cloud,
+  const Eigen::Matrix4f & seed, double stamp,
+  lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
+  std::uint64_t generation)
+{
+  lidar_localization::AlignmentAttempt attempt;
+  attempt.init_guess = seed;
+  if (!setInputTargetForPose(seed)) {return attempt;}
+  const auto target = registration_->getInputTarget();
+  auto refiner = conditional_map_refiner_;
+  const float leaf = static_cast<float>(voxel_leaf_size_);
+  const auto started = std::chrono::steady_clock::now();
+  conditional_scan_recovery::MapRefiner::Result refined;
+  // The private shared owner keeps this cache alive if initialpose/cleanup
+  // clears the live owner. Cloud callbacks serialize access to the backend.
+  state_lock.unlock();
+  try {
+    if (!refiner || refiner->inputMap() != target) {
+      refiner = std::make_shared<conditional_scan_recovery::MapRefiner>(target, leaf);
+    }
+    refined = refiner->align(cloud, seed);
+  } catch (const std::exception & error) {
+    state_lock.lock();
+    RCLCPP_WARN(get_logger(), "Conditional map refinement unavailable: %s", error.what());
+    return attempt;
+  } catch (...) {
+    state_lock.lock();
+    throw;
+  }
+  state_lock.lock();
+  attempt.alignment_time_sec =
+    std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+  if (shutting_down_.load(std::memory_order_acquire) ||
+    !callback_state_coordinator_.initialPoseGenerationMatches(generation) ||
+    !registration_ || registration_->getInputTarget() != target)
+  {
+    return attempt;
+  }
+  conditional_map_refiner_ = std::move(refiner);
+  attempt.target_ready = refined.target_ready;
+  attempt.has_converged = refined.converged;
+  attempt.fitness_score = refined.fitness;
+  attempt.final_transformation = refined.pose;
+  const auto seed_metrics = lidar_localization::computeAlignmentSeedMetrics(
+    have_last_accepted_pose_, last_accepted_pose_matrix_, seed, stamp,
+    last_accepted_pose_time_sec_);
+  attempt.accepted_gap_sec = seed_metrics.accepted_gap_sec;
+  attempt.seed_translation_since_accept_m = seed_metrics.translation_since_accept_m;
+  attempt.seed_yaw_since_accept_deg = seed_metrics.yaw_since_accept_deg;
+  if (attempt.has_converged) {
+    const auto correction = lidar_localization::computeAlignmentCorrectionMetrics(
+      seed, attempt.final_transformation);
+    attempt.correction_translation_m = correction.translation_m;
+    attempt.correction_yaw_deg = correction.yaw_deg;
+  }
+  return attempt;
+}
+
 lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelineForScan(
   const pcl::PointCloud<pcl::PointXYZI>::ConstPtr & prepared_cloud,
   const Eigen::Matrix4f & init_guess,
@@ -558,13 +618,13 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
     seed.seed(0, 3), seed.seed(1, 3), seed.seed(2, 3));
   conditional_scan_seed_ = std::move(snapshot);
   if (!seed.valid) {return result;}
-  const auto attempt = runAlignmentAttempt(
-    seed.seed, seed.seed, scan_stamp_sec, state_lock, seed_generation);
+  const auto attempt = runConditionalMapAttempt(
+    prepared_cloud, seed.seed, scan_stamp_sec, state_lock, seed_generation);
   RCLCPP_INFO(get_logger(),
-    "CONDITIONAL_RECOVERY aligned stamp=%.9f target=%d converged=%d current_generation=%d shutdown=%d",
+    "CONDITIONAL_RECOVERY aligned stamp=%.9f target=%d converged=%d current_generation=%d shutdown=%d seconds=%.6f",
     scan_stamp_sec, attempt.target_ready, attempt.has_converged,
     callback_state_coordinator_.initialPoseGenerationMatches(seed_generation),
-    shutting_down_.load(std::memory_order_acquire));
+    shutting_down_.load(std::memory_order_acquire), attempt.alignment_time_sec);
   if (shutting_down_.load(std::memory_order_acquire) ||
     !callback_state_coordinator_.initialPoseGenerationMatches(seed_generation) ||
     !attempt.target_ready || !attempt.has_converged)
@@ -573,7 +633,7 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
   }
   const auto gate = evaluateMeasurementGateForAttempt(attempt, seed_source);
   RCLCPP_INFO(get_logger(),
-    "CONDITIONAL_RECOVERY ndt stamp=%.9f rejected=%d reason=%s fitness=%.6f correction=%.6f,%.6f xyz=%.6f,%.6f,%.6f",
+    "CONDITIONAL_RECOVERY map_gicp stamp=%.9f rejected=%d reason=%s fitness=%.6f correction=%.6f,%.6f xyz=%.6f,%.6f,%.6f",
     scan_stamp_sec, gate.reject_measurement, gate.status_message.c_str(), attempt.fitness_score,
     attempt.correction_translation_m, attempt.correction_yaw_deg,
     attempt.final_transformation(0, 3), attempt.final_transformation(1, 3),

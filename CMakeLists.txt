@@ -248,6 +248,12 @@ install(DIRECTORY
 )
 
 if(BUILD_TESTING)
+  add_executable(test_conditional_map_refiner
+    experiments/conditional_scan_recovery/test_map_refiner.cpp)
+  ament_target_dependencies(test_conditional_map_refiner ndt_omp_ros2)
+  target_link_libraries(test_conditional_map_refiner Eigen3::Eigen ${PCL_LIBRARIES})
+  add_test(NAME conditional_map_refiner COMMAND test_conditional_map_refiner)
+  set_tests_properties(conditional_map_refiner PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=4")
   add_executable(test_conditional_scan_seed
     experiments/conditional_scan_recovery/test_seed.cpp)
   ament_target_dependencies(test_conditional_scan_seed ndt_omp_ros2)

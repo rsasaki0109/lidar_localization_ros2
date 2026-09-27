@@ -315,6 +315,8 @@ CallbackReturn PCLLocalization::on_deactivate(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(get_logger(), "Deactivating");
   auto state_lock = callback_state_coordinator_.lockState();
+  conditional_scan_seed_.reset();
+  conditional_map_refiner_.reset();
 
 #ifdef LIDAR_LOCALIZATION_HAVE_NAV2_BOND
   if (bond_) {
@@ -386,6 +388,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
     twist_history_.clear();
   }
   conditional_scan_seed_.reset();
+  conditional_map_refiner_.reset();
   scan_twist_.reset();
   last_scan_ptr_.reset();
   path_ptr_.reset();
