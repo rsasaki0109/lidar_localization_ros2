@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #pragma once
 
-#include "source_wait_policy.hpp"
+#include "lidar_localization/source_wait_policy.hpp"
 #include <tf2_ros/buffer.hpp>
 #include <string>
 

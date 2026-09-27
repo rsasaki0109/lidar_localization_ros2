@@ -1,7 +1,7 @@
 // Copyright 2026 Sasaki
 // SPDX-License-Identifier: BSD-2-Clause
-#ifndef EXPERIMENTS_TF_SOURCE_PROGRESS_SOURCE_WAIT_POLICY_HPP_
-#define EXPERIMENTS_TF_SOURCE_PROGRESS_SOURCE_WAIT_POLICY_HPP_
+#ifndef LIDAR_LOCALIZATION_SOURCE_WAIT_POLICY_HPP_
+#define LIDAR_LOCALIZATION_SOURCE_WAIT_POLICY_HPP_
 
 #include <cstdint>
 #include <optional>
@@ -39,4 +39,4 @@ private:
   SourceStamp failed_source_;
 };
 }  // namespace lidar_localization
-#endif  // EXPERIMENTS_TF_SOURCE_PROGRESS_SOURCE_WAIT_POLICY_HPP_
+#endif  // LIDAR_LOCALIZATION_SOURCE_WAIT_POLICY_HPP_

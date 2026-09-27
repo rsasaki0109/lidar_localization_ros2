@@ -585,6 +585,17 @@ if(BUILD_TESTING)
     COMMAND test_bbs_branch_and_bound
   )
 
+  add_executable(test_source_wait_policy test/test_source_wait_policy.cpp)
+  target_include_directories(test_source_wait_policy PRIVATE include)
+  add_test(NAME source_wait_policy COMMAND test_source_wait_policy)
+
+  add_executable(test_source_wait_native_buffer test/test_source_wait_native_buffer.cpp)
+  target_include_directories(test_source_wait_native_buffer PRIVATE include)
+  ament_target_dependencies(test_source_wait_native_buffer tf2_ros)
+  target_link_libraries(test_source_wait_native_buffer Threads::Threads)
+  add_test(NAME source_wait_native_buffer COMMAND test_source_wait_native_buffer)
+  set_tests_properties(source_wait_native_buffer PROPERTIES TIMEOUT 30)
+
   add_executable(test_twist_subscription_lifecycle test/test_twist_subscription_lifecycle.cpp)
   target_link_libraries(test_twist_subscription_lifecycle
     lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})

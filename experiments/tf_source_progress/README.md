@@ -17,8 +17,8 @@ source-progress policy must be tested against both counterexamples. It does not
 queue clouds, return stale transforms, change the latest-transform extrapolation
 path or relax registration acceptance guards.
 
-`test_source_wait_policy.cpp` covers policy state independently.
-`test_native_buffer.cpp` uses a real `tf2_ros::Buffer`, including delayed insertion,
+`test/test_source_wait_policy.cpp` covers policy state independently.
+`test/test_source_wait_native_buffer.cpp` uses a real `tf2_ros::Buffer`, including delayed insertion,
 partial progress during timeout, restored input, historical interpolation,
 out-of-order insertion, explicit reset, frame change and cleared/backward data.
 It uses system time and insertion threads; it does not validate ROS graph delivery
@@ -29,3 +29,15 @@ Validation artifacts are outside the repository under
 Delayed-200-ms and live combined-fault replay candidates use separate artifact
 directories with `_delay` and `_live` suffixes. Mainline promotion requires replay
 evidence for accuracy, coverage, input loss and recovery, not just fixture success.
+
+The helpers now live under `include/lidar_localization/`; their implementation
+is unchanged. Both fixtures are registered in the package CTest suite as
+`source_wait_policy` and `source_wait_native_buffer`. The package's Release
+assertion setting applies to both targets. The former standalone fixture build
+is removed so there is one test registration path. Run after a package build:
+
+```bash
+ctest --test-dir <overlay>/build/lidar_localization_ros2 -R source_wait --output-on-failure
+```
+
+This layout cleanup does not by itself promote the experimental behavior.

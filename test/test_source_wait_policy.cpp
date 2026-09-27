@@ -1,6 +1,6 @@
 // Copyright 2026 Sasaki
 // SPDX-License-Identifier: BSD-2-Clause
-#include "source_wait_policy.hpp"
+#include "lidar_localization/source_wait_policy.hpp"
 #include <cassert>
 #include <iostream>
 
