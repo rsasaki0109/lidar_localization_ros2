@@ -48,7 +48,9 @@ public:
     return true;
   }
 
-  Result estimate(const Cloud::ConstPtr & current, double stamp, std::uint64_t generation)
+  Result estimate(
+    const Cloud::ConstPtr & current, double stamp, std::uint64_t generation,
+    const Eigen::Matrix3f * world_rotation_hint = nullptr)
   {
     Result result;
     if (!reference_) {return result;}
@@ -72,6 +74,20 @@ public:
     for (const auto & p : *reference_) {
       if (!pcl::isFinite(p)) {result.reason = "nonfinite_cloud"; return result;}
     }
+    Eigen::Matrix4f initial = Eigen::Matrix4f::Identity();
+    if (world_rotation_hint) {
+      const auto & rotation = *world_rotation_hint;
+      if (!rotation.allFinite() || std::abs(rotation.determinant() - 1.0f) > 1e-3f ||
+        !(rotation.transpose() * rotation).isApprox(Eigen::Matrix3f::Identity(), 1e-3f))
+      {
+        result.reason = "invalid_rotation_hint";
+        return result;
+      }
+      initial.block<3, 3>(0, 0) =
+        reference_pose_.block<3, 3>(0, 0).transpose() * rotation;
+    }
+    // The hint contains orientation only. Biased primary translation cannot
+    // enter this initial guess, and the map gate must still validate the result.
     Probe registration;
     registration.setCorrespondenceRandomness(20);
     registration.setMaxCorrespondenceDistance(0.5);
@@ -81,7 +97,7 @@ public:
     if (covariance_) {registration.setTargetCovariances(covariance_);}
     registration.setInputSource(current);
     Cloud aligned;
-    registration.align(aligned, Eigen::Matrix4f::Identity());
+    registration.align(aligned, initial);
     covariance_ = registration.targetCovariance();
     const auto delta = registration.getFinalTransformation();
     if (!registration.hasConverged() || !delta.allFinite()) {

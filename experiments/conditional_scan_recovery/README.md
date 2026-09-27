@@ -45,3 +45,17 @@ because the experiment has not been connected to package targets.
 Next: fixed real Box accepted-reference/current pairs, followed by isolated node
 dispatch and reset tests, package build, and normal/fault paced replays. Preserve
 the existing cheap healthy path and compare latency, drops, and false acceptance.
+
+Optional rotation-only initialization is now available. A supplied world rotation
+is converted into the accepted-reference frame; translation remains zero.
+Nonfinite, non-orthogonal, or reflected rotations are rejected. This reuses
+existing primary orientation and is not independent angular evidence.
+
+Fixed real Box A/B (`go2_conditional_rotation_hint`): identity reproduces the prior
+seed/final matrices exactly. Primary rotation supplies gated correct candidates
+in both selected intervals (max accepted error about6cm); synthetic local-yaw
++90deg hints yield no gate-passing eligible candidates. This is a small fixed
+sweep, not stateful/live validation or a guarantee for arbitrary bad hints.
+GT is used only for labels. No new guard threshold, translation prior, sensor
+subscription or history was added. Next step remains conditional node dispatch
+and lifecycle integration followed by package build/paced regressions.

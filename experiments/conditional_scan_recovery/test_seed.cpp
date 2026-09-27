@@ -48,4 +48,27 @@ int main()
   assert(seed.estimate(current, 4.1, 8).valid);
   assert(!seed.observeAccepted({}, world, 5., 8));
   assert(!seed.estimate(current, 5.1, 8).valid);
+  world.block<3, 3>(0, 0) = Eigen::AngleAxisf(-.3f, Eigen::Vector3f::UnitY()).toRotationMatrix();
+  assert(seed.observeAccepted(reference, world, 6., 9));
+  const Eigen::Matrix3f relative_rotation =
+    Eigen::AngleAxisf(.45f, Eigen::Vector3f::UnitZ()).toRotationMatrix();
+  auto rotated = Seed::Cloud::Ptr(new Seed::Cloud(*reference));
+  for (auto & p : *rotated) {
+    const Eigen::Vector3f v = relative_rotation.transpose() *
+      (p.getVector3fMap() - Eigen::Vector3f(.04f, -.02f, .01f));
+    p.x = v.x(); p.y = v.y(); p.z = v.z();
+  }
+  Eigen::Matrix3f hint = world.block<3, 3>(0, 0) * relative_rotation;
+  Eigen::Matrix4f delta = Eigen::Matrix4f::Identity();
+  delta.block<3, 3>(0, 0) = relative_rotation;
+  delta.block<3, 1>(0, 3) = Eigen::Vector3f(.04f, -.02f, .01f);
+  const auto hinted = seed.estimate(rotated, 6.1, 9, &hint);
+  assert(hinted.valid && (hinted.seed - world * delta).cwiseAbs().maxCoeff() < .003f);
+  hint(0, 0) = std::numeric_limits<float>::quiet_NaN();
+  assert(!seed.estimate(rotated, 6.1, 9, &hint).valid);
+  hint = 2.f * Eigen::Matrix3f::Identity();
+  assert(!seed.estimate(rotated, 6.1, 9, &hint).valid);
+  hint = Eigen::Matrix3f::Identity(); hint(0, 0) = -1.f;
+  assert(!seed.estimate(rotated, 6.1, 9, &hint).valid);
+
 }
