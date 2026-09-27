@@ -4,6 +4,7 @@
 #include <pcl/registration/gicp.h>
 #include <pcl/registration/ndt.h>
 #include <rclcpp/qos_overriding_options.hpp>
+#include <tf2_eigen/tf2_eigen.hpp>
 
 
 void PCLLocalization::initializePubSub()
@@ -770,7 +771,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       if (!enable_conditional_scan_recovery_) {return;}
       Eigen::Affine3d map_odom = Eigen::Affine3d::Identity();
       if (has_last_good_map_to_odom_) {
-        tf2::fromMsg(last_good_map_to_odom_.transform, map_odom);
+        map_odom = tf2::transformToEigen(last_good_map_to_odom_);
       }
       RCLCPP_INFO(get_logger(),
         "RECOVERY_FEEDBACK state stamp=%.17g stage=%s generation=%llu "
