@@ -407,6 +407,7 @@ public:
   // odom -> base_link the whole time -- never updated from a rejected match.
   geometry_msgs::msg::TransformStamped last_good_map_to_odom_;
   bool has_last_good_map_to_odom_{false};
+  std::optional<geometry_msgs::msg::TransformStamped> pending_map_to_odom_anchor_;
   // Map-frame pose whose z/roll/pitch accompany last_good_map_to_odom_. Keep
   // the planar constraint on the same confidence boundary as the TF anchor;
   // an accepted but weak match must not tilt the otherwise stable bridge.

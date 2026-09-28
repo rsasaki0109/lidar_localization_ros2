@@ -396,6 +396,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   odom_bridge_pose_pub_.reset();
   last_good_map_to_odom_ = geometry_msgs::msg::TransformStamped{};
   has_last_good_map_to_odom_ = false;
+  pending_map_to_odom_anchor_.reset();
   odom_source_wait_.reset();
   odom_tf_constraint_anchor_pose_matrix_ = Eigen::Matrix4f::Identity();
   has_odom_tf_constraint_anchor_pose_ = false;

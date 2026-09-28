@@ -613,6 +613,12 @@ if(BUILD_TESTING)
   add_test(NAME source_wait_native_buffer COMMAND test_source_wait_native_buffer)
   set_tests_properties(source_wait_native_buffer PROPERTIES TIMEOUT 30)
 
+  add_executable(test_deferred_map_odom_anchor test/test_deferred_map_odom_anchor.cpp)
+  target_link_libraries(test_deferred_map_odom_anchor
+    lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+  add_test(NAME deferred_map_odom_anchor COMMAND test_deferred_map_odom_anchor)
+  set_tests_properties(deferred_map_odom_anchor PROPERTIES TIMEOUT 30)
+
   add_executable(test_initial_pose_bridge_reset test/test_initial_pose_bridge_reset.cpp)
   target_link_libraries(test_initial_pose_bridge_reset
     lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})

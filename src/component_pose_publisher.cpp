@@ -87,6 +87,43 @@ bool PCLLocalization::publishPoseTransform(
   return publishMapToOdomTransform(stamp, map_to_base_link_stamped, freeze_as_last_good);
 }
 
+namespace
+{
+void completeMapToOdomPublication(
+  PCLLocalization & node, const builtin_interfaces::msg::Time & stamp,
+  const geometry_msgs::msg::TransformStamped & map_to_base_link_stamped,
+  const geometry_msgs::msg::TransformStamped & odom_to_base_link_msg,
+  bool freeze_as_last_good)
+{
+  const geometry_msgs::msg::TransformStamped map_to_odom =
+    lidar_localization::composeMapToOdomTransform(
+      stamp,
+      node.global_frame_id_,
+      node.odom_frame_id_,
+      map_to_base_link_stamped,
+      odom_to_base_link_msg);
+  node.broadcaster_.sendTransform(map_to_odom);
+  // Freeze this map -> odom offset so republishFrozenMapToOdomTransform can keep
+  // it alive (re-stamped) through a dropout. Only called from accepted-match /
+  // accepted-reset call sites (see publishPoseTransform's default and its one
+  // explicit false caller, timerPublishPose) -- never from a rejected match.
+  if (freeze_as_last_good) {
+    node.pending_map_to_odom_anchor_.reset();
+    node.last_good_map_to_odom_ = map_to_odom;
+    node.has_last_good_map_to_odom_ = true;
+    geometry_msgs::msg::Pose anchor_pose;
+    anchor_pose.position.x = map_to_base_link_stamped.transform.translation.x;
+    anchor_pose.position.y = map_to_base_link_stamped.transform.translation.y;
+    anchor_pose.position.z = map_to_base_link_stamped.transform.translation.z;
+    anchor_pose.orientation = map_to_base_link_stamped.transform.rotation;
+    Eigen::Affine3d anchor_affine;
+    tf2::fromMsg(anchor_pose, anchor_affine);
+    node.odom_tf_constraint_anchor_pose_matrix_ = anchor_affine.matrix().cast<float>();
+    node.has_odom_tf_constraint_anchor_pose_ = true;
+  }
+}
+}  // namespace
+
 bool PCLLocalization::publishMapToOdomTransform(
   const builtin_interfaces::msg::Time & stamp,
   const geometry_msgs::msg::TransformStamped & map_to_base_link_stamped,
@@ -97,42 +134,36 @@ bool PCLLocalization::publishMapToOdomTransform(
     odom_to_base_link_msg = odom_source_wait_.lookup(
       tfbuffer_, odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(0.2));
   } catch (tf2::TransformException & ex) {
+    if (freeze_as_last_good) {
+      pending_map_to_odom_anchor_ = map_to_base_link_stamped;
+      pending_map_to_odom_anchor_->header.stamp = stamp;
+    }
     RCLCPP_WARN(
       this->get_logger(), "Could not get transform %s to %s: %s",
       base_frame_id_.c_str(), odom_frame_id_.c_str(), ex.what());
     return false;
   }
-  const geometry_msgs::msg::TransformStamped map_to_odom =
-    lidar_localization::composeMapToOdomTransform(
-      stamp,
-      global_frame_id_,
-      odom_frame_id_,
-      map_to_base_link_stamped,
-      odom_to_base_link_msg);
-  broadcaster_.sendTransform(map_to_odom);
-  // Freeze this map -> odom offset so republishFrozenMapToOdomTransform can keep
-  // it alive (re-stamped) through a dropout. Only called from accepted-match /
-  // accepted-reset call sites (see publishPoseTransform's default and its one
-  // explicit false caller, timerPublishPose) -- never from a rejected match.
-  if (freeze_as_last_good) {
-    last_good_map_to_odom_ = map_to_odom;
-    has_last_good_map_to_odom_ = true;
-    geometry_msgs::msg::Pose anchor_pose;
-    anchor_pose.position.x = map_to_base_link_stamped.transform.translation.x;
-    anchor_pose.position.y = map_to_base_link_stamped.transform.translation.y;
-    anchor_pose.position.z = map_to_base_link_stamped.transform.translation.z;
-    anchor_pose.orientation = map_to_base_link_stamped.transform.rotation;
-    Eigen::Affine3d anchor_affine;
-    tf2::fromMsg(anchor_pose, anchor_affine);
-    odom_tf_constraint_anchor_pose_matrix_ = anchor_affine.matrix().cast<float>();
-    has_odom_tf_constraint_anchor_pose_ = true;
-  }
+  completeMapToOdomPublication(
+    *this, stamp, map_to_base_link_stamped, odom_to_base_link_msg, freeze_as_last_good);
   return true;
 }
 
 void PCLLocalization::republishFrozenMapToOdomTransform(
   const builtin_interfaces::msg::Time & stamp)
 {
+  // One nonblocking opportunity on the next admitted scan. Never retain an
+  // untrusted pose or keep retrying through an extended source outage.
+  if (enable_map_odom_tf_ && pending_map_to_odom_anchor_) {
+    auto pending = std::move(*pending_map_to_odom_anchor_);
+    pending_map_to_odom_anchor_.reset();
+    try {
+      const auto source = tfbuffer_.lookupTransform(
+        odom_frame_id_, base_frame_id_, pending.header.stamp);
+      completeMapToOdomPublication(*this, pending.header.stamp, pending, source, true);
+    } catch (const tf2::TransformException &) {
+      // Preserve the previously trusted anchor if this opportunity is too early.
+    }
+  }
   // AMCL-style bridge: while enable_map_odom_tf_ is on, keep the last ACCEPTED
   // map -> odom offset alive with a fresh stamp even when the current scan was
   // rejected/skipped, so map -> base_link stays resolvable via TF composition
