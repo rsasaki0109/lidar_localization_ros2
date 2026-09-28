@@ -182,7 +182,8 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
       static_cast<std::size_t>(msg->width) * static_cast<std::size_t>(msg->height);
     tmp.reserve(point_count);
     for (std::size_t point_idx = 0; point_idx < point_count; ++point_idx) {
-      const uint8_t * point_data = msg->data.data() + point_idx * msg->point_step;
+      const uint8_t * point_data = msg->data.data() +
+        lidar_localization::pointCloudPointOffset(*msg, point_idx);
       pcl::PointXYZI point;
       float intensity = 0.0f;
       if (!lidar_localization::readPointFieldAsFloat(point_data, *x_field, &point.x) ||

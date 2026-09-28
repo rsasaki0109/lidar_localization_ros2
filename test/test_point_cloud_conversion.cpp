@@ -400,8 +400,42 @@ void test_pcl_cloud_to_xyzi_detects_or_synthesizes_intensity()
   assert(converted_xyz[0].intensity == 0.0f);
 }
 
+void test_organized_cloud_row_padding()
+{
+  for (const uint32_t padding : {0U, 4U, 20U}) {
+    auto cloud = make_sensor_cloud();
+    cloud.height = 3;
+    cloud.point_step = 20;
+    cloud.row_step = cloud.width * cloud.point_step + padding;
+    cloud.fields.push_back(make_field("time", 16, sensor_msgs::msg::PointField::FLOAT32));
+    cloud.data.assign(cloud.height * cloud.row_step, 0);
+    for (std::size_t i = 0; i < 6; ++i) {
+      const std::size_t offset = (i / 2) * cloud.row_step + (i % 2) * cloud.point_step;
+      write_value<float>(cloud.data, offset, static_cast<float>(i + 1));
+      write_value<float>(cloud.data, offset + 16, static_cast<float>(i) * 0.01f);
+      assert(ll::pointCloudPointOffset(cloud, i) == offset);
+    }
+    const auto times = ll::extractPointRelativeTimesSeconds(cloud);
+    const auto converted = ll::convertSensorCloudToTimedXyzi(cloud, times);
+    pcl::PointCloud<pcl::PointXYZI> untimed;
+    ll::convertSensorCloudToXyzi(cloud, untimed);
+    const auto range = ll::computePointTimeRangeSeconds(cloud);
+    assert(converted.cloud.size() == 6 && untimed.size() == 6 && times.hasCompleteTimes());
+    assert(std::abs(range.durationSec() - 0.05) < 1e-8);
+    for (std::size_t i = 0; i < converted.cloud.size(); ++i) {
+      assert(converted.cloud[i].x == static_cast<float>(i + 1));
+      assert(untimed[i].x == converted.cloud[i].x);
+      assert(std::abs(converted.relative_times_sec[i] - static_cast<float>(i) * 0.01f) < 1e-8);
+    }
+    cloud.data.resize(cloud.row_step * (cloud.height - 1));
+    assert(!ll::extractPointRelativeTimesSeconds(cloud).valid);
+    assert(!ll::computePointTimeRangeSeconds(cloud).valid);
+  }
+}
+
 int main()
 {
+  test_organized_cloud_row_padding();
   test_point_time_field_t_float_is_seconds();
   test_field_lookup_and_numeric_conversion();
   test_point_time_field_detection_and_unit_conversion();

@@ -83,6 +83,20 @@ struct TimedXyziCloud
 };
 
 
+// Byte offset of an in-range point in a valid PointCloud2 layout.
+inline std::size_t pointCloudPointOffset(
+  const sensor_msgs::msg::PointCloud2 & input, std::size_t point_idx)
+{
+  if (input.height == 1 || input.row_step ==
+    static_cast<std::size_t>(input.width) * input.point_step)
+  {
+    return point_idx * static_cast<std::size_t>(input.point_step);
+  }
+  return (point_idx / input.width) * static_cast<std::size_t>(input.row_step) +
+         (point_idx % input.width) * static_cast<std::size_t>(input.point_step);
+}
+
+
 inline PointTimeRange computePointTimeRangeSeconds(const sensor_msgs::msg::PointCloud2 & input)
 {
   PointTimeRange range;
@@ -103,7 +117,7 @@ inline PointTimeRange computePointTimeRangeSeconds(const sensor_msgs::msg::Point
   const std::size_t time_field_size = pointFieldDatatypeSize(time_field->datatype);
   const std::size_t required_size = point_count == 0 ?
     0 :
-    (point_count - 1) * static_cast<std::size_t>(input.point_step) +
+    pointCloudPointOffset(input, point_count - 1) +
     static_cast<std::size_t>(time_field->offset) + time_field_size;
   if (input.data.size() < required_size) {
     range.invalid_point_count = point_count;
@@ -112,7 +126,7 @@ inline PointTimeRange computePointTimeRangeSeconds(const sensor_msgs::msg::Point
 
   for (std::size_t point_idx = 0; point_idx < point_count; ++point_idx) {
     const uint8_t * point_data =
-      input.data.data() + point_idx * static_cast<std::size_t>(input.point_step);
+      input.data.data() + pointCloudPointOffset(input, point_idx);
     double time_seconds = 0.0;
     if (!readPointTimeSeconds(point_data, *time_field, &time_seconds) ||
       !std::isfinite(time_seconds))
@@ -156,7 +170,7 @@ inline PointRelativeTimes extractPointRelativeTimesSeconds(
   const std::size_t time_field_size = pointFieldDatatypeSize(time_field->datatype);
   const std::size_t required_size = point_count == 0 ?
     0 :
-    (point_count - 1) * static_cast<std::size_t>(input.point_step) +
+    pointCloudPointOffset(input, point_count - 1) +
     static_cast<std::size_t>(time_field->offset) + time_field_size;
   if (input.data.size() < required_size) {
     times.invalid_point_count = point_count;
@@ -167,7 +181,7 @@ inline PointRelativeTimes extractPointRelativeTimesSeconds(
   double max_time_sec = std::numeric_limits<double>::quiet_NaN();
   for (std::size_t point_idx = 0; point_idx < point_count; ++point_idx) {
     const uint8_t * point_data =
-      input.data.data() + point_idx * static_cast<std::size_t>(input.point_step);
+      input.data.data() + pointCloudPointOffset(input, point_idx);
     double time_seconds = 0.0;
     if (!readPointTimeSeconds(point_data, *time_field, &time_seconds) ||
       !std::isfinite(time_seconds))
@@ -289,7 +303,7 @@ inline TimedXyziCloud convertSensorCloudToTimedXyzi(
   const std::size_t point_count =
     static_cast<std::size_t>(input.width) * static_cast<std::size_t>(input.height);
   for (std::size_t point_idx = 0; point_idx < point_count; ++point_idx) {
-    const uint8_t * point_data = input.data.data() + point_idx * input.point_step;
+    const uint8_t * point_data = input.data.data() + pointCloudPointOffset(input, point_idx);
     pcl::PointXYZI point;
     float intensity = 0.0f;
     if (!readPointFieldAsFloat(point_data, *x_field, &point.x) ||
@@ -333,7 +347,7 @@ inline void convertSensorCloudToXyzi(
   const std::size_t point_count =
     static_cast<std::size_t>(input.width) * static_cast<std::size_t>(input.height);
   for (std::size_t point_idx = 0; point_idx < point_count; ++point_idx) {
-    const uint8_t * point_data = input.data.data() + point_idx * input.point_step;
+    const uint8_t * point_data = input.data.data() + pointCloudPointOffset(input, point_idx);
     pcl::PointXYZI point;
     float intensity = 0.0f;
     if (!readPointFieldAsFloat(point_data, *x_field, &point.x) ||
