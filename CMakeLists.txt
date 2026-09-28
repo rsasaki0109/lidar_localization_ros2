@@ -613,6 +613,11 @@ if(BUILD_TESTING)
   add_test(NAME source_wait_native_buffer COMMAND test_source_wait_native_buffer)
   set_tests_properties(source_wait_native_buffer PROPERTIES TIMEOUT 30)
 
+  add_executable(test_registration_fitness test/test_registration_fitness.cpp)
+  target_link_libraries(test_registration_fitness ${PCL_LIBRARIES})
+  add_test(NAME registration_fitness COMMAND test_registration_fitness)
+  set_tests_properties(registration_fitness PROPERTIES TIMEOUT 30)
+
   add_executable(test_initial_pose_bridge_reset test/test_initial_pose_bridge_reset.cpp)
   target_link_libraries(test_initial_pose_bridge_reset
     lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})

@@ -1,4 +1,5 @@
 #include "component_internal.hpp"
+#include "registration_fitness.hpp"
 
 
 PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSeed(
@@ -419,7 +420,9 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
     return attempt;
   }
   attempt.has_converged = registration_->hasConverged();
-  attempt.fitness_score = registration_->getFitnessScore();
+  attempt.fitness_score = ndt_omp_registration_ ?
+    lidar_localization::orderedParallelFitness(*ndt_omp_registration_, ndt_num_threads_) :
+    registration_->getFitnessScore();
 
   if (enable_registration_localizability_diagnostics_ && ndt_omp_registration_) {
     Eigen::Matrix<double, 6, 6> hessian;
