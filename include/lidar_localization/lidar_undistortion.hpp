@@ -8,6 +8,7 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 #include <iostream>
+#include <array>
 
 class LidarUndistortion
 {
@@ -189,21 +190,21 @@ private:
   static const int imu_que_length_{200};
   int imu_ptr_front_{0}, imu_ptr_last_{-1}, imu_ptr_last_iter_{0};
 
-  std::array<double, imu_que_length_> imu_time_;
-  std::array<float, imu_que_length_> imu_roll_;
-  std::array<float, imu_que_length_> imu_pitch_;
-  std::array<float, imu_que_length_> imu_yaw_;
+  std::array<double, imu_que_length_> imu_time_{};
+  std::array<float, imu_que_length_> imu_roll_{};
+  std::array<float, imu_que_length_> imu_pitch_{};
+  std::array<float, imu_que_length_> imu_yaw_{};
 
-  std::array<float, imu_que_length_> imu_velo_x_;
-  std::array<float, imu_que_length_> imu_velo_y_;
-  std::array<float, imu_que_length_> imu_velo_z_;
-  std::array<float, imu_que_length_> imu_shift_x_;
-  std::array<float, imu_que_length_> imu_shift_y_;
-  std::array<float, imu_que_length_> imu_shift_z_;
+  std::array<float, imu_que_length_> imu_velo_x_{};
+  std::array<float, imu_que_length_> imu_velo_y_{};
+  std::array<float, imu_que_length_> imu_velo_z_{};
+  std::array<float, imu_que_length_> imu_shift_x_{};
+  std::array<float, imu_que_length_> imu_shift_y_{};
+  std::array<float, imu_que_length_> imu_shift_z_{};
 
-  std::array<float, imu_que_length_> imu_angular_rot_x_;
-  std::array<float, imu_que_length_> imu_angular_rot_y_;
-  std::array<float, imu_que_length_> imu_angular_rot_z_;
+  std::array<float, imu_que_length_> imu_angular_rot_x_{};
+  std::array<float, imu_que_length_> imu_angular_rot_y_{};
+  std::array<float, imu_que_length_> imu_angular_rot_z_{};
 };
 
 #endif  // LIDAR_UNDISTORTION_HPP_
