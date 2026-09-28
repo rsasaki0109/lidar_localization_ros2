@@ -116,7 +116,7 @@ public:
       if (imu_ptr_last_ > 0) {
         imu_ptr_front_ = imu_ptr_last_iter_;
         while (imu_ptr_front_ != imu_ptr_last_) {
-          if (scan_time + rel_time > imu_time_[imu_ptr_front_]) {
+          if (scan_time + rel_time < imu_time_[imu_ptr_front_]) {
             break;
           }
           imu_ptr_front_ = (imu_ptr_front_ + 1) % imu_que_length_;
