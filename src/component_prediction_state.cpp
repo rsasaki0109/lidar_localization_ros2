@@ -90,7 +90,9 @@ void PCLLocalization::updatePredictionState(
   const Eigen::Matrix4f & accepted_pose_matrix,
   double stamp_sec)
 {
-  const double accepted_interval_sec = have_last_accepted_pose_ ?
+  // Keep the duration paired with the held motion across rejected updates.
+  const double accepted_interval_sec =
+    have_last_accepted_pose_ && consecutive_rejected_updates_ == 0 ?
     stamp_sec - last_accepted_pose_time_sec_ : 0.0;
   // Store the pose at its timestamp in every prediction mode. Extrapolating
   // here makes a later switch to twist integrate the same interval twice.
