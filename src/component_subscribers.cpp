@@ -236,6 +236,11 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
       get_logger(),
       "initial pose accepted before map is ready; scans will wait until map load completes");
   }
+  // An admitted reset supersedes the old track even if its TF is not available yet.
+  has_last_good_map_to_odom_ = false;
+  has_odom_tf_constraint_anchor_pose_ = false;
+  odom_bridge_transform_history_.clear();
+  has_last_odom_bridge_source_advance_node_stamp_ = false;
   odom_source_wait_.reset();
   initialpose_recieved_ = true;
   last_initial_pose_stamp_sec_ = stamp_to_sec(msg->header.stamp);
