@@ -204,14 +204,13 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
       {
         tmp.push_back(point);
         if (point_relative_times.has_time_field) {
-          prepared_scan.pre_voxel_relative_times_sec.push_back(
+          prepared_scan.relative_times_sec.push_back(
             lidar_localization::relativeTimeOrNaN(point_relative_times, point_idx));
         }
       }
     }
     prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(tmp));
     if (point_relative_times.has_time_field) {
-      prepared_scan.relative_times_sec = prepared_scan.pre_voxel_relative_times_sec;
       prepared_scan.relative_times_aligned_with_cloud =
         prepared_scan.relative_times_sec.size() == prepared_scan.cloud->size();
     }
@@ -262,7 +261,7 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
       {
         tmp.push_back(point);
         if (point_relative_times.has_time_field) {
-          prepared_scan.pre_voxel_relative_times_sec.push_back(
+          prepared_scan.relative_times_sec.push_back(
             lidar_localization::relativeTimeOrNaN(cloud_relative_times, point_idx));
         }
       }
@@ -270,7 +269,6 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
     prepared_scan.filtered_point_count = tmp.size();
     prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(tmp));
     if (point_relative_times.has_time_field) {
-      prepared_scan.relative_times_sec = prepared_scan.pre_voxel_relative_times_sec;
       prepared_scan.relative_times_aligned_with_cloud =
         prepared_scan.relative_times_sec.size() == prepared_scan.cloud->size();
     }
