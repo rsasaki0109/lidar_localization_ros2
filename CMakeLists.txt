@@ -305,6 +305,14 @@ if(BUILD_TESTING)
     COMMAND test_scan_admission_policy
   )
 
+  add_executable(test_lidar_undistortion_initial_state
+    test/test_lidar_undistortion_initial_state.cpp)
+  target_include_directories(test_lidar_undistortion_initial_state PRIVATE
+    include ${PCL_INCLUDE_DIRS})
+  target_link_libraries(test_lidar_undistortion_initial_state ${PCL_LIBRARIES})
+  add_test(NAME lidar_undistortion_initial_state
+    COMMAND test_lidar_undistortion_initial_state)
+
   add_executable(test_odom_integration_policy
     test/test_odom_integration_policy.cpp)
   target_include_directories(test_odom_integration_policy PRIVATE
