@@ -269,10 +269,6 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   // pose stayed at the pre-reset track, the crop-failure guard and the
   // retry-from-last-pose path would re-seed alignment there after a few
   // rejections and silently undo the reset.
-  have_last_accepted_pose_ = true;
-  last_accepted_pose_matrix_ = currentPoseMatrix();
-  last_accepted_pose_time_sec_ = stamp_to_sec(msg->header.stamp);
-  consecutive_rejected_updates_ = 0;
   resetPredictionState(currentPoseMatrix(), stamp_to_sec(msg->header.stamp));
   publishReinitializationRequest(msg->header.stamp, ReinitializationRequestDecision{});
 
