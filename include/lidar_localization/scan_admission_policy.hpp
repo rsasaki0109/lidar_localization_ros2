@@ -36,7 +36,6 @@ struct ScanAdmissionDecision
 {
   ScanAdmissionStatus status{ScanAdmissionStatus::kAccepted};
   bool accepted{true};
-  bool should_store_last_scan{true};
   bool should_warn_null_scan{false};
   bool should_update_last_process_time{true};
   bool should_activate_crop_failure_guard{false};
@@ -46,14 +45,12 @@ struct ScanAdmissionDecision
 
 inline ScanAdmissionDecision rejectScanAdmission(
   ScanAdmissionStatus status,
-  bool should_store_last_scan,
   bool should_warn_null_scan = false,
   bool should_update_last_process_time = false)
 {
   ScanAdmissionDecision decision;
   decision.status = status;
   decision.accepted = false;
-  decision.should_store_last_scan = should_store_last_scan;
   decision.should_warn_null_scan = should_warn_null_scan;
   decision.should_update_last_process_time = should_update_last_process_time;
   return decision;
@@ -62,13 +59,13 @@ inline ScanAdmissionDecision rejectScanAdmission(
 inline ScanAdmissionDecision decideScanAdmission(const ScanAdmissionInput & input)
 {
   if (input.shutting_down) {
-    return rejectScanAdmission(ScanAdmissionStatus::kShuttingDown, false);
+    return rejectScanAdmission(ScanAdmissionStatus::kShuttingDown);
   }
   if (!input.has_scan_message) {
-    return rejectScanAdmission(ScanAdmissionStatus::kNullScan, false, true);
+    return rejectScanAdmission(ScanAdmissionStatus::kNullScan, true);
   }
   if (!input.map_received || !input.initial_pose_received) {
-    return rejectScanAdmission(ScanAdmissionStatus::kWaitingForMapOrInitialPose, true);
+    return rejectScanAdmission(ScanAdmissionStatus::kWaitingForMapOrInitialPose);
   }
   // An accepted /initialpose is authoritative; a scan stamped before it would re-anchor the
   // estimate to the pre-reset pose via the accepted-measurement path and undo the reset.
@@ -76,18 +73,18 @@ inline ScanAdmissionDecision decideScanAdmission(const ScanAdmissionInput & inpu
     input.last_initial_pose_stamp_sec >= 0.0 &&
     input.scan_stamp_sec < input.last_initial_pose_stamp_sec)
   {
-    return rejectScanAdmission(ScanAdmissionStatus::kPredatesInitialPose, true);
+    return rejectScanAdmission(ScanAdmissionStatus::kPredatesInitialPose);
   }
   if (
     input.min_scan_interval_sec > 0.0 &&
     input.has_last_process_time &&
     input.elapsed_since_last_process_sec < input.min_scan_interval_sec)
   {
-    return rejectScanAdmission(ScanAdmissionStatus::kThrottledByMinScanInterval, true);
+    return rejectScanAdmission(ScanAdmissionStatus::kThrottledByMinScanInterval);
   }
   if (input.consecutive_crop_failures > input.crop_failure_threshold) {
     ScanAdmissionDecision decision =
-      rejectScanAdmission(ScanAdmissionStatus::kCropFailureGuard, true, false, true);
+      rejectScanAdmission(ScanAdmissionStatus::kCropFailureGuard, false, true);
     decision.should_activate_crop_failure_guard = !input.crop_failure_guard_active;
     decision.should_log_crop_failure_guard_activation = decision.should_activate_crop_failure_guard;
     decision.should_reset_prediction_to_last_accepted_pose =
