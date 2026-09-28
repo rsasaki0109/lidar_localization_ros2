@@ -13,6 +13,11 @@ from typing import Any
 from relocalization_attempt_common import (
     ATTEMPT_FIELDNAMES,
     CANDIDATE_FIELDNAMES,
+    as_bool as _as_bool,
+    as_float as _as_float,
+    parse_float_list as _parse_float_list,
+    yaw_from_quaternion as _yaw_from_quaternion,
+    load_alignment_rows,
     request_windows,
 )
 
@@ -101,56 +106,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _as_bool(value: Any) -> bool:
-    return str(value).strip().lower() in {"true", "1", "yes", "y"}
-
-
-def _as_float(value: Any) -> float | None:
-    if value is None or str(value).strip() == "":
-        return None
-    try:
-        number = float(str(value))
-    except (TypeError, ValueError):
-        return None
-    return number if math.isfinite(number) else None
-
-
-def _parse_float_list(raw: str) -> list[float]:
-    values: list[float] = []
-    for token in str(raw).split(","):
-        token = token.strip()
-        if not token:
-            continue
-        values.append(float(token))
-    if not values:
-        raise ValueError(f"expected at least one numeric value in {raw!r}")
-    return values
-
-
-def _yaw_from_quaternion(x: float, y: float, z: float, w: float) -> float:
-    siny_cosp = 2.0 * (w * z + x * y)
-    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
-    return math.atan2(siny_cosp, cosy_cosp)
-
-
 def _wrap_angle(angle: float) -> float:
     return math.atan2(math.sin(angle), math.cos(angle))
-
-
-def load_alignment_rows(path: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8", newline="") as stream:
-        for record in csv.DictReader(stream):
-            values = json.loads(record["values_json"])
-            rows.append(
-                {
-                    "stamp_sec": float(record["stamp_sec"]),
-                    "requested": _as_bool(values.get("reinitialization_requested")),
-                    "reason": values.get("reinitialization_request_reason"),
-                    "score": _as_float(values.get("reinitialization_request_score")),
-                }
-            )
-    return rows
 
 
 def load_reference_rows(path: Path) -> list[dict[str, float]]:
