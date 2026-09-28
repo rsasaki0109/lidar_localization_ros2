@@ -40,9 +40,6 @@ bool PCLLocalization::admitScanMessage(
   if (admission.should_warn_null_scan) {
     RCLCPP_WARN(get_logger(), "Received null point cloud message");
   }
-  if (admission.should_store_last_scan) {
-    last_scan_ptr_ = msg;
-  }
   if (admission.should_update_last_process_time) {
     last_cloud_process_time_ = now;
   }

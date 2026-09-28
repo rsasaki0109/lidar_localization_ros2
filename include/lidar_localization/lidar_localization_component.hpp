@@ -255,7 +255,6 @@ public:
   lidar_localization::CallbackStateCoordinator callback_state_coordinator_;
   geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr corrent_pose_with_cov_stamped_ptr_;
   nav_msgs::msg::Path::SharedPtr path_ptr_;
-  sensor_msgs::msg::PointCloud2::ConstSharedPtr last_scan_ptr_;
 
   bool map_recieved_{false};
   bool initialpose_recieved_{false};
