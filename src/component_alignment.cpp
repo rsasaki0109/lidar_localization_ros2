@@ -526,6 +526,37 @@ lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurement
   return gate;
 }
 
+void PCLLocalization::recheckAlignmentWithReturnedOdomTf(
+  const builtin_interfaces::msg::Time & stamp,
+  lidar_localization::RegistrationSeedSource seed_source,
+  lidar_localization::AlignmentPipelineResult & result)
+{
+  if (!use_odom_tf_prediction_ ||
+    seed_source == lidar_localization::RegistrationSeedSource::kOdomTfPrediction ||
+    !result.should_continue || result.gate_result.reject_measurement)
+  {
+    return;
+  }
+  Eigen::Matrix4f bridge_pose;
+  // Inspect only TF already available for this scan; never wait for its return.
+  if (!lookupOdomBridgePoseMatrix(stamp, bridge_pose, false, nullptr, 0.0)) {
+    return;
+  }
+  auto rechecked_attempt = result.selected_attempt;
+  const auto correction = lidar_localization::computeAlignmentCorrectionMetrics(
+    bridge_pose, rechecked_attempt.final_transformation);
+  rechecked_attempt.correction_translation_m = correction.translation_m;
+  rechecked_attempt.correction_yaw_deg = correction.yaw_deg;
+  auto gate = evaluateMeasurementGateForAttempt(rechecked_attempt, seed_source);
+  if (gate.reject_measurement) {
+    gate.rejected_seed_update_applied = false;
+    gate.status_message = "returned_odom_tf_" + gate.status_message;
+    result.gate_result = gate;
+    result.recovered_by_retry_from_last_pose = false;
+    lidar_localization::syncPipelineStatusFromGate(result);
+  }
+}
+
 void PCLLocalization::logAlignmentPipelineRecovery(
   const lidar_localization::AlignmentPipelineResult & pipeline_result)
 {

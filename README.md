@@ -175,3 +175,15 @@ disabled. They cannot update the rejected seed or pass consistency recovery.
 The existing recovery retry may still accept a separate valid alignment.
 Diagnostics classify non-finite fitness as `bad_match`, subject to the existing
 missing-map, missing-initial-pose and weak-overlap priorities.
+
+### TF returning after fallback alignment (experimental)
+
+With odom-TF prediction enabled, an otherwise accepted fallback alignment is
+checked again against the saved map-to-odom anchor if exact scan-time TF has
+returned. This read-only lookup does not wait or alter source-wait bookkeeping.
+Existing measurement-gate settings, including warmup and release counts, apply.
+A rejection uses the `returned_odom_tf_` status prefix, cannot update a rejected
+seed, and reaches the existing rejection path before pose/anchor publication.
+Original seed/correction diagnostic fields still describe the original alignment;
+the gate warning reports the returned-TF correction. No additional alignment
+retry is started by this check. TF arriving after the check is not covered.

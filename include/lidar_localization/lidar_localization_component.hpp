@@ -557,6 +557,10 @@ public:
   lidar_localization::MeasurementGateDecision evaluateMeasurementGateForAttempt(
     const lidar_localization::AlignmentAttempt & attempt,
     lidar_localization::RegistrationSeedSource seed_source);
+  void recheckAlignmentWithReturnedOdomTf(
+    const builtin_interfaces::msg::Time & stamp,
+    lidar_localization::RegistrationSeedSource seed_source,
+    lidar_localization::AlignmentPipelineResult & result);
   void logAlignmentPipelineRecovery(
     const lidar_localization::AlignmentPipelineResult & pipeline_result);
   bool handleTerminalAlignmentPipelineResult(
@@ -686,7 +690,8 @@ public:
     const builtin_interfaces::msg::Time & stamp,
     Eigen::Matrix4f & out_pose_matrix,
     bool use_latest_odom_transform = false,
-    builtin_interfaces::msg::Time * resolved_stamp = nullptr);
+    builtin_interfaces::msg::Time * resolved_stamp = nullptr,
+    double timeout_sec = 0.2);
   void publishBridgePoseAsRejectedOutput(const builtin_interfaces::msg::Time & stamp);
   void fillPoseCovariance(double fitness_score);
 

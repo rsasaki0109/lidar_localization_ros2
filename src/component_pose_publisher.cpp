@@ -227,7 +227,8 @@ bool PCLLocalization::lookupOdomBridgePoseMatrix(
   const builtin_interfaces::msg::Time & stamp,
   Eigen::Matrix4f & out_pose_matrix,
   bool use_latest_odom_transform,
-  builtin_interfaces::msg::Time * resolved_stamp)
+  builtin_interfaces::msg::Time * resolved_stamp,
+  double timeout_sec)
 {
   // Same composition as publishOdomBridgePose (frozen map -> odom x live
   // odom -> base_link(stamp)), but returning an Eigen matrix for use as an
@@ -240,9 +241,12 @@ bool PCLLocalization::lookupOdomBridgePoseMatrix(
     if (use_latest_odom_transform) {
       odom_to_base_link_msg = tfbuffer_.lookupTransform(
         odom_frame_id_, base_frame_id_, tf2::TimePointZero);
+    } else if (timeout_sec == 0.0) {
+      odom_to_base_link_msg = tfbuffer_.lookupTransform(
+        odom_frame_id_, base_frame_id_, stamp);
     } else {
       odom_to_base_link_msg = odom_source_wait_.lookup(
-        tfbuffer_, odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(0.2));
+        tfbuffer_, odom_frame_id_, base_frame_id_, stamp, rclcpp::Duration::from_seconds(timeout_sec));
     }
   } catch (tf2::TransformException &) {
     return false;

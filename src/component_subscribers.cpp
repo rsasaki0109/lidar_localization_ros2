@@ -767,7 +767,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     lidar_localization::registrationSeedSourceName(selected_seed.source);
   Eigen::Matrix4f init_guess =
     refineSeedWithNdtInitializer(tmp_ptr, selected_seed.init_guess);
-  const auto pipeline_result = runAlignmentPipelineForScan(
+  auto pipeline_result = runAlignmentPipelineForScan(
     init_guess,
     scan_stamp_sec,
     selected_seed.source,
@@ -788,6 +788,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     return;
   }
 
+  recheckAlignmentWithReturnedOdomTf(msg->header.stamp, selected_seed.source, pipeline_result);
   logAlignmentPipelineRecovery(pipeline_result);
   if (handleTerminalAlignmentPipelineResult(
       msg->header.stamp,
