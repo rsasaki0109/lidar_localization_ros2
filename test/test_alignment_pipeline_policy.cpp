@@ -275,8 +275,38 @@ void test_continuing_recovery_handling_logs_and_uses_backend()
   assert(handling.continue_to_backend);
 }
 
+void test_nonfinite_primary_can_recover_only_with_valid_retry()
+{
+  for (const bool valid_retry : {false, true}) {
+    const auto primary = make_attempt(true, true, std::numeric_limits<double>::quiet_NaN());
+    int retry_calls = 0;
+    const auto result = ll::runAlignmentPipeline(
+      primary, default_input(),
+      [&]() {
+        ++retry_calls;
+        return make_attempt(true, true, valid_retry ? 1.0 :
+          std::numeric_limits<double>::quiet_NaN());
+      },
+      [](const ll::AlignmentAttempt & attempt) {
+        return ll::evaluateMeasurementGate(
+          ll::MeasurementGateParams{},
+          ll::makeMeasurementGateInput(attempt.fitness_score, 0.4, 0.5, 0.1, 0.2, 2));
+      });
+    assert(retry_calls == 1);
+    assert(result.recovered_by_retry_from_last_pose == valid_retry);
+    assert(result.gate_result.reject_measurement == !valid_retry);
+    assert(!result.gate_result.rejected_seed_update_applied);
+    if (valid_retry) {
+      assert(result.selected_attempt.fitness_score == 1.0);
+    } else {
+      assert(result.status_message == "registration_fitness_non_finite");
+    }
+  }
+}
+
 int main()
 {
+  test_nonfinite_primary_can_recover_only_with_valid_retry();
   test_target_missing_terminal_failure_when_retry_unavailable();
   test_not_converged_terminal_failure_when_retry_disabled();
   test_fitness_reject_remains_rejected_when_retry_denied();

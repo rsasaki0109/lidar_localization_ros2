@@ -2,6 +2,7 @@
 #define LIDAR_LOCALIZATION_MEASUREMENT_GATE_POLICY_HPP_
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <limits>
 #include <cstdint>
@@ -310,6 +311,12 @@ inline MeasurementGateDecision evaluateMeasurementGate(
   gate.effective_score_threshold = threshold_decision.effective_score_threshold;
   gate.post_reject_strict_active = threshold_decision.post_reject_strict_active;
   gate.open_loop_strict_active = threshold_decision.open_loop_strict_active;
+  if (!std::isfinite(input.fitness_score)) {
+    gate.status_level = kMeasurementGateWarn;
+    gate.status_message = "registration_fitness_non_finite";
+    gate.reject_measurement = true;
+    return gate;
+  }
   gate.borderline_seed_gate_active =
     isBorderlineSeedGateActive(params, input, gate.effective_score_threshold);
 

@@ -166,3 +166,12 @@ clock deadline produces an error and a nonzero helper exit. An already active
 node is left unchanged. For direct use, `ros2 run lidar_localization_ros2
 start_lifecycle_node.py <node_name> --timeout <seconds>` accepts a relative node
 name in the helper's ROS namespace.
+
+### Non-finite registration fitness
+
+Registration results with NaN or infinite fitness are rejected with
+`registration_fitness_non_finite`, including when score-threshold rejection is
+disabled. They cannot update the rejected seed or pass consistency recovery.
+The existing recovery retry may still accept a separate valid alignment.
+Diagnostics classify non-finite fitness as `bad_match`, subject to the existing
+missing-map, missing-initial-pose and weak-overlap priorities.
