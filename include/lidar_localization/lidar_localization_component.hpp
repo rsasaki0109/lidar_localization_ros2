@@ -109,7 +109,6 @@ public:
     std::vector<double> relative_times_sec;
     double point_time_reference_sec{0.0};
     bool relative_times_aligned_with_cloud{false};
-    std::vector<double> pre_voxel_relative_times_sec;
   };
   struct SelectedRegistrationSeed
   {
