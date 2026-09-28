@@ -314,6 +314,14 @@ if(BUILD_TESTING)
   add_test(NAME lidar_undistortion_initial_state
     COMMAND test_lidar_undistortion_initial_state)
 
+  add_executable(test_lidar_undistortion_time_lookup
+    test/test_lidar_undistortion_time_lookup.cpp)
+  target_include_directories(test_lidar_undistortion_time_lookup PRIVATE
+    include ${PCL_INCLUDE_DIRS})
+  target_link_libraries(test_lidar_undistortion_time_lookup ${PCL_LIBRARIES})
+  add_test(NAME lidar_undistortion_time_lookup
+    COMMAND test_lidar_undistortion_time_lookup)
+
   add_executable(test_odom_integration_policy
     test/test_odom_integration_policy.cpp)
   target_include_directories(test_odom_integration_policy PRIVATE
