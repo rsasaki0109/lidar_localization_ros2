@@ -24,18 +24,31 @@ def activate(node, target, timeout):
             raise TimeoutError(f'{target}: startup timed out after {timeout:g}s')
         return left
 
+    retry_delay = 1.0
+
     def call(client, request):
+        nonlocal retry_delay
         while not client.wait_for_service(timeout_sec=min(0.1, remaining())):
             pass
-        future = client.call_async(request)
+        futures = [client.call_async(request)]
+        retry_at = time.monotonic() + retry_delay
         try:
-            while not future.done():
-                executor.spin_once(timeout_sec=min(0.1, remaining()))
-            remaining()
-            return future.result()
+            while True:
+                left = remaining()
+                for future in futures:
+                    if future.done():
+                        return future.result()
+                if client is get_state and time.monotonic() >= retry_at:
+                    # Keep late responses usable; back off across startup to
+                    # avoid adding steady request load to a slow service.
+                    futures.append(client.call_async(request))
+                    retry_delay *= 2
+                    retry_at = time.monotonic() + retry_delay
+                executor.spin_once(timeout_sec=min(0.1, left))
         finally:
-            if not future.done():
-                future.cancel()
+            for future in futures:
+                if not future.done():
+                    future.cancel()
 
     remaining()
     executor = SingleThreadedExecutor(context=node.context)
