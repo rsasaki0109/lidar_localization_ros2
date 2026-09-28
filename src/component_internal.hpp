@@ -54,29 +54,10 @@ inline double stamp_to_sec(const builtin_interfaces::msg::Time & stamp)
   return static_cast<double>(stamp.sec) + static_cast<double>(stamp.nanosec) * 1e-9;
 }
 
-inline lidar_localization::PredictionStateSnapshot make_prediction_state_snapshot(
-  bool have_last_accepted_pose,
-  const Eigen::Matrix4f & last_accepted_pose_matrix,
-  const Eigen::Matrix4f & predicted_pose_matrix,
-  const Eigen::Matrix4f & last_relative_motion_matrix,
-  std::size_t consecutive_rejected_updates,
-  double last_accepted_pose_time_sec,
-  double predicted_pose_time_sec)
-{
-  return {
-    have_last_accepted_pose,
-    last_accepted_pose_matrix,
-    predicted_pose_matrix,
-    last_relative_motion_matrix,
-    consecutive_rejected_updates,
-    last_accepted_pose_time_sec,
-    predicted_pose_time_sec};
-}
 
 }  // namespace lidar_localization_component_internal
 
 // Preserve the original unqualified call sites in the implementation files.
 using lidar_localization_component_internal::stamp_to_sec;
-using lidar_localization_component_internal::make_prediction_state_snapshot;
 
 #endif  // LIDAR_LOCALIZATION__COMPONENT_INTERNAL_HPP_
