@@ -24,6 +24,7 @@ def services():
     state = {'id': 1, 'success': True, 'calls': [], 'delay': 0, 'stuck': False}
 
     def get_state(request, response):
+        time.sleep(state.get('read_delay', 0))
         response.current_state.id = state['id']
         response.current_state.label = str(state['id'])
         return response
@@ -110,3 +111,59 @@ def test_shutdown_stops_waiting(services):
     with pytest.raises(ExternalShutdownException):
         activate(client, 'missing', 3)
     assert state['calls'] == []
+
+
+@pytest.mark.parametrize('mode', ['first_read', 'all_reads', 'transition'])
+def test_lost_response_is_bounded_and_mutations_are_not_retried(services, monkeypatch, mode):
+    from rclpy.task import Future
+
+    client, state = services
+    original = client.create_client
+    calls = {'read': 0, 'transition': 0}
+    dropped = []
+
+    def create_client(service_type, *args, **kwargs):
+        service = original(service_type, *args, **kwargs)
+        real_call = service.call_async
+        kind = 'read' if service_type is GetState else 'transition'
+
+        def call(request):
+            calls[kind] += 1
+            delivered = real_call(request)
+            drop = ((kind == 'read' and
+                     (mode == 'all_reads' or (mode == 'first_read' and calls[kind] == 1)))
+                    or (kind == 'transition' and mode == 'transition'))
+            # Server still processes the request, but the caller never gets its result.
+            if drop:
+                pending = Future()
+                dropped.append(pending)
+                return pending
+            return delivered
+
+        monkeypatch.setattr(service, 'call_async', call)
+        return service
+
+    monkeypatch.setattr(client, 'create_client', create_client)
+    started = time.monotonic()
+    if mode == 'first_read':
+        activate(client, 'target', 3)
+        assert state['id'] == 3
+        assert state['calls'] == [1, 3]
+        assert calls['read'] >= 4
+    else:
+        with pytest.raises(TimeoutError):
+            activate(client, 'target', 2.5)
+        assert state['calls'] == ([1] if mode == 'transition' else [])
+        assert calls['transition'] == (1 if mode == 'transition' else 0)
+        if mode == 'all_reads':
+            assert calls['read'] >= 2
+    assert time.monotonic() - started < 3.8
+    assert all(future.cancelled() for future in dropped)
+
+
+def test_slow_read_responses_remain_usable(services):
+    client, state = services
+    state['read_delay'] = 1.2
+    activate(client, 'target', 6)
+    assert state['id'] == 3
+    assert state['calls'] == [1, 3]
