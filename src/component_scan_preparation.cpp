@@ -390,6 +390,22 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
     return false;
   }
 
+  const bool absolute_point_time = continuous_time_cloud_stamp_reference_ == "absolute";
+  double reference_time_sec = continuous_time_deskew_reference_time_sec_;
+  if (absolute_point_time) {
+    const double header_relative_sec = scan_stamp_sec - prepared_scan.point_time_reference_sec;
+    reference_time_sec += header_relative_sec;
+    if (!std::isfinite(header_relative_sec) || header_relative_sec < 0.0 ||
+      header_relative_sec > latest_scan_time_duration_sec_ ||
+      !std::isfinite(reference_time_sec) || reference_time_sec < 0.0 ||
+      reference_time_sec > latest_scan_time_duration_sec_)
+    {
+      latest_continuous_time_deskew_status_ =
+        "continuous_time_deskew_absolute_reference_out_of_range";
+      return false;
+    }
+  }
+
   if (use_lidar_motion) {
     const double motion_scale =
       latest_scan_time_duration_sec_ / last_relative_motion_duration_sec_;
@@ -405,7 +421,7 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
       prepared_scan.relative_times_sec,
       latest_scan_time_duration_sec_,
       scan_motion,
-      continuous_time_deskew_reference_time_sec_);
+      reference_time_sec);
     if (!deskew_result.applied) {
       latest_continuous_time_deskew_status_ =
         "continuous_time_deskew_lidar_motion_not_applied";
@@ -423,7 +439,8 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
   }
 
   if (use_pose_history) {
-    const double scan_start_sec = continuous_time_cloud_stamp_reference_ == "end" ?
+    const double scan_start_sec = absolute_point_time ? prepared_scan.point_time_reference_sec :
+      continuous_time_cloud_stamp_reference_ == "end" ?
       scan_stamp_sec - latest_scan_time_duration_sec_ :
       scan_stamp_sec + prepared_scan.point_time_reference_sec;
     auto deskew_result = lidar_localization::deskewPointCloudWithPoseHistory(
@@ -432,7 +449,7 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
       scan_start_sec,
       latest_scan_time_duration_sec_,
       pose_history,
-      continuous_time_deskew_reference_time_sec_);
+      reference_time_sec);
     latest_continuous_time_deskew_pose_history_coverage_ratio_ =
       deskew_result.coverage_ratio;
     latest_continuous_time_deskew_status_ =
@@ -461,7 +478,7 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
     prepared_scan.relative_times_sec,
     latest_scan_time_duration_sec_,
     start_to_end_motion,
-    continuous_time_deskew_reference_time_sec_);
+    reference_time_sec);
   if (!deskew_result.applied) {
     latest_continuous_time_deskew_status_ =
       lidar_localization::continuousTimeDeskewStatusMessage(

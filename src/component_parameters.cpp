@@ -96,7 +96,8 @@ void PCLLocalization::loadImuPreintegrationParameters()
   }
   if (
     continuous_time_cloud_stamp_reference_ != "start" &&
-    continuous_time_cloud_stamp_reference_ != "end")
+    continuous_time_cloud_stamp_reference_ != "end" &&
+    continuous_time_cloud_stamp_reference_ != "absolute")
   {
     RCLCPP_WARN(
       get_logger(), "Unsupported continuous_time_cloud_stamp_reference '%s'; using start",

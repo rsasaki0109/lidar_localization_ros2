@@ -122,8 +122,8 @@ component that feeds itself must not be able to diverge unbounded.
 | --- | --- | --- |
 | `use_continuous_time_deskew` | `true` | Deskew the pre-voxel scan when per-point timing and a motion estimate are ready; otherwise preserve the input scan |
 | `continuous_time_deskew_mode` | `relative_motion` | Experimental motion source: `relative_motion`, `imu_pose_history`, or `lidar_constant_velocity` |
-| `continuous_time_cloud_stamp_reference` | `start` | Whether the cloud header is the scan `start` or `end`; Koide Livox uses `start` |
-| `continuous_time_deskew_reference_time_sec` | `0.0` | Scan-relative reference time for the deskewed cloud; `0.0` means earliest point |
+| `continuous_time_cloud_stamp_reference` | `start` | `start` or `end` for relative point times; `absolute` for point times in the header clock (deskews to the header). Koide Livox uses `start` |
+| `continuous_time_deskew_reference_time_sec` | `0.0` | Scan-relative reference time; `0.0` means earliest point for `start`/`end`. In `absolute` mode this is an offset from the header; `0.0` means the header pose |
 | `continuous_time_pose_history_duration_sec` | `2.0` | Bounded rotation-only IMU pose-history horizon used by `imu_pose_history` |
 | `enable_localizability_guard` | `false` | Experimental XY scan-covariance proxy; suppress the previous-delta seed only below its threshold |
 | `localizability_min_xy_eigen_ratio` | `0.05` | Minimum XY covariance eigenvalue ratio for the proxy guard |
@@ -423,3 +423,5 @@ on Koide; until then the limits above stand.
 - [interfaces.md](interfaces.md) — topics, including the optional `/imu` input
 - [mid360_legged_jetson.md](mid360_legged_jetson.md) — a real IMU bringup
 - [competitive_roadmap.md](competitive_roadmap.md) — dataset/validation strategy
+
+With `continuous_time_cloud_stamp_reference=absolute`, per-point times must be absolute seconds in the same clock as the cloud header. The header and requested reference must fall within the finite point-time span; otherwise deskew is skipped with `continuous_time_deskew_absolute_reference_out_of_range`. No timestamp-format inference is performed. This opt-in does not improve stale or inaccurate motion estimates; continuous-time deskew remains disabled by default.

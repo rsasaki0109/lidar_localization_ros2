@@ -630,6 +630,12 @@ if(BUILD_TESTING)
   target_link_libraries(test_causal_twist_history Eigen3::Eigen)
   add_test(NAME causal_twist_history COMMAND test_causal_twist_history)
 
+  add_executable(test_absolute_deskew test/test_absolute_deskew.cpp)
+  target_link_libraries(test_absolute_deskew
+    lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+  add_test(NAME absolute_deskew COMMAND test_absolute_deskew)
+  set_tests_properties(absolute_deskew PROPERTIES TIMEOUT 30)
+
   add_executable(test_motion_duration_pair test/test_motion_duration_pair.cpp)
   target_link_libraries(test_motion_duration_pair
     lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
