@@ -203,5 +203,6 @@ are fixed, not new tuning parameters. Search and confirmation add callback work;
 this mode has no hard real-time deadline. Results finishing after reset or
 deactivation are discarded.
 
-This feature is an integration candidate: final product replay validation is
-pending. The previous experimental Go2 comparisons are not product acceptance.
+This mode targets sustained rejection during tracking, not cold-start or global
+localization. Validation on local Go2 replays does not guarantee recovery from
+unseen faults or incorrect accepted poses. It remains opt-in.
