@@ -94,60 +94,8 @@ struct MeasurementGateInput
   std::size_t accepted_updates_since_reset{std::numeric_limits<std::size_t>::max()};
 };
 
-struct MeasurementGateParamConfig
+struct MeasurementGateParamConfig : MeasurementGateParams
 {
-  double score_threshold{2.0};
-  bool reject_above_score_threshold{true};
-
-  bool enable_consistency_recovery_gate{false};
-  int consistency_recovery_min_rejections{10};
-  double consistency_recovery_score_margin{2.0};
-  double consistency_recovery_max_translation_m{0.05};
-  double consistency_recovery_max_yaw_deg{0.5};
-
-  bool enable_post_reject_strict_score_threshold{false};
-  int post_reject_strict_min_rejections{100};
-  double post_reject_strict_score_threshold{5.5};
-
-  bool enable_open_loop_strict_score_threshold{false};
-  double open_loop_strict_min_accepted_gap_sec{15.0};
-  double open_loop_strict_min_seed_translation_m{100.0};
-  double open_loop_strict_score_threshold{5.25};
-
-  bool enable_borderline_seed_rejection_gate{false};
-  double borderline_seed_gate_score_threshold{5.25};
-  double borderline_seed_gate_min_seed_translation_m{1.0};
-
-  bool enable_odom_tf_prediction_correction_guard{false};
-  double odom_tf_prediction_correction_guard_translation_m{2.0};
-  double odom_tf_prediction_correction_guard_yaw_deg{30.0};
-  bool enable_odom_tf_prediction_recovery_correction_guard{false};
-  int odom_tf_prediction_recovery_min_rejections{30};
-  double odom_tf_prediction_recovery_max_fitness{1.5};
-  double odom_tf_prediction_recovery_guard_translation_m{5.0};
-  double odom_tf_prediction_recovery_guard_yaw_deg{30.0};
-
-  // Seed-agnostic jump guard.  Whatever produced the seed (previous delta,
-  // twist, IMU, odom), a legged or wheeled robot cannot move meters between
-  // two scans, so a result that lands far from the seed is an aliased
-  // solution even with a good fitness.  Accepting it also poisons the
-  // previous-delta prediction and the estimate runs away.  After
-  // release_rejections consecutive rejections the guard stops applying so a
-  // genuinely drifted seed can still re-lock.
-  bool enable_seed_correction_guard{false};
-  double seed_correction_guard_translation_m{0.5};
-  double seed_correction_guard_yaw_deg{15.0};
-  int seed_correction_guard_release_rejections{10};
-  // The guard only protects an established track: until this many updates
-  // have been accepted since the last (re)initialization the seed is an
-  // external initial pose, not a tracked one.
-  int seed_correction_guard_warmup_accepts{5};
-
-  bool enable_rejected_seed_update{false};
-  int rejected_seed_update_min_rejections{0};
-  double rejected_seed_update_max_fitness{10.0};
-  double rejected_seed_update_max_correction_translation_m{2.0};
-  double rejected_seed_update_max_correction_yaw_deg{2.0};
 };
 
 struct EffectiveScoreThresholdDecision
@@ -172,68 +120,7 @@ struct MeasurementGateDecision
 inline MeasurementGateParams makeMeasurementGateParams(
   const MeasurementGateParamConfig & config)
 {
-  MeasurementGateParams params;
-  params.score_threshold = config.score_threshold;
-  params.reject_above_score_threshold = config.reject_above_score_threshold;
-  params.enable_consistency_recovery_gate = config.enable_consistency_recovery_gate;
-  params.consistency_recovery_min_rejections =
-    config.consistency_recovery_min_rejections;
-  params.consistency_recovery_score_margin = config.consistency_recovery_score_margin;
-  params.consistency_recovery_max_translation_m =
-    config.consistency_recovery_max_translation_m;
-  params.consistency_recovery_max_yaw_deg =
-    config.consistency_recovery_max_yaw_deg;
-  params.enable_post_reject_strict_score_threshold =
-    config.enable_post_reject_strict_score_threshold;
-  params.post_reject_strict_min_rejections =
-    config.post_reject_strict_min_rejections;
-  params.post_reject_strict_score_threshold =
-    config.post_reject_strict_score_threshold;
-  params.enable_open_loop_strict_score_threshold =
-    config.enable_open_loop_strict_score_threshold;
-  params.open_loop_strict_min_accepted_gap_sec =
-    config.open_loop_strict_min_accepted_gap_sec;
-  params.open_loop_strict_min_seed_translation_m =
-    config.open_loop_strict_min_seed_translation_m;
-  params.open_loop_strict_score_threshold =
-    config.open_loop_strict_score_threshold;
-  params.enable_borderline_seed_rejection_gate =
-    config.enable_borderline_seed_rejection_gate;
-  params.borderline_seed_gate_score_threshold =
-    config.borderline_seed_gate_score_threshold;
-  params.borderline_seed_gate_min_seed_translation_m =
-    config.borderline_seed_gate_min_seed_translation_m;
-  params.enable_odom_tf_prediction_correction_guard =
-    config.enable_odom_tf_prediction_correction_guard;
-  params.odom_tf_prediction_correction_guard_translation_m =
-    config.odom_tf_prediction_correction_guard_translation_m;
-  params.odom_tf_prediction_correction_guard_yaw_deg =
-    config.odom_tf_prediction_correction_guard_yaw_deg;
-  params.enable_odom_tf_prediction_recovery_correction_guard =
-    config.enable_odom_tf_prediction_recovery_correction_guard;
-  params.odom_tf_prediction_recovery_min_rejections =
-    config.odom_tf_prediction_recovery_min_rejections;
-  params.odom_tf_prediction_recovery_max_fitness =
-    config.odom_tf_prediction_recovery_max_fitness;
-  params.odom_tf_prediction_recovery_guard_translation_m =
-    config.odom_tf_prediction_recovery_guard_translation_m;
-  params.odom_tf_prediction_recovery_guard_yaw_deg =
-    config.odom_tf_prediction_recovery_guard_yaw_deg;
-  params.enable_seed_correction_guard = config.enable_seed_correction_guard;
-  params.seed_correction_guard_translation_m = config.seed_correction_guard_translation_m;
-  params.seed_correction_guard_yaw_deg = config.seed_correction_guard_yaw_deg;
-  params.seed_correction_guard_release_rejections =
-    config.seed_correction_guard_release_rejections;
-  params.seed_correction_guard_warmup_accepts = config.seed_correction_guard_warmup_accepts;
-  params.enable_rejected_seed_update = config.enable_rejected_seed_update;
-  params.rejected_seed_update_min_rejections =
-    config.rejected_seed_update_min_rejections;
-  params.rejected_seed_update_max_fitness = config.rejected_seed_update_max_fitness;
-  params.rejected_seed_update_max_correction_translation_m =
-    config.rejected_seed_update_max_correction_translation_m;
-  params.rejected_seed_update_max_correction_yaw_deg =
-    config.rejected_seed_update_max_correction_yaw_deg;
-  return params;
+  return config;
 }
 
 inline MeasurementGateInput makeMeasurementGateInput(
