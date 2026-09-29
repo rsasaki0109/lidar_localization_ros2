@@ -3,12 +3,13 @@
 import argparse
 import csv
 import json
-import math
 import time
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from relocalization_attempt_common import as_float as _as_float
 
 EXECUTION_FIELDNAMES = [
     "command_id",
@@ -79,16 +80,6 @@ def _as_bool(value: Any) -> bool | None:
     if normalized in {"0", "false", "no", "n"}:
         return False
     return None
-
-
-def _as_float(value: Any) -> float | None:
-    if value is None or str(value).strip() == "":
-        return None
-    try:
-        number = float(str(value))
-    except (TypeError, ValueError):
-        return None
-    return number if math.isfinite(number) else None
 
 
 def _counts(values: Iterable[str]) -> dict[str, int]:
