@@ -25,57 +25,41 @@ def generate_launch_description():
         get_package_share_directory('lidar_localization_ros2'),
         'param',
         'localization.yaml')
-    localization_param_dir = LaunchConfiguration(
-        'localization_param_dir',
-        default=default_localization_param_dir)
-    cloud_topic = LaunchConfiguration(
-        'cloud_topic',
-        default='/velodyne_points')
-    twist_topic = LaunchConfiguration(
-        'twist_topic',
-        default='/twist')
-    imu_topic = LaunchConfiguration(
-        'imu_topic',
-        default='/imu')
-    odom_topic = LaunchConfiguration(
-        'odom_topic',
-        default='/odom')
-    global_frame_id = LaunchConfiguration('global_frame_id', default='map')
-    odom_frame_id = LaunchConfiguration('odom_frame_id', default='odom')
-    base_frame_id = LaunchConfiguration('base_frame_id', default='base_link')
-    use_sim_time = LaunchConfiguration('use_sim_time', default='false')
-    use_dataset_tf_tree = LaunchConfiguration('use_dataset_tf_tree', default='false')
-    dataset_root_frame = LaunchConfiguration('dataset_root_frame', default='camera_base')
-    publish_lidar_tf = LaunchConfiguration('publish_lidar_tf', default='true')
-    lidar_frame_id = LaunchConfiguration('lidar_frame_id', default='velodyne')
-    lidar_tf_x = LaunchConfiguration('lidar_tf_x', default='0.0')
-    lidar_tf_y = LaunchConfiguration('lidar_tf_y', default='0.0')
-    lidar_tf_z = LaunchConfiguration('lidar_tf_z', default='0.0')
-    lidar_tf_roll = LaunchConfiguration('lidar_tf_roll', default='0.0')
-    lidar_tf_pitch = LaunchConfiguration('lidar_tf_pitch', default='0.0')
-    lidar_tf_yaw = LaunchConfiguration('lidar_tf_yaw', default='0.0')
-    publish_imu_tf = LaunchConfiguration('publish_imu_tf', default='false')
-    imu_frame_id = LaunchConfiguration('imu_frame_id', default='imu_link')
-    use_imu_preintegration = LaunchConfiguration(
-        'use_imu_preintegration', default='true')
-    imu_preintegration_use_base_frame_transform = LaunchConfiguration(
-        'imu_preintegration_use_base_frame_transform', default='false')
-    enable_map_odom_tf = LaunchConfiguration('enable_map_odom_tf', default='false')
-    use_odom = LaunchConfiguration('use_odom', default='false')
-    use_odom_tf_prediction = LaunchConfiguration(
-        'use_odom_tf_prediction', default='false')
-    publish_bridge_pose_when_lost = LaunchConfiguration(
-        'publish_bridge_pose_when_lost', default='false')
-    use_continuous_time_deskew = LaunchConfiguration(
-        'use_continuous_time_deskew', default='true')
-    continuous_time_deskew_reference_time_sec = LaunchConfiguration(
-        'continuous_time_deskew_reference_time_sec', default='0.0')
-    imu_tf_x = LaunchConfiguration('imu_tf_x', default='0.0')
-    imu_tf_y = LaunchConfiguration('imu_tf_y', default='0.0')
-    imu_tf_z = LaunchConfiguration('imu_tf_z', default='0.0')
-    imu_tf_roll = LaunchConfiguration('imu_tf_roll', default='0.0')
-    imu_tf_pitch = LaunchConfiguration('imu_tf_pitch', default='0.0')
-    imu_tf_yaw = LaunchConfiguration('imu_tf_yaw', default='0.0')
+    localization_param_dir = LaunchConfiguration('localization_param_dir')
+    cloud_topic = LaunchConfiguration('cloud_topic')
+    twist_topic = LaunchConfiguration('twist_topic')
+    imu_topic = LaunchConfiguration('imu_topic')
+    odom_topic = LaunchConfiguration('odom_topic')
+    global_frame_id = LaunchConfiguration('global_frame_id')
+    odom_frame_id = LaunchConfiguration('odom_frame_id')
+    base_frame_id = LaunchConfiguration('base_frame_id')
+    use_sim_time = LaunchConfiguration('use_sim_time')
+    use_dataset_tf_tree = LaunchConfiguration('use_dataset_tf_tree')
+    dataset_root_frame = LaunchConfiguration('dataset_root_frame')
+    publish_lidar_tf = LaunchConfiguration('publish_lidar_tf')
+    lidar_frame_id = LaunchConfiguration('lidar_frame_id')
+    lidar_tf_x = LaunchConfiguration('lidar_tf_x')
+    lidar_tf_y = LaunchConfiguration('lidar_tf_y')
+    lidar_tf_z = LaunchConfiguration('lidar_tf_z')
+    lidar_tf_roll = LaunchConfiguration('lidar_tf_roll')
+    lidar_tf_pitch = LaunchConfiguration('lidar_tf_pitch')
+    lidar_tf_yaw = LaunchConfiguration('lidar_tf_yaw')
+    publish_imu_tf = LaunchConfiguration('publish_imu_tf')
+    imu_frame_id = LaunchConfiguration('imu_frame_id')
+    use_imu_preintegration = LaunchConfiguration('use_imu_preintegration')
+    imu_preintegration_use_base_frame_transform = LaunchConfiguration('imu_preintegration_use_base_frame_transform')
+    enable_map_odom_tf = LaunchConfiguration('enable_map_odom_tf')
+    use_odom = LaunchConfiguration('use_odom')
+    use_odom_tf_prediction = LaunchConfiguration('use_odom_tf_prediction')
+    publish_bridge_pose_when_lost = LaunchConfiguration('publish_bridge_pose_when_lost')
+    use_continuous_time_deskew = LaunchConfiguration('use_continuous_time_deskew')
+    continuous_time_deskew_reference_time_sec = LaunchConfiguration('continuous_time_deskew_reference_time_sec')
+    imu_tf_x = LaunchConfiguration('imu_tf_x')
+    imu_tf_y = LaunchConfiguration('imu_tf_y')
+    imu_tf_z = LaunchConfiguration('imu_tf_z')
+    imu_tf_roll = LaunchConfiguration('imu_tf_roll')
+    imu_tf_pitch = LaunchConfiguration('imu_tf_pitch')
+    imu_tf_yaw = LaunchConfiguration('imu_tf_yaw')
 
     # Default robot: base frame -> lidar. Bagged datasets (e.g. Koide Zenodo 10122133): set
     # use_dataset_tf_tree:=true and dataset_root_frame:=camera_base so the base frame attaches to
