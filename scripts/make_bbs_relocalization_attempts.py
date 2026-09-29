@@ -46,6 +46,7 @@ from relocalization_attempt_common import (
     CANDIDATE_FIELDNAMES,
     as_bool as _as_bool,
     as_float as _as_float,
+    write_csv,
 )
 
 
@@ -715,21 +716,6 @@ def pointcloud2_xyz_array(msg: Any) -> np.ndarray:
 
     xyz = np.column_stack(arrays)
     return xyz[np.isfinite(xyz).all(axis=1)]
-
-
-def write_csv(
-    path: Path,
-    rows: list[dict[str, str]],
-    fieldnames: Sequence[str],
-    overwrite: bool,
-) -> None:
-    if path.exists() and not overwrite:
-        raise FileExistsError(f"output CSV already exists: {path}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def run(args: argparse.Namespace) -> None:
