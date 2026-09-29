@@ -206,3 +206,6 @@ deactivation are discarded.
 This mode targets sustained rejection during tracking, not cold-start or global
 localization. Validation on local Go2 replays does not guarantee recovery from
 unseen faults or incorrect accepted poses. It remains opt-in.
+For a saved Go2 replay YAML, use the
+[explicit launch overrides](docs/go2_twist_reception.md#launching-a-saved-go2-replay-configuration);
+launch defaults otherwise take precedence over matching YAML keys.

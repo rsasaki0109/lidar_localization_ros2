@@ -29,6 +29,41 @@ were removed before integration; the experiment READMEs preserve their history.
   For example, a remapped `/livox/lidar` input can explicitly use `reliable`.
   Reliability must be compatible with the publisher; there is no automatic global switch.
 
+## Launching a saved Go2 replay configuration
+
+Launch arguments override matching YAML keys even when the arguments use their
+launch defaults. In particular, the generic launch defaults to `base_link` and
+IMU preintegration enabled; supplying a Go2 YAML alone does not preserve its
+`livox_frame` / disabled-preintegration settings. Use the generic launch with
+explicit overrides for the evaluated confirmed-recovery replay configuration:
+
+```bash
+GO2_PARAMS=/path/to/verified_runtime_param.yaml
+ros2 launch lidar_localization_ros2 lidar_localization.launch.py \
+  localization_param_dir:="$GO2_PARAMS" \
+  cloud_topic:=/livox/lidar twist_topic:=/leg_twist imu_topic:=/livox/imu \
+  global_frame_id:=map odom_frame_id:=odom base_frame_id:=livox_frame \
+  use_sim_time:=true use_odom:=false \
+  use_imu_preintegration:=false imu_preintegration_use_base_frame_transform:=false \
+  use_continuous_time_deskew:=false continuous_time_deskew_reference_time_sec:=0.0 \
+  enable_map_odom_tf:=true use_odom_tf_prediction:=false \
+  publish_bridge_pose_when_lost:=false publish_lidar_tf:=false publish_imu_tf:=false
+```
+
+Use the runtime YAML generated for the intended bag and map: it contains the map
+path, initial pose, measurement gates, queue/QoS and the opt-in recovery setting.
+Do not substitute `mid360_legged.yaml` for that evaluated file. The historical
+Go2 tests used GT for the initial pose and source-map alignment; reusing their
+initial pose with a different map does not reproduce the evaluated conditions.
+
+This command starts the localizer and its lifecycle helper. The input publisher
+must provide the converted LiDAR/IMU/twist topics, simulation clock and external
+`odom -> livox_frame` TF separately. Enabling map-to-odom publication here does
+not enable TF-based prediction or rejected-pose publication. Check the resulting
+node parameters, rather than the YAML alone. The command preserves the saved
+launch settings; it is not a new dataset replay or a general recovery guarantee.
+See the [confirmed-recovery input contract](../README.md#go2-confirmed-recovery-opt-in).
+
 ## Evidence and limits
 
 The Release candidate passed 69 CTests, 234 Python tests and both bringup help
