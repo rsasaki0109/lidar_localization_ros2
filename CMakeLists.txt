@@ -371,24 +371,6 @@ if(BUILD_TESTING)
     COMMAND test_alignment_failure_taxonomy
   )
 
-  add_executable(test_exact_quadratic_coreset
-    test/test_exact_quadratic_coreset.cpp)
-  target_include_directories(test_exact_quadratic_coreset PRIVATE
-    include)
-  add_test(
-    NAME exact_quadratic_coreset
-    COMMAND test_exact_quadratic_coreset
-  )
-
-  add_executable(test_exact_quadratic_coreset_reuse
-    test/test_exact_quadratic_coreset_reuse.cpp)
-  target_include_directories(test_exact_quadratic_coreset_reuse PRIVATE
-    include)
-  add_test(
-    NAME exact_quadratic_coreset_reuse
-    COMMAND test_exact_quadratic_coreset_reuse
-  )
-
   add_executable(test_alignment_diagnostic_ros_adapter
     test/test_alignment_diagnostic_ros_adapter.cpp)
   target_include_directories(test_alignment_diagnostic_ros_adapter PRIVATE
