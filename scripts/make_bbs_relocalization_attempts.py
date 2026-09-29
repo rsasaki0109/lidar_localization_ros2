@@ -44,6 +44,8 @@ if _SCRIPT_DIR not in sys.path:
 from relocalization_attempt_common import (
     ATTEMPT_FIELDNAMES,
     CANDIDATE_FIELDNAMES,
+    as_bool as _as_bool,
+    as_float as _as_float,
 )
 
 
@@ -470,20 +472,6 @@ def load_occupancy_map(yaml_path: Path) -> OccupancyMap:
         origin_y_m=float(origin[1]),
         origin_yaw_rad=float(origin[2]) if len(origin) > 2 else 0.0,
     )
-
-
-def _as_bool(value: Any) -> bool:
-    return str(value).strip().lower() in {"true", "1", "yes", "y"}
-
-
-def _as_float(value: Any) -> float | None:
-    if value is None or str(value).strip() == "":
-        return None
-    try:
-        number = float(str(value))
-    except (TypeError, ValueError):
-        return None
-    return number if math.isfinite(number) else None
 
 
 def load_request_windows(alignment_csv: Path, source: str) -> list[RequestWindow]:
