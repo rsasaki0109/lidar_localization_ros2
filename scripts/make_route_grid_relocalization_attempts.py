@@ -19,6 +19,7 @@ from relocalization_attempt_common import (
     yaw_from_quaternion as _yaw_from_quaternion,
     load_alignment_rows,
     request_windows,
+    write_csv,
 )
 
 
@@ -331,21 +332,6 @@ def build_attempt_artifacts(
             }
         )
     return attempts, candidate_rows
-
-
-def write_csv(
-    path: Path,
-    rows: list[dict[str, Any]],
-    fieldnames: list[str],
-    overwrite: bool,
-) -> None:
-    if path.exists() and not overwrite:
-        raise FileExistsError(f"output CSV already exists: {path}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def main() -> None:
