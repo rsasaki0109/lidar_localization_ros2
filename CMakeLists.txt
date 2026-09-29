@@ -62,6 +62,7 @@ add_library(lidar_localization_component SHARED
   src/component_pose_backend.cpp
   src/component_pose_publisher.cpp
   src/component_reinit_recovery.cpp
+  src/go2_recovery.cpp
   src/component_diagnostics.cpp
 )
 target_link_libraries(lidar_localization_component Eigen3::Eigen)
@@ -249,6 +250,13 @@ install(DIRECTORY
 )
 
 if(BUILD_TESTING)
+  add_executable(test_go2_recovery_inputs test/test_go2_recovery_inputs.cpp)
+  target_include_directories(test_go2_recovery_inputs PRIVATE src)
+  target_link_libraries(test_go2_recovery_inputs
+    lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+  ament_target_dependencies(test_go2_recovery_inputs sensor_msgs)
+  add_test(NAME go2_recovery_inputs COMMAND test_go2_recovery_inputs)
+  set_tests_properties(go2_recovery_inputs PROPERTIES TIMEOUT 30)
   find_package(Threads REQUIRED)
   link_libraries(Eigen3::Eigen)
   add_executable(test_glim_prior_map_factor_policy

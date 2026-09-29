@@ -151,6 +151,7 @@ void PCLLocalization::loadImuPreintegrationParameters()
 
 void PCLLocalization::initializeParameters()
 {
+  get_parameter("enable_go2_confirmed_recovery", enable_go2_confirmed_recovery_);
   RCLCPP_INFO(get_logger(), "initializeParameters");
   get_parameter("global_frame_id", global_frame_id_);
   get_parameter("odom_frame_id", odom_frame_id_);
@@ -255,6 +256,14 @@ void PCLLocalization::initializeParameters()
     gtsam_smoother_.reset();
   }
   loadImuPreintegrationParameters();
+  if (enable_go2_confirmed_recovery_ &&
+    (base_frame_id_ != "livox_frame" || registration_method_ != "NDT_OMP" ||
+    use_imu_ || use_imu_preintegration_ || use_twist_ekf_ || use_gtsam_smoother_))
+  {
+    throw std::invalid_argument(
+      "Go2 confirmed recovery requires livox_frame, NDT_OMP and the direct pose backend "
+      "(use_imu/use_imu_preintegration/use_twist_ekf/use_gtsam_smoother=false)");
+  }
   get_parameter("enable_debug", enable_debug_);
   get_parameter("viz_downsample", viz_downsample_);
   get_parameter("viz_voxel_leaf_size", viz_voxel_leaf_size_);

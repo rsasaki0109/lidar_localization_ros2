@@ -3,6 +3,8 @@
 # Runtime launch should override map_path and measured sensor extrinsics.
 /**:
   ros__parameters:
+    # Opt in only with the Go2 frame/input/backend contract described in README.
+    enable_go2_confirmed_recovery: false
     registration_method: NDT_OMP
     score_threshold: 6.0
     ndt_resolution: 1.0

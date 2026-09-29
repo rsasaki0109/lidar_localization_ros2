@@ -283,6 +283,10 @@ void PCLLocalization::appendAlignmentDiagnosticValues(
   diagnostic_msgs::msg::DiagnosticStatus & status,
   const lidar_localization::AlignmentDiagnosticValuesInput & diagnostic_values_input) const
 {
+  diagnostic_msgs::msg::KeyValue recovery_enabled;
+  recovery_enabled.key = "enable_go2_confirmed_recovery";
+  recovery_enabled.value = enable_go2_confirmed_recovery_ ? "true" : "false";
+  status.values.push_back(recovery_enabled);
   for (const auto & value :
     lidar_localization::makeRosAlignmentDiagnosticKeyValues(diagnostic_values_input))
   {

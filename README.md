@@ -175,3 +175,33 @@ disabled. They cannot update the rejected seed or pass consistency recovery.
 The existing recovery retry may still accept a separate valid alignment.
 Diagnostics classify non-finite fitness as `bad_match`, subject to the existing
 missing-map, missing-initial-pose and weak-overlap priorities.
+
+### Go2 confirmed recovery (opt-in)
+
+`enable_go2_confirmed_recovery` defaults to `false` and is reported in alignment
+status. It attempts BBS translation recovery once after at least ten consecutive
+rejections, then requires confirmation on the next scan using independent gyro
+deskew and pairwise GICP. A successful primary match takes precedence. Only an
+actual accepted backend update rearms another recovery attempt; initial pose and
+lifecycle reset discard pending work. No ground truth enters candidate selection.
+
+The initial supported contract is `registration_method: NDT_OMP`,
+`base_frame_id: livox_frame`, and `use_imu`, `use_imu_preintegration`,
+`use_twist_ekf`, `use_gtsam_smoother` all false. Enabling recovery with another
+backend/frame configuration fails configuration. Feed the existing `imu` topic
+with radians/second gyro in `livox_frame`; input clouds must be little-endian,
+with float32 x/y/z and float64 `t` in absolute seconds, also in `livox_frame`.
+Only samples received before cloud callback entry are eligible. Missing/stale
+IMU coverage (over 20 ms), invalid fields or fewer than 20 filtered GICP points
+cancel the attempt; they do not bypass the normal measurement gate.
+
+Recovery reads the static `map_path` PCD or PLY map on demand. Do not replace the
+map file or publish a different map while this mode is active. The 0.2 m raster
+is capped at 16M cells and 16384 cells per dimension. Large/unsupported maps fail
+closed. The existing 16-candidate search and 0.1 m / 5 degree confirmation limits
+are fixed, not new tuning parameters. Search and confirmation add callback work;
+this mode has no hard real-time deadline. Results finishing after reset or
+deactivation are discarded.
+
+This feature is an integration candidate: final product replay validation is
+pending. The previous experimental Go2 comparisons are not product acceptance.

@@ -87,6 +87,16 @@
 #include "bondcpp/bond.hpp"
 #endif
 
+struct Go2Recovery;
+// Read-only inputs for a registration candidate, not a restorable prediction state.
+struct AlignmentReference {
+  bool have_pose;
+  Eigen::Matrix4f pose;
+  double stamp_sec;
+  std::size_t rejected;
+  std::size_t accepted;
+};
+
 class PCLLocalization : public rclcpp_lifecycle::LifecycleNode
 {
 public:
@@ -190,6 +200,9 @@ public:
     bool update_pose_backends, std::uint64_t subscription_generation);
   void imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr msg);
   void cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
+  void cloudReceivedForContext(
+    const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg,
+    const std::shared_ptr<Go2Recovery> & recovery_context);
   // void gnssReceived();
 
   // --- TF infrastructure, publishers, and subscriptions ---
@@ -546,17 +559,19 @@ public:
     const Eigen::Matrix4f & crop_center_pose_matrix,
     double scan_stamp_sec,
     lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
-    std::uint64_t seed_generation);
+    std::uint64_t seed_generation,
+    const AlignmentReference & reference);
   lidar_localization::AlignmentPipelineResult runAlignmentPipelineForScan(
     const Eigen::Matrix4f & init_guess,
     double scan_stamp_sec,
     lidar_localization::RegistrationSeedSource seed_source,
     bool imu_prediction_ready,
     lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
-    std::uint64_t seed_generation);
+    std::uint64_t seed_generation,
+    const AlignmentReference & reference);
   lidar_localization::MeasurementGateDecision evaluateMeasurementGateForAttempt(
     const lidar_localization::AlignmentAttempt & attempt,
-    lidar_localization::RegistrationSeedSource seed_source);
+    const AlignmentReference & reference);
   void logAlignmentPipelineRecovery(
     const lidar_localization::AlignmentPipelineResult & pipeline_result);
   bool handleTerminalAlignmentPipelineResult(
@@ -758,4 +773,7 @@ public:
     const std::string & registration_seed_source = "not_selected",
     const lidar_localization::RegistrationLocalizabilityMetrics &
     registration_localizability = lidar_localization::RegistrationLocalizabilityMetrics{});
+  bool enable_go2_confirmed_recovery_{false};
+  std::shared_ptr<Go2Recovery> go2_recovery_;
+
 };

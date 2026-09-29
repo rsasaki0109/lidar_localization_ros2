@@ -1,4 +1,5 @@
 #include "component_internal.hpp"
+#include "go2_recovery.hpp"
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
 PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
@@ -13,6 +14,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("base_frame_id", "base_link");
   declare_parameter("enable_map_odom_tf", false);
   declare_parameter("use_odom_tf_prediction", false);
+  declare_parameter("enable_go2_confirmed_recovery", false);
   declare_parameter("constrain_odom_tf_prediction_to_planar", false);
   declare_parameter("constrain_odom_tf_prediction_height_only", false);
   declare_parameter("publish_bridge_pose_when_lost", false);
@@ -168,6 +170,7 @@ CallbackReturn PCLLocalization::on_configure(const rclcpp_lifecycle::State &)
 
   shutting_down_.store(false, std::memory_order_release);
   initializeParameters();
+  shutting_down_.store(enable_go2_confirmed_recovery_, std::memory_order_release);
   initializePubSub();
   initializeRegistration();
 
@@ -182,6 +185,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(get_logger(), "Activating");
   auto state_lock = callback_state_coordinator_.lockState();
+  shutting_down_.store(false, std::memory_order_release);
 
   pose_pub_->on_activate();
   odom_bridge_pose_pub_->on_activate();
@@ -223,18 +227,21 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
       RCLCPP_INFO(get_logger(), "Loading pcd map from: %s", map_path_.c_str());
       if (pcl::io::loadPCDFile(map_path_, raw_map_cloud) == -1) {
         RCLCPP_ERROR(get_logger(), "Failed to load pcd file: %s", map_path_.c_str());
+        shutting_down_.store(enable_go2_confirmed_recovery_, std::memory_order_release);
         return CallbackReturn::FAILURE;
       }
     } else if (map_file_format == lidar_localization::MapFileFormat::kPly) {
       RCLCPP_INFO(get_logger(), "Loading ply map from: %s", map_path_.c_str());
       if (pcl::io::loadPLYFile(map_path_, raw_map_cloud) == -1) {
         RCLCPP_ERROR(get_logger(), "Failed to load ply file: %s", map_path_.c_str());
+        shutting_down_.store(enable_go2_confirmed_recovery_, std::memory_order_release);
         return CallbackReturn::FAILURE;
       }
     } else {
       RCLCPP_ERROR(
         get_logger(), "Unsupported map file format. Please use .pcd or .ply: %s",
         map_path_.c_str());
+      shutting_down_.store(enable_go2_confirmed_recovery_, std::memory_order_release);
       return CallbackReturn::FAILURE;
     }
 
@@ -313,7 +320,14 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
 CallbackReturn PCLLocalization::on_deactivate(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(get_logger(), "Deactivating");
+  if (enable_go2_confirmed_recovery_) {
+    shutting_down_.store(true, std::memory_order_release);
+  }
   auto state_lock = callback_state_coordinator_.lockState();
+  if (auto recovery = std::atomic_load(&go2_recovery_)) {
+    callback_state_coordinator_.advanceInitialPoseGeneration();
+    recovery->reset(callback_state_coordinator_.initialPoseGeneration());
+  }
 
 #ifdef LIDAR_LOCALIZATION_HAVE_NAV2_BOND
   if (bond_) {
@@ -360,6 +374,7 @@ CallbackReturn PCLLocalization::on_error(const rclcpp_lifecycle::State & state)
 void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdown)
 {
   shutting_down_.store(true, std::memory_order_release);
+  std::atomic_store(&go2_recovery_,std::shared_ptr<Go2Recovery>{});
   auto state_lock = callback_state_coordinator_.lockState();
 
 #ifdef LIDAR_LOCALIZATION_HAVE_NAV2_BOND

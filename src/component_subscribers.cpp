@@ -1,4 +1,6 @@
 #include "component_internal.hpp"
+
+#include "go2_recovery.hpp"
 #include <pcl/registration/gicp.h>
 #include <pcl/registration/ndt.h>
 #include <rclcpp/qos_overriding_options.hpp>
@@ -7,6 +9,10 @@
 void PCLLocalization::initializePubSub()
 {
   RCLCPP_INFO(get_logger(), "initializePubSub");
+  auto recovery_state = enable_go2_confirmed_recovery_ ? std::make_shared<Go2Recovery>() : nullptr;
+  if (recovery_state)
+    recovery_state->reset(callback_state_coordinator_.initialPoseGeneration());
+  std::atomic_store(&go2_recovery_, recovery_state);
 
   pose_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
     "pcl_pose",
@@ -76,20 +82,30 @@ void PCLLocalization::initializePubSub()
     rclcpp::QosOverridingOptions({rclcpp::QosPolicyKind::Reliability});
   cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
     "cloud", rclcpp::SensorDataQoS().keep_last(cloud_queue_depth_),
-    std::bind(&PCLLocalization::cloudReceived, this, std::placeholders::_1),
+    [this, recovery_state](const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg) {
+      cloudReceivedForContext(msg, recovery_state);
+    },
     cloud_subscription_options);
 
   rclcpp::SubscriptionOptions imu_subscription_options;
-  if (use_imu_preintegration_ && !use_imu_) {
+  if ((use_imu_preintegration_ && !use_imu_) || enable_go2_confirmed_recovery_) {
     imu_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     imu_subscription_options.callback_group = imu_callback_group_;
     RCLCPP_INFO(
       get_logger(),
-      "IMU preintegration subscription uses a dedicated callback group");
+      "IMU subscription uses a dedicated callback group");
   }
   imu_sub_ = create_subscription<sensor_msgs::msg::Imu>(
     "imu", rclcpp::SensorDataQoS().keep_last(imu_queue_depth_),
-    std::bind(&PCLLocalization::imuReceived, this, std::placeholders::_1),
+    [this, recovery_state](const sensor_msgs::msg::Imu::ConstSharedPtr msg) {
+      if (shutting_down_.load(std::memory_order_acquire) ||
+        std::atomic_load(&go2_recovery_) != recovery_state)
+        return;
+      const auto generation = callback_state_coordinator_.initialPoseGeneration();
+      if (recovery_state)
+        go2ReceiveImu(*msg, *recovery_state, generation);
+      imuReceived(msg);
+    },
     imu_subscription_options);
 
   if (enable_timer_publishing_) {
@@ -245,6 +261,9 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   initialpose_recieved_ = true;
   last_initial_pose_stamp_sec_ = stamp_to_sec(msg->header.stamp);
   callback_state_coordinator_.advanceInitialPoseGeneration();
+  if (auto recovery = std::atomic_load(&go2_recovery_)) {
+    recovery->reset(callback_state_coordinator_.initialPoseGeneration());
+  }
   corrent_pose_with_cov_stamped_ptr_ = msg;
   {
     std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
@@ -730,7 +749,24 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
 
 void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
 {
+  cloudReceivedForContext(msg, std::atomic_load(&go2_recovery_));
+}
+
+void PCLLocalization::cloudReceivedForContext(
+  const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg,
+  const std::shared_ptr<Go2Recovery> & recovery_context)
+{
+  if (std::atomic_load(&go2_recovery_) != recovery_context)
+    return;
+  const auto go2_start = go2RecoveryNow();
+  const auto input_generation = callback_state_coordinator_.initialPoseGeneration();
+  const auto go2_imu = recovery_context ?
+    go2ImuSnapshot(go2_start, *recovery_context, input_generation) : std::vector<Go2Imu>{};
   auto state_lock = callback_state_coordinator_.lockState();
+  if (std::atomic_load(&go2_recovery_) != recovery_context ||
+    !callback_state_coordinator_.initialPoseGenerationMatches(input_generation))
+    return;
+
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
   double scan_stamp_sec = 0.0;
   if (!admitScanMessage(msg, &scan_stamp_sec)) {
@@ -767,13 +803,15 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     lidar_localization::registrationSeedSourceName(selected_seed.source);
   Eigen::Matrix4f init_guess =
     refineSeedWithNdtInitializer(tmp_ptr, selected_seed.init_guess);
-  const auto pipeline_result = runAlignmentPipelineForScan(
+  const AlignmentReference reference{have_last_accepted_pose_, last_accepted_pose_matrix_,
+    last_accepted_pose_time_sec_, consecutive_rejected_updates_, accepted_updates_since_reset_};
+  auto pipeline_result = runAlignmentPipelineForScan(
     init_guess,
     scan_stamp_sec,
     selected_seed.source,
     imu_prediction_ready,
     state_lock,
-    seed_generation);
+    seed_generation, reference);
 
   if (
     shutting_down_.load(std::memory_order_acquire) ||
@@ -786,6 +824,115 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       get_logger(),
       "discarding alignment result seeded before the latest /initialpose");
     return;
+  }
+
+
+  if (recovery_context) {
+    auto & recovery = *recovery_context;
+    auto valid = [&]() {
+        return std::atomic_load(&go2_recovery_) == recovery_context &&
+               input_generation == seed_generation &&
+               !shutting_down_.load(std::memory_order_acquire) &&
+               callback_state_coordinator_.initialPoseGenerationMatches(seed_generation);
+      };
+    auto recover = [&]() {
+        if (recovery.pending &&
+          !callback_state_coordinator_.initialPoseGenerationMatches(recovery.generation))
+        {
+          recovery.pending = false;
+          recovery.previous.reset();
+        }
+        if (pipeline_result.should_continue && !pipeline_result.gate_result.reject_measurement) {
+          recovery.pending = false;
+          return;
+        }
+        if (recovery.pending) {
+          const auto previous = recovery.previous;
+          const auto previous_imu = recovery.previous_imu;
+          Eigen::Matrix4f delta;
+          state_lock.unlock();
+          try {
+            delta = go2Delta(*previous, *msg, previous_imu, go2_imu);
+          } catch (...) {
+            state_lock.lock();
+            throw;
+          }
+          state_lock.lock();
+          if (!valid()) {recovery.pending = false; recovery.previous.reset(); return;}
+          recovery.previous.reset();
+          Eigen::Matrix4f predicted = recovery.pose * delta;
+          const AlignmentReference confirmation_reference{true, recovery.pose, recovery.stamp, 0,
+            reference.accepted};
+          auto trial = runAlignmentPipelineForScan(predicted, scan_stamp_sec, selected_seed.source,
+          imu_prediction_ready, state_lock, seed_generation, confirmation_reference);
+          if (!valid()) {recovery.pending = false; return;}
+          auto & attempt = trial.selected_attempt;
+          double distance = (attempt.final_transformation.block<3, 1>(0, 3) - predicted.block<3, 1>(0,
+          3)).norm();
+          double cosine = std::clamp((double((predicted.block<3, 3>(0,
+          0).transpose() * attempt.final_transformation.block<3, 3>(0, 0)).trace()) - 1.) / 2., -1.,
+          1.);
+          double angle = std::acos(cosine) * 180. / std::acos(-1.);
+          bool confirmed = trial.should_continue && attempt.target_ready && attempt.has_converged &&
+            attempt.final_transformation.allFinite() && std::isfinite(attempt.fitness_score) &&
+            attempt.fitness_score >= 0 && !trial.gate_result.reject_measurement && distance <= .1 &&
+            angle <= 5.;
+          recovery.pending = false;
+          if (confirmed) {pipeline_result = trial;}
+        } else if (!recovery.tried && have_last_accepted_pose_ &&
+          consecutive_rejected_updates_ >= 10 &&
+          (!pipeline_result.should_continue || pipeline_result.gate_result.reject_measurement)) {
+          recovery.tried = true;
+          recovery.previous = msg;
+          recovery.previous_imu = go2_imu;
+          const std::string recovery_map_path = map_path_;
+          const Eigen::Matrix4d recovery_last = last_accepted_pose_matrix_.cast<double>(),
+            recovery_seed = init_guess.cast<double>();
+          std::vector<Eigen::Matrix4f> seeds;
+          state_lock.unlock();
+          try {
+            seeds = go2BbsSeeds(recovery_map_path, *msg, recovery_last, recovery_seed);
+          } catch (...) {
+            state_lock.lock();
+            throw;
+          }
+          state_lock.lock();
+          if (!valid()) {recovery.pending = false; return;}
+          double best = std::numeric_limits<double>::infinity();
+          for (int rank = 0; rank <= 16; ++rank) {
+            auto trial = rank == 0 ? pipeline_result : runAlignmentPipelineForScan(seeds.at(rank - 1),
+            scan_stamp_sec, selected_seed.source, imu_prediction_ready, state_lock, seed_generation,
+            reference);
+            if (!valid()) {
+              recovery.pending = false;
+              return;
+            }
+            auto & a = trial.selected_attempt;
+            bool usable = trial.should_continue && a.target_ready && a.has_converged &&
+              a.final_transformation.allFinite() && std::isfinite(a.fitness_score) &&
+              a.fitness_score >= 0 &&
+              (!trial.gate_result.reject_measurement ||
+              trial.status_message == "seed_correction_guard_rejected");
+            if (usable && a.fitness_score < best) {
+              best = a.fitness_score;
+              recovery.pose = a.final_transformation;
+              recovery.pending = true;
+              recovery.generation = seed_generation;
+              recovery.stamp = scan_stamp_sec;
+            }
+          }
+        }
+      };
+    try {
+      recover();
+    } catch (const std::exception & error) {
+      if (!state_lock.owns_lock()) {state_lock.lock();}
+      recovery.pending = false;
+      RCLCPP_WARN(get_logger(), "Discarding recovery candidate: %s", error.what());
+    }
+    if (!valid()) {recovery.pending = false;}
+    if (!recovery.pending) {recovery.previous.reset(); recovery.previous_imu.clear();}
+    if (!valid()) {return;}
   }
 
   logAlignmentPipelineRecovery(pipeline_result);
@@ -810,6 +957,11 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   {
     publishBridgePoseAsRejectedOutput(msg->header.stamp);
     return;
+  }
+
+  // A backend-accepted update ends this loss episode and permits a later attempt.
+  if (recovery_context) {
+    recovery_context->tried = false;
   }
 
   printAlignmentDebugInfo(init_guess, pipeline_result.selected_attempt, filtered_point_count);

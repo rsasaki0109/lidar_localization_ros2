@@ -384,7 +384,8 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   const Eigen::Matrix4f & crop_center_pose_matrix,
   double scan_stamp_sec,
   lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
-  std::uint64_t seed_generation)
+  std::uint64_t seed_generation,
+  const AlignmentReference & reference)
 {
   lidar_localization::AlignmentAttempt attempt;
   attempt.init_guess = attempt_init_guess;
@@ -431,11 +432,11 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   }
 
   const auto seed_metrics = lidar_localization::computeAlignmentSeedMetrics(
-    have_last_accepted_pose_,
-    last_accepted_pose_matrix_,
+    reference.have_pose,
+    reference.pose,
     attempt_init_guess,
     scan_stamp_sec,
-    last_accepted_pose_time_sec_);
+    reference.stamp_sec);
   attempt.seed_translation_since_accept_m = seed_metrics.translation_since_accept_m;
   attempt.seed_yaw_since_accept_deg = seed_metrics.yaw_since_accept_deg;
   attempt.accepted_gap_sec = seed_metrics.accepted_gap_sec;
@@ -459,10 +460,11 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
   lidar_localization::RegistrationSeedSource seed_source,
   bool imu_prediction_ready,
   lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
-  std::uint64_t seed_generation)
+  std::uint64_t seed_generation,
+  const AlignmentReference & reference)
 {
   const lidar_localization::AlignmentAttempt primary_attempt =
-    runAlignmentAttempt(init_guess, init_guess, scan_stamp_sec, state_lock, seed_generation);
+    runAlignmentAttempt(init_guess, init_guess, scan_stamp_sec, state_lock, seed_generation, reference);
   if (!callback_state_coordinator_.initialPoseGenerationMatches(seed_generation)) {
     lidar_localization::AlignmentPipelineResult interrupted_result;
     interrupted_result.selected_attempt = primary_attempt;
@@ -483,26 +485,26 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
   return lidar_localization::runAlignmentPipeline(
     primary_attempt,
     lidar_localization::AlignmentPipelineInput{
-      have_last_accepted_pose_,
-      consecutive_rejected_updates_,
+      reference.have_pose,
+      reference.rejected,
       scan_stamp_sec,
-      last_accepted_pose_time_sec_,
+      reference.stamp_sec,
       recoveryRetryFromLastPoseParams(),
       force_retry_from_last_pose,
       "imu_prediction_correction_guard_rejected"},
     [&]() {
       return runAlignmentAttempt(
-        last_accepted_pose_matrix_, last_accepted_pose_matrix_, scan_stamp_sec,
-        state_lock, seed_generation);
+        reference.pose, reference.pose, scan_stamp_sec,
+        state_lock, seed_generation, reference);
     },
-    [this, seed_source](const lidar_localization::AlignmentAttempt & attempt) {
-      return evaluateMeasurementGateForAttempt(attempt, seed_source);
+    [this, &reference](const lidar_localization::AlignmentAttempt & attempt) {
+      return evaluateMeasurementGateForAttempt(attempt, reference);
     });
 }
 
 lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurementGateForAttempt(
   const lidar_localization::AlignmentAttempt & attempt,
-  lidar_localization::RegistrationSeedSource seed_source)
+  const AlignmentReference & reference)
 {
   const auto gate_input = lidar_localization::makeMeasurementGateInput(
     attempt.fitness_score,
@@ -510,9 +512,9 @@ lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurement
     attempt.seed_translation_since_accept_m,
     attempt.correction_translation_m,
     attempt.correction_yaw_deg,
-    consecutive_rejected_updates_,
+    reference.rejected,
     use_odom_tf_prediction_ && has_last_good_map_to_odom_,
-    accepted_updates_since_reset_);
+    reference.accepted);
   auto gate =
     lidar_localization::evaluateMeasurementGate(measurementGateParams(), gate_input);
   if (gate.status_level == lidar_localization::kMeasurementGateWarn) {
