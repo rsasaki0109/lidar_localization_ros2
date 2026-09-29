@@ -20,7 +20,7 @@ ll::AlignmentAttempt make_attempt(
   attempt.seed_yaw_since_accept_deg = 1.0;
   attempt.accepted_gap_sec = 0.4;
   if (has_converged) {
-    attempt.final_transformation(0, 3) = static_cast<float>(fitness_score);
+    attempt.final_transformation(0, 3) = std::isfinite(fitness_score) ? static_cast<float>(fitness_score) : 1.0F;
     attempt.correction_translation_m = 0.1;
     attempt.correction_yaw_deg = 0.2;
   }
@@ -304,8 +304,54 @@ void test_nonfinite_primary_can_recover_only_with_valid_retry()
   }
 }
 
+void test_nonfinite_pose_never_reaches_measurement_gate()
+{
+  for (const float invalid : {std::numeric_limits<float>::quiet_NaN(),
+      std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity()})
+  {
+    for (int element = 0; element < 16; ++element) {
+      auto bad = make_attempt(true, true);
+      bad.final_transformation.data()[element] = invalid;
+      for (const bool retry_enabled : {false, true}) {
+        for (const bool retry_valid : {false, true}) {
+          auto input = default_input();
+          input.recovery_retry_params.enable = retry_enabled;
+          int gate_calls = 0;
+          const auto result = ll::runAlignmentPipeline(
+            bad, input,
+            [&]() {return retry_valid ? make_attempt(true, true) : bad;},
+            [&](const ll::AlignmentAttempt & attempt) {
+              ++gate_calls;
+              assert(attempt.final_transformation.allFinite());
+              return accepted_gate();
+            });
+          const bool recovered = retry_enabled && retry_valid;
+          assert(result.should_continue == recovered);
+          assert(result.recovered_by_retry_from_last_pose == recovered);
+          assert(gate_calls == (recovered ? 1 : 0));
+          if (!recovered) {
+            assert(result.status_message == "registration_result_non_finite");
+            assert(result.should_advance_prediction_without_measurement);
+          }
+        }
+      }
+      auto input = default_input();
+      input.force_retry_from_last_pose = true;
+      const auto result = ll::runAlignmentPipeline(
+        make_attempt(true, true), input, [&]() {return bad;},
+        [](const ll::AlignmentAttempt & attempt) {
+          assert(attempt.final_transformation.allFinite());
+          return accepted_gate();
+        });
+      assert(result.gate_result.reject_measurement);
+      assert(!result.recovered_by_retry_from_last_pose);
+    }
+  }
+}
+
 int main()
 {
+  test_nonfinite_pose_never_reaches_measurement_gate();
   test_nonfinite_primary_can_recover_only_with_valid_retry();
   test_target_missing_terminal_failure_when_retry_unavailable();
   test_not_converged_terminal_failure_when_retry_disabled();

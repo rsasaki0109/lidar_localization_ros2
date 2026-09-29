@@ -180,8 +180,19 @@ void test_nonfinite_fitness_is_a_bad_match()
   }
 }
 
+void test_nonfinite_registration_result_is_a_bad_match()
+{
+  auto input = healthy_input();
+  input.status_message = "registration_result_non_finite";
+  const auto result =
+    ll::classifyAlignmentFailure(ll::AlignmentFailureTaxonomyParams{}, input);
+  assert(result.bad_match_active);
+  assert(result.category == ll::kAlignmentFailureCategoryBadMatch);
+}
+
 int main()
 {
+  test_nonfinite_registration_result_is_a_bad_match();
   test_healthy_input_classifies_healthy();
   test_nonfinite_fitness_is_a_bad_match();
   test_missing_map_outranks_everything();
