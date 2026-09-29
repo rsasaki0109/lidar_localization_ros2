@@ -148,7 +148,8 @@ inline PointTimeRange computePointTimeRangeSeconds(const sensor_msgs::msg::Point
 }
 
 inline PointRelativeTimes extractPointRelativeTimesSeconds(
-  const sensor_msgs::msg::PointCloud2 & input)
+  const sensor_msgs::msg::PointCloud2 & input,
+  bool collect_relative_times = true)
 {
   PointRelativeTimes times;
   const auto * time_field = findPointTimeField(input.fields);
@@ -160,8 +161,10 @@ inline PointRelativeTimes extractPointRelativeTimesSeconds(
 
   const std::size_t point_count =
     static_cast<std::size_t>(input.width) * static_cast<std::size_t>(input.height);
-  times.relative_times_sec.assign(
-    point_count, std::numeric_limits<double>::quiet_NaN());
+  if (collect_relative_times) {
+    times.relative_times_sec.assign(
+      point_count, std::numeric_limits<double>::quiet_NaN());
+  }
   if (!pointFieldFitsPointStep(*time_field, input.point_step) || input.point_step == 0) {
     times.invalid_point_count = point_count;
     return times;
@@ -189,7 +192,9 @@ inline PointRelativeTimes extractPointRelativeTimesSeconds(
       ++times.invalid_point_count;
       continue;
     }
-    times.relative_times_sec[point_idx] = time_seconds;
+    if (collect_relative_times) {
+      times.relative_times_sec[point_idx] = time_seconds;
+    }
     if (!times.valid) {
       min_time_sec = time_seconds;
       max_time_sec = time_seconds;
