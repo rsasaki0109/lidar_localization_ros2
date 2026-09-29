@@ -1,4 +1,5 @@
 #include "lidar_localization/prediction_state_policy.hpp"
+#include "lidar_localization/alignment_retry_policy.hpp"
 #include "lidar_localization/registration_seed_policy.hpp"
 
 #include <cassert>
@@ -106,7 +107,8 @@ void test_advance_prediction_without_measurement()
   const auto unchanged = ll::advancePredictionWithoutMeasurement(
     state, 4.0, ll::PredictionAdvanceMode::kNone);
   assert(near(unchanged.predicted_pose_matrix(0, 3), 3.0f));
-  assert(unchanged.consecutive_rejected_updates == 0);
+  assert(unchanged.consecutive_rejected_updates == 1);
+  assert(unchanged.predicted_pose_time_sec == state.predicted_pose_time_sec);
 }
 
 void test_rejected_measurement_updates_prediction_only()
@@ -166,8 +168,37 @@ void test_twist_dropout_and_return_keep_a_single_time_anchor()
   assert(near(next_delta_seed(0, 3), 0.4f));
 }
 
+void test_rejections_without_prediction_enable_retry_and_preserve_motion()
+{
+  auto state = ll::resetPredictionState(pose_x(0.0f), 10.0);
+  state = ll::updatePredictionStateFromAcceptedMeasurement(state, pose_x(0.1f), 10.1, false);
+  for (int i = 1; i <= 3; ++i) {
+    state = ll::advancePredictionWithoutMeasurement(
+      state, 10.1 + 0.1 * i, ll::PredictionAdvanceMode::kNone);
+    const auto retry = ll::decideRecoveryRetryFromLastPose(
+      {true, 3, 1.0, 10.0},
+      {true, state.consecutive_rejected_updates, 0.4, 0.4, 0.0});
+    assert(state.consecutive_rejected_updates == static_cast<std::size_t>(i));
+    assert(retry.should_retry == (i == 3));
+    assert(near(state.predicted_pose_matrix(0, 3), 0.1f));
+    assert(state.predicted_pose_time_sec == 10.1);
+    assert(state.last_accepted_pose_time_sec == 10.1);
+  }
+  state = ll::updatePredictionStateFromAcceptedMeasurement(state, pose_x(0.5f), 10.5, false);
+  assert(state.consecutive_rejected_updates == 0);
+  assert(near(state.last_relative_motion_matrix(0, 3), 0.1f));
+  assert(near(state.predicted_pose_matrix(0, 3), 0.5f));
+
+  const ll::PredictionStateSnapshot empty;
+  const auto unchanged = ll::advancePredictionWithoutMeasurement(
+    empty, 10.0, ll::PredictionAdvanceMode::kNone);
+  assert(!unchanged.have_last_accepted_pose);
+  assert(unchanged.consecutive_rejected_updates == 0);
+}
+
 int main()
 {
+  test_rejections_without_prediction_enable_retry_and_preserve_motion();
   test_twist_dropout_and_return_keep_a_single_time_anchor();
   test_accepted_measurement_without_previous_delta_extrapolation();
   test_reset_prediction_state();
