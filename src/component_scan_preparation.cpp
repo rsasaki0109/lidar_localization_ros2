@@ -103,7 +103,7 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
       "Input cloud does not contain intensity. Falling back to xyz with zero intensity.");
   }
   const lidar_localization::PointRelativeTimes point_relative_times =
-    lidar_localization::extractPointRelativeTimesSeconds(*msg);
+    lidar_localization::extractPointRelativeTimesSeconds(*msg, use_continuous_time_deskew_);
   prepared_scan.point_time_reference_sec = point_relative_times.reference_time_sec;
   const lidar_localization::ScanTimeRangeStatus point_time_status =
     lidar_localization::classifyScanTimeRange(
@@ -163,6 +163,9 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
       msg->header.frame_id,
       base_frame_id_});
 
+  const bool collect_relative_times =
+    use_continuous_time_deskew_ && point_relative_times.has_time_field;
+
   if (can_direct_range_filter) {
     const auto * x_field = lidar_localization::findPointField(msg->fields, "x");
     const auto * y_field = lidar_localization::findPointField(msg->fields, "y");
@@ -201,21 +204,23 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
           point.x, point.y, point.z, scan_min_range_, scan_max_range_))
       {
         tmp.push_back(point);
-        if (point_relative_times.has_time_field) {
+        if (collect_relative_times) {
           prepared_scan.relative_times_sec.push_back(
             lidar_localization::relativeTimeOrNaN(point_relative_times, point_idx));
         }
       }
     }
     prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(std::move(tmp)));
-    if (point_relative_times.has_time_field) {
+    if (collect_relative_times) {
       prepared_scan.relative_times_aligned_with_cloud =
         prepared_scan.relative_times_sec.size() == prepared_scan.cloud->size();
     }
     applyContinuousTimeDeskewIfEnabled(prepared_scan, scan_stamp_sec);
   } else {
+    const lidar_localization::PointRelativeTimes no_relative_times;
     lidar_localization::TimedXyziCloud timed_cloud =
-      lidar_localization::convertSensorCloudToTimedXyzi(*msg, point_relative_times);
+      lidar_localization::convertSensorCloudToTimedXyzi(
+      *msg, collect_relative_times ? point_relative_times : no_relative_times);
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_ptr(
       new pcl::PointCloud<pcl::PointXYZI>(std::move(timed_cloud.cloud)));
     std::vector<double> cloud_relative_times = std::move(timed_cloud.relative_times_sec);
@@ -258,7 +263,7 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
           point.x, point.y, point.z, scan_min_range_, scan_max_range_))
       {
         tmp.push_back(point);
-        if (point_relative_times.has_time_field) {
+        if (collect_relative_times) {
           prepared_scan.relative_times_sec.push_back(
             lidar_localization::relativeTimeOrNaN(cloud_relative_times, point_idx));
         }
@@ -266,7 +271,7 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
     }
     prepared_scan.filtered_point_count = tmp.size();
     prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(std::move(tmp)));
-    if (point_relative_times.has_time_field) {
+    if (collect_relative_times) {
       prepared_scan.relative_times_aligned_with_cloud =
         prepared_scan.relative_times_sec.size() == prepared_scan.cloud->size();
     }
