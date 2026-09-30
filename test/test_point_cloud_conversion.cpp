@@ -131,6 +131,31 @@ void test_point_time_field_accepts_float_seconds_and_integer_timestamp_nanosecon
   assert(std::abs(time_seconds - 0.075) < 1.0e-12);
 }
 
+void test_point_time_field_t_float_is_seconds()
+{
+  auto cloud = make_sensor_cloud();
+  cloud.point_step = 24;
+  cloud.row_step = cloud.point_step * cloud.width;
+  cloud.fields.push_back(make_field("t", 16, sensor_msgs::msg::PointField::FLOAT64));
+  cloud.data.assign(cloud.row_step, 0);
+  write_value<double>(cloud.data, 16, 1787499769.302);
+  write_value<double>(cloud.data, 16 + cloud.point_step, 1787499769.352);
+
+  const auto * time_field = ll::findPointTimeField(cloud.fields);
+  assert(time_field != nullptr);
+  assert(time_field->name == "t");
+  assert(ll::pointTimeFieldScaleToSeconds(*time_field) == 1.0);
+  const auto times = ll::extractPointRelativeTimesSeconds(cloud);
+  assert(times.valid);
+  assert(std::abs(times.duration_sec - 0.05) < 1.0e-6);
+
+  // Integer "t" (Ouster) stays nanoseconds.
+  auto ns_cloud = make_sensor_cloud();
+  ns_cloud.fields.push_back(make_field("t", 16, sensor_msgs::msg::PointField::UINT32));
+  assert(std::abs(
+    ll::pointTimeFieldScaleToSeconds(ns_cloud.fields.back()) - 1.0e-9) < 1.0e-15);
+}
+
 void test_point_time_range_uses_min_max_even_when_points_are_unsorted()
 {
   auto cloud = make_sensor_cloud();
@@ -377,6 +402,7 @@ void test_pcl_cloud_to_xyzi_detects_or_synthesizes_intensity()
 
 int main()
 {
+  test_point_time_field_t_float_is_seconds();
   test_field_lookup_and_numeric_conversion();
   test_point_time_field_detection_and_unit_conversion();
   test_point_time_field_accepts_float_seconds_and_integer_timestamp_nanoseconds();

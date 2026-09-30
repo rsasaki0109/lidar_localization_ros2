@@ -41,10 +41,16 @@ inline PredictionStateSnapshot resetPredictionState(
   return state;
 }
 
+// extrapolate_previous_delta: the stored prediction is the accepted pose
+// advanced by one previous delta, which is the seed for the next scan in
+// previous-delta mode.  Twist prediction integrates its own motion from the
+// stored prediction, so it must start from the accepted pose itself or the
+// inter-scan motion is counted twice.
 inline PredictionStateSnapshot updatePredictionStateFromAcceptedMeasurement(
   const PredictionStateSnapshot & current,
   const Eigen::Matrix4f & accepted_pose_matrix,
-  double stamp_sec)
+  double stamp_sec,
+  bool extrapolate_previous_delta = true)
 {
   if (!current.have_last_accepted_pose) {
     return resetPredictionState(accepted_pose_matrix, stamp_sec);
@@ -57,7 +63,9 @@ inline PredictionStateSnapshot updatePredictionStateFromAcceptedMeasurement(
   }
 
   next.last_accepted_pose_matrix = accepted_pose_matrix;
-  next.predicted_pose_matrix = accepted_pose_matrix * next.last_relative_motion_matrix;
+  next.predicted_pose_matrix = extrapolate_previous_delta ?
+    accepted_pose_matrix * next.last_relative_motion_matrix :
+    accepted_pose_matrix;
   next.have_last_accepted_pose = true;
   next.consecutive_rejected_updates = 0;
   next.last_accepted_pose_time_sec = stamp_sec;

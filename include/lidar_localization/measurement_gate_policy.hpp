@@ -1,7 +1,9 @@
 #ifndef LIDAR_LOCALIZATION_MEASUREMENT_GATE_POLICY_HPP_
 #define LIDAR_LOCALIZATION_MEASUREMENT_GATE_POLICY_HPP_
 
+#include <algorithm>
 #include <cstddef>
+#include <limits>
 #include <cstdint>
 #include <string>
 
@@ -52,6 +54,22 @@ struct MeasurementGateParams
   double odom_tf_prediction_recovery_guard_translation_m{5.0};
   double odom_tf_prediction_recovery_guard_yaw_deg{30.0};
 
+  // Seed-agnostic jump guard.  Whatever produced the seed (previous delta,
+  // twist, IMU, odom), a legged or wheeled robot cannot move meters between
+  // two scans, so a result that lands far from the seed is an aliased
+  // solution even with a good fitness.  Accepting it also poisons the
+  // previous-delta prediction and the estimate runs away.  After
+  // release_rejections consecutive rejections the guard stops applying so a
+  // genuinely drifted seed can still re-lock.
+  bool enable_seed_correction_guard{false};
+  double seed_correction_guard_translation_m{0.5};
+  double seed_correction_guard_yaw_deg{15.0};
+  int seed_correction_guard_release_rejections{10};
+  // The guard only protects an established track: until this many updates
+  // have been accepted since the last (re)initialization the seed is an
+  // external initial pose, not a tracked one.
+  int seed_correction_guard_warmup_accepts{5};
+
   bool enable_rejected_seed_update{false};
   int rejected_seed_update_min_rejections{0};
   double rejected_seed_update_max_fitness{10.0};
@@ -72,6 +90,7 @@ struct MeasurementGateInput
   // back to previous_delta because the live TF lookup briefly missed; that
   // is exactly when an aliased NDT result must not replace the good anchor.
   bool odom_tf_prediction_guard_applicable{false};
+  std::size_t accepted_updates_since_reset{std::numeric_limits<std::size_t>::max()};
 };
 
 struct MeasurementGateParamConfig
@@ -106,6 +125,22 @@ struct MeasurementGateParamConfig
   double odom_tf_prediction_recovery_max_fitness{1.5};
   double odom_tf_prediction_recovery_guard_translation_m{5.0};
   double odom_tf_prediction_recovery_guard_yaw_deg{30.0};
+
+  // Seed-agnostic jump guard.  Whatever produced the seed (previous delta,
+  // twist, IMU, odom), a legged or wheeled robot cannot move meters between
+  // two scans, so a result that lands far from the seed is an aliased
+  // solution even with a good fitness.  Accepting it also poisons the
+  // previous-delta prediction and the estimate runs away.  After
+  // release_rejections consecutive rejections the guard stops applying so a
+  // genuinely drifted seed can still re-lock.
+  bool enable_seed_correction_guard{false};
+  double seed_correction_guard_translation_m{0.5};
+  double seed_correction_guard_yaw_deg{15.0};
+  int seed_correction_guard_release_rejections{10};
+  // The guard only protects an established track: until this many updates
+  // have been accepted since the last (re)initialization the seed is an
+  // external initial pose, not a tracked one.
+  int seed_correction_guard_warmup_accepts{5};
 
   bool enable_rejected_seed_update{false};
   int rejected_seed_update_min_rejections{0};
@@ -183,6 +218,12 @@ inline MeasurementGateParams makeMeasurementGateParams(
     config.odom_tf_prediction_recovery_guard_translation_m;
   params.odom_tf_prediction_recovery_guard_yaw_deg =
     config.odom_tf_prediction_recovery_guard_yaw_deg;
+  params.enable_seed_correction_guard = config.enable_seed_correction_guard;
+  params.seed_correction_guard_translation_m = config.seed_correction_guard_translation_m;
+  params.seed_correction_guard_yaw_deg = config.seed_correction_guard_yaw_deg;
+  params.seed_correction_guard_release_rejections =
+    config.seed_correction_guard_release_rejections;
+  params.seed_correction_guard_warmup_accepts = config.seed_correction_guard_warmup_accepts;
   params.enable_rejected_seed_update = config.enable_rejected_seed_update;
   params.rejected_seed_update_min_rejections =
     config.rejected_seed_update_min_rejections;
@@ -201,7 +242,8 @@ inline MeasurementGateInput makeMeasurementGateInput(
   double correction_translation_m,
   double correction_yaw_deg,
   std::size_t consecutive_rejected_updates,
-  bool odom_tf_prediction_guard_applicable = false)
+  bool odom_tf_prediction_guard_applicable = false,
+  std::size_t accepted_updates_since_reset = std::numeric_limits<std::size_t>::max())
 {
   return {
     fitness_score,
@@ -210,7 +252,8 @@ inline MeasurementGateInput makeMeasurementGateInput(
     correction_translation_m,
     correction_yaw_deg,
     consecutive_rejected_updates,
-    odom_tf_prediction_guard_applicable};
+    odom_tf_prediction_guard_applicable,
+    accepted_updates_since_reset};
 }
 
 inline EffectiveScoreThresholdDecision computeEffectiveScoreThreshold(
@@ -289,6 +332,21 @@ inline MeasurementGateDecision evaluateMeasurementGate(
   if (odom_correction_guard_active) {
     gate.status_level = kMeasurementGateWarn;
     gate.status_message = "odom_tf_prediction_correction_guard_rejected";
+    gate.reject_measurement = true;
+    return gate;
+  }
+
+  const bool seed_correction_guard_active =
+    params.enable_seed_correction_guard &&
+    input.accepted_updates_since_reset >=
+    static_cast<std::size_t>(std::max(0, params.seed_correction_guard_warmup_accepts)) &&
+    static_cast<int>(input.consecutive_rejected_updates) <
+    params.seed_correction_guard_release_rejections &&
+    ((input.correction_translation_m > params.seed_correction_guard_translation_m) ||
+    (input.correction_yaw_deg > params.seed_correction_guard_yaw_deg));
+  if (seed_correction_guard_active) {
+    gate.status_level = kMeasurementGateWarn;
+    gate.status_message = "seed_correction_guard_rejected";
     gate.reject_measurement = true;
     return gate;
   }

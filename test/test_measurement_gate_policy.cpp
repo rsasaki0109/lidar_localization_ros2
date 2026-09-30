@@ -114,6 +114,49 @@ void test_odom_tf_prediction_correction_guard_is_opt_in_and_seed_specific()
   assert(!gate.reject_measurement);
 }
 
+void test_seed_correction_guard_rejects_jumps_until_release()
+{
+  auto params = default_params();
+  auto input = default_input();
+  input.correction_translation_m = 2.5;
+  auto gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);  // disabled by default
+
+  params.enable_seed_correction_guard = true;
+  params.seed_correction_guard_translation_m = 0.5;
+  params.seed_correction_guard_yaw_deg = 15.0;
+  params.seed_correction_guard_release_rejections = 10;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(gate.reject_measurement);
+  assert(gate.status_message == "seed_correction_guard_rejected");
+
+  input.correction_translation_m = 0.1;
+  input.correction_yaw_deg = 20.0;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(gate.reject_measurement);
+
+  input.correction_translation_m = 0.5;
+  input.correction_yaw_deg = 15.0;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);
+
+  // Not applied before the track is established.
+  params.seed_correction_guard_warmup_accepts = 5;
+  input.correction_translation_m = 2.5;
+  input.accepted_updates_since_reset = 4;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);
+  input.accepted_updates_since_reset = 5;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(gate.reject_measurement);
+
+  // Released after a sustained rejection streak.
+  input.correction_translation_m = 2.5;
+  input.consecutive_rejected_updates = 10;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);
+}
+
 void test_odom_tf_recovery_guard_relaxes_only_for_strong_match_after_streak()
 {
   auto params = default_params();
@@ -283,6 +326,7 @@ void test_rejected_seed_update_marks_rejection_for_prediction_update()
 
 int main()
 {
+  test_seed_correction_guard_rejects_jumps_until_release();
   test_param_and_input_builders_map_fields();
   test_default_ok_gate();
   test_odom_tf_prediction_correction_guard_is_opt_in_and_seed_specific();

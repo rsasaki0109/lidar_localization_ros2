@@ -277,6 +277,10 @@ public:
   bool enable_local_map_crop_{false};
   double local_map_radius_{150.0};
   std::size_t local_map_min_points_{100};
+  double local_map_update_distance_{0.0};
+  bool local_map_target_cached_{false};
+  float local_map_target_center_x_{0.0f};
+  float local_map_target_center_y_{0.0f};
   int consecutive_crop_failures_{0};
   bool crop_failure_guard_active_{false};
   std::chrono::steady_clock::time_point last_crop_out_of_bounds_log_time_{};
@@ -482,6 +486,7 @@ public:
   Eigen::Matrix4f predicted_pose_matrix_{Eigen::Matrix4f::Identity()};
   Eigen::Matrix4f last_relative_motion_matrix_{Eigen::Matrix4f::Identity()};
   double last_relative_motion_duration_sec_{0.0};
+  std::size_t accepted_updates_since_reset_{0};
   std::size_t consecutive_rejected_updates_{0};
   double last_accepted_pose_time_sec_{0.0};
   double predicted_pose_time_sec_{0.0};
@@ -532,6 +537,7 @@ public:
     const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud,
     const Eigen::Matrix4f & init_guess);
   bool setInputTargetForPose(const Eigen::Matrix4f & center_pose_matrix);
+  void warmUpRegistrationTarget(const pcl::PointCloud<pcl::PointXYZI>::Ptr & target);
   lidar_localization::AlignmentAttempt runAlignmentAttempt(
     const Eigen::Matrix4f & attempt_init_guess,
     const Eigen::Matrix4f & crop_center_pose_matrix,
