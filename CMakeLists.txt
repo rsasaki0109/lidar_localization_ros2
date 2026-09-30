@@ -567,6 +567,17 @@ if(BUILD_TESTING)
     COMMAND test_bbs_branch_and_bound
   )
 
+  add_executable(test_twist_subscription_lifecycle test/test_twist_subscription_lifecycle.cpp)
+  target_link_libraries(test_twist_subscription_lifecycle
+    lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+  add_test(NAME twist_subscription_lifecycle COMMAND test_twist_subscription_lifecycle)
+  set_tests_properties(twist_subscription_lifecycle PROPERTIES TIMEOUT 30)
+
+  add_executable(test_causal_twist_history test/test_causal_twist_history.cpp)
+  target_include_directories(test_causal_twist_history PRIVATE include)
+  target_link_libraries(test_causal_twist_history Eigen3::Eigen)
+  add_test(NAME causal_twist_history COMMAND test_causal_twist_history)
+
   add_executable(test_prediction_state_policy
     test/test_prediction_state_policy.cpp)
   target_include_directories(test_prediction_state_policy PRIVATE
