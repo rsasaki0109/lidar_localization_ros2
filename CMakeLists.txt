@@ -801,6 +801,15 @@ if(BUILD_TESTING)
   # Parity check for the optional C++ backend: compares bbs_cpp against the
   # Python reference when the compiled module is importable, and skips cleanly
   # (exit 0) otherwise, so it is green whether or not pybind11 was found.
+  # The standalone C++ tests use assert(). Release builds define NDEBUG;
+  # undefine it for test executables only so checks (and setup inside asserts)
+  # execute in the same optimized builds used for runtime validation.
+  get_property(local_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(local_target IN LISTS local_targets)
+    if(local_target MATCHES "^test_")
+      target_compile_options(${local_target} PRIVATE -UNDEBUG)
+    endif()
+  endforeach()
 endif()
 
 ament_package()

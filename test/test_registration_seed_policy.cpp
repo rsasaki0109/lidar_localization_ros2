@@ -176,6 +176,12 @@ void test_imu_sample_and_dt_helpers()
   assert(ll::clampPredictionDt(9.0, 10.0, 0.5) == 0.0);
   assert(ll::clampPredictionDt(NAN, 10.0, 0.5) == 0.0);
   assert(ll::clampPredictionDt(10.0, 9.0, -1.0) == 0.0);
+  // Startup with use_sim_time can initialize /initialpose before /clock.
+  // Stamp zero is an unanchored seed, not 1.5 seconds of measured motion.
+  assert(ll::clampPredictionDt(1787499773.2, 0.0, 1.5) == 0.0);
+  assert(ll::clampPredictionDt(10.0, -1.0, 1.5) == 0.0);
+  assert(ll::clampPredictionDt(10.0, NAN, 1.5) == 0.0);
+  assert(ll::clampPredictionDt(10.0, 9.0, NAN) == 0.0);
 }
 
 void test_registration_seed_source_names_are_stable_for_diagnostics()

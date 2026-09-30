@@ -109,7 +109,8 @@ void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
     predict_pose_from_previous_delta_);
   Eigen::Matrix4f twist_predicted_pose_matrix = Eigen::Matrix4f::Identity();
   if (advance_mode == lidar_localization::PredictionAdvanceMode::kTwistPrediction) {
-    const double dt = std::clamp(stamp_sec - predicted_pose_time_sec_, 0.0, max_twist_prediction_dt_);
+    const double dt = lidar_localization::clampPredictionDt(
+      stamp_sec, predicted_pose_time_sec_, max_twist_prediction_dt_);
     twist_predicted_pose_matrix = applyTwistPrediction(predicted_pose_matrix_, dt);
   }
   const auto state = lidar_localization::advancePredictionWithoutMeasurement(
@@ -156,4 +157,3 @@ void PCLLocalization::updatePredictionFromRejectedMeasurement(
   last_accepted_pose_time_sec_ = state.last_accepted_pose_time_sec;
   predicted_pose_time_sec_ = state.predicted_pose_time_sec;
 }
-
