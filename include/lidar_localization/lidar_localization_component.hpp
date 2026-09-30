@@ -62,6 +62,7 @@
 
 #include "lidar_localization/lidar_undistortion.hpp"
 #include "lidar_localization/twist_ekf.hpp"
+#include "lidar_localization/causal_twist_history.hpp"
 #include "lidar_localization/twist_gtsam_smoother.hpp"
 #include "lidar_localization/imu_gtsam_smoother.hpp"
 #include "lidar_localization/imu_pose_history_deskew.hpp"
@@ -190,7 +191,9 @@ public:
   void initialPoseReceived(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
   void odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr msg);
-  void twistReceived(const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg);
+  void twistReceived(
+    const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg,
+    bool update_pose_backends, std::uint64_t subscription_generation);
   void imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr msg);
   void cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
   // void gnssReceived();
@@ -236,6 +239,7 @@ public:
   rclcpp::Subscription<sensor_msgs::msg::Imu>::ConstSharedPtr
     imu_sub_;
   rclcpp::CallbackGroup::SharedPtr imu_callback_group_;
+  rclcpp::CallbackGroup::SharedPtr twist_callback_group_;
 
   // --- Registration backends ---
 
@@ -490,7 +494,12 @@ public:
   std::size_t consecutive_rejected_updates_{0};
   double last_accepted_pose_time_sec_{0.0};
   double predicted_pose_time_sec_{0.0};
-  geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr latest_twist_msg_;
+  // Lock order: localization state (when needed), then short twist history lock.
+  std::mutex twist_history_mutex_;
+  std::uint64_t twist_subscription_generation_{0};
+  lidar_localization::CausalTwistHistory twist_history_;
+  // Captured under the state lock for every admitted cloud callback.
+  std::optional<lidar_localization::TimestampedTwist> scan_twist_;
   // Read by the dedicated IMU callback without taking the callback-state lock.
   std::atomic<bool> shutting_down_{false};
   bool reinitialization_requested_{false};

@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- Direct twist reception no longer waits for the localization state lock, so twists
+  keep arriving while a scan is being registered. Each admitted scan uses the latest
+  finite twist at or before its source stamp (bounded 1024-sample history) for both
+  its registration seed and rejected-scan advancement, instead of whichever message
+  arrived last. Non-finite twists are ignored. EKF/GTSAM twist routes still update
+  under the state lock, and callbacks from a cleaned-up configuration are discarded.
 - Twist prediction no longer extrapolates an unstamped initial pose by the maximum
   prediction interval before the first simulated clock. Rejected-scan prediction
   uses the same time validation as registration seeds.

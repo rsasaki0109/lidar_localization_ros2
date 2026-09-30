@@ -47,9 +47,24 @@ void PCLLocalization::initializePubSub()
     "odom", rclcpp::SensorDataQoS(),
     std::bind(&PCLLocalization::odomReceived, this, std::placeholders::_1));
 
+  // Direct twist history reception uses only its short mutex. Optional pose
+  // backends retain state locking; capture that routing choice at configuration.
+  rclcpp::SubscriptionOptions twist_subscription_options;
+  twist_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  twist_subscription_options.callback_group = twist_callback_group_;
+  std::uint64_t subscription_generation;
+  {
+    std::lock_guard<std::mutex> history_lock(twist_history_mutex_);
+    subscription_generation = twist_subscription_generation_;
+  }
   twist_sub_ = create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(
     "twist", rclcpp::SensorDataQoS(),
-    std::bind(&PCLLocalization::twistReceived, this, std::placeholders::_1));
+    [this, subscription_generation,
+      update_pose_backends = use_twist_ekf_ || use_gtsam_smoother_](
+      const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg) {
+      twistReceived(msg, update_pose_backends, subscription_generation);
+    },
+    twist_subscription_options);
 
   cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
     "cloud", rclcpp::SensorDataQoS().keep_last(cloud_queue_depth_),
@@ -460,13 +475,37 @@ void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr
 }
 
 void PCLLocalization::twistReceived(
-  const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg)
+  const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg,
+  bool update_pose_backends, std::uint64_t subscription_generation)
 {
-  auto state_lock = callback_state_coordinator_.lockState();
+  lidar_localization::CallbackStateCoordinator::StateLock state_lock;
+  if (update_pose_backends) {
+    state_lock = callback_state_coordinator_.lockState();
+  }
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
-  latest_twist_msg_ = msg;
-
+  const auto & twist = msg->twist.twist;
+  const double velocity[] = {
+    twist.linear.x, twist.linear.y, twist.linear.z,
+    twist.angular.x, twist.angular.y, twist.angular.z};
+  for (const double value : velocity) {
+    if (!std::isfinite(value)) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "Ignoring non-finite twist; retaining the last valid velocity");
+      return;
+    }
+  }
   double stamp_sec = stamp_to_sec(msg->header.stamp);
+  {
+    std::lock_guard<std::mutex> history_lock(twist_history_mutex_);
+    // Shutdown sets the flag before clearing history under this same mutex.
+    if (shutting_down_.load(std::memory_order_acquire) ||
+      subscription_generation != twist_subscription_generation_) {return;}
+    twist_history_.insert(lidar_localization::TimestampedTwist{
+      stamp_sec, Eigen::Vector3d(twist.linear.x, twist.linear.y, twist.linear.z),
+      Eigen::Vector3d(twist.angular.x, twist.angular.y, twist.angular.z)});
+  }
+  if (!update_pose_backends) {return;}
   double vx = msg->twist.twist.linear.x;
   double wz = msg->twist.twist.angular.z;
 
@@ -684,6 +723,13 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   double scan_stamp_sec = 0.0;
   if (!admitScanMessage(msg, &scan_stamp_sec)) {
     return;
+  }
+  // Select by source time, then copy before alignment releases the state lock. Keep the
+  // seed and rejected advance on the same observation; receive fresh data for
+  // the next scan without changing this scan's prediction halfway through.
+  {
+    std::lock_guard<std::mutex> history_lock(twist_history_mutex_);
+    scan_twist_ = twist_history_.atOrBefore(scan_stamp_sec);
   }
   // Odom bridge: keep map -> odom alive (re-stamped from the last accepted
   // match) on every admitted scan callback, whether or not this particular
