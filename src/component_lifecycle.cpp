@@ -1,4 +1,6 @@
 #include "component_internal.hpp"
+#include <pcl/io/pcd_io.h>
+#include <pcl/io/ply_io.h>
 PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("lidar_localization", options),
   clock_(RCL_ROS_TIME),
@@ -383,7 +385,6 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
     twist_history_.clear();
   }
   scan_twist_.reset();
-  last_scan_ptr_.reset();
   path_ptr_.reset();
   corrent_pose_with_cov_stamped_ptr_.reset();
 
@@ -485,4 +486,3 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   map_recieved_ = false;
   initialpose_recieved_ = false;
 }
-

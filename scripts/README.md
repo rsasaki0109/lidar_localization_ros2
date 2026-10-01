@@ -60,10 +60,10 @@ same directory.
 way: it owns the `relocalization_attempts.csv` fieldname contract used by the
 candidate generators and the runtime global-localization engine.
 
-`experiments/glim_prior_map_localizer/` and
-`experiments/imu_yaw_prediction/` hold the remaining C++ experiment sources.
+`experiments/glim_prior_map_localizer/` holds the remaining C++ experiment sources.
 They are discardable and only promoted into `src/`/`include/` after a shared
-fixture comparison.
+fixture comparison. The rejected IMU rotation candidate retains only its
+[decision and archive reference](../experiments/imu_yaw_prediction/README.md).
 
 ## Adding a script
 

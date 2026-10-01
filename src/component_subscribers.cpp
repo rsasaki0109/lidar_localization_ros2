@@ -1,4 +1,6 @@
 #include "component_internal.hpp"
+#include <pcl/registration/gicp.h>
+#include <pcl/registration/ndt.h>
 void PCLLocalization::initializePubSub()
 {
   RCLCPP_INFO(get_logger(), "initializePubSub");
@@ -254,10 +256,6 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   // pose stayed at the pre-reset track, the crop-failure guard and the
   // retry-from-last-pose path would re-seed alignment there after a few
   // rejections and silently undo the reset.
-  have_last_accepted_pose_ = true;
-  last_accepted_pose_matrix_ = currentPoseMatrix();
-  last_accepted_pose_time_sec_ = stamp_to_sec(msg->header.stamp);
-  consecutive_rejected_updates_ = 0;
   resetPredictionState(currentPoseMatrix(), stamp_to_sec(msg->header.stamp));
   publishReinitializationRequest(msg->header.stamp, ReinitializationRequestDecision{});
 
@@ -802,4 +800,3 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
 
   printAlignmentDebugInfo(init_guess, pipeline_result.selected_attempt, filtered_point_count);
 }
-

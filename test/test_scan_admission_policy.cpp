@@ -13,14 +13,13 @@ ll::ScanAdmissionInput ready_input()
   return input;
 }
 
-void test_shutdown_and_null_scan_do_not_store_or_update_time()
+void test_shutdown_and_null_scan_do_not_update_time()
 {
   auto input = ready_input();
   input.shutting_down = true;
   const auto shutting_down = ll::decideScanAdmission(input);
   assert(!shutting_down.accepted);
   assert(shutting_down.status == ll::ScanAdmissionStatus::kShuttingDown);
-  assert(!shutting_down.should_store_last_scan);
   assert(!shutting_down.should_update_last_process_time);
 
   input = ready_input();
@@ -29,17 +28,15 @@ void test_shutdown_and_null_scan_do_not_store_or_update_time()
   assert(!null_scan.accepted);
   assert(null_scan.status == ll::ScanAdmissionStatus::kNullScan);
   assert(null_scan.should_warn_null_scan);
-  assert(!null_scan.should_store_last_scan);
 }
 
-void test_waiting_for_map_or_pose_stores_last_scan_without_processing()
+void test_waiting_for_map_or_pose_does_not_process_scan()
 {
   auto input = ready_input();
   input.map_received = false;
   const auto waiting_for_map = ll::decideScanAdmission(input);
   assert(!waiting_for_map.accepted);
   assert(waiting_for_map.status == ll::ScanAdmissionStatus::kWaitingForMapOrInitialPose);
-  assert(waiting_for_map.should_store_last_scan);
   assert(!waiting_for_map.should_update_last_process_time);
 
   input = ready_input();
@@ -47,7 +44,6 @@ void test_waiting_for_map_or_pose_stores_last_scan_without_processing()
   const auto waiting_for_pose = ll::decideScanAdmission(input);
   assert(!waiting_for_pose.accepted);
   assert(waiting_for_pose.status == ll::ScanAdmissionStatus::kWaitingForMapOrInitialPose);
-  assert(waiting_for_pose.should_store_last_scan);
 }
 
 void test_min_scan_interval_throttles_without_time_update()
@@ -60,7 +56,6 @@ void test_min_scan_interval_throttles_without_time_update()
   const auto decision = ll::decideScanAdmission(input);
   assert(!decision.accepted);
   assert(decision.status == ll::ScanAdmissionStatus::kThrottledByMinScanInterval);
-  assert(decision.should_store_last_scan);
   assert(!decision.should_update_last_process_time);
 
   input.elapsed_since_last_process_sec = 0.1;
@@ -77,7 +72,6 @@ void test_crop_failure_guard_updates_time_and_only_activates_once()
   const auto first_guard = ll::decideScanAdmission(input);
   assert(!first_guard.accepted);
   assert(first_guard.status == ll::ScanAdmissionStatus::kCropFailureGuard);
-  assert(first_guard.should_store_last_scan);
   assert(first_guard.should_update_last_process_time);
   assert(first_guard.should_activate_crop_failure_guard);
   assert(first_guard.should_reset_prediction_to_last_accepted_pose);
@@ -97,7 +91,6 @@ void test_ready_scan_is_accepted_and_updates_time()
   const auto decision = ll::decideScanAdmission(ready_input());
   assert(decision.accepted);
   assert(ll::isScanAdmissionAccepted(decision.status));
-  assert(decision.should_store_last_scan);
   assert(decision.should_update_last_process_time);
 }
 
@@ -110,7 +103,6 @@ void test_scan_predating_initial_pose_is_rejected_without_time_update()
   const auto decision = ll::decideScanAdmission(input);
   assert(!decision.accepted);
   assert(decision.status == ll::ScanAdmissionStatus::kPredatesInitialPose);
-  assert(decision.should_store_last_scan);
   assert(!decision.should_update_last_process_time);
 }
 
@@ -139,8 +131,8 @@ void test_scan_accepted_when_no_initial_pose_stamp_recorded()
 
 int main()
 {
-  test_shutdown_and_null_scan_do_not_store_or_update_time();
-  test_waiting_for_map_or_pose_stores_last_scan_without_processing();
+  test_shutdown_and_null_scan_do_not_update_time();
+  test_waiting_for_map_or_pose_does_not_process_scan();
   test_min_scan_interval_throttles_without_time_update();
   test_crop_failure_guard_updates_time_and_only_activates_once();
   test_ready_scan_is_accepted_and_updates_time();
