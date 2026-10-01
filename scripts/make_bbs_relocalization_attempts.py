@@ -44,6 +44,13 @@ if _SCRIPT_DIR not in sys.path:
 from relocalization_attempt_common import (
     ATTEMPT_FIELDNAMES,
     CANDIDATE_FIELDNAMES,
+    write_csv,
+)
+from relocalization_attempt_common import (
+    as_bool as _as_bool,
+)
+from relocalization_attempt_common import (
+    as_float as _as_float,
 )
 
 
@@ -472,20 +479,6 @@ def load_occupancy_map(yaml_path: Path) -> OccupancyMap:
     )
 
 
-def _as_bool(value: Any) -> bool:
-    return str(value).strip().lower() in {"true", "1", "yes", "y"}
-
-
-def _as_float(value: Any) -> float | None:
-    if value is None or str(value).strip() == "":
-        return None
-    try:
-        number = float(str(value))
-    except (TypeError, ValueError):
-        return None
-    return number if math.isfinite(number) else None
-
-
 def load_request_windows(alignment_csv: Path, source: str) -> list[RequestWindow]:
     """Group consecutive reinitialization-requested alignment rows into windows.
 
@@ -727,21 +720,6 @@ def pointcloud2_xyz_array(msg: Any) -> np.ndarray:
 
     xyz = np.column_stack(arrays)
     return xyz[np.isfinite(xyz).all(axis=1)]
-
-
-def write_csv(
-    path: Path,
-    rows: list[dict[str, str]],
-    fieldnames: Sequence[str],
-    overwrite: bool,
-) -> None:
-    if path.exists() and not overwrite:
-        raise FileExistsError(f"output CSV already exists: {path}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def run(args: argparse.Namespace) -> None:
