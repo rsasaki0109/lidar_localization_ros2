@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- `lidar_localization.launch.py` and `mid360_legged_localization.launch.py` no longer
+  overwrite the parameter YAML with launch-argument defaults. Unset arguments keep the
+  YAML value (or the previous default when the YAML omits it); explicit arguments still
+  win, and the static TF publishers use the resolved `base_frame_id`. Previously, e.g. a
+  generated config with `use_continuous_time_deskew: false` or a YAML `base_frame_id`
+  was silently replaced by the launch default. `mid360_legged.yaml` now carries the
+  former launch default `map_path: /map/map.pcd`.
 - Direct twist reception no longer waits for the localization state lock, so twists
   keep arriving while a scan is being registered. Each admitted scan uses the latest
   finite twist at or before its source stamp (bounded 1024-sample history) for both

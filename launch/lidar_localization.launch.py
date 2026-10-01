@@ -1,4 +1,5 @@
 import os
+import sys
 
 import launch.actions
 import launch.events
@@ -13,11 +14,30 @@ from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PythonExpression
 from launch_ros.actions import LifecycleNode
 from launch_ros.actions import Node
-from launch_ros.parameter_descriptions import ParameterValue
 
 import lifecycle_msgs.msg
 
 from ament_index_python.packages import get_package_share_directory
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from launch_param_overrides import resolve_parameter_overrides  # noqa: E402
+
+# Node parameters that a launch argument overrides only when it is set.
+# Empty arguments keep the parameter YAML value, or the fallback below.
+PARAMETER_OVERRIDES = {
+    'use_sim_time': (bool, False),
+    'global_frame_id': (str, 'map'),
+    'odom_frame_id': (str, 'odom'),
+    'base_frame_id': (str, 'base_link'),
+    'use_imu_preintegration': (bool, True),
+    'imu_preintegration_use_base_frame_transform': (bool, False),
+    'enable_map_odom_tf': (bool, False),
+    'use_odom': (bool, False),
+    'use_odom_tf_prediction': (bool, False),
+    'publish_bridge_pose_when_lost': (bool, False),
+    'use_continuous_time_deskew': (bool, True),
+    'continuous_time_deskew_reference_time_sec': (float, 0.0),
+}
 
 
 def generate_launch_description():
@@ -30,10 +50,7 @@ def generate_launch_description():
     twist_topic = LaunchConfiguration('twist_topic')
     imu_topic = LaunchConfiguration('imu_topic')
     odom_topic = LaunchConfiguration('odom_topic')
-    global_frame_id = LaunchConfiguration('global_frame_id')
-    odom_frame_id = LaunchConfiguration('odom_frame_id')
-    base_frame_id = LaunchConfiguration('base_frame_id')
-    use_sim_time = LaunchConfiguration('use_sim_time')
+    base_frame_id = LaunchConfiguration('resolved_base_frame_id')
     use_dataset_tf_tree = LaunchConfiguration('use_dataset_tf_tree')
     dataset_root_frame = LaunchConfiguration('dataset_root_frame')
     publish_lidar_tf = LaunchConfiguration('publish_lidar_tf')
@@ -46,14 +63,6 @@ def generate_launch_description():
     lidar_tf_yaw = LaunchConfiguration('lidar_tf_yaw')
     publish_imu_tf = LaunchConfiguration('publish_imu_tf')
     imu_frame_id = LaunchConfiguration('imu_frame_id')
-    use_imu_preintegration = LaunchConfiguration('use_imu_preintegration')
-    imu_preintegration_use_base_frame_transform = LaunchConfiguration('imu_preintegration_use_base_frame_transform')
-    enable_map_odom_tf = LaunchConfiguration('enable_map_odom_tf')
-    use_odom = LaunchConfiguration('use_odom')
-    use_odom_tf_prediction = LaunchConfiguration('use_odom_tf_prediction')
-    publish_bridge_pose_when_lost = LaunchConfiguration('publish_bridge_pose_when_lost')
-    use_continuous_time_deskew = LaunchConfiguration('use_continuous_time_deskew')
-    continuous_time_deskew_reference_time_sec = LaunchConfiguration('continuous_time_deskew_reference_time_sec')
     imu_tf_x = LaunchConfiguration('imu_tf_x')
     imu_tf_y = LaunchConfiguration('imu_tf_y')
     imu_tf_z = LaunchConfiguration('imu_tf_z')
@@ -151,27 +160,7 @@ def generate_launch_description():
         executable='lidar_localization_node',
         parameters=[
             localization_param_dir,
-            {
-                'use_sim_time': ParameterValue(use_sim_time, value_type=bool),
-                'global_frame_id': global_frame_id,
-                'odom_frame_id': odom_frame_id,
-                'base_frame_id': base_frame_id,
-                'use_imu_preintegration': ParameterValue(
-                    use_imu_preintegration, value_type=bool),
-                'imu_preintegration_use_base_frame_transform': ParameterValue(
-                    imu_preintegration_use_base_frame_transform, value_type=bool),
-                'enable_map_odom_tf': ParameterValue(
-                    enable_map_odom_tf, value_type=bool),
-                'use_odom': ParameterValue(use_odom, value_type=bool),
-                'use_odom_tf_prediction': ParameterValue(
-                    use_odom_tf_prediction, value_type=bool),
-                'publish_bridge_pose_when_lost': ParameterValue(
-                    publish_bridge_pose_when_lost, value_type=bool),
-                'use_continuous_time_deskew': ParameterValue(
-                    use_continuous_time_deskew, value_type=bool),
-                'continuous_time_deskew_reference_time_sec': ParameterValue(
-                    continuous_time_deskew_reference_time_sec, value_type=float),
-            },
+            LaunchConfiguration('lidar_localization_override_file'),
         ],
         remappings=[
             ('/cloud', cloud_topic),
@@ -241,47 +230,69 @@ def generate_launch_description():
                         '(used as a twist-integration fallback when IMU '
                         'preintegration is off, or as the source TF for '
                         'enable_map_odom_tf).'),
-        DeclareLaunchArgument('global_frame_id', default_value='map'),
-        DeclareLaunchArgument('odom_frame_id', default_value='odom'),
-        DeclareLaunchArgument('base_frame_id', default_value='base_link'),
-        DeclareLaunchArgument('use_sim_time', default_value='false'),
-        DeclareLaunchArgument('use_imu_preintegration', default_value='true'),
+        DeclareLaunchArgument(
+            'global_frame_id',
+            default_value='',
+            description='Empty keeps the parameter YAML value (fallback: map).'),
+        DeclareLaunchArgument(
+            'odom_frame_id',
+            default_value='',
+            description='Empty keeps the parameter YAML value (fallback: odom).'),
+        DeclareLaunchArgument(
+            'base_frame_id',
+            default_value='',
+            description='Empty keeps the parameter YAML value (fallback: base_link).'),
+        DeclareLaunchArgument(
+            'use_sim_time',
+            default_value='',
+            description='Empty keeps the parameter YAML value (fallback: false).'),
+        DeclareLaunchArgument(
+            'use_imu_preintegration',
+            default_value='',
+            description='Empty keeps the parameter YAML value (fallback: true).'),
         DeclareLaunchArgument(
             'imu_preintegration_use_base_frame_transform',
-            default_value='false'),
+            default_value='',
+            description='Empty keeps the parameter YAML value (fallback: false).'),
         DeclareLaunchArgument(
             'enable_map_odom_tf',
-            default_value='false',
+            default_value='',
             description='Look up an external odom -> base_frame_id TF (e.g. from an '
                         'external LIO front end) and publish map -> odom instead of '
-                        'map -> base_frame_id directly.'),
+                        'map -> base_frame_id directly.'
+                        ' Empty keeps the parameter YAML value (fallback: false).'),
         DeclareLaunchArgument(
             'use_odom',
-            default_value='false',
+            default_value='',
             description='Subscribe odom_topic (nav_msgs/Odometry) as a twist-'
-                        'integration seed fallback when IMU preintegration is off.'),
+                        'integration seed fallback when IMU preintegration is off.'
+                        ' Empty keeps the parameter YAML value (fallback: false).'),
         DeclareLaunchArgument(
             'use_odom_tf_prediction',
-            default_value='false',
+            default_value='',
             description='Seed scan registration from the composed frozen '
                         'map -> odom x live odom -> base_frame_id TF (external '
                         'LIO front end) instead of internal dead reckoning; '
-                        'requires enable_map_odom_tf.'),
+                        'requires enable_map_odom_tf.'
+                        ' Empty keeps the parameter YAML value (fallback: false).'),
         DeclareLaunchArgument(
             'publish_bridge_pose_when_lost',
-            default_value='false',
+            default_value='',
             description='While scan matching is rejected, keep publishing the '
                         'odom-bridge composed pose as the pose output so the '
                         'estimate stays continuous through dropouts; requires '
-                        'enable_map_odom_tf.'),
+                        'enable_map_odom_tf.'
+                        ' Empty keeps the parameter YAML value (fallback: false).'),
         DeclareLaunchArgument(
             'use_continuous_time_deskew',
-            default_value='true',
+            default_value='',
             description='Deskew scans when point timing and motion data are ready; '
-                        'otherwise keep the input scan unchanged.'),
+                        'otherwise keep the input scan unchanged.'
+                        ' Empty keeps the parameter YAML value (fallback: true).'),
         DeclareLaunchArgument(
             'continuous_time_deskew_reference_time_sec',
-            default_value='0.0'),
+            default_value='',
+            description='Empty keeps the parameter YAML value (fallback: 0.0).'),
         DeclareLaunchArgument(
             'publish_lidar_tf',
             default_value='true',
@@ -309,6 +320,8 @@ def generate_launch_description():
             default_value='false',
             description='Attach base_frame_id to a dataset-provided TF tree instead of lidar TF.'),
         DeclareLaunchArgument('dataset_root_frame', default_value='camera_base'),
+        resolve_parameter_overrides(
+            'localization_param_dir', 'lidar_localization', PARAMETER_OVERRIDES),
         from_unconfigured_to_inactive,
         from_inactive_to_active,
         lidar_localization,

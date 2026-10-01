@@ -1,4 +1,5 @@
 import os
+import sys
 
 import launch
 import launch.actions
@@ -14,9 +15,36 @@ from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode
 from launch_ros.actions import Node
-from launch_ros.parameter_descriptions import ParameterValue
 
 import lifecycle_msgs.msg
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from launch_param_overrides import resolve_parameter_overrides  # noqa: E402
+
+# Node parameters that a launch argument overrides only when it is set.
+# Empty arguments keep the parameter YAML value, or the fallback below.
+PARAMETER_OVERRIDES = {
+    'use_sim_time': (bool, False),
+    'map_path': (str, '/map/map.pcd'),
+    'registration_method': (str, 'NDT_OMP'),
+    'ndt_num_threads': (int, 4),
+    'global_frame_id': (str, 'map'),
+    'odom_frame_id': (str, 'odom'),
+    'base_frame_id': (str, 'base_link'),
+    'enable_map_odom_tf': (bool, True),
+    'use_imu_preintegration': (bool, True),
+    'imu_preintegration_use_base_frame_transform': (bool, True),
+    'use_continuous_time_deskew': (bool, True),
+    'continuous_time_deskew_reference_time_sec': (float, 0.0),
+    'set_initial_pose': (bool, False),
+    'initial_pose_x': (float, 0.0),
+    'initial_pose_y': (float, 0.0),
+    'initial_pose_z': (float, 0.0),
+    'initial_pose_qx': (float, 0.0),
+    'initial_pose_qy': (float, 0.0),
+    'initial_pose_qz': (float, 0.0),
+    'initial_pose_qw': (float, 1.0),
+}
 
 
 def generate_launch_description():
@@ -28,32 +56,13 @@ def generate_launch_description():
         'mid360_legged.yaml')
 
     localization_param_dir = LaunchConfiguration('localization_param_dir')
-    map_path = LaunchConfiguration('map_path')
-    registration_method = LaunchConfiguration('registration_method')
-    ndt_num_threads = LaunchConfiguration('ndt_num_threads')
 
-    global_frame_id = LaunchConfiguration('global_frame_id')
-    odom_frame_id = LaunchConfiguration('odom_frame_id')
-    base_frame_id = LaunchConfiguration('base_frame_id')
-    use_sim_time = LaunchConfiguration('use_sim_time')
-    enable_map_odom_tf = LaunchConfiguration('enable_map_odom_tf')
+    base_frame_id = LaunchConfiguration('resolved_base_frame_id')
 
     cloud_topic = LaunchConfiguration('cloud_topic')
     twist_topic = LaunchConfiguration('twist_topic')
     imu_topic = LaunchConfiguration('imu_topic')
-    use_imu_preintegration = LaunchConfiguration('use_imu_preintegration')
-    imu_preintegration_use_base_frame_transform = LaunchConfiguration('imu_preintegration_use_base_frame_transform')
-    use_continuous_time_deskew = LaunchConfiguration('use_continuous_time_deskew')
-    continuous_time_deskew_reference_time_sec = LaunchConfiguration('continuous_time_deskew_reference_time_sec')
 
-    set_initial_pose = LaunchConfiguration('set_initial_pose')
-    initial_pose_x = LaunchConfiguration('initial_pose_x')
-    initial_pose_y = LaunchConfiguration('initial_pose_y')
-    initial_pose_z = LaunchConfiguration('initial_pose_z')
-    initial_pose_qx = LaunchConfiguration('initial_pose_qx')
-    initial_pose_qy = LaunchConfiguration('initial_pose_qy')
-    initial_pose_qz = LaunchConfiguration('initial_pose_qz')
-    initial_pose_qw = LaunchConfiguration('initial_pose_qw')
 
     publish_lidar_tf = LaunchConfiguration('publish_lidar_tf')
     lidar_frame_id = LaunchConfiguration('lidar_frame_id')
@@ -112,32 +121,7 @@ def generate_launch_description():
         executable='lidar_localization_node',
         parameters=[
             localization_param_dir,
-            {
-                'use_sim_time': ParameterValue(use_sim_time, value_type=bool),
-                'map_path': map_path,
-                'registration_method': registration_method,
-                'ndt_num_threads': ParameterValue(ndt_num_threads, value_type=int),
-                'global_frame_id': global_frame_id,
-                'odom_frame_id': odom_frame_id,
-                'base_frame_id': base_frame_id,
-                'enable_map_odom_tf': ParameterValue(enable_map_odom_tf, value_type=bool),
-                'use_imu_preintegration': ParameterValue(
-                    use_imu_preintegration, value_type=bool),
-                'imu_preintegration_use_base_frame_transform': ParameterValue(
-                    imu_preintegration_use_base_frame_transform, value_type=bool),
-                'use_continuous_time_deskew': ParameterValue(
-                    use_continuous_time_deskew, value_type=bool),
-                'continuous_time_deskew_reference_time_sec': ParameterValue(
-                    continuous_time_deskew_reference_time_sec, value_type=float),
-                'set_initial_pose': ParameterValue(set_initial_pose, value_type=bool),
-                'initial_pose_x': ParameterValue(initial_pose_x, value_type=float),
-                'initial_pose_y': ParameterValue(initial_pose_y, value_type=float),
-                'initial_pose_z': ParameterValue(initial_pose_z, value_type=float),
-                'initial_pose_qx': ParameterValue(initial_pose_qx, value_type=float),
-                'initial_pose_qy': ParameterValue(initial_pose_qy, value_type=float),
-                'initial_pose_qz': ParameterValue(initial_pose_qz, value_type=float),
-                'initial_pose_qw': ParameterValue(initial_pose_qw, value_type=float),
-            },
+            LaunchConfiguration('lidar_localization_override_file'),
         ],
         remappings=[
             ('/cloud', cloud_topic),
@@ -178,34 +162,71 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('localization_param_dir', default_value=default_param),
-        DeclareLaunchArgument('map_path', default_value='/map/map.pcd'),
-        DeclareLaunchArgument('registration_method', default_value='NDT_OMP'),
-        DeclareLaunchArgument('ndt_num_threads', default_value='4'),
-        DeclareLaunchArgument('global_frame_id', default_value='map'),
-        DeclareLaunchArgument('odom_frame_id', default_value='odom'),
-        DeclareLaunchArgument('base_frame_id', default_value='base_link'),
-        DeclareLaunchArgument('use_sim_time', default_value='false'),
-        DeclareLaunchArgument('enable_map_odom_tf', default_value='true'),
+        DeclareLaunchArgument(
+            'map_path', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: /map/map.pcd).'),
+        DeclareLaunchArgument(
+            'registration_method', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: NDT_OMP).'),
+        DeclareLaunchArgument(
+            'ndt_num_threads', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: 4).'),
+        DeclareLaunchArgument(
+            'global_frame_id', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: map).'),
+        DeclareLaunchArgument(
+            'odom_frame_id', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: odom).'),
+        DeclareLaunchArgument(
+            'base_frame_id', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: base_link).'),
+        DeclareLaunchArgument(
+            'use_sim_time', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: false).'),
+        DeclareLaunchArgument(
+            'enable_map_odom_tf', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: true).'),
         DeclareLaunchArgument('cloud_topic', default_value='/livox/points'),
         DeclareLaunchArgument('twist_topic', default_value='/twist'),
         DeclareLaunchArgument('imu_topic', default_value='/livox/imu'),
-        DeclareLaunchArgument('use_imu_preintegration', default_value='true'),
         DeclareLaunchArgument(
-            'imu_preintegration_use_base_frame_transform', default_value='true'),
+            'use_imu_preintegration', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: true).'),
         DeclareLaunchArgument(
-            'use_continuous_time_deskew', default_value='true',
+            'imu_preintegration_use_base_frame_transform', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: true).'),
+        DeclareLaunchArgument(
+            'use_continuous_time_deskew', default_value='',
             description='Deskew scans when point timing and motion data are ready; '
-                        'otherwise keep the input scan unchanged.'),
+                        'otherwise keep the input scan unchanged.'
+                        ' Empty keeps the parameter YAML value (fallback: true).'),
         DeclareLaunchArgument(
-            'continuous_time_deskew_reference_time_sec', default_value='0.0'),
-        DeclareLaunchArgument('set_initial_pose', default_value='false'),
-        DeclareLaunchArgument('initial_pose_x', default_value='0.0'),
-        DeclareLaunchArgument('initial_pose_y', default_value='0.0'),
-        DeclareLaunchArgument('initial_pose_z', default_value='0.0'),
-        DeclareLaunchArgument('initial_pose_qx', default_value='0.0'),
-        DeclareLaunchArgument('initial_pose_qy', default_value='0.0'),
-        DeclareLaunchArgument('initial_pose_qz', default_value='0.0'),
-        DeclareLaunchArgument('initial_pose_qw', default_value='1.0'),
+            'continuous_time_deskew_reference_time_sec', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: 0.0).'),
+        DeclareLaunchArgument(
+            'set_initial_pose', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: false).'),
+        DeclareLaunchArgument(
+            'initial_pose_x', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: 0.0).'),
+        DeclareLaunchArgument(
+            'initial_pose_y', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: 0.0).'),
+        DeclareLaunchArgument(
+            'initial_pose_z', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: 0.0).'),
+        DeclareLaunchArgument(
+            'initial_pose_qx', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: 0.0).'),
+        DeclareLaunchArgument(
+            'initial_pose_qy', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: 0.0).'),
+        DeclareLaunchArgument(
+            'initial_pose_qz', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: 0.0).'),
+        DeclareLaunchArgument(
+            'initial_pose_qw', default_value='',
+            description='Empty keeps the parameter YAML value (fallback: 1.0).'),
         DeclareLaunchArgument('publish_lidar_tf', default_value='true'),
         DeclareLaunchArgument('lidar_frame_id', default_value='livox_frame'),
         DeclareLaunchArgument('lidar_tf_x', default_value='0.0'),
@@ -222,6 +243,8 @@ def generate_launch_description():
         DeclareLaunchArgument('imu_tf_roll', default_value='0.0'),
         DeclareLaunchArgument('imu_tf_pitch', default_value='0.0'),
         DeclareLaunchArgument('imu_tf_yaw', default_value='0.0'),
+        resolve_parameter_overrides(
+            'localization_param_dir', 'lidar_localization', PARAMETER_OVERRIDES),
         from_inactive_to_active,
         lidar_localization,
         lidar_tf,
