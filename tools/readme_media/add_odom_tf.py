@@ -37,7 +37,7 @@ odom = odom[np.argsort(odom[:, 0])]
 tf_msgs = []
 for row in odom:
     sec = int(row[0])
-    nsec = int(round((row[0] - sec) * 1e9))
+    nsec = int(np.rint((row[0] - sec) * 1e9))
     if nsec >= 1_000_000_000:
         sec, nsec = sec + 1, nsec - 1_000_000_000
     t = TS(
