@@ -33,6 +33,12 @@
 
 ### Added
 
+- Opt-in local re-acquisition after an odometry-bridged outage
+  (`enable_local_reacquisition`, `local_reacquisition_occupancy_yaml`, ...). While scans
+  are rejected and the pose is carried by external odometry, a branch-and-bound search
+  around the bridged pose proposes heading-consistent candidates, refines them with the
+  normal registration, and seeds the next scan from an unambiguous fit; the normal
+  measurement gate on that scan decides whether it becomes the new `map -> odom`.
 - `local_map_update_distance` reuses the cropped local-map registration target until
   the crop center has moved that far (default `0` keeps re-cropping every scan).
 - Opt-in seed-agnostic jump guard: `enable_seed_correction_guard`,

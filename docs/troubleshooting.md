@@ -233,6 +233,37 @@ looks good; previous-delta prediction then extrapolates the jump.
   releases after `seed_correction_guard_release_rejections` (default `10`) consecutive
   rejects so a drifted seed can re-lock. Only use it with a seed you trust per scan.
 
+## Symptom: Tracking Does Not Recover After Leaving the Map With External Odometry
+
+With `enable_map_odom_tf: true` and `use_odom_tf_prediction: true`, an external
+LiDAR-inertial odometry carries the pose while scans do not match the map, for example
+outside the mapped area. The bridged pose drifts with that odometry. If the drift exceeds
+the NDT convergence basin (a few metres) by the time the sensor is back in mapped space,
+every scan keeps being rejected, and `/alignment_status` stays at `bad_match`.
+
+Enable the opt-in local re-acquisition:
+
+```yaml
+enable_local_reacquisition: true
+local_reacquisition_occupancy_yaml: /path/to/map.yaml   # 2D occupancy grid of the same map
+# optional
+local_reacquisition_min_rejections: 10          # rejected scans before searching
+local_reacquisition_attempt_interval_scans: 10  # scans between searches
+local_reacquisition_search_radius_m: 15.0       # square window around the bridged pose
+local_reacquisition_yaw_window_deg: 20.0        # heading tolerance around the bridged pose
+local_reacquisition_max_candidates: 6           # candidates refined with NDT per search
+```
+
+How it works:
+1. A search runs only while the seed comes from the odometry bridge.
+2. 2D branch-and-bound searches the occupancy grid inside the window around the bridged pose.
+3. Candidates whose heading differs from the bridged heading by more than the yaw window are discarded.
+4. The remaining candidates are refined with the normal registration.
+5. The best one is proposed only if it is below `score_threshold` and no candidate that refined to a different place (more than 2 m away) fits within 1.2× of it.
+6. The proposal only seeds the next scan. It becomes the new `map -> odom` only if that scan passes the normal measurement gate. Otherwise it is discarded.
+
+Searches cost up to `local_reacquisition_max_candidates` NDT alignments inside the scan callback, so they run only during rejection streaks. On the Koide `outdoor_hard_02b` replay, the longest output gap grew from 1.2 s to 6.7 s while lost. The occupancy YAML must use an unrotated origin and a binary PGM image. Without an occupancy map or odometry bridge, the feature stays disabled and logs a warning.
+
 ## Symptom: Map Not Visible in RViz (#43, #48)
 
 Two different map paths exist:

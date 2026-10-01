@@ -58,6 +58,7 @@ add_library(lidar_localization_component SHARED
   src/component_subscribers.cpp
   src/component_scan_preparation.cpp
   src/component_alignment.cpp
+  src/component_local_reacquisition.cpp
   src/component_prediction_state.cpp
   src/component_pose_backend.cpp
   src/component_pose_publisher.cpp
@@ -577,6 +578,10 @@ if(BUILD_TESTING)
   target_include_directories(test_causal_twist_history PRIVATE include)
   target_link_libraries(test_causal_twist_history Eigen3::Eigen)
   add_test(NAME causal_twist_history COMMAND test_causal_twist_history)
+
+  add_executable(test_local_reacquisition_policy test/test_local_reacquisition_policy.cpp)
+  target_include_directories(test_local_reacquisition_policy PRIVATE include)
+  add_test(NAME local_reacquisition_policy COMMAND test_local_reacquisition_policy)
 
   add_executable(test_prediction_state_policy
     test/test_prediction_state_policy.cpp)

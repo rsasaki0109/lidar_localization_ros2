@@ -783,6 +783,9 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       imu_prediction_ready,
       registration_seed_source))
   {
+    finishLocalReacquisitionConfirmation(false);
+    maybeRunLocalReacquisition(
+      tmp_ptr, selected_seed, scan_stamp_sec, state_lock, seed_generation);
     publishBridgePoseAsRejectedOutput(msg->header.stamp);
     return;
   }
@@ -794,9 +797,13 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       imu_prediction_ready,
       registration_seed_source))
   {
+    finishLocalReacquisitionConfirmation(false);
+    maybeRunLocalReacquisition(
+      tmp_ptr, selected_seed, scan_stamp_sec, state_lock, seed_generation);
     publishBridgePoseAsRejectedOutput(msg->header.stamp);
     return;
   }
+  finishLocalReacquisitionConfirmation(true);
 
   printAlignmentDebugInfo(init_guess, pipeline_result.selected_attempt, filtered_point_count);
 }

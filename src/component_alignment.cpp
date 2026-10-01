@@ -115,6 +115,20 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
   Eigen::Matrix4f odom_tf_prediction = Eigen::Matrix4f::Identity();
   const bool odom_tf_bridge_available =
     use_odom_tf_prediction_ && lookupOdomBridgePoseMatrix(stamp, odom_tf_prediction);
+  local_reacquisition_confirmation_scan_ = false;
+  scan_seeded_from_reacquisition_ = false;
+  if (odom_tf_bridge_available && pending_reacquisition_map_to_odom_) {
+    // Seed this scan from the proposed map -> odom instead of the frozen one.
+    // The proposal is used once; the normal gate on this scan decides whether
+    // it becomes the accepted anchor.
+    const Eigen::Matrix4f frozen_map_to_odom =
+      tf2::transformToEigen(last_good_map_to_odom_.transform).matrix().cast<float>();
+    odom_tf_prediction =
+      *pending_reacquisition_map_to_odom_ * frozen_map_to_odom.inverse() * odom_tf_prediction;
+    pending_reacquisition_map_to_odom_.reset();
+    local_reacquisition_confirmation_scan_ = true;
+    scan_seeded_from_reacquisition_ = true;
+  }
 
   const lidar_localization::RegistrationSeedPolicyDecision seed_decision =
     lidar_localization::chooseRegistrationSeed(
