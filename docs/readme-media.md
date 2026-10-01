@@ -48,4 +48,20 @@ The goal was a deterministic evaluation on a shared, loaded workstation, so no r
 | GIF run | 1346 over 274 s | 0.40 m | 0.24 m | 0.64 m | 2.89 m | 1.2 s |
 | Repeat | 1192 over 272 s | 0.44 m | 0.25 m | 0.74 m | 2.90 m | 1.5 s |
 
-Live real-time replays on the same loaded workstation were not reliable. The online RKO-LIO node fell behind, dropped scans, and re-anchored on the resulting gaps. A real-time claim needs a quiet machine and is outside this note.
+### Live real-time replays
+
+**Setup:** online RKO-LIO node and localization together, bag at 1.0×, initial pose as above.
+
+**Heavily loaded workstation** (load average 10–20 from unrelated jobs): live runs were not reliable. The online RKO-LIO node fell behind, dropped scans, and re-anchored on the resulting gaps.
+
+**Less loaded workstation** (load average ~4.5), two runs:
+
+| Run | Poses | RMSE | Median | p95 | Max | Note |
+| --- | --- | --- | --- | --- | --- | --- |
+| Live 1 | 733 over 291 s | 0.37 m | 0.26 m | 0.62 m | 1.46 m | Recovered after the section outside the map |
+| Live 2 | 606 over 271 s | 2.45 m | 0.31 m | 6.68 m | 9.72 m | Within 0.5 m up to ~200 s, then drifted outside the map and did not re-acquire before the end |
+
+**Reading:**
+- Inside the map, real-time tracking held in both runs.
+- The long section outside the map (about 160–260 s) is carried by odometry alone. Whether localization re-acquires afterwards depends on how far the live odometry has drifted. The offline odometry used for the GIF has 0.63 m APE over the whole run.
+- This is not a guarantee for long map-free stretches.
