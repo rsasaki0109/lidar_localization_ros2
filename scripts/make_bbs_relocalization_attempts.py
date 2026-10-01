@@ -44,9 +44,13 @@ if _SCRIPT_DIR not in sys.path:
 from relocalization_attempt_common import (
     ATTEMPT_FIELDNAMES,
     CANDIDATE_FIELDNAMES,
-    as_bool as _as_bool,
-    as_float as _as_float,
     write_csv,
+)
+from relocalization_attempt_common import (
+    as_bool as _as_bool,
+)
+from relocalization_attempt_common import (
+    as_float as _as_float,
 )
 
 

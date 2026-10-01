@@ -7,7 +7,6 @@ import argparse
 from pathlib import Path
 
 import yaml
-
 from tum_trajectory_to_pose_reference_csv import (
     export_initial_pose_yaml,
     iter_tum_poses,
