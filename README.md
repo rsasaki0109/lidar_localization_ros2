@@ -98,6 +98,11 @@ ros2 launch lidar_localization_ros2 mid360_legged_localization.launch.py \
   cloud_topic:=/livox/points imu_topic:=/livox/imu
 ```
 
+With `lidar_localization.launch.py` and `mid360_legged_localization.launch.py`, the
+parameter YAML (`localization_param_dir:=...`) is the source of truth: frame, IMU,
+deskew, map and initial-pose arguments override it only when you pass them, and the
+static TF publishers use the same resolved `base_frame_id` as the node.
+
 Check topics, TF, pose output, and diagnostics with:
 
 ```bash

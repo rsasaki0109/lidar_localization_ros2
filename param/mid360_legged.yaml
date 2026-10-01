@@ -1,6 +1,7 @@
 # Preset: Jetson + Livox MID-360 for quadruped/biped robots.
 # Status: hardware-specific runtime preset.
-# Runtime launch should override map_path and measured sensor extrinsics.
+# Set map_path here or pass map_path:=... to the launch; set the measured sensor
+# extrinsics with the launch TF arguments.
 /**:
   ros__parameters:
     registration_method: NDT_OMP
@@ -23,7 +24,7 @@
     min_scan_interval_sec: 0.0
 
     use_pcd_map: true
-    map_path: ""
+    map_path: "/map/map.pcd"
     set_initial_pose: false
     initial_pose_x: 0.0
     initial_pose_y: 0.0
