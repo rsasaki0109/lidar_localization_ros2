@@ -1,5 +1,5 @@
-#ifndef LIDAR_LOCALIZATION__LOCAL_REACQUISITION_POLICY_HPP_
-#define LIDAR_LOCALIZATION__LOCAL_REACQUISITION_POLICY_HPP_
+#ifndef LIDAR_LOCALIZATION_LOCAL_REACQUISITION_POLICY_HPP_
+#define LIDAR_LOCALIZATION_LOCAL_REACQUISITION_POLICY_HPP_
 
 // Local re-acquisition after an odometry-bridged outage.
 //
@@ -391,4 +391,4 @@ inline LocalReacquisitionDecision decideLocalReacquisition(
 
 }  // namespace lidar_localization
 
-#endif  // LIDAR_LOCALIZATION__LOCAL_REACQUISITION_POLICY_HPP_
+#endif  // LIDAR_LOCALIZATION_LOCAL_REACQUISITION_POLICY_HPP_
