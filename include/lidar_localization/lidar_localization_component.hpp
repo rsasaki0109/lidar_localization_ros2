@@ -57,6 +57,7 @@
 #include "lidar_localization/lidar_undistortion.hpp"
 #include "lidar_localization/twist_ekf.hpp"
 #include "lidar_localization/causal_twist_history.hpp"
+#include "lidar_localization/local_reacquisition_policy.hpp"
 #include "lidar_localization/twist_gtsam_smoother.hpp"
 #include "lidar_localization/imu_gtsam_smoother.hpp"
 #include "lidar_localization/imu_pose_history_deskew.hpp"
@@ -404,6 +405,16 @@ public:
   // available via TF composition with the (external, e.g. GLIM) live
   // odom -> base_link the whole time -- never updated from a rejected match.
   geometry_msgs::msg::TransformStamped last_good_map_to_odom_;
+  // Local re-acquisition after an odometry-bridged outage (opt-in).
+  lidar_localization::LocalReacquisitionParams local_reacquisition_params_;
+  std::optional<lidar_localization::OccupancyGridMap> local_reacquisition_map_;
+  std::size_t scans_since_local_reacquisition_attempt_{0};
+  // Proposed map -> odom, used once to seed the next scan; kept only if that
+  // scan passes the normal measurement gate.
+  std::optional<Eigen::Matrix4f> pending_reacquisition_map_to_odom_;
+  bool local_reacquisition_confirmation_scan_{false};
+  // True while the current scan is seeded from a proposal (never search on it).
+  bool scan_seeded_from_reacquisition_{false};
   bool has_last_good_map_to_odom_{false};
   // Map-frame pose whose z/roll/pitch accompany last_good_map_to_odom_. Keep
   // the planar constraint on the same confidence boundary as the TF anchor;
@@ -571,6 +582,13 @@ public:
     double scan_stamp_sec,
     bool imu_prediction_ready,
     const std::string & registration_seed_source);
+  void maybeRunLocalReacquisition(
+    const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud,
+    const SelectedRegistrationSeed & selected_seed,
+    double scan_stamp_sec,
+    lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
+    std::uint64_t seed_generation);
+  void finishLocalReacquisitionConfirmation(bool accepted);
   void setRegistrationSourceCloud(const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud);
   void printAlignmentDebugInfo(
     const Eigen::Matrix4f & init_guess,

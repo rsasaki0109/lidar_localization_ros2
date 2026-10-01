@@ -113,6 +113,13 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("odom_tf_prediction_recovery_guard_translation_m", 5.0);
   declare_parameter("odom_tf_prediction_recovery_guard_yaw_deg", 30.0);
   declare_parameter("enable_seed_correction_guard", false);
+  declare_parameter("enable_local_reacquisition", false);
+  declare_parameter("local_reacquisition_occupancy_yaml", "");
+  declare_parameter("local_reacquisition_min_rejections", 10);
+  declare_parameter("local_reacquisition_attempt_interval_scans", 10);
+  declare_parameter("local_reacquisition_search_radius_m", 15.0);
+  declare_parameter("local_reacquisition_yaw_window_deg", 20.0);
+  declare_parameter("local_reacquisition_max_candidates", 6);
   declare_parameter("seed_correction_guard_translation_m", 0.5);
   declare_parameter("seed_correction_guard_yaw_deg", 15.0);
   declare_parameter("seed_correction_guard_release_rejections", 10);
@@ -396,6 +403,9 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   odom_bridge_pose_pub_.reset();
   last_good_map_to_odom_ = geometry_msgs::msg::TransformStamped{};
   has_last_good_map_to_odom_ = false;
+  pending_reacquisition_map_to_odom_.reset();
+  local_reacquisition_confirmation_scan_ = false;
+  scans_since_local_reacquisition_attempt_ = 0;
   odom_tf_constraint_anchor_pose_matrix_ = Eigen::Matrix4f::Identity();
   has_odom_tf_constraint_anchor_pose_ = false;
   odom_bridge_transform_history_.clear();

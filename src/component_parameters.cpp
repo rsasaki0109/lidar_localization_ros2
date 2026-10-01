@@ -349,6 +349,42 @@ void PCLLocalization::initializeParameters()
   get_parameter(
     "seed_correction_guard_warmup_accepts",
     measurement_gate_config_.seed_correction_guard_warmup_accepts);
+  get_parameter("enable_local_reacquisition", local_reacquisition_params_.enable);
+  get_parameter(
+    "local_reacquisition_min_rejections", local_reacquisition_params_.min_rejections);
+  get_parameter(
+    "local_reacquisition_attempt_interval_scans",
+    local_reacquisition_params_.attempt_interval_scans);
+  get_parameter(
+    "local_reacquisition_search_radius_m", local_reacquisition_params_.search_radius_m);
+  get_parameter(
+    "local_reacquisition_yaw_window_deg", local_reacquisition_params_.yaw_window_deg);
+  get_parameter(
+    "local_reacquisition_max_candidates", local_reacquisition_params_.max_candidates);
+  local_reacquisition_map_.reset();
+  if (local_reacquisition_params_.enable) {
+    std::string occupancy_yaml;
+    get_parameter("local_reacquisition_occupancy_yaml", occupancy_yaml);
+    if (!use_odom_tf_prediction_ || occupancy_yaml.empty()) {
+      RCLCPP_WARN(
+        get_logger(),
+        "enable_local_reacquisition requires use_odom_tf_prediction and "
+        "local_reacquisition_occupancy_yaml; local re-acquisition is disabled");
+      local_reacquisition_params_.enable = false;
+    } else {
+      try {
+        local_reacquisition_map_ = lidar_localization::loadOccupancyGridMap(occupancy_yaml);
+        RCLCPP_INFO(
+          get_logger(), "local re-acquisition occupancy map: %s (%dx%d cells, %.3f m)",
+          occupancy_yaml.c_str(), local_reacquisition_map_->grid.width,
+          local_reacquisition_map_->grid.height, local_reacquisition_map_->resolution_m);
+      } catch (const std::exception & error) {
+        RCLCPP_WARN(
+          get_logger(), "local re-acquisition disabled: %s", error.what());
+        local_reacquisition_params_.enable = false;
+      }
+    }
+  }
   get_parameter(
     "enable_odom_tf_prediction_correction_guard",
     measurement_gate_config_.enable_odom_tf_prediction_correction_guard);
