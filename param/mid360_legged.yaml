@@ -81,7 +81,7 @@
 
     enable_debug: false
     predict_pose_from_previous_delta: true
-    enable_local_map_crop: true
+    enable_local_map_crop: false
     local_map_radius: 80.0
     local_map_update_distance: 20.0
     local_map_min_points: 100

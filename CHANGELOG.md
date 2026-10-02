@@ -60,11 +60,14 @@
   reverted in #153). With RKO-LIO keeping its motion across scan gaps (rko_lio#16), live
   1.0x replays of the Koide `outdoor_hard_02b` README setup publish ~6.5 instead of
   ~1.1 poses/s, at RMSE 0.33-0.36 m in 4 of 4 runs (0.31-0.98 m without it).
-- `param/mid360_legged.yaml` sets `local_map_update_distance: 20.0`: the 80 m local-map
-  target is rebuilt after the robot moves 20 m instead of on every scan. On JEPLO (Go2,
-  MID-360) with this crop, rebuilding every scan processed 20% of the Long_Stairs scans
-  and lost Outdoor1 (20.8 m ATE); with 20 m, Long_Stairs, Outdoor1 and EIL_Mask2 match
-  the no-crop runs (0.058 / 0.033 / 0.056 m).
+- `param/mid360_legged.yaml` registers against the full map (`enable_local_map_crop:
+  false`). The 80 m crop was rebuilt on every scan, which on JEPLO (Go2, MID-360)
+  processed 20% of the Long_Stairs scans and lost Outdoor1 (20.8 m ATE). Reusing it for
+  20 m restores the accuracy, but in live replays with the online RKO-LIO front end each
+  re-crop of the dense outdoor map still stalled the output for 1.8-2.0 s; without the
+  crop the accuracy is the same and the longest gap is 0.1 s. The crop settings
+  (`local_map_radius: 80.0`, `local_map_update_distance: 20.0`) stay for maps too large
+  to register against whole.
 - Continuous-time deskew now defaults on in the component, launch files, and shipped
   presets. Readiness guards preserve the original scan when point timing or motion data
   is unavailable; `use_continuous_time_deskew:=false` remains the rollback switch.

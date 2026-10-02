@@ -121,7 +121,9 @@ use_imu_preintegration:=false
 - `NDT_OMP` with `ndt_num_threads: 4`
 - scan voxel leaf size `0.25 m`
 - range clamp `0.8 m` to `60 m`
-- local map crop radius `80 m`, re-cropped after the robot moves `20 m`
+- the full map as the NDT target (built once at map load); the local map crop
+  (`80 m`, re-cropped every `20 m`) is off, because each re-crop of a dense map
+  stalls the output for about 2 s
 - timer publishing at `20 Hz` for stable `map -> odom`
 - twist prediction enabled, but angular twist prediction disabled
 - IMU preintegration enabled with correction guards
@@ -134,7 +136,7 @@ ndt_num_threads:=2
 
 Then increase `voxel_leaf_size` or reduce `scan_max_range` in a copied YAML if
 CPU is still saturated. For Jetson Orin-class devices with cooling, `4` to `6`
-threads is usually the first range to test before widening map crop or scan
+threads is usually the first range to test before widening scan
 range.
 
 ## Bringup Checks
