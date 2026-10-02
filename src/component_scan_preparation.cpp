@@ -103,7 +103,7 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
       "Input cloud does not contain intensity. Falling back to xyz with zero intensity.");
   }
   const lidar_localization::PointRelativeTimes point_relative_times =
-    lidar_localization::extractPointRelativeTimesSeconds(*msg);
+    lidar_localization::extractPointRelativeTimesSeconds(*msg, use_continuous_time_deskew_);
   prepared_scan.point_time_reference_sec = point_relative_times.reference_time_sec;
   const lidar_localization::ScanTimeRangeStatus point_time_status =
     lidar_localization::classifyScanTimeRange(
@@ -163,6 +163,9 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
       msg->header.frame_id,
       base_frame_id_});
 
+  const bool collect_relative_times =
+    use_continuous_time_deskew_ && point_relative_times.has_time_field;
+
   if (can_direct_range_filter) {
     const auto * x_field = lidar_localization::findPointField(msg->fields, "x");
     const auto * y_field = lidar_localization::findPointField(msg->fields, "y");
@@ -182,7 +185,8 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
       static_cast<std::size_t>(msg->width) * static_cast<std::size_t>(msg->height);
     tmp.reserve(point_count);
     for (std::size_t point_idx = 0; point_idx < point_count; ++point_idx) {
-      const uint8_t * point_data = msg->data.data() + point_idx * msg->point_step;
+      const uint8_t * point_data = msg->data.data() +
+        lidar_localization::pointCloudPointOffset(*msg, point_idx);
       pcl::PointXYZI point;
       float intensity = 0.0f;
       if (!lidar_localization::readPointFieldAsFloat(point_data, *x_field, &point.x) ||
@@ -200,23 +204,25 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
           point.x, point.y, point.z, scan_min_range_, scan_max_range_))
       {
         tmp.push_back(point);
-        if (point_relative_times.has_time_field) {
+        if (collect_relative_times) {
           prepared_scan.relative_times_sec.push_back(
             lidar_localization::relativeTimeOrNaN(point_relative_times, point_idx));
         }
       }
     }
-    prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(tmp));
-    if (point_relative_times.has_time_field) {
+    prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(std::move(tmp)));
+    if (collect_relative_times) {
       prepared_scan.relative_times_aligned_with_cloud =
         prepared_scan.relative_times_sec.size() == prepared_scan.cloud->size();
     }
     applyContinuousTimeDeskewIfEnabled(prepared_scan, scan_stamp_sec);
   } else {
+    const lidar_localization::PointRelativeTimes no_relative_times;
     lidar_localization::TimedXyziCloud timed_cloud =
-      lidar_localization::convertSensorCloudToTimedXyzi(*msg, point_relative_times);
+      lidar_localization::convertSensorCloudToTimedXyzi(
+      *msg, collect_relative_times ? point_relative_times : no_relative_times);
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_ptr(
-      new pcl::PointCloud<pcl::PointXYZI>(timed_cloud.cloud));
+      new pcl::PointCloud<pcl::PointXYZI>(std::move(timed_cloud.cloud)));
     std::vector<double> cloud_relative_times = std::move(timed_cloud.relative_times_sec);
 
     // If your cloud is not robot-centric, convert to base_frame.
@@ -257,15 +263,15 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
           point.x, point.y, point.z, scan_min_range_, scan_max_range_))
       {
         tmp.push_back(point);
-        if (point_relative_times.has_time_field) {
+        if (collect_relative_times) {
           prepared_scan.relative_times_sec.push_back(
             lidar_localization::relativeTimeOrNaN(cloud_relative_times, point_idx));
         }
       }
     }
     prepared_scan.filtered_point_count = tmp.size();
-    prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(tmp));
-    if (point_relative_times.has_time_field) {
+    prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(std::move(tmp)));
+    if (collect_relative_times) {
       prepared_scan.relative_times_aligned_with_cloud =
         prepared_scan.relative_times_sec.size() == prepared_scan.cloud->size();
     }
@@ -399,7 +405,7 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
     }
     const Eigen::Matrix4f scan_motion = lidar_localization::scaleRelativeMotion(
       last_relative_motion_matrix_, motion_scale);
-    const auto deskew_result = lidar_localization::deskewPointCloudWithRelativeMotion(
+    auto deskew_result = lidar_localization::deskewPointCloudWithRelativeMotion(
       *prepared_scan.cloud,
       prepared_scan.relative_times_sec,
       latest_scan_time_duration_sec_,
@@ -410,7 +416,7 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
         "continuous_time_deskew_lidar_motion_not_applied";
       return false;
     }
-    prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(deskew_result.cloud));
+    prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(std::move(deskew_result.cloud)));
     latest_continuous_time_deskew_applied_ = true;
     latest_continuous_time_deskew_status_ =
       "continuous_time_deskew_lidar_motion_applied";
@@ -425,7 +431,7 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
     const double scan_start_sec = continuous_time_cloud_stamp_reference_ == "end" ?
       scan_stamp_sec - latest_scan_time_duration_sec_ :
       scan_stamp_sec + prepared_scan.point_time_reference_sec;
-    const auto deskew_result = lidar_localization::deskewPointCloudWithPoseHistory(
+    auto deskew_result = lidar_localization::deskewPointCloudWithPoseHistory(
       *prepared_scan.cloud,
       prepared_scan.relative_times_sec,
       scan_start_sec,
@@ -439,7 +445,7 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
     if (!deskew_result.applied) {
       return false;
     }
-    prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(deskew_result.cloud));
+    prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(std::move(deskew_result.cloud)));
     prepared_scan.relative_times_aligned_with_cloud =
       prepared_scan.relative_times_sec.size() == prepared_scan.cloud->size();
     latest_continuous_time_deskew_applied_ = true;
@@ -455,7 +461,7 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
   }
 
   const Eigen::Matrix4f start_to_end_motion = scan_start_pose.inverse() * scan_end_pose;
-  const auto deskew_result = lidar_localization::deskewPointCloudWithRelativeMotion(
+  auto deskew_result = lidar_localization::deskewPointCloudWithRelativeMotion(
     *prepared_scan.cloud,
     prepared_scan.relative_times_sec,
     latest_scan_time_duration_sec_,
@@ -468,7 +474,7 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
     return false;
   }
 
-  prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(deskew_result.cloud));
+  prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(std::move(deskew_result.cloud)));
   prepared_scan.relative_times_aligned_with_cloud =
     prepared_scan.relative_times_sec.size() == prepared_scan.cloud->size();
   latest_continuous_time_deskew_applied_ = true;
