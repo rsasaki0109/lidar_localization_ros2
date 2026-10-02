@@ -56,6 +56,11 @@
 
 ### Changed
 
+- `param/mid360_legged.yaml` sets `local_map_update_distance: 20.0`: the 80 m local-map
+  target is rebuilt after the robot moves 20 m instead of on every scan. On JEPLO (Go2,
+  MID-360) with this crop, rebuilding every scan processed 20% of the Long_Stairs scans
+  and lost Outdoor1 (20.8 m ATE); with 20 m, Long_Stairs, Outdoor1 and EIL_Mask2 match
+  the no-crop runs (0.058 / 0.033 / 0.056 m).
 - `param/nav2_ndt_urban.yaml` sets `local_map_update_distance: 10.0`, so the 150 m
   local-map target is reused until the crop center moves 10 m instead of being rebuilt
   on every scan. On the Koide `outdoor_hard_02b` replay the mean NDT time dropped from
