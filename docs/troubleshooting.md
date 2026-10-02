@@ -256,13 +256,12 @@ local_reacquisition_max_candidates: 6           # candidates refined with NDT pe
 
 How it works:
 1. A search runs only while the seed comes from the odometry bridge.
-2. 2D branch-and-bound searches the occupancy grid inside the window around the bridged pose.
-3. Candidates whose heading differs from the bridged heading by more than the yaw window are discarded.
-4. The remaining candidates are refined with the normal registration.
-5. The best one is proposed only if it is below `score_threshold` and no candidate that refined to a different place (more than 2 m away) fits within 1.2× of it.
-6. The proposal only seeds the next scan. It becomes the new `map -> odom` only if that scan passes the normal measurement gate. Otherwise it is discarded.
+2. 2D branch-and-bound searches the occupancy grid inside the window around the bridged pose, only over headings within the yaw window of the bridged heading.
+3. The best candidates are refined with the normal registration, against the local map already cropped around the bridged pose.
+4. The best one is proposed only if it is below `score_threshold` and no candidate that refined to a different place (more than 2 m away) fits within 1.2× of it.
+5. The proposal only seeds the next scan. It becomes the new `map -> odom` only if that scan passes the normal measurement gate. Otherwise it is discarded.
 
-Searches cost up to `local_reacquisition_max_candidates` NDT alignments inside the scan callback, so they run only during rejection streaks. On the Koide `outdoor_hard_02b` replay, the longest output gap grew from 1.2 s to 6.7 s while lost. The occupancy YAML must use an unrotated origin and a binary PGM image. Without an occupancy map or odometry bridge, the feature stays disabled and logs a warning.
+Searches run inside the scan callback, so they run only during rejection streaks. On the Koide `outdoor_hard_02b` replay a search took 1.2 s on average (2.1 s at most), and the longest output gap while lost was 1.8 s (1.2–1.5 s with the feature off). The occupancy YAML must use an unrotated origin and a binary PGM image. Without an occupancy map or odometry bridge, the feature stays disabled and logs a warning.
 
 ## Symptom: Map Not Visible in RViz (#43, #48)
 
