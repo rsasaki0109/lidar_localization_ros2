@@ -216,7 +216,10 @@ scan, which rebuilds its search structure. On dense maps this can cost 0.1-0.25 
 scan, so `cloud_queue_depth: 1` drops scans and fast turns lose track.
 
 - set `local_map_update_distance` (m, default `0` = re-crop every scan) to reuse the
-  target until the crop center has moved that far, e.g. `5.0` for a `30`-`80` m radius
+  target until the crop center has moved that far, e.g. `5.0` for a `30`-`80` m radius.
+  `nav2_ndt_urban.yaml` uses `10.0` with its `150` m radius. On the Koide
+  `outdoor_hard_02b` README replay (0.5x) this cut the mean NDT time from 113 ms to
+  19 ms and published 75% more poses (2096 vs 1196), with RMSE 0.39 m vs 0.48 m
 - or, when the full map fits in memory, disable the crop for NDT backends
 
 ## Symptom: Pose Jumps Along a Corridor-Like Axis
