@@ -211,8 +211,9 @@ when `reinitialization_requested` stays true.
 ## Symptom: Pose Rate Drops or Tracking Is Lost on Dense Maps
 
 With `enable_local_map_crop: true` (and always for GICP/small_gicp backends) the
-target is cropped, voxel-filtered, and handed to the registration backend on every
-scan, which rebuilds its search structure. On dense maps this can cost 0.1-0.25 s per
+target is cropped and handed to the registration backend on every scan, which rebuilds
+its search structure. GICP-family backends get the crop voxel-filtered with
+`voxel_leaf_size`; NDT gets it unfiltered, like the full map without a crop. On dense maps this can cost 0.1-0.25 s per
 scan, so `cloud_queue_depth: 1` drops scans and fast turns lose track.
 
 - set `local_map_update_distance` (m, default `0` = re-crop every scan) to reuse the

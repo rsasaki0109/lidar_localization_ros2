@@ -61,19 +61,25 @@ void test_min_points_and_target_choice()
   assert(ll::chooseLocalMapTargetCloud(10, 10) == ll::LocalMapTargetCloud::kFilteredLocalMap);
   assert(ll::chooseLocalMapTargetCloud(9, 10) == ll::LocalMapTargetCloud::kRawLocalMap);
 
-  const auto too_small = ll::chooseTargetAfterLocalMapCrop(9, 9, 10);
+  const auto too_small = ll::chooseTargetAfterLocalMapCrop(9, 9, 10, true);
   assert(!too_small.target_ready);
   assert(too_small.failure == ll::LocalMapTargetFailure::kCropTooSmall);
   assert(!ll::validateLocalMapCropSize(9, 10).target_ready);
   assert(ll::validateLocalMapCropSize(10, 10).target_ready);
 
-  const auto filtered_ready = ll::chooseTargetAfterLocalMapCrop(20, 10, 10);
+  const auto filtered_ready = ll::chooseTargetAfterLocalMapCrop(20, 10, 10, true);
   assert(filtered_ready.target_ready);
   assert(filtered_ready.target_cloud == ll::LocalMapTargetCloud::kFilteredLocalMap);
 
-  const auto raw_fallback = ll::chooseTargetAfterLocalMapCrop(20, 9, 10);
+  const auto raw_fallback = ll::chooseTargetAfterLocalMapCrop(20, 9, 10, true);
   assert(raw_fallback.target_ready);
   assert(raw_fallback.target_cloud == ll::LocalMapTargetCloud::kRawLocalMap);
+
+  // NDT registers against the unfiltered full map, so its crop stays unfiltered.
+  const auto ndt_raw = ll::chooseTargetAfterLocalMapCrop(20, 10, 10, false);
+  assert(ndt_raw.target_ready);
+  assert(ndt_raw.target_cloud == ll::LocalMapTargetCloud::kRawLocalMap);
+  assert(!ll::chooseTargetAfterLocalMapCrop(9, 9, 10, false).target_ready);
 }
 
 void test_crop_request_validation()

@@ -181,10 +181,13 @@ inline LocalMapTargetCloud chooseLocalMapTargetCloud(
   return LocalMapTargetCloud::kRawLocalMap;
 }
 
+// Backends that take the full map unfiltered (NDT) take the crop unfiltered too,
+// so enabling the crop does not change the target density they register against.
 inline LocalMapTargetSelectionDecision chooseTargetAfterLocalMapCrop(
   std::size_t local_map_points,
   std::size_t filtered_local_map_points,
-  std::size_t min_points)
+  std::size_t min_points,
+  bool backend_uses_filtered_target)
 {
   const auto crop_size_decision = validateLocalMapCropSize(local_map_points, min_points);
   if (!crop_size_decision.target_ready) {
@@ -193,7 +196,9 @@ inline LocalMapTargetSelectionDecision chooseTargetAfterLocalMapCrop(
   return {
     true,
     LocalMapTargetFailure::kNone,
-    chooseLocalMapTargetCloud(filtered_local_map_points, min_points)};
+    backend_uses_filtered_target ?
+    chooseLocalMapTargetCloud(filtered_local_map_points, min_points) :
+    LocalMapTargetCloud::kRawLocalMap};
 }
 
 inline LocalMapTargetCloud chooseMapSubscriptionTargetCloud(bool backend_uses_filtered_target)
