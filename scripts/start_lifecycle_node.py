@@ -21,7 +21,7 @@ def activate(node, target, timeout):
             raise ExternalShutdownException()
         left = deadline - time.monotonic()
         if left <= 0:
-            raise TimeoutError(f'{target}: startup timed out after {timeout:g}s')
+            raise TimeoutError(f"{target}: startup timed out after {timeout:g}s")
         return left
 
     retry_delay = 1.0
@@ -53,8 +53,8 @@ def activate(node, target, timeout):
     remaining()
     executor = SingleThreadedExecutor(context=node.context)
     executor.add_node(node)
-    get_state = node.create_client(GetState, f'{target}/get_state')
-    change_state = node.create_client(ChangeState, f'{target}/change_state')
+    get_state = node.create_client(GetState, f"{target}/get_state")
+    change_state = node.create_client(ChangeState, f"{target}/change_state")
     attempted = set()
     transitions = {
         State.PRIMARY_STATE_UNCONFIGURED: Transition.TRANSITION_CONFIGURE,
@@ -64,25 +64,29 @@ def activate(node, target, timeout):
         while True:
             state = call(get_state, GetState.Request()).current_state
             if state.id == State.PRIMARY_STATE_ACTIVE:
-                node.get_logger().info(f'{target}: active')
+                node.get_logger().info(f"{target}: active")
                 return
             transition = transitions.get(state.id)
             if transition is not None:
                 # Do not hide callback failures by repeatedly configuring/activating.
                 if transition in attempted:
-                    raise RuntimeError(f'{target}: returned to {state.label} after transition')
+                    raise RuntimeError(
+                        f"{target}: returned to {state.label} after transition"
+                    )
                 attempted.add(transition)
                 request = ChangeState.Request()
                 request.transition.id = transition
                 if not call(change_state, request).success:
-                    raise RuntimeError(f'{target}: transition {transition} failed')
+                    raise RuntimeError(f"{target}: transition {transition} failed")
             elif state.id in (
                 State.TRANSITION_STATE_CONFIGURING,
                 State.TRANSITION_STATE_ACTIVATING,
             ):
                 executor.spin_once(timeout_sec=min(0.1, remaining()))
             else:
-                raise RuntimeError(f'{target}: unexpected state {state.label} ({state.id})')
+                raise RuntimeError(
+                    f"{target}: unexpected state {state.label} ({state.id})"
+                )
     finally:
         executor.shutdown()
         node.destroy_client(get_state)
@@ -91,15 +95,17 @@ def activate(node, target, timeout):
 
 def main(args=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('target', help='Lifecycle node name, relative to this node namespace')
-    parser.add_argument('--timeout', type=float, default=60.0)
+    parser.add_argument(
+        "target", help="Lifecycle node name, relative to this node namespace"
+    )
+    parser.add_argument("--timeout", type=float, default=60.0)
     options = parser.parse_args(remove_ros_args(args=args)[1:])
     if not math.isfinite(options.timeout) or options.timeout <= 0:
-        parser.error('--timeout must be finite and positive')
+        parser.error("--timeout must be finite and positive")
     rclpy.init(args=args)
-    node = rclpy.create_node('localization_startup')
+    node = rclpy.create_node("localization_startup")
     try:
-        activate(node, options.target.rstrip('/'), options.timeout)
+        activate(node, options.target.rstrip("/"), options.timeout)
         return 0
     except (KeyboardInterrupt, ExternalShutdownException):
         return 0
@@ -111,5 +117,5 @@ def main(args=None):
         rclpy.try_shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise SystemExit(main())
