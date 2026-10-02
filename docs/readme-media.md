@@ -54,14 +54,15 @@ The goal was a deterministic evaluation on a shared, loaded workstation, so no r
 
 **Heavily loaded workstation** (load average 10–20 from unrelated jobs): live runs were not reliable. The online RKO-LIO node fell behind, dropped scans, and re-anchored on the resulting gaps.
 
-**Less loaded workstation** (load average ~4.5), two runs:
+**Less loaded workstation** (load average 2.5–6.6). The online RKO-LIO node includes the scan-gap fix (rko_lio#16). Localization was built from `main` at `768b557`; that build also contained an unmerged guard, which was disabled and has no effect.
 
-| Run | Poses | RMSE | Median | p95 | Max | Note |
+| `local_map_update_distance` | Runs | Poses per run | RMSE | Median | p95 | Max |
 | --- | --- | --- | --- | --- | --- | --- |
-| Live 1 | 733 over 291 s | 0.37 m | 0.26 m | 0.62 m | 1.46 m | Recovered after the section outside the map |
-| Live 2 | 606 over 271 s | 2.45 m | 0.31 m | 6.68 m | 9.72 m | Within 0.5 m up to ~200 s, then drifted outside the map and did not re-acquire before the end |
+| `10` (`nav2_ndt_urban.yaml`) | 4 | 1793–1797 over ~277 s | 0.33–0.36 m | 0.087–0.091 m | 0.80–0.92 m | 1.39–2.14 m |
+| `0` | 3 | 308–321 over ~268 s | 0.31–0.98 m | 0.10–0.11 m | 0.70–2.20 m | 1.36–2.35 m |
 
 **Reading:**
-- Inside the map, real-time tracking held in both runs.
-- The long section outside the map (about 160–260 s) is carried by odometry alone. Whether localization re-acquires afterwards depends on how far the live odometry has drifted. The offline odometry used for the GIF has 0.63 m APE over the whole run.
+- Inside the map, real-time tracking held in all runs. Reusing the local-map target raises the output from about 1.1 to 6.5 poses/s and makes the result repeatable.
+- The long section outside the map (about 160–260 s) is carried by odometry alone. Every run with `10` re-acquired afterwards (error 0.14–0.15 m over the last 15 s). With `0`, one of the three runs ended about 1 m off.
+- Before rko_lio#16, the online node lost the motion of the 1.1–1.5 s scan gaps it produces under load. With `10`, 5 of 6 such runs then failed (#153).
 - This is not a guarantee for long map-free stretches.
