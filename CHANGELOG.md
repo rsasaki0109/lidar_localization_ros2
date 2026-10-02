@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- The standalone, Nav2 and MID-360 launch files activate the localizer through bounded
+  `GetState`/`ChangeState` calls (`start_lifecycle_node.py`) instead of chained transition
+  events, which could miss a transition and leave the node inactive. Activation failure,
+  an unexpected state or a 60 s deadline now fails the helper visibly; a slow but valid
+  reply is still accepted.
 - Registration results with NaN or infinite fitness are rejected as
   `registration_fitness_non_finite`, even when score-threshold rejection is disabled; they
   cannot update the rejected seed or pass consistency recovery, and diagnostics classify
