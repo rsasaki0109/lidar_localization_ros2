@@ -56,6 +56,10 @@
 
 ### Changed
 
+- `param/nav2_ndt_urban.yaml` sets `local_map_update_distance: 10.0` again (it was
+  reverted in #153). With RKO-LIO keeping its motion across scan gaps (rko_lio#16), live
+  1.0x replays of the Koide `outdoor_hard_02b` README setup publish ~6.5 instead of
+  ~1.1 poses/s, at RMSE 0.33-0.36 m in 4 of 4 runs (0.31-0.98 m without it).
 - `param/mid360_legged.yaml` sets `local_map_update_distance: 20.0`: the 80 m local-map
   target is rebuilt after the robot moves 20 m instead of on every scan. On JEPLO (Go2,
   MID-360) with this crop, rebuilding every scan processed 20% of the Long_Stairs scans
