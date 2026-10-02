@@ -60,7 +60,9 @@ void PCLLocalization::maybeRunLocalReacquisition(
     local_reacquisition_params_.angular_resolution_deg * M_PI / 180.0,
     local_reacquisition_params_.pyramid_depth,
     16,
-    static_cast<int>(std::lround(1.0 / map.resolution_m)));
+    static_cast<int>(std::lround(1.0 / map.resolution_m)),
+    bridged_yaw,
+    local_reacquisition_params_.yaw_window_deg * M_PI / 180.0);
   const auto candidates = lidar_localization::selectHeadingConsistentCandidates(
     bbs_candidates, map, window, bridged_yaw, local_reacquisition_params_);
 
@@ -74,8 +76,10 @@ void PCLLocalization::maybeRunLocalReacquisition(
     guess.block<3, 3>(0, 0) = yaw_delta * bridged.block<3, 3>(0, 0);
     guess(0, 3) = static_cast<float>(candidate.x_m);
     guess(1, 3) = static_cast<float>(candidate.y_m);
+    // Candidates lie within search_radius_m of the bridged pose, so the target
+    // this scan already cropped around it serves all of them without a re-crop.
     const auto attempt =
-      runAlignmentAttempt(guess, guess, scan_stamp_sec, state_lock, seed_generation);
+      runAlignmentAttempt(guess, bridged, scan_stamp_sec, state_lock, seed_generation);
     if (!callback_state_coordinator_.initialPoseGenerationMatches(seed_generation)) {
       return;
     }

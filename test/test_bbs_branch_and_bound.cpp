@@ -86,6 +86,38 @@ void test_upper_bound_level0_is_exact_occupancy()
   assert(ub[0].data == occ.data);
 }
 
+// A yaw-windowed search must return exactly the in-window prefix of a full search
+// deep enough to contain it (nms off, so candidates do not suppress each other).
+void test_yaw_window_matches_filtered_full_search(const GoldenFixture & gf)
+{
+  const bbs::Grid occ = grid_from_string(gf.height, gf.width, gf.occ);
+  const double center = 0.3;
+  const double half_window = M_PI / 6.0;
+  const int k = 4;
+  const auto windowed = bbs::branch_and_bound_candidates(
+    occ, gf.scan, gf.resolution_m, gf.ares_rad, gf.depth, k, 0, center, half_window);
+  const auto full = bbs::branch_and_bound_candidates(
+    occ, gf.scan, gf.resolution_m, gf.ares_rad, gf.depth, 100000, 0);
+  std::vector<bbs::BbsGridCandidate> expected;
+  for (const auto & c : full) {
+    if (std::abs(bbs::py_normalize_angle_rad(c.yaw_rad - center)) <= half_window &&
+      static_cast<int>(expected.size()) < k)
+    {
+      expected.push_back(c);
+    }
+  }
+  assert(!expected.empty());
+  assert(expected.size() < full.size());  // the window must exclude some yaws
+  assert(windowed.size() == expected.size());
+  for (size_t i = 0; i < windowed.size(); ++i) {
+    assert(windowed[i].tx_cell == expected[i].tx_cell);
+    assert(windowed[i].ty_cell == expected[i].ty_cell);
+    assert(windowed[i].yaw_index == expected[i].yaw_index);
+    assert(windowed[i].hit_count == expected[i].hit_count);
+  }
+  std::printf("  [%s] yaw window matches the filtered full search\n", gf.name);
+}
+
 }  // namespace
 
 int main()
@@ -98,5 +130,6 @@ int main()
     check_fixture(gf);
   }
   std::printf("all %zu golden fixtures bit-exact\n", fixtures.size());
+  test_yaw_window_matches_filtered_full_search(fixtures.back());  // 12 yaws
   return 0;
 }

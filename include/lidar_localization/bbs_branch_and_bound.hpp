@@ -217,6 +217,9 @@ inline int gather_hits(
 // Bit-exact port of branch_and_bound_candidates (the FFT path omitted, see file
 // header). occupancy is the boolean map; scan_xy_m is the sensor-frame scan in
 // metres; resolution_m maps metres to cells; the rest mirror the Python args.
+// yaw_center_rad / yaw_half_window_rad (C++ only) restrict the search to yaw
+// samples within the window; the default searches every yaw, as in Python.
+// Yaw indices keep their full-circle numbering.
 inline std::vector<BbsGridCandidate> branch_and_bound_candidates(
   const Grid & occupancy,
   const std::vector<std::array<double, 2>> & scan_xy_m,
@@ -224,7 +227,9 @@ inline std::vector<BbsGridCandidate> branch_and_bound_candidates(
   double angular_resolution_rad,
   int pyramid_depth,
   int max_candidates,
-  int nms_radius_cells = 0)
+  int nms_radius_cells = 0,
+  double yaw_center_rad = 0.0,
+  double yaw_half_window_rad = M_PI)
 {
   if (max_candidates <= 0) return {};
   if (resolution_m <= 0.0) throw std::invalid_argument("resolution_m must be positive");
@@ -248,11 +253,19 @@ inline std::vector<BbsGridCandidate> branch_and_bound_candidates(
   const std::vector<double> yaws = yaw_samples(angular_resolution_rad);
   const int n_yaws = static_cast<int>(yaws.size());
   const int n_levels = static_cast<int>(ub.size());
+  std::vector<bool> searched(n_yaws, true);
+  if (yaw_half_window_rad < M_PI) {
+    for (int yi = 0; yi < n_yaws; ++yi) {
+      searched[yi] =
+        std::abs(py_normalize_angle_rad(yaws[yi] - yaw_center_rad)) <= yaw_half_window_rad;
+    }
+  }
 
   // offset_cache[yaw][level] -> deduplicated (qy, qx, count). Dedup order does
   // not affect the gathered sum, so any stable container is fine.
   std::vector<std::vector<std::vector<OffsetCell>>> offset_cache(n_yaws);
   for (int yi = 0; yi < n_yaws; ++yi) {
+    if (!searched[yi]) continue;
     const double c = std::cos(yaws[yi]);
     const double s = std::sin(yaws[yi]);
     offset_cache[yi].resize(n_levels);
@@ -284,6 +297,7 @@ inline std::vector<BbsGridCandidate> branch_and_bound_candidates(
   std::priority_queue<detail::HeapNode, std::vector<detail::HeapNode>, detail::HeapCmp> heap;
   long sequence = 0;
   for (int yi = 0; yi < n_yaws; ++yi) {
+    if (!searched[yi]) continue;
     const auto & offs = offset_cache[yi][start_level];
     for (int ty = 0; ty < height; ty += initial_step) {
       for (int tx = 0; tx < width; tx += initial_step) {

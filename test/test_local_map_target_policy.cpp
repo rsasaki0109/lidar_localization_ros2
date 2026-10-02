@@ -160,9 +160,12 @@ void test_target_success_resets_runtime_guard_state()
 
 void test_local_map_target_reuse_distance()
 {
-  // Disabled (non-positive distance) or no cached target: always re-crop.
-  assert(!ll::shouldReuseLocalMapTarget(true, 0.0f, 0.0f, 0.0f, 0.0f, 0.0));
-  assert(!ll::shouldReuseLocalMapTarget(true, 0.0f, 0.0f, 0.0f, 0.0f, -1.0));
+  // Disabled (non-positive distance): re-crop whenever the center moves.
+  assert(!ll::shouldReuseLocalMapTarget(true, 0.0f, 0.0f, 0.01f, 0.0f, 0.0));
+  assert(!ll::shouldReuseLocalMapTarget(true, 0.0f, 0.0f, 0.0f, 0.01f, -1.0));
+  // The identical center would rebuild the same target, so it is always reused.
+  assert(ll::shouldReuseLocalMapTarget(true, 1.5f, -2.5f, 1.5f, -2.5f, 0.0));
+  // No cached target: always crop.
   assert(!ll::shouldReuseLocalMapTarget(false, 0.0f, 0.0f, 0.0f, 0.0f, 5.0));
   // Reused strictly inside the horizontal update distance.
   assert(ll::shouldReuseLocalMapTarget(true, 1.0f, 2.0f, 4.0f, 5.0f, 5.0));

@@ -122,8 +122,9 @@ inline LocalMapTargetSelectionDecision validateLocalMapCropSize(
 // backend rebuilds its search structure (the NDT voxel grid), which dominates
 // the per-scan cost on dense maps. A target cropped around a nearby center is
 // still valid, so it is reused until the crop center has moved at least
-// update_distance_m. A non-positive distance keeps the re-crop-every-scan
-// behavior.
+// update_distance_m. A non-positive distance re-crops whenever the center
+// moves; a crop around the identical center is always reused, since it would
+// rebuild the same target.
 inline bool shouldReuseLocalMapTarget(
   bool has_cached_target,
   float cached_center_x,
@@ -132,7 +133,13 @@ inline bool shouldReuseLocalMapTarget(
   float center_y,
   double update_distance_m)
 {
-  if (!has_cached_target || !(update_distance_m > 0.0)) {
+  if (!has_cached_target) {
+    return false;
+  }
+  if (center_x == cached_center_x && center_y == cached_center_y) {
+    return true;
+  }
+  if (!(update_distance_m > 0.0)) {
     return false;
   }
   const double dx = static_cast<double>(center_x) - static_cast<double>(cached_center_x);
