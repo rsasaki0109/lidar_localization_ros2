@@ -30,7 +30,7 @@ The odometry source must publish `odom -> livox_frame`, for example RKO-LIO from
 
 The goal was a deterministic evaluation on a shared, loaded workstation, so no real-time performance is claimed.
 
-1. **Odometry:** RKO-LIO was run offline over every scan, with the outdoor settings from `lidar_slam_ros2/tools/readme_media/rko_lio_koide_outdoor.yaml`. The dataset publishes IMU acceleration in g, so it was first rescaled with `lidar_slam_ros2/tools/readme_media/scale_imu_bag.py`. Odometry APE (Umeyama SE(3)) is 0.63 m RMSE.
+1. **Odometry:** RKO-LIO was run offline over every scan, with the outdoor settings from [`lidar_slam_ros2/tools/readme_media/rko_lio_koide_outdoor.yaml`](https://github.com/rsasaki0109/lidar_slam_ros2/blob/329be597/tools/readme_media/rko_lio_koide_outdoor.yaml) (since replaced by the handheld MID-360 profile). The dataset publishes IMU acceleration in g, so it was first rescaled with `lidar_slam_ros2/tools/readme_media/scale_imu_bag.py`. Odometry APE (Umeyama SE(3)) is 0.63 m RMSE.
 2. **TF bag:** `tools/readme_media/add_odom_tf.py` writes that trajectory into a copy of the bag as `odom -> livox_frame` TF. The TF is delivered 0.3 s ahead of its stamp, so it is available when each scan arrives (odometry without latency).
 3. **Localization:**
    - Built from #142 (`4bdb9ca`, merged as `2947d85`). The later #143 and #144 do not change localization behaviour for explicit launch arguments.
