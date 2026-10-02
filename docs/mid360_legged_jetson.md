@@ -121,7 +121,7 @@ use_imu_preintegration:=false
 - `NDT_OMP` with `ndt_num_threads: 4`
 - scan voxel leaf size `0.25 m`
 - range clamp `0.8 m` to `60 m`
-- local map crop radius `80 m`
+- local map crop radius `80 m`, re-cropped after the robot moves `20 m`
 - timer publishing at `20 Hz` for stable `map -> odom`
 - twist prediction enabled, but angular twist prediction disabled
 - IMU preintegration enabled with correction guards

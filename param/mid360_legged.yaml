@@ -83,6 +83,7 @@
     predict_pose_from_previous_delta: true
     enable_local_map_crop: true
     local_map_radius: 80.0
+    local_map_update_distance: 20.0
     local_map_min_points: 100
     reject_above_score_threshold: true
     enable_borderline_seed_rejection_gate: true
