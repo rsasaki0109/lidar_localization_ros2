@@ -11,8 +11,12 @@ SCRIPT = REPO / "scripts" / "setup_local_env.sh"
 
 
 class SetupLocalEnvTest(unittest.TestCase):
-    def run_setup(self, workspace: Path | None, explicit: Path | None = None,
-                  script: Path = SCRIPT) -> str:
+    def run_setup(
+        self,
+        workspace: Path | None,
+        explicit: Path | None = None,
+        script: Path = SCRIPT,
+    ) -> str:
         env = os.environ.copy()
         env.pop("LIDAR_LOCALIZATION_WS_ROOT", None)
         env.pop("LIDAR_LOCALIZATION_LOCAL_PREFIX", None)
@@ -41,7 +45,9 @@ class SetupLocalEnvTest(unittest.TestCase):
             workspace = Path(tmp)
             setup = workspace / "build_ws/install/setup.bash"
             setup.parent.mkdir(parents=True)
-            setup.write_text('export LIDAR_TEST_OVERLAY_SOURCED="$LIDAR_LOCALIZATION_LOCAL_PREFIX"\n')
+            setup.write_text(
+                'export LIDAR_TEST_OVERLAY_SOURCED="$LIDAR_LOCALIZATION_LOCAL_PREFIX"\n'
+            )
             self.assertEqual(self.run_setup(workspace), str(workspace / "local_prefix"))
 
     def test_default_root_for_supported_repository_layouts(self):
@@ -53,8 +59,12 @@ class SetupLocalEnvTest(unittest.TestCase):
                 script.write_bytes(SCRIPT.read_bytes())
                 setup = workspace / "build_ws/install/setup.bash"
                 setup.parent.mkdir(parents=True)
-                setup.write_text('export LIDAR_TEST_OVERLAY_SOURCED="$LIDAR_LOCALIZATION_LOCAL_PREFIX"\n')
-                self.assertEqual(self.run_setup(None, script=script), str(workspace / "local_prefix"))
+                setup.write_text(
+                    'export LIDAR_TEST_OVERLAY_SOURCED="$LIDAR_LOCALIZATION_LOCAL_PREFIX"\n'
+                )
+                self.assertEqual(
+                    self.run_setup(None, script=script), str(workspace / "local_prefix")
+                )
 
     def test_conventional_workspace_install_is_sourced(self):
         with tempfile.TemporaryDirectory() as tmp:
