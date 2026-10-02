@@ -21,6 +21,14 @@
   understated the motion rate.
 - Accepting an initial pose invalidates the previous `map -> odom` anchor and odometry
   bridge history, even when the odometry TF for the new stamp is not available yet.
+- PointCloud2 point and time readers honour row padding (`row_step` larger than
+  `width * point_step`) instead of reading padding bytes as points.
+- Legacy IMU deskew initializes its history before the first update and looks up
+  interpolation samples in the right direction.
+- The measurement-gate warning reports the actual rejection reason, fitness, threshold and
+  correction instead of always claiming the fitness exceeded the threshold.
+- `scripts/setup_local_env.sh` resolves the local workspace root across the supported
+  layouts.
 - NDT no longer registers against a thinned map when `enable_local_map_crop` is on. The
   full-map path hands NDT the unfiltered map, but the crop path voxel-filtered the crop
   with the scan `voxel_leaf_size`, so enabling the crop changed the target density. On
@@ -56,6 +64,8 @@
 
 ### Added
 
+- The point cloud subscription accepts the standard ROS reliability override
+  (`qos_overrides.<topic>.subscription.reliability`).
 - Opt-in local re-acquisition after an odometry-bridged outage
   (`enable_local_reacquisition`, `local_reacquisition_occupancy_yaml`, ...). While scans
   are rejected and the pose is carried by external odometry, a branch-and-bound search
