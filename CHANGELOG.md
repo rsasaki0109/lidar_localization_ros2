@@ -50,6 +50,10 @@
 
 ### Changed
 
+- `param/nav2_ndt_urban.yaml` sets `local_map_update_distance: 10.0`, so the 150 m
+  local-map target is reused until the crop center moves 10 m instead of being rebuilt
+  on every scan. On the Koide `outdoor_hard_02b` replay the mean NDT time dropped from
+  113 ms to 19 ms and 75% more poses were published.
 - Continuous-time deskew now defaults on in the component, launch files, and shipped
   presets. Readiness guards preserve the original scan when point timing or motion data
   is unavailable; `use_continuous_time_deskew:=false` remains the rollback switch.
