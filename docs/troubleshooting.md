@@ -218,9 +218,12 @@ scan, so `cloud_queue_depth: 1` drops scans and fast turns lose track.
 
 - set `local_map_update_distance` (m, default `0` = re-crop every scan) to reuse the
   target until the crop center has moved that far, e.g. `5.0` for a `30`-`80` m radius.
-  `nav2_ndt_urban.yaml` uses `10.0` with its `150` m radius. On the Koide
-  `outdoor_hard_02b` README replay (0.5x) this cut the mean NDT time from 113 ms to
-  19 ms and published 75% more poses (2096 vs 1196), with RMSE 0.39 m vs 0.48 m
+  With external odometry as the seed (`use_odom_tf_prediction`), check live runs before
+  adopting it: on the Koide `outdoor_hard_02b` README setup at 1.0x with online
+  RKO-LIO, `10.0` raised the pose rate from ~1 Hz to ~6 Hz but failed 5 of 6 live runs
+  (0 of 4 without it). In a weakly constrained stretch NDT kept accepting a
+  0.1-0.2 m backward correction on every scan, and at the higher rate that slide
+  accumulated instead of being carried forward by odometry between updates
 - or, when the full map fits in memory, disable the crop for NDT backends
 
 ## Symptom: Pose Jumps Along a Corridor-Like Axis
