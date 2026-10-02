@@ -362,14 +362,18 @@ bool PCLLocalization::setInputTargetForPose(const Eigen::Matrix4f & center_pose_
     return false;
   }
 
+  const bool filter_target = lidar_localization::usesFilteredTarget(registration_method_);
   pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_local_map(
     new pcl::PointCloud<pcl::PointXYZI>());
-  voxel_grid_filter_.setInputCloud(local_map);
-  voxel_grid_filter_.filter(*filtered_local_map);
+  if (filter_target) {
+    voxel_grid_filter_.setInputCloud(local_map);
+    voxel_grid_filter_.filter(*filtered_local_map);
+  }
   const auto target_selection = lidar_localization::chooseTargetAfterLocalMapCrop(
     local_map->size(),
     filtered_local_map->size(),
-    crop_request.min_points);
+    crop_request.min_points,
+    filter_target);
   if (target_selection.target_cloud ==
     lidar_localization::LocalMapTargetCloud::kFilteredLocalMap)
   {

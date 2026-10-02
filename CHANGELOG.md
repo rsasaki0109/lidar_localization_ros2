@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- NDT no longer registers against a thinned map when `enable_local_map_crop` is on. The
+  full-map path hands NDT the unfiltered map, but the crop path voxel-filtered the crop
+  with the scan `voxel_leaf_size`, so enabling the crop changed the target density. On
+  JEPLO Outdoor1 (crop radius 80 m, `local_map_update_distance: 5.0`) that locked onto a
+  wrong place (ATE 22.9 m, 99.6% accepted); the unfiltered crop gives 0.03 m, as without
+  a crop. GICP-family backends keep the filtered crop.
 - `lidar_localization.launch.py` and `mid360_legged_localization.launch.py` no longer
   overwrite the parameter YAML with launch-argument defaults. Unset arguments keep the
   YAML value (or the previous default when the YAML omits it); explicit arguments still
