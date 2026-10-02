@@ -4,6 +4,18 @@
 
 ### Fixed
 
+- Registration results with NaN or infinite fitness are rejected as
+  `registration_fitness_non_finite`, even when score-threshold rejection is disabled; they
+  cannot update the rejected seed or pass consistency recovery, and diagnostics classify
+  them as `bad_match`. Non-finite registration poses are rejected before they reach the
+  pose backend.
+- Rejected updates are counted when motion prediction is disabled, so the recovery retry
+  from the last pose still triggers.
+- After a rejected-update streak, deskew keeps the held relative motion paired with its
+  own duration instead of the whole interval since the last accepted scan, which
+  understated the motion rate.
+- Accepting an initial pose invalidates the previous `map -> odom` anchor and odometry
+  bridge history, even when the odometry TF for the new stamp is not available yet.
 - NDT no longer registers against a thinned map when `enable_local_map_crop` is on. The
   full-map path hands NDT the unfiltered map, but the crop path voxel-filtered the crop
   with the scan `voxel_leaf_size`, so enabling the crop changed the target density. On

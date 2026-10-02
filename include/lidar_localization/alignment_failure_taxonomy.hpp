@@ -69,7 +69,8 @@ inline AlignmentFailureTaxonomyResult classifyAlignmentFailure(
     input.filtered_point_count < params.weak_overlap_min_filtered_points ||
     input.status_message == "local_map_crop_too_small";
   result.bad_match_active =
-    !input.has_converged ||
+    !input.has_converged || !std::isfinite(input.fitness_score) ||
+    input.status_message == "registration_result_non_finite" ||
     (std::isfinite(input.fitness_score) &&
     std::isfinite(input.effective_score_threshold) &&
     input.fitness_score > input.effective_score_threshold);

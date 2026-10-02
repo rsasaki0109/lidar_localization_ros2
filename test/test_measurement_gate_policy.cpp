@@ -193,10 +193,7 @@ void test_default_ok_gate()
   assert(!gate.reject_measurement);
   assert(gate.effective_score_threshold == 10.0);
 
-  auto nan_input = default_input();
-  nan_input.fitness_score = std::numeric_limits<double>::quiet_NaN();
-  const auto nan_gate = ll::evaluateMeasurementGate(default_params(), nan_input);
-  assert(nan_gate.status_level == ll::kMeasurementGateOk);
+
 }
 
 void test_effective_threshold_uses_lowest_active_strict_threshold()
@@ -324,11 +321,37 @@ void test_rejected_seed_update_marks_rejection_for_prediction_update()
   assert(gate.status_message == "fitness_score_over_threshold_rejected_seeded");
 }
 
+void test_nonfinite_fitness_is_never_accepted_or_seeded()
+{
+  for (const double score : {
+      std::numeric_limits<double>::quiet_NaN(),
+      std::numeric_limits<double>::infinity(),
+      -std::numeric_limits<double>::infinity()})
+  {
+    for (const bool reject_above : {false, true}) {
+      auto params = default_params();
+      params.reject_above_score_threshold = reject_above;
+      params.enable_consistency_recovery_gate = true;
+      params.enable_rejected_seed_update = true;
+      auto input = default_input();
+      input.fitness_score = score;
+      input.consecutive_rejected_updates = 100;
+      const auto gate = ll::evaluateMeasurementGate(params, input);
+      assert(gate.reject_measurement);
+      assert(!gate.rejected_seed_update_applied);
+      assert(gate.status_level == ll::kMeasurementGateWarn);
+      assert(gate.status_message == "registration_fitness_non_finite");
+      assert(gate.effective_score_threshold == params.score_threshold);
+    }
+  }
+}
+
 int main()
 {
   test_seed_correction_guard_rejects_jumps_until_release();
   test_param_and_input_builders_map_fields();
   test_default_ok_gate();
+  test_nonfinite_fitness_is_never_accepted_or_seeded();
   test_odom_tf_prediction_correction_guard_is_opt_in_and_seed_specific();
   test_odom_tf_recovery_guard_relaxes_only_for_strong_match_after_streak();
   test_effective_threshold_uses_lowest_active_strict_threshold();

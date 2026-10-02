@@ -144,7 +144,8 @@ AlignmentPipelineResult runAlignmentPipeline(
 
       const AlignmentAttempt retry_attempt = retry_attempt_fn();
       if (!isRecoveryRetryAlignmentUsable(
-          retry_attempt.target_ready, retry_attempt.has_converged))
+          retry_attempt.target_ready, retry_attempt.has_converged) ||
+        !retry_attempt.final_transformation.allFinite())
       {
         return false;
       }
@@ -186,6 +187,14 @@ AlignmentPipelineResult runAlignmentPipeline(
     }
     return makeTerminalAlignmentPipelineResult(
       result.selected_attempt, "registration_not_converged");
+  }
+
+  if (!result.selected_attempt.final_transformation.allFinite()) {
+    if (try_recovery_retry(false)) {
+      return result;
+    }
+    return makeTerminalAlignmentPipelineResult(
+      result.selected_attempt, "registration_result_non_finite");
   }
 
   if (input.force_retry_from_last_pose) {

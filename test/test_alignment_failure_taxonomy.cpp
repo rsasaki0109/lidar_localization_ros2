@@ -100,11 +100,7 @@ void test_bad_match_from_over_threshold_or_no_convergence()
   result = ll::classifyAlignmentFailure(ll::AlignmentFailureTaxonomyParams{}, input);
   assert(result.category == ll::kAlignmentFailureCategoryBadMatch);
 
-  // NaN fitness (no alignment ran) does not flag over-threshold by itself.
-  input = healthy_input();
-  input.fitness_score = std::numeric_limits<double>::quiet_NaN();
-  result = ll::classifyAlignmentFailure(ll::AlignmentFailureTaxonomyParams{}, input);
-  assert(!result.bad_match_active);
+
 }
 
 void test_weak_overlap_outranks_bad_match()
@@ -168,9 +164,37 @@ void test_bad_match_outranks_stale_and_overload()
   assert(result.overload_active);
 }
 
+void test_nonfinite_fitness_is_a_bad_match()
+{
+  for (const double score : {
+      std::numeric_limits<double>::quiet_NaN(),
+      std::numeric_limits<double>::infinity(),
+      -std::numeric_limits<double>::infinity()})
+  {
+    auto input = healthy_input();
+    input.fitness_score = score;
+    const auto result =
+      ll::classifyAlignmentFailure(ll::AlignmentFailureTaxonomyParams{}, input);
+    assert(result.bad_match_active);
+    assert(result.category == ll::kAlignmentFailureCategoryBadMatch);
+  }
+}
+
+void test_nonfinite_registration_result_is_a_bad_match()
+{
+  auto input = healthy_input();
+  input.status_message = "registration_result_non_finite";
+  const auto result =
+    ll::classifyAlignmentFailure(ll::AlignmentFailureTaxonomyParams{}, input);
+  assert(result.bad_match_active);
+  assert(result.category == ll::kAlignmentFailureCategoryBadMatch);
+}
+
 int main()
 {
+  test_nonfinite_registration_result_is_a_bad_match();
   test_healthy_input_classifies_healthy();
+  test_nonfinite_fitness_is_a_bad_match();
   test_missing_map_outranks_everything();
   test_missing_initial_pose_when_map_present();
   test_weak_overlap_from_low_point_count_and_crop_message();

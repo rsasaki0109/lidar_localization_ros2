@@ -568,6 +568,12 @@ if(BUILD_TESTING)
     COMMAND test_bbs_branch_and_bound
   )
 
+  add_executable(test_initial_pose_bridge_reset test/test_initial_pose_bridge_reset.cpp)
+  target_link_libraries(test_initial_pose_bridge_reset
+    lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+  add_test(NAME initial_pose_bridge_reset COMMAND test_initial_pose_bridge_reset)
+  set_tests_properties(initial_pose_bridge_reset PROPERTIES TIMEOUT 30)
+
   add_executable(test_twist_subscription_lifecycle test/test_twist_subscription_lifecycle.cpp)
   target_link_libraries(test_twist_subscription_lifecycle
     lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
@@ -582,6 +588,12 @@ if(BUILD_TESTING)
   add_executable(test_local_reacquisition_policy test/test_local_reacquisition_policy.cpp)
   target_include_directories(test_local_reacquisition_policy PRIVATE include)
   add_test(NAME local_reacquisition_policy COMMAND test_local_reacquisition_policy)
+
+  add_executable(test_motion_duration_pair test/test_motion_duration_pair.cpp)
+  target_link_libraries(test_motion_duration_pair
+    lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+  add_test(NAME motion_duration_pair COMMAND test_motion_duration_pair)
+  set_tests_properties(motion_duration_pair PROPERTIES TIMEOUT 30)
 
   add_executable(test_prediction_state_policy
     test/test_prediction_state_policy.cpp)

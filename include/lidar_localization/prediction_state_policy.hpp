@@ -97,7 +97,7 @@ inline PredictionStateSnapshot advancePredictionWithoutMeasurement(
   PredictionAdvanceMode mode,
   const Eigen::Matrix4f & twist_predicted_pose_matrix = Eigen::Matrix4f::Identity())
 {
-  if (!current.have_last_accepted_pose || mode == PredictionAdvanceMode::kNone) {
+  if (!current.have_last_accepted_pose) {
     return current;
   }
 
@@ -108,7 +108,10 @@ inline PredictionStateSnapshot advancePredictionWithoutMeasurement(
     next.predicted_pose_matrix =
       current.predicted_pose_matrix * current.last_relative_motion_matrix;
   }
-  next.predicted_pose_time_sec = stamp_sec;
+  // A held pose keeps its time anchor, but this scan still counts as rejected.
+  if (mode != PredictionAdvanceMode::kNone) {
+    next.predicted_pose_time_sec = stamp_sec;
+  }
   ++next.consecutive_rejected_updates;
   return next;
 }
