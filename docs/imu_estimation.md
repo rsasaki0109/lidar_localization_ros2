@@ -282,7 +282,9 @@ Use these before tuning noise values. If `imu_preintegration_status` is
 first. If it is `imu_preintegration_fallback_mode`, inspect the correction guard
 messages and the LiDAR alignment quality around the transition.
 
-For a quick runtime smoke test during rosbag replay:
+For a quick runtime smoke test during rosbag replay (the validation and comparison
+scripts below were removed with the offline tooling in 6825f05; check out an earlier
+commit to run them, or watch `/alignment_status` directly):
 
 ```bash
 ros2 run lidar_localization_ros2 validate_lidar_localization_imu.py \

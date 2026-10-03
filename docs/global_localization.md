@@ -168,35 +168,27 @@ confirm. Full defect chain and artifacts in
 remaining work in [global_localization_roadmap.md](global_localization_roadmap.md)
 (G3 section).
 
-### Replay harnesses
+### Replaying a bag through the recovery stack
 
-Kidnapped-recovery closed-loop replays (prepare assets, launch recovery stack, inject
-kidnap, play bag, run health rubric):
-
-| Scenario | Prepare | Replay | Regression wrapper |
-| --- | --- | --- | --- |
-| Koide `outdoor_hard_01a` | `scripts/prepare_koide_hard_relocalization_assets.sh` | `scripts/run_koide_g3_recovery_replay.sh` | `scripts/run_koide_g3_recovery_regression.sh` |
-| HDL `hdl_400_ros2` | `scripts/prepare_hdl_recovery_assets.sh` | `scripts/run_hdl_g3_recovery_replay.sh` | `scripts/run_hdl_g3_recovery_regression.sh` |
-
-Both wrappers write `recovery_health.json` and `regression_result.json` under
-`artifacts/public/<scenario>_g3_recovery_regression` by default and skip gracefully
-when the dataset is absent.
-
-The Koide replay script accepts `--recovery-fitness-threshold X` (default `1.5`), passed
-through as launch arg `supervisor_recovery_fitness_threshold` on
-`global_localization_recovery.launch.py`. Use it only for boundary characterization; the
-default is the intended production value. Example:
+The scripted replay harnesses were removed with the offline tooling (6825f05); the
+runs recorded above used them. To replay a bag yourself, build the occupancy grid from
+the same map, start the three-node stack, and play the bag on `/clock`:
 
 ```bash
-scripts/run_koide_g3_recovery_replay.sh --skip-prepare
+ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd \
+  --pcd /path/to/map.pcd --output-dir maps --map-name site
 
-# Optional slow-motion / longer evidence run:
-# scripts/run_koide_g3_recovery_replay.sh --skip-prepare --duration-sec 120 --rate 0.4
+ros2 launch lidar_localization_ros2 global_localization_recovery.launch.py \
+  localization_param_dir:=/path/to/params.yaml use_sim_time:=true \
+  cloud_topic:=/livox/points imu_topic:=/livox/imu \
+  base_frame_id:=livox_frame lidar_frame_id:=livox_frame publish_lidar_tf:=false \
+  occupancy_yaml:=maps/site.yaml map_path:=/path/to/map.pcd \
+  g2_registration_seed_z_m:=<sensor height in the map frame>
 
-# Boundary characterization only (not the production default):
-scripts/run_koide_g3_recovery_replay.sh --skip-prepare \
-  --recovery-fitness-threshold 2.0 --output-dir /tmp/lidarloc_koide_g3_recovery_thr20
+ros2 bag play /path/to/bag --clock
 ```
 
-The three-node recovery bringup (`ros2 launch ... global_localization_recovery.launch.py`)
-also exposes `supervisor_recovery_fitness_threshold` directly when not using the harness.
+With an external odometry front end (`odom -> base` TF), add
+`enable_map_odom_tf:=true use_odom_tf_prediction:=true publish_bridge_pose_when_lost:=true`.
+`supervisor_recovery_fitness_threshold` (default `1.5`) is the production value; change
+it only for boundary characterization.
