@@ -855,7 +855,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--occupancy-yaml",
         required=True,
-        help="Occupancy map .yaml from generate_occupancy_map_from_pcd.py",
+        help="Occupancy map .yaml from generate_occupancy_map_from_pcd",
     )
     parser.add_argument(
         "--bag-path", required=True, help="rosbag2 directory with the scan topic"

@@ -141,7 +141,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'occupancy_yaml', default_value='',
             description='Occupancy grid YAML for the G2 BBS_2D search '
-                        '(scripts/generate_occupancy_map_from_pcd.py).'),
+                        '(ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd).'),
         DeclareLaunchArgument(
             'map_path', default_value='',
             description='3D map PCD/PLY for optional G2 NDT registration scoring.'),

@@ -252,7 +252,7 @@ Enable the opt-in local re-acquisition:
 
 ```yaml
 enable_local_reacquisition: true
-local_reacquisition_occupancy_yaml: /path/to/map.yaml   # 2D occupancy grid of the same map
+local_reacquisition_occupancy_yaml: /path/to/map.yaml   # 2D occupancy grid of the same map (see below)
 # optional
 local_reacquisition_min_rejections: 10          # rejected scans before searching
 local_reacquisition_attempt_interval_scans: 10  # scans between searches
@@ -269,6 +269,15 @@ How it works:
 5. The proposal only seeds the next scan. It becomes the new `map -> odom` only if that scan passes the normal measurement gate. Otherwise it is discarded.
 
 Searches run inside the scan callback, so they run only during rejection streaks. On the Koide `outdoor_hard_02b` replay a search took 1.2 s on average (2.1 s at most), and the longest output gap while lost was 1.8 s (1.2–1.5 s with the feature off). The occupancy YAML must use an unrotated origin and a binary PGM image. Without an occupancy map or odometry bridge, the feature stays disabled and logs a warning.
+
+Build the grid from the same 3D map:
+
+```bash
+ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd \
+  --pcd /path/to/map.pcd --output-dir maps --map-name site
+# optional: --reference-csv route.csv crops around a driven route (position_x/y/z columns)
+# and classifies cells relative to its median height, which keeps canopy out of the grid
+```
 
 ### Height drifts while bridging on odometry
 

@@ -19,7 +19,7 @@ Use it when you want to compare localization changes under repeatable rosbag pla
 | Run one dataset from a manifest | `ros2 run lidar_localization_ros2 benchmark_from_manifest --manifest ...` |
 | Evaluate a pose CSV | `ros2 run lidar_localization_ros2 benchmark_eval_trajectory ...` |
 | Compare multiple run directories | `ros2 run lidar_localization_ros2 benchmark_compare_runs ...` |
-| Generate a Nav2 occupancy map from PCD | `ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd.py ...` |
+| Generate a Nav2 occupancy map from PCD | `ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd --pcd map.pcd --output-dir maps` |
 
 Start every workflow from the repository root:
 
@@ -678,7 +678,7 @@ Dataset preparation:
 - `convert_boreas_sequence_to_rosbag2.py`
 - `scaffold_mapless_public_dataset_bundle.py`
 - `benchmark_make_graph_dataset`
-- `generate_occupancy_map_from_pcd.py`
+- `generate_occupancy_map_from_pcd`
 - `benchmark_extract_pose_reference_from_rosbag2`
 - `tum_trajectory_to_pose_reference_csv_for_rosbag2.py`
 - `build_gt_aligned_map_from_reference_csv.py`

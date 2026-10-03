@@ -108,7 +108,7 @@ class GlobalLocalizationNode(Node):
         if candidate_source.strip().lower() == "bbs" and not occupancy_yaml:
             raise RuntimeError(
                 "occupancy_yaml parameter is required when candidate_source=bbs "
-                "(output of generate_occupancy_map_from_pcd.py)"
+                "(output of generate_occupancy_map_from_pcd)"
             )
 
         map_path = self.get_parameter("map_path").get_parameter_value().string_value

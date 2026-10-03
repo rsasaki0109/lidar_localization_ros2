@@ -1,6 +1,5 @@
 import os
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -159,10 +158,9 @@ def _resolve_effective_map_yaml(map_yaml: str, pointcloud_map_path: str, referen
     resolution = LaunchConfiguration("generated_map_resolution").perform(context)
     ground_band_m = LaunchConfiguration("generated_map_ground_band_m").perform(context)
     package_prefix = Path(get_package_prefix("lidar_localization_ros2"))
-    generator = package_prefix / "lib" / "lidar_localization_ros2" / "generate_occupancy_map_from_pcd.py"
+    generator = package_prefix / "lib" / "lidar_localization_ros2" / "generate_occupancy_map_from_pcd"
 
     command = [
-        sys.executable,
         str(generator),
         "--pcd",
         str(Path(pointcloud_map_path).expanduser().resolve()),

@@ -118,7 +118,7 @@ experiments, not unattended startup.
 
 The occupancy grid must represent the same physical map as the 3D map. The package does
 not infer this relationship and cannot make a mismatched pair safe. Create a grid with
-`generate_occupancy_map_from_pcd.py` when its route-crop behavior fits the site, then
+`generate_occupancy_map_from_pcd` when its route-crop behavior fits the site, then
 inspect the result before use.
 
 ## Profiles

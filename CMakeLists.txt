@@ -120,6 +120,10 @@ target_link_libraries(relocalization_ndt_score_jobs
   ${PCL_LIBRARIES}
   -Wl,--end-group
 )
+add_executable(generate_occupancy_map_from_pcd src/generate_occupancy_map_from_pcd.cpp)
+target_include_directories(generate_occupancy_map_from_pcd PRIVATE include ${PCL_INCLUDE_DIRS})
+target_link_libraries(generate_occupancy_map_from_pcd ${PCL_LIBRARIES})
+
 link_directories(
   ${PCL_LIBRARY_DIRS}
 )
@@ -130,6 +134,7 @@ ament_export_libraries(lidar_localization_component)
 install(TARGETS
   lidar_localization_node
   relocalization_ndt_score_jobs
+  generate_occupancy_map_from_pcd
   DESTINATION lib/${PROJECT_NAME})
 
 install(TARGETS
@@ -605,6 +610,10 @@ if(BUILD_TESTING)
   add_executable(test_local_reacquisition_policy test/test_local_reacquisition_policy.cpp)
   target_include_directories(test_local_reacquisition_policy PRIVATE include)
   add_test(NAME local_reacquisition_policy COMMAND test_local_reacquisition_policy)
+
+  add_executable(test_occupancy_map_generation test/test_occupancy_map_generation.cpp)
+  target_include_directories(test_occupancy_map_generation PRIVATE include)
+  add_test(NAME occupancy_map_generation COMMAND test_occupancy_map_generation)
 
   add_executable(test_motion_duration_pair test/test_motion_duration_pair.cpp)
   target_link_libraries(test_motion_duration_pair

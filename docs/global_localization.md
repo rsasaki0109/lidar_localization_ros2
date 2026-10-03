@@ -20,7 +20,7 @@ and never publishes a reset unless its safety guards pass.
 | G3 | Guarded *automatic* reinitialization: watch the lost-tracking signal, query G2, and re-seed `/initialpose` behind safety gates | `scripts/reinitialization_supervisor_node.py` |
 
 G1 and G2 need an occupancy grid built from the map PCD
-(`scripts/generate_occupancy_map_from_pcd.py`). G3 needs a running localization
+(`ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd`). G3 needs a running localization
 node *and* a running G2 node.
 
 ## G2: on-demand relocalization service
