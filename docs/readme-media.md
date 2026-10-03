@@ -41,6 +41,47 @@ The goal was a deterministic evaluation on a shared, loaded workstation, so no r
    - `lidar_slam_ros2/tools/readme_media/render_lidar_demo.py --mode localization --overview`. Each scan is drawn at the published pose, together with the estimated path and the dashed ground-truth path.
    - The GIF was encoded at 560 px, 10 fps, with a 48-colour palette.
 
+### Reproduce the run
+
+From the [dataset record](https://zenodo.org/records/10122133), take the `outdoor_hard_02b`
+sequence, `map_outdoor_hard.ply`, and `gt.zip` (`traj_lidar_outdoor_hard_02.txt` is the
+02a/02b ground truth in TUM format). The odometry step needs a built
+[lidar_slam_ros2](https://github.com/rsasaki0109/lidar_slam_ros2) workspace.
+
+```bash
+# 1. Odometry, from the lidar_slam_ros2 checkout (IMU acceleration is published in g)
+python3 tools/readme_media/scale_imu_bag.py <dataset>/sequences/outdoor_hard_02b outdoor_hard_02b_scaled
+bash scripts/run_rko_lio_graph_benchmark.sh --gt-blind --skip-map-save \
+  --bag outdoor_hard_02b_scaled --lidar-topic /livox/points --imu-topic /livox/imu \
+  --base-frame livox_frame --publish-static-tf false \
+  --rko-param lidarslam/param/rko_lio_mid360_handheld_outdoor.yaml \
+  --lidarslam-param lidarslam/param/lidarslam.yaml \
+  --output-dir rko_02b --run-name rko_02b
+# odometry: rko_02b/rko_02b_0/rko_02b_tum_0.txt
+
+# 2. TF bag and parameters, from this repository
+python3 tools/readme_media/add_odom_tf.py outdoor_hard_02b_scaled \
+  rko_02b/rko_02b_0/rko_02b_tum_0.txt outdoor_hard_02b_odomtf
+sed "s|MAP_OUTDOOR_HARD_PLY|$PWD/map_outdoor_hard.ply|" \
+  tools/readme_media/koide_outdoor_hard_02b.yaml > koide_02b.yaml
+
+# 3. Localization, with the launch arguments shown above
+ros2 launch lidar_localization_ros2 lidar_localization.launch.py \
+  localization_param_dir:=$PWD/koide_02b.yaml use_sim_time:=true \
+  base_frame_id:=livox_frame lidar_frame_id:=livox_frame publish_lidar_tf:=false \
+  enable_map_odom_tf:=true use_odom_tf_prediction:=true publish_bridge_pose_when_lost:=true \
+  use_imu_preintegration:=false cloud_topic:=/livox/points imu_topic:=/livox/imu
+
+# 4. In other terminals: record, play at 0.5x, and send the ground-truth pose at 4 s
+ros2 bag record -o rec /pcl_pose /alignment_status
+ros2 bag play outdoor_hard_02b_odomtf --clock --rate 0.5 --topics /livox/points /livox/imu /tf
+# about 8 s into the playback, run the command this prints:
+python3 tools/readme_media/initial_pose_from_tum.py traj_lidar_outdoor_hard_02.txt outdoor_hard_02b_odomtf
+
+# 5. Evaluate
+python3 tools/readme_media/evaluate_pose_against_tum.py rec traj_lidar_outdoor_hard_02.txt
+```
+
 **Result** (map frame, no alignment, against the dataset ground truth):
 
 | Run | Poses | RMSE | Median | p95 | Max | Longest output gap |
