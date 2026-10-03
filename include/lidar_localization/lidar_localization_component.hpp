@@ -274,6 +274,7 @@ public:
   bool enable_local_map_crop_{false};
   double local_map_radius_{150.0};
   std::size_t local_map_min_points_{100};
+  std::size_t min_registration_points_{0};
   double local_map_update_distance_{0.0};
   bool local_map_target_cached_{false};
   float local_map_target_center_x_{0.0f};

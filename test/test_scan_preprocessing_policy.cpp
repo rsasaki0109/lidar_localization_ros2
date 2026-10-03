@@ -82,6 +82,27 @@ void test_scan_preparation_status_priority_and_actions()
     ll::ScanPreparationStatus::kFilteredScanEmpty);
   assert(ll::classifyPreparedScan(true, true, false) == ll::ScanPreparationStatus::kReady);
 
+  // A ready scan below min_registration_points is treated like an empty one;
+  // 0 disables the check and earlier failures keep their own status.
+  assert(
+    ll::requireMinRegistrationPoints(ll::ScanPreparationStatus::kReady, 56, 100) ==
+    ll::ScanPreparationStatus::kFilteredScanTooSparse);
+  assert(
+    ll::requireMinRegistrationPoints(ll::ScanPreparationStatus::kReady, 100, 100) ==
+    ll::ScanPreparationStatus::kReady);
+  assert(
+    ll::requireMinRegistrationPoints(ll::ScanPreparationStatus::kReady, 6, 0) ==
+    ll::ScanPreparationStatus::kReady);
+  assert(
+    ll::requireMinRegistrationPoints(ll::ScanPreparationStatus::kFilteredScanEmpty, 0, 100) ==
+    ll::ScanPreparationStatus::kFilteredScanEmpty);
+  assert(!ll::isPreparedScanReady(ll::ScanPreparationStatus::kFilteredScanTooSparse));
+  assert(ll::shouldAdvancePredictionAfterScanPreparationFailure(
+    ll::ScanPreparationStatus::kFilteredScanTooSparse));
+  assert(
+    std::string(ll::scanPreparationStatusMessage(
+      ll::ScanPreparationStatus::kFilteredScanTooSparse)) == "filtered_scan_too_sparse");
+
   assert(!ll::isPreparedScanReady(ll::ScanPreparationStatus::kFilteredScanEmpty));
   assert(ll::isPreparedScanReady(ll::ScanPreparationStatus::kReady));
   assert(ll::shouldAdvancePredictionAfterScanPreparationFailure(

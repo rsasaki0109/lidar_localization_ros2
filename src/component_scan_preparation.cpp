@@ -291,10 +291,13 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
     }
   }
 
-  prepared_scan.status = lidar_localization::classifyPreparedScan(
-    true,
-    true,
-    !prepared_scan.cloud || prepared_scan.cloud->empty());
+  prepared_scan.status = lidar_localization::requireMinRegistrationPoints(
+    lidar_localization::classifyPreparedScan(
+      true,
+      true,
+      !prepared_scan.cloud || prepared_scan.cloud->empty()),
+    prepared_scan.cloud ? prepared_scan.cloud->size() : 0,
+    min_registration_points_);
   latest_horizontal_localizability_ = prepared_scan.cloud ?
     lidar_localization::evaluateHorizontalLocalizability(*prepared_scan.cloud) :
     lidar_localization::HorizontalLocalizability{};
@@ -522,6 +525,12 @@ void PCLLocalization::handleScanPreparationFailure(
     RCLCPP_ERROR(get_logger(), "Input scan is missing x/y/z fields.");
   } else if (prepared_scan.status == lidar_localization::ScanPreparationStatus::kFilteredScanEmpty) {
     RCLCPP_WARN(get_logger(), "Filtered scan is empty after range filtering.");
+  } else if (
+    prepared_scan.status == lidar_localization::ScanPreparationStatus::kFilteredScanTooSparse)
+  {
+    RCLCPP_WARN(
+      get_logger(), "Filtered scan has %zu points, below min_registration_points (%zu).",
+      prepared_scan.filtered_point_count, min_registration_points_);
   }
 
   if (lidar_localization::shouldAdvancePredictionAfterScanPreparationFailure(
