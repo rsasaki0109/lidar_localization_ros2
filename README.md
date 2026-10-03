@@ -15,7 +15,7 @@
 
 <img src="./images/readme/localization_koide_outdoor_hard_02b.gif" alt="Handheld outdoor run tracked on a prior point-cloud map; the estimate follows the ground truth for the whole run" width="720">
 
-<p><em>Handheld Livox MID-360, ~390 m outdoors on a prior map, including stretches where the scans no longer match the map and a section outside it. Localization fused with RKO-LIO odometry stays within 0.40 m RMSE of the ground truth for the whole run (<a href="https://zenodo.org/records/10122133">Koide Hard Point Cloud Localization Dataset</a> <code>outdoor_hard_02b</code>, CC BY 4.0). <a href="./docs/readme-media.md">How this was made</a>.</em></p>
+<p><em>Handheld Livox MID-360, ~390 m outdoors on a prior map, including stretches where the scans no longer match the map and a section outside it. Localization fused with RKO-LIO odometry stays within 0.26 m RMSE of the ground truth for the whole run (<a href="https://zenodo.org/records/10122133">Koide Hard Point Cloud Localization Dataset</a> <code>outdoor_hard_02b</code>, CC BY 4.0). <a href="./docs/readme-media.md">How this was made</a>.</em></p>
 
 <p><a href="./docs/koide_gif_gallery.md">Explore the complete Koide indoor/outdoor GIF gallery →</a></p>
 

@@ -30,11 +30,11 @@ The odometry source must publish `odom -> livox_frame`, for example RKO-LIO from
 
 The goal was a deterministic evaluation on a shared, loaded workstation, so no real-time performance is claimed.
 
-1. **Odometry:** RKO-LIO was run offline over every scan, with the outdoor settings from [`lidar_slam_ros2/tools/readme_media/rko_lio_koide_outdoor.yaml`](https://github.com/rsasaki0109/lidar_slam_ros2/blob/329be597/tools/readme_media/rko_lio_koide_outdoor.yaml) (since replaced by the handheld MID-360 profile). The dataset publishes IMU acceleration in g, so it was first rescaled with `lidar_slam_ros2/tools/readme_media/scale_imu_bag.py`. Odometry APE (Umeyama SE(3)) is 0.63 m RMSE.
+1. **Odometry:** RKO-LIO was run offline over every scan with the handheld MID-360 profile, [`lidar_slam_ros2/lidarslam/param/rko_lio_mid360_handheld_outdoor.yaml`](https://github.com/rsasaki0109/lidar_slam_ros2/blob/develop/lidarslam/param/rko_lio_mid360_handheld_outdoor.yaml), with RKO-LIO at `e5f731f`. The dataset publishes IMU acceleration in g, so it was first rescaled with `lidar_slam_ros2/tools/readme_media/scale_imu_bag.py`. Odometry APE (Umeyama SE(3)) is 0.34 m RMSE.
 2. **TF bag:** `tools/readme_media/add_odom_tf.py` writes that trajectory into a copy of the bag as `odom -> livox_frame` TF. The TF is delivered 0.3 s ahead of its stamp, so it is available when each scan arrives (odometry without latency).
 3. **Localization:**
-   - Built from #142 (`4bdb9ca`, merged as `2947d85`). The later #143 and #144 do not change localization behaviour for explicit launch arguments.
-   - `param/nav2_ndt_urban.yaml` with `enable_scan_voxel_filter: true`, `voxel_leaf_size: 0.5`, `base_frame_id: livox_frame` and `map_path` changed.
+   - Built from `main` at `e4d2b69`.
+   - `param/nav2_ndt_urban.yaml` (including `local_map_update_distance: 10.0`) with `enable_scan_voxel_filter: true`, `voxel_leaf_size: 0.5`, `base_frame_id: livox_frame` and `map_path` changed.
    - The launch arguments shown above. The bag was played at 0.5×.
    - The initial pose is the dataset ground truth at 4 s (the sensor is still), published on `/initialpose` after odometry TF is available.
 4. **Render:**
@@ -45,8 +45,10 @@ The goal was a deterministic evaluation on a shared, loaded workstation, so no r
 
 | Run | Poses | RMSE | Median | p95 | Max | Longest output gap |
 | --- | --- | --- | --- | --- | --- | --- |
-| GIF run | 1346 over 274 s | 0.40 m | 0.24 m | 0.64 m | 2.89 m | 1.2 s |
-| Repeat | 1192 over 272 s | 0.44 m | 0.25 m | 0.74 m | 2.90 m | 1.5 s |
+| GIF run | 1946 over 273 s | 0.26 m | 0.088 m | 0.67 m | 1.44 m | 1.2 s |
+| Repeat | 1946 over 272 s | 0.26 m | 0.088 m | 0.66 m | 1.44 m | 1.2 s |
+
+The earlier GIF, with odometry from the previous outdoor RKO-LIO settings (0.63 m APE) and the build at #142, gave 0.40 m RMSE (median 0.24 m, max 2.89 m, 1346 poses).
 
 ### Live real-time replays
 
