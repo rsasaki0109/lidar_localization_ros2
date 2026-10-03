@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- `min_registration_points` (default 0, off): a scan with fewer points than this after
+  filtering is skipped like an empty one (`filtered_scan_too_sparse`) instead of being
+  registered on almost no geometry. On Koide `outdoor_kidnap_b`, scans with 6-56 points,
+  taken while the sensor was covered, had been accepted with 2 m / 21 deg corrections.
+
 ### Fixed
 
 - Global re-initialization seeds its reset at the height G2 verified the candidate at

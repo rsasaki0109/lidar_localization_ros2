@@ -263,6 +263,10 @@ void PCLLocalization::initializeParameters()
   get_parameter("enable_local_map_crop", enable_local_map_crop_);
   get_parameter("local_map_radius", local_map_radius_);
   get_parameter("local_map_update_distance", local_map_update_distance_);
+  int requested_min_registration_points = 0;
+  get_parameter("min_registration_points", requested_min_registration_points);
+  min_registration_points_ =
+    static_cast<std::size_t>(std::max(0, requested_min_registration_points));
   int requested_local_map_min_points = static_cast<int>(local_map_min_points_);
   get_parameter("local_map_min_points", requested_local_map_min_points);
   const auto local_map_min_points =
@@ -611,6 +615,8 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(), "local_map_radius: %lf", local_map_radius_);
   RCLCPP_INFO(
     get_logger(), "local_map_min_points: %zu", local_map_min_points_);
+  RCLCPP_INFO(
+    get_logger(), "min_registration_points: %zu", min_registration_points_);
   RCLCPP_INFO(
     get_logger(), "local_map_update_distance: %lf", local_map_update_distance_);
   RCLCPP_INFO(

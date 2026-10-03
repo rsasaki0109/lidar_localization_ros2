@@ -91,6 +91,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("enable_local_map_crop", false);
   declare_parameter("local_map_radius", 150.0);
   declare_parameter("local_map_min_points", 100);
+  declare_parameter("min_registration_points", 0);
   declare_parameter("local_map_update_distance", 0.0);
   declare_parameter(
     "registration_source_cloud_keep_alive_count",

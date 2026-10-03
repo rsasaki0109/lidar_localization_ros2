@@ -164,6 +164,7 @@ These keys are diagnostics only — they never change acceptance behavior.
 | `ok` | last alignment accepted | localization is running |
 | `scan_missing_xyz_field` | cloud is not `PointCloud2` with x/y/z | fix driver conversion (common with custom lidar bridges) |
 | `filtered_scan_empty` | crop/range filter removed all points | check `min_scan_range` / `max_scan_range`, sensor FOV |
+| `filtered_scan_too_sparse` | fewer points than `min_registration_points` after filtering (opt-in) | expected while the sensor is covered or blinded; prediction continues |
 | `local_map_crop_too_small` | predicted pose is outside local map crop | wrong initial pose or map frame offset; re-send `/initialpose` |
 | `registration_not_converged` | NDT/GICP did not converge | initial pose too far from truth; try closer seed |
 | `fitness_score_over_threshold_rejected` | match quality too poor | fix initial pose, map alignment, or sensor frame |
@@ -300,6 +301,21 @@ deterministic replay):
 Leave it off when the odometry's own roll/pitch drifts. With the older outdoor RKO-LIO
 settings, which have no gravity alignment, it raised `outdoor_hard_02b` from 0.37 m to
 1.46 m.
+
+### Pose jumps while the sensor is covered
+
+A handheld sensor covered by a hand or the body still delivers a few dozen points. NDT can
+converge on them with a low fitness, yet on almost no geometry. On Koide
+`outdoor_kidnap_b`, scans with 6-56 points after filtering were accepted with corrections
+of up to 2 m and 21 deg, and left a 9 m error. Set `min_registration_points` (default 0,
+off) to skip such scans like empty ones (`filtered_scan_too_sparse`); prediction or the
+odometry bridge carries the pose instead.
+
+| Sequence (0.5x replay, RKO-LIO odometry) | Off | `min_registration_points: 100` |
+| --- | --- | --- |
+| `outdoor_kidnap_b`, 30-35 s | 9 m median error | 0 m |
+| `outdoor_kidnap_b`, whole run | 117 m median | 107 m (the odometry drifts 30 m while covered) |
+| `outdoor_hard_02b` | 0.254 m RMSE | 0.260 m (3 scans skipped) |
 
 ## Symptom: Map Not Visible in RViz (#43, #48)
 

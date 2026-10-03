@@ -85,6 +85,7 @@ inline bool isRecoveryFailureStatus(const std::string & status_message)
   return status_message == "local_map_crop_too_small" ||
          status_message == "registration_not_converged" ||
          status_message == "filtered_scan_empty" ||
+         status_message == "filtered_scan_too_sparse" ||
          status_message == "scan_missing_xyz_field" ||
          status_message.rfind("fitness_score_over_", 0) == 0 ||
          status_message == "imu_prediction_correction_guard_rejected" ||
@@ -235,6 +236,7 @@ inline std::string classifyRecoverySupervisorAction(
     status_message == "local_map_crop_too_small" ||
     status_message == "registration_not_converged" ||
     status_message == "filtered_scan_empty" ||
+    status_message == "filtered_scan_too_sparse" ||
     status_message == "scan_missing_xyz_field")
   {
     return "advance_prediction_without_measurement";

@@ -40,6 +40,7 @@ enum class ScanPreparationStatus
   kMissingXyzField,
   kTransformUnavailable,
   kFilteredScanEmpty,
+  kFilteredScanTooSparse,
 };
 
 enum class ScanTimeRangeStatus
@@ -98,6 +99,19 @@ inline ScanPreparationStatus classifyPreparedScan(
   return ScanPreparationStatus::kReady;
 }
 
+// A scan with only a few dozen points left (e.g. a handheld sensor covered by a
+// hand) can still converge with a low fitness, but on almost no geometry: on Koide
+// outdoor_kidnap_b, 6-56 point scans were accepted with 2 m / 21 deg corrections.
+// Treat such a scan like an empty one. min_points == 0 disables the check.
+inline ScanPreparationStatus requireMinRegistrationPoints(
+  ScanPreparationStatus status, std::size_t filtered_point_count, std::size_t min_points)
+{
+  if (status == ScanPreparationStatus::kReady && filtered_point_count < min_points) {
+    return ScanPreparationStatus::kFilteredScanTooSparse;
+  }
+  return status;
+}
+
 inline bool isPreparedScanReady(ScanPreparationStatus status)
 {
   return status == ScanPreparationStatus::kReady;
@@ -111,7 +125,8 @@ inline bool isScanTimeRangeReady(ScanTimeRangeStatus status)
 inline bool shouldAdvancePredictionAfterScanPreparationFailure(ScanPreparationStatus status)
 {
   return status == ScanPreparationStatus::kMissingXyzField ||
-         status == ScanPreparationStatus::kFilteredScanEmpty;
+         status == ScanPreparationStatus::kFilteredScanEmpty ||
+         status == ScanPreparationStatus::kFilteredScanTooSparse;
 }
 
 inline const char * scanPreparationStatusMessage(ScanPreparationStatus status)
@@ -125,6 +140,8 @@ inline const char * scanPreparationStatusMessage(ScanPreparationStatus status)
       return "scan_transform_unavailable";
     case ScanPreparationStatus::kFilteredScanEmpty:
       return "filtered_scan_empty";
+    case ScanPreparationStatus::kFilteredScanTooSparse:
+      return "filtered_scan_too_sparse";
   }
   return "unknown_scan_preparation_status";
 }
