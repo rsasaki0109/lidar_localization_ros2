@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- `generate_occupancy_map_from_pcd` is back, as a C++ executable. The Python tool was
+  removed with the offline tooling, but `nav2_navigation.launch.py`
+  (`generate_map_from_pcd:=true`), local re-acquisition and global localization still need
+  an occupancy grid of the 3D map, and the launch failed when asked to generate one. The
+  output matches the removed tool (Koide `outdoor_kidnap` map: 9 of 893k cells differ) and
+  loads with the same reader as local re-acquisition.
 - The standalone, Nav2 and MID-360 launch files activate the localizer through bounded
   `GetState`/`ChangeState` calls (`start_lifecycle_node.py`) instead of chained transition
   events, which could miss a transition and leave the node inactive. Activation failure,
