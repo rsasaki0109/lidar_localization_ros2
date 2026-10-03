@@ -437,6 +437,7 @@ public:
   // Alternative for non-conventional sensor axes: hold only map-frame height
   // while preserving the external odometry's full relative rotation.
   bool constrain_odom_tf_prediction_height_only_{false};
+  bool level_map_to_odom_{false};
   // Opt-in output continuity: while a scan is rejected/lost, /pcl_pose (the
   // benchmark's coverage/RMSE source) otherwise goes silent (only accepted
   // matches call publishCurrentPose). When set, publish the odom bridge pose

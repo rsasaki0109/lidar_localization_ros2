@@ -209,6 +209,39 @@ void test_compose_map_to_odom_transform()
   assert(near(map_to_odom.transform.rotation.w, 1.0));
 }
 
+void test_level_map_to_odom_keeps_only_yaw()
+{
+  // The registration came out tilted 10 deg in roll; odometry is level.
+  geometry_msgs::msg::Pose tilted = pose_xyz(10.0, 2.0, 1.0);
+  tf2::Quaternion q;
+  q.setRPY(0.17, 0.0, 0.5);
+  tilted.orientation = tf2::toMsg(q);
+  const auto map_to_base = ll::makeMapToBaseTransform(stamp(3), "map", "base_link", tilted);
+  const auto odom_to_base = ll::makeMapToBaseTransform(
+    stamp(3), "odom", "base_link", pose_xyz(4.0, 1.0, 0.5));
+
+  const auto leveled = ll::composeMapToOdomTransform(
+    stamp(3), "map", "odom", map_to_base, odom_to_base, true);
+  tf2::Quaternion r;
+  tf2::fromMsg(leveled.transform.rotation, r);
+  double roll = 0.0, pitch = 0.0, yaw = 0.0;
+  tf2::Matrix3x3(r).getRPY(roll, pitch, yaw);
+  assert(near(roll, 0.0) && near(pitch, 0.0) && near(yaw, 0.5));
+
+  // The base position at this stamp is unchanged.
+  tf2::Transform m2o, o2b;
+  tf2::fromMsg(leveled.transform, m2o);
+  tf2::fromMsg(odom_to_base.transform, o2b);
+  const tf2::Vector3 base = (m2o * o2b).getOrigin();
+  assert(near(base.x(), 10.0) && near(base.y(), 2.0) && near(base.z(), 1.0));
+
+  // Without `level` the tilt is kept.
+  const auto raw = ll::composeMapToOdomTransform(stamp(3), "map", "odom", map_to_base, odom_to_base);
+  tf2::fromMsg(raw.transform.rotation, r);
+  tf2::Matrix3x3(r).getRPY(roll, pitch, yaw);
+  assert(near(roll, 0.17));
+}
+
 int main()
 {
   test_accepted_pose_publication_policy();
@@ -222,5 +255,6 @@ int main()
   test_stamp_pose_with_covariance();
   test_map_to_base_transform();
   test_compose_map_to_odom_transform();
+  test_level_map_to_odom_keeps_only_yaw();
   return 0;
 }

@@ -270,6 +270,28 @@ How it works:
 
 Searches run inside the scan callback, so they run only during rejection streaks. On the Koide `outdoor_hard_02b` replay a search took 1.2 s on average (2.1 s at most), and the longest output gap while lost was 1.8 s (1.2–1.5 s with the feature off). The occupancy YAML must use an unrotated origin and a binary PGM image. Without an occupancy map or odometry bridge, the feature stays disabled and logs a warning.
 
+### Height drifts while bridging on odometry
+
+`map -> odom` is frozen from the last accepted registration. If that registration was
+tilted, every bridged pose inherits the tilt, and the height error grows with the
+distance travelled outside the map. On the held-out Koide `outdoor_hard_01a`, a roll
+error of up to 16 deg at the last accepts produced a 9.5 m height error over a 165 s
+bridge. The horizontal error stayed below 1.1 m.
+
+When the odometry is a gravity-aligned inertial front end, set `level_map_to_odom: true`.
+`map -> odom` then keeps only its yaw, and bridged roll/pitch come from the odometry.
+Measured on Koide with RKO-LIO odometry from the handheld MID-360 profile (0.5x
+deterministic replay):
+
+| Sequence | Off | On |
+| --- | --- | --- |
+| `outdoor_hard_01a` | 3.72 m RMSE (max 9.87 m) | 0.67 m (max 1.84 m) |
+| `outdoor_hard_02b` | 0.26 m (p95 0.66 m) | 0.35 m (p95 0.97 m) |
+
+Leave it off when the odometry's own roll/pitch drifts. With the older outdoor RKO-LIO
+settings, which have no gravity alignment, it raised `outdoor_hard_02b` from 0.37 m to
+1.46 m.
+
 ## Symptom: Map Not Visible in RViz (#43, #48)
 
 Two different map paths exist:

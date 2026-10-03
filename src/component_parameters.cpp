@@ -163,6 +163,7 @@ void PCLLocalization::initializeParameters()
   get_parameter(
     "constrain_odom_tf_prediction_height_only",
     constrain_odom_tf_prediction_height_only_);
+  get_parameter("level_map_to_odom", level_map_to_odom_);
   get_parameter("publish_bridge_pose_when_lost", publish_bridge_pose_when_lost_);
   get_parameter(
     "enable_map_odom_anchor_fitness_gate",
@@ -530,6 +531,7 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "constrain_odom_tf_prediction_height_only: %d",
     constrain_odom_tf_prediction_height_only_);
+  RCLCPP_INFO(get_logger(), "level_map_to_odom: %d", level_map_to_odom_);
   RCLCPP_INFO(
     get_logger(),"publish_bridge_pose_when_lost: %d", publish_bridge_pose_when_lost_);
   RCLCPP_INFO(

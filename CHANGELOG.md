@@ -66,6 +66,10 @@
 
 ### Added
 
+- Opt-in `level_map_to_odom`: `map -> odom` keeps only its yaw, so a tilted registration
+  does not tilt the poses bridged on a gravity-aligned odometry. On Koide
+  `outdoor_hard_01a` (165 s outside the map) RMSE 3.72 -> 0.67 m; on `outdoor_hard_02b`
+  0.26 -> 0.35 m. See troubleshooting before enabling it.
 - The point cloud subscription accepts the standard ROS reliability override
   (`qos_overrides.<topic>.subscription.reliability`).
 - Opt-in local re-acquisition after an odometry-bridged outage
