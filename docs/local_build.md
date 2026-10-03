@@ -64,4 +64,4 @@ The current no-sudo setup in this workspace uses:
 ## Notes
 
 - The `ndt_omp_ros2` checkout in `../build_ws/src/ndt_omp_ros2` is patched locally so the library is exported cleanly and the visualization sample app is disabled by default.
-- After the build finishes, `source scripts/setup_local_env.sh` is enough to make `ros2 run lidar_localization_ros2 ...` and `ros2 run lidar_localization_ros2 benchmark_runner ...` resolve correctly in a new shell.
+- After the build finishes, `source scripts/setup_local_env.sh` is enough to make `ros2 run lidar_localization_ros2 ...` resolve correctly in a new shell.

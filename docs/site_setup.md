@@ -107,14 +107,8 @@ Inspect JSON `candidate_source` (`route_crop`), `runtime_sec`, top candidate
 
 ## 5. Optional: bag replay validation
 
-On a recorded sequence (Koide outdoor example):
-
-```bash
-scripts/run_koide_g3_recovery_replay.sh --route-crop --skip-prepare
-```
-
-Default replay is **60 s at real-time rate** (~1.5 min wall). See
-[global_localization.md](global_localization.md) for the full G2/G3 stack.
+Replay a recorded sequence through the recovery stack as shown in
+[global_localization.md](global_localization.md#replaying-a-bag-through-the-recovery-stack).
 
 ## Related docs
 

@@ -116,22 +116,11 @@ data plus per-point cloud timing. Use `--no-enable-continuous-time-deskew` to op
 LiDAR-only profiles keep running without deskew, and the doctor reports invalid or
 oversized timing as a warning.
 
-During bag replay, `validate_lidar_localization_imu.py` summarizes these same
-diagnostics over a time window and fails if IMU preintegration is not active
-often enough. When generating a bag replay launch command with
+During bag replay, check the same keys in `/alignment_status`:
+`registration_seed_source=imu_preintegration` confirms that IMU preintegration is
+actually seeding registration. When generating a bag replay launch command with
 `create_lidar_localization_config.py`, add `--use-sim-time` so localization
-uses `/clock`:
-
-```bash
-ros2 run lidar_localization_ros2 validate_lidar_localization_imu.py \
-  --duration-sec 30 \
-  --min-imu-active-ratio 0.5 \
-  --require-imu-seed-source
-```
-
-`--require-imu-seed-source` is the strict check for "IMU preintegration is
-actually seeding registration"; it fails unless enough samples report
-`registration_seed_source=imu_preintegration`.
+uses `/clock`.
 
 ### Failure category (one-key triage)
 
@@ -189,8 +178,7 @@ Watch live:
 ros2 topic echo /alignment_status
 ```
 
-For benchmark runs, record diagnostics to CSV with `benchmark_diagnostic_recorder`
-(see [benchmarking.md](benchmarking.md)).
+To analyze diagnostics later, record them with `ros2 bag record /alignment_status`.
 
 ## Symptom: Direct Positioning Got Stuck (#35)
 
@@ -393,12 +381,8 @@ Short version:
 
 ## Still Stuck?
 
-1. run the public demo to verify your environment can reproduce a known-good path:
-
-   ```bash
-   source scripts/setup_local_env.sh
-   scripts/run_public_demo.sh
-   ```
+1. reproduce the [README run](readme-media.md) to verify your environment can
+   produce a known-good path.
 
 2. open a GitHub issue with:
    - ROS distro

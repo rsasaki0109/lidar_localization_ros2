@@ -1,5 +1,10 @@
 # Benchmarking
 
+> **Note:** the offline Python tooling these commands use (benchmark runners, regression
+> suites, dataset fetchers, validators) was removed from the package in 6825f05. The
+> commands are kept as a record of how the published results were produced; check out a
+> commit before 6825f05 to rerun them.
+
 This guide is the command entry point for replay, trajectory evaluation, and public regression checks.
 Use it when you want to compare localization changes under repeatable rosbag playback.
 

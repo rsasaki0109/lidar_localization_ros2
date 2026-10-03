@@ -78,6 +78,8 @@ ros2 run lidar_localization_ros2 quickstart.py \
   --reference-csv /absolute/path/to/mapping_run/reference.csv
 ```
 
+Build the occupancy map from the same point-cloud map with
+`ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd --pcd map.pcd --output-dir maps`.
 If no safe candidate is available, it asks for **2D Pose Estimate** in RViz; it never
 guesses the origin. See [quickstart and automatic initialization](docs/quickstart.md)
 and the [repeat-route site setup](docs/site_setup.md) guide.
@@ -129,18 +131,12 @@ topic names are configurable. See [frame contract](docs/frame_contract.md) and
 
 Nav2 additionally requires a 2D occupancy map and an `odom -> base_link` source.
 
-## Public Demo
+## Reproduce the README Run
 
-The Autoware Istanbul demo downloads its public assets, builds when needed, replays
-60 seconds, and writes a trajectory report:
-
-```bash
-source scripts/setup_local_env.sh
-scripts/run_public_demo.sh
-```
-
-First-time setup may take 15–30 minutes. For datasets, metrics, and regression
-commands, see [benchmarking](docs/benchmarking.md).
+The run at the top of this page uses only public data (Koide Hard Point Cloud
+Localization Dataset, `outdoor_hard_02b`) and the launch files above.
+[How this was made](docs/readme-media.md) lists the odometry, TF bag, parameters and
+launch command needed to replay it and check the 0.26 m result.
 
 ## Documentation
 
