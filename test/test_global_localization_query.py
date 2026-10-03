@@ -243,6 +243,47 @@ def test_score_with_registration_keeps_raw_pose_by_default():
         assert ranked[0].y_m == 29.7
         assert ranked[0].yaw_rad == math.radians(10.0)
         assert ranked[0].registration_fitness == 0.042
+        # The 2D cell has no height; report the one registration converged to.
+        assert ranked[0].z_m == 1.2
+
+
+def test_score_with_registration_reports_scoring_height_when_unconverged():
+    with tempfile.TemporaryDirectory() as tmp:
+        yaml_path = write_occupancy_map(Path(tmp))
+        engine = glq.GlobalLocalizationEngine(
+            glq.GlobalLocalizationConfig(registration_seed_z_m=-11.4),
+            occupancy_yaml=yaml_path,
+        )
+        engine.registration_scorer = _FakeRegistrationScorer(
+            {
+                (-13.5, 29.7, -11.4, 0.0): _FakeScoreResult(
+                    fitness=float("nan"),
+                    converged=False,
+                    refined_x=99.0,
+                    refined_y=99.0,
+                    refined_z=99.0,
+                    refined_yaw=99.0,
+                ),
+            }
+        )
+        raw_candidates = [
+            glq.GlobalLocalizationCandidate(
+                x_m=-13.5,
+                y_m=29.7,
+                z_m=0.0,
+                yaw_rad=0.0,
+                score=0.99,
+                hit_count=100,
+                point_count=512,
+                bbs_score=0.99,
+            ),
+        ]
+        ranked = engine._score_with_registration(
+            np.zeros((8, 3), dtype=np.float64), raw_candidates
+        )
+
+        assert ranked[0].z_m == -11.4
+        assert not ranked[0].registration_converged
 
 
 def test_resolve_pclomp_search_method_mapping():
