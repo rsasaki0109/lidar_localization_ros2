@@ -341,11 +341,18 @@ class GlobalLocalizationEngine:
                     )
                 )
             else:
-                pose_x, pose_y, pose_z, pose_yaw = (
+                # Keep the BBS cell and heading, but report the height the
+                # candidate was verified at: a 2D candidate has no height of
+                # its own, and a reset seeded far from it cannot register.
+                pose_x, pose_y, pose_yaw = (
                     candidate.x_m,
                     candidate.y_m,
-                    candidate.z_m,
                     candidate.yaw_rad,
+                )
+                pose_z = (
+                    float(result.refined_z)
+                    if math.isfinite(fitness) and math.isfinite(result.refined_z)
+                    else score_z
                 )
             ranked.append(
                 g2_rank.RankedG2Candidate(

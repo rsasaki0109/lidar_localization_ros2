@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Global re-initialization seeds its reset at the height G2 verified the candidate at
+  (NDT's converged z, else the scoring z) instead of the last localizer pose's z. After a
+  kidnap that pose had been bridged on drifting odometry and was 12.5 m above the ground
+  on Koide `outdoor_kidnap_b`, so resets within ~1 m in xy could not register.
 - The TF buffer keeps 120 s instead of 10 s. An initial pose is anchored to `map -> odom`
   through `odom -> base` at its own stamp, and global re-initialization stamps its reset
   with the scan it searched; with a 13.6 s search the odom TF was already gone, so every

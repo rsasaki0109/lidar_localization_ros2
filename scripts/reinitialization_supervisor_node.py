@@ -934,6 +934,14 @@ class ReinitializationSupervisorNode(Node):
         self._prev_sim_fix = (raw_x, raw_y, scan_stamp_sec)
 
     @staticmethod
+    def _finite_float(value):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) else None
+
+    @staticmethod
     def _parse_nonnegative_float(value):
         if value is None:
             return None
@@ -955,11 +963,17 @@ class ReinitializationSupervisorNode(Node):
         yaw = math.radians(top["yaw_deg"])
         raw_x, raw_y = float(top["x"]), float(top["y"])
         seed_x, seed_y = self._compensate_seed(raw_x, raw_y, candidate_index)
-        # The candidate is 2D (x, y, yaw); carry z / roll / pitch from the last
-        # localizer pose so the seed lands in the registration z-basin on a non-flat
-        # map. Fall back to the configured default z if no pose seen yet.
+        # A BBS candidate is 2D (x, y, yaw). If G2 registered it against the map,
+        # its z is the height it was verified at; otherwise carry z / roll / pitch
+        # from the last localizer pose so the seed lands in the registration
+        # z-basin on a non-flat map. That pose may have been bridged on drifting
+        # odometry for a long time, so a verified height wins. Fall back to the
+        # configured default z if no pose was seen yet.
+        candidate_z = self._finite_float(top.get("z"))
         if self.prefer_reset_default_z:
             z = self.reset_default_z
+        elif top.get("registration_converged") is True and candidate_z is not None:
+            z = candidate_z
         else:
             z = (
                 self._last_pose_z

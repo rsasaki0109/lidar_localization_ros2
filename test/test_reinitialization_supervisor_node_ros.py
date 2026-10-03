@@ -53,7 +53,7 @@ class _Harness(Node):
     walked to the second candidate -- exercising the ranked-candidate walk glue.
     """
 
-    def __init__(self, recover_on_second=False, pose_z=None):
+    def __init__(self, recover_on_second=False, pose_z=None, top_candidate=None):
         super().__init__("g3_test_harness")
         self.create_service(Trigger, "/global_localization_node/query", self._on_query)
         self._reinit = self.create_publisher(Bool, "/reinitialization_requested", _REL)
@@ -63,6 +63,12 @@ class _Harness(Node):
         )
         # Optionally fake the localizer pose output so the supervisor can carry z.
         self._pose_z = pose_z
+        self._top_candidate = top_candidate or {
+            "x": 12.0,
+            "y": 34.0,
+            "yaw_deg": 45.0,
+            "score": 0.99,
+        }
         self._pcl_pose = self.create_publisher(
             PoseWithCovarianceStamped, "/pcl_pose", _POSE_QOS
         )
@@ -82,7 +88,7 @@ class _Harness(Node):
             {
                 "candidate_count": 2,
                 "candidates": [
-                    {"x": 12.0, "y": 34.0, "yaw_deg": 45.0, "score": 0.99},
+                    self._top_candidate,
                     {"x": 99.0, "y": 88.0, "yaw_deg": -90.0, "score": 0.98},
                 ],
             }
@@ -228,6 +234,44 @@ def test_reset_carries_z_from_localizer_pose():
         pose = harness.initialpose.pose.pose
         assert abs(pose.position.x - 12.0) < 1e-3
         assert abs(pose.position.z - (-11.05)) < 1e-2, pose.position.z
+    finally:
+        executor.shutdown()
+        sup.destroy_node()
+        harness.destroy_node()
+        rclpy.shutdown()
+
+
+def test_reset_uses_registration_verified_candidate_height():
+    # The localizer pose may have been bridged on drifting odometry for minutes
+    # (Koide outdoor_kidnap_b: +12.5 m); a height G2 verified against the map wins.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    sup.params = replace(sup.params, request_debounce_sec=0.5)
+    harness = _Harness(
+        pose_z=1.2,
+        top_candidate={
+            "x": 12.0,
+            "y": 34.0,
+            "z": -11.3,
+            "yaw_deg": 45.0,
+            "score": 0.99,
+            "registration_fitness": 0.3,
+            "registration_converged": True,
+        },
+    )
+    executor = SingleThreadedExecutor()
+    executor.add_node(sup)
+    executor.add_node(harness)
+    spin = threading.Thread(target=executor.spin, daemon=True)
+    spin.start()
+    try:
+        deadline = time.monotonic() + 12.0
+        while time.monotonic() < deadline and harness.initialpose is None:
+            time.sleep(0.1)
+        assert harness.initialpose is not None, (
+            "supervisor never published /initialpose"
+        )
+        assert abs(harness.initialpose.pose.pose.position.z - (-11.3)) < 1e-3
     finally:
         executor.shutdown()
         sup.destroy_node()
