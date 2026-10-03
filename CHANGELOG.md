@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- The TF buffer keeps 120 s instead of 10 s. An initial pose is anchored to `map -> odom`
+  through `odom -> base` at its own stamp, and global re-initialization stamps its reset
+  with the scan it searched; with a 13.6 s search the odom TF was already gone, so every
+  reset was dropped ("extrapolation into the past") on a real-time Koide
+  `outdoor_kidnap_b` replay (7 of 7; 0 of 8 after the change).
 - `generate_occupancy_map_from_pcd` is back, as a C++ executable. The Python tool was
   removed with the offline tooling, but `nav2_navigation.launch.py`
   (`generate_map_from_pcd:=true`), local re-acquisition and global localization still need

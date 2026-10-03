@@ -1,10 +1,19 @@
 #include "component_internal.hpp"
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
+namespace
+{
+// An initial pose is anchored to map -> odom through odom -> base at its own stamp.
+// Global re-initialization stamps its reset with the scan it searched, and a search
+// plus the settle time of the earlier candidates can take over a minute; with the
+// default 10 s buffer that odom TF is already gone and the reset is dropped.
+constexpr double kTfBufferCacheSec = 120.0;
+}  // namespace
+
 PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("lidar_localization", options),
   clock_(RCL_ROS_TIME),
-  tfbuffer_(std::make_shared<rclcpp::Clock>(clock_)),
+  tfbuffer_(std::make_shared<rclcpp::Clock>(clock_), tf2::durationFromSec(kTfBufferCacheSec)),
   tflistener_(tfbuffer_),
   broadcaster_(this)
 {
