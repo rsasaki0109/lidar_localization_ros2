@@ -15,6 +15,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("use_odom_tf_prediction", false);
   declare_parameter("constrain_odom_tf_prediction_to_planar", false);
   declare_parameter("constrain_odom_tf_prediction_height_only", false);
+  declare_parameter("level_map_to_odom", false);
   declare_parameter("publish_bridge_pose_when_lost", false);
   declare_parameter("enable_map_odom_anchor_fitness_gate", false);
   declare_parameter("map_odom_anchor_max_fitness", 1.5);

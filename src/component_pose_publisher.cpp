@@ -108,7 +108,8 @@ bool PCLLocalization::publishMapToOdomTransform(
       global_frame_id_,
       odom_frame_id_,
       map_to_base_link_stamped,
-      odom_to_base_link_msg);
+      odom_to_base_link_msg,
+      level_map_to_odom_);
   broadcaster_.sendTransform(map_to_odom);
   // Freeze this map -> odom offset so republishFrozenMapToOdomTransform can keep
   // it alive (re-stamped) through a dropout. Only called from accepted-match /

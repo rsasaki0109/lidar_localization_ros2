@@ -199,23 +199,41 @@ inline geometry_msgs::msg::TransformStamped makeMapToBaseTransform(
   return transform;
 }
 
+// With `level`, map -> odom keeps only its yaw: when both the map and an inertial
+// odometry front end are gravity-aligned, a roll/pitch error of one registration
+// would otherwise tilt every pose bridged on odometry afterwards. The translation
+// is chosen so the base position at this stamp is unchanged.
 inline geometry_msgs::msg::TransformStamped composeMapToOdomTransform(
   const builtin_interfaces::msg::Time & stamp,
   const std::string & global_frame_id,
   const std::string & odom_frame_id,
   const geometry_msgs::msg::TransformStamped & map_to_base_link,
-  const geometry_msgs::msg::TransformStamped & odom_to_base_link)
+  const geometry_msgs::msg::TransformStamped & odom_to_base_link,
+  bool level = false)
 {
   tf2::Transform map_to_base_link_tf;
   tf2::Transform odom_to_base_link_tf;
   tf2::fromMsg(map_to_base_link.transform, map_to_base_link_tf);
   tf2::fromMsg(odom_to_base_link.transform, odom_to_base_link_tf);
 
+  tf2::Transform map_to_odom_tf = map_to_base_link_tf * odom_to_base_link_tf.inverse();
+  if (level) {
+    double roll = 0.0;
+    double pitch = 0.0;
+    double yaw = 0.0;
+    tf2::Matrix3x3(map_to_odom_tf.getRotation()).getRPY(roll, pitch, yaw);
+    tf2::Quaternion yaw_only;
+    yaw_only.setRPY(0.0, 0.0, yaw);
+    map_to_odom_tf.setRotation(yaw_only);
+    map_to_odom_tf.setOrigin(
+      map_to_base_link_tf.getOrigin() - tf2::quatRotate(yaw_only, odom_to_base_link_tf.getOrigin()));
+  }
+
   geometry_msgs::msg::TransformStamped map_to_odom;
   map_to_odom.header.stamp = stamp;
   map_to_odom.header.frame_id = global_frame_id;
   map_to_odom.child_frame_id = odom_frame_id;
-  map_to_odom.transform = tf2::toMsg(map_to_base_link_tf * odom_to_base_link_tf.inverse());
+  map_to_odom.transform = tf2::toMsg(map_to_odom_tf);
   return map_to_odom;
 }
 
