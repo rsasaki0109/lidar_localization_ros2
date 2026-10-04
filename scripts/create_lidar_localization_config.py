@@ -211,6 +211,9 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         "predict_pose_from_previous_delta": True,
         "enable_local_map_crop": True,
         "local_map_radius": _arg_or_profile(args, "local_map_radius"),
+        # The node default (0) re-crops the local map on every scan, which held a
+        # 20k-point Livox replay to ~0.9 Hz; reusing it for 10 m gave ~4.8 Hz.
+        "local_map_update_distance": 10.0,
         "local_map_min_points": 100,
         "reject_above_score_threshold": True,
         "enable_borderline_seed_rejection_gate": True,
