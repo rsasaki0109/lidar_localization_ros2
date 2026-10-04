@@ -25,7 +25,7 @@ ros2 run lidar_localization_ros2 quickstart.py \
   --occupancy-map /absolute/path/to/map.yaml
 ```
 
-Known-route sites (corridor alias risk on map-wide BBS):
+Replays of a recorded mapping run (route-crop needs the run's timestamps; see below):
 
 ```bash
 ros2 run lidar_localization_ros2 quickstart.py \
@@ -34,8 +34,11 @@ ros2 run lidar_localization_ros2 quickstart.py \
   --reference-csv /absolute/path/to/mapping_run/reference.csv
 ```
 
-Both `--occupancy-map` and `--reference-csv` may be supplied; when the reference CSV
-is present, G2 uses route-crop candidates and skips map-wide BBS.
+Route-crop picks reference poses by the scan's timestamp, so it only re-localizes
+within the recorded session (replays and benchmarks of the mapping run). A live robot
+on a later day is outside that time span: route-crop then reports
+`scan is ... s outside the reference trajectory`. Supply `--occupancy-map` as well and
+G2 uses route-crop inside the session and map-wide BBS outside it.
 
 For a full repeat-route workflow (mapping CSV → one-command bringup → status checks),
 see [site_setup.md](site_setup.md).

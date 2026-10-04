@@ -72,7 +72,8 @@ ros2 run lidar_localization_ros2 quickstart.py \
   --occupancy-map /absolute/path/to/map.yaml
 ```
 
-Known routes (avoids map-wide BBS corridor aliases):
+Replays of the recorded mapping run (route-crop selects poses by time, so add
+`--occupancy-map` for a live robot):
 
 ```bash
 ros2 run lidar_localization_ros2 quickstart.py \

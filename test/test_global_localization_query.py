@@ -409,6 +409,69 @@ def test_route_crop_requires_scan_stamp():
         assert result.route_crop_error == "scan_stamp_sec required for route_crop"
 
 
+def _route_rows(stamps):
+    return [
+        {
+            "stamp_sec": str(stamp),
+            "position_x": str(-1.0 + i),
+            "position_y": "7.0",
+            "position_z": "0.5",
+            "orientation_x": "0.0",
+            "orientation_y": "0.0",
+            "orientation_z": "0.0",
+            "orientation_w": "1.0",
+        }
+        for i, stamp in enumerate(stamps)
+    ]
+
+
+def test_route_crop_reports_scans_from_another_session():
+    with tempfile.TemporaryDirectory() as tmp:
+        reference_csv = Path(tmp) / "reference.csv"
+        _write_reference_csv(reference_csv, _route_rows([100.0, 110.0]))
+        config = glq.GlobalLocalizationConfig(
+            candidate_source=glq.CANDIDATE_SOURCE_ROUTE_CROP,
+            reference_csv=str(reference_csv),
+            route_time_radius_sec=20.0,
+        )
+        engine = glq.GlobalLocalizationEngine(config)
+        scan = np.array([[1.0, 0.0, 1.0]], dtype=np.float64)
+
+        result = engine.query(scan, scan_stamp_sec=10_000.0)
+
+        assert result.candidates == []
+        assert "outside the reference trajectory" in result.route_crop_error
+
+
+def test_route_crop_falls_back_to_bbs_outside_the_session():
+    with tempfile.TemporaryDirectory() as tmp:
+        yaml_path = write_occupancy_map(Path(tmp))
+        reference_csv = Path(tmp) / "reference.csv"
+        _write_reference_csv(reference_csv, _route_rows([100.0, 110.0]))
+        config = glq.GlobalLocalizationConfig(
+            candidate_source=glq.CANDIDATE_SOURCE_ROUTE_CROP,
+            reference_csv=str(reference_csv),
+            route_time_radius_sec=20.0,
+            route_yaw_offsets_deg="0",
+            route_lateral_offsets_m="0",
+            route_longitudinal_offsets_m="0",
+            angular_resolution_rad=math.radians(15.0),
+            max_candidates=8,
+            min_range_m=1.0,
+        )
+        engine = glq.GlobalLocalizationEngine(config, occupancy_yaml=yaml_path)
+        true_x, true_y, true_yaw = -1.0, 7.0, math.radians(30.0)
+        scan = make_scan(yaml_path, true_x, true_y, true_yaw)
+
+        in_session = engine.query(scan, scan_stamp_sec=105.0)
+        new_session = engine.query(scan, scan_stamp_sec=10_000.0)
+
+        assert in_session.candidate_source == glq.CANDIDATE_SOURCE_ROUTE_CROP
+        assert new_session.candidate_source == glq.CANDIDATE_SOURCE_BBS
+        top = new_session.candidates[0]
+        assert math.hypot(top.x_m - true_x, top.y_m - true_y) <= 1.0, (top.x_m, top.y_m)
+
+
 def test_default_candidate_source_is_bbs():
     assert glq.GlobalLocalizationConfig().candidate_source == glq.CANDIDATE_SOURCE_BBS
 
@@ -443,6 +506,8 @@ if __name__ == "__main__":
     test_default_ndt_search_method_preserves_direct7_behavior()
     test_route_crop_generates_local_candidates()
     test_route_crop_requires_scan_stamp()
+    test_route_crop_reports_scans_from_another_session()
+    test_route_crop_falls_back_to_bbs_outside_the_session()
     test_default_candidate_source_is_bbs()
     test_query_progress_callback_reports_phases()
     print("test_global_localization_query: all tests passed")

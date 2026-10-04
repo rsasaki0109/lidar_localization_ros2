@@ -212,31 +212,41 @@ class GlobalLocalizationEngine:
             self.backend = CANDIDATE_SOURCE_ROUTE_CROP
             self.backend_error = None
             self._search = None
+            # A grid supplied alongside the route answers scans from outside the
+            # recorded session, which route-crop cannot place.
+            if occupancy_yaml is not None:
+                self._load_bbs(config, occupancy_yaml)
         else:
             if occupancy_yaml is None:
                 raise ValueError("occupancy_yaml is required when candidate_source=bbs")
-            self.occupancy_map = bbs_engine.load_occupancy_map(Path(occupancy_yaml))
-            matching_grid = self.occupancy_map.occupied
-            for _ in range(max(0, config.dilate_cells)):
-                matching_grid = bbs_engine._dilate_one_cell(matching_grid)
-            self.matching_grid = matching_grid
+            self._load_bbs(config, occupancy_yaml)
+            self.backend = self._bbs_backend
+        self._init_registration_scorer(config)
 
-            # Resolve the search backend once. The C++ module (bbs_cpp) is bit-exact
-            # to bbs_engine.branch_and_bound_candidates and exposes the same call
-            # signature and candidate attributes, so query() is backend-agnostic.
-            self.backend = "python"
-            self.backend_error = None
-            self._search = bbs_engine.branch_and_bound_candidates
-            if config.use_cpp_backend:
-                try:
-                    _append_module_dirs("bbs_cpp")
-                    import bbs_cpp
+    def _load_bbs(self, config, occupancy_yaml):
+        self.occupancy_map = bbs_engine.load_occupancy_map(Path(occupancy_yaml))
+        matching_grid = self.occupancy_map.occupied
+        for _ in range(max(0, config.dilate_cells)):
+            matching_grid = bbs_engine._dilate_one_cell(matching_grid)
+        self.matching_grid = matching_grid
 
-                    self._search = bbs_cpp.branch_and_bound_candidates
-                    self.backend = "cpp"
-                except ImportError as exc:  # pragma: no cover - depends on build
-                    self.backend_error = str(exc)
+        # Resolve the search backend once. The C++ module (bbs_cpp) is bit-exact
+        # to bbs_engine.branch_and_bound_candidates and exposes the same call
+        # signature and candidate attributes, so query() is backend-agnostic.
+        self._bbs_backend = "python"
+        self.backend_error = None
+        self._search = bbs_engine.branch_and_bound_candidates
+        if config.use_cpp_backend:
+            try:
+                _append_module_dirs("bbs_cpp")
+                import bbs_cpp
 
+                self._search = bbs_cpp.branch_and_bound_candidates
+                self._bbs_backend = "cpp"
+            except ImportError as exc:  # pragma: no cover - depends on build
+                self.backend_error = str(exc)
+
+    def _init_registration_scorer(self, config):
         self.registration_scorer = None
         self.registration_scoring_error = None
         self._registration_seed_z_m = config.registration_seed_z_m
@@ -394,6 +404,20 @@ class GlobalLocalizationEngine:
                 **base_result,
             )
 
+        outside_sec = self._seconds_outside_reference(float(scan_stamp_sec))
+        if outside_sec > 0.0:
+            # Rows are picked by time, so a scan from another session would only get
+            # the nearest end of the route, wherever the robot actually is.
+            return GlobalLocalizationResult(
+                candidates=[],
+                route_crop_error=(
+                    f"scan is {outside_sec:.0f} s outside the reference trajectory; "
+                    "route-crop only re-localizes within the recorded session, so "
+                    "supply an occupancy map for map-wide search"
+                ),
+                **base_result,
+            )
+
         if progress_callback is not None:
             progress_callback("search", 0, 1)
         route_rows, _nearest = route_grid.select_route_rows(
@@ -437,11 +461,29 @@ class GlobalLocalizationEngine:
             progress_callback("done", 1, 1)
         return GlobalLocalizationResult(candidates=candidates, **base_result)
 
+    def _seconds_outside_reference(self, scan_stamp_sec: float) -> float:
+        """How far the scan lies beyond the reference times plus the route radius."""
+        first = min(row["stamp_sec"] for row in self.reference_rows)
+        last = max(row["stamp_sec"] for row in self.reference_rows)
+        radius = self.config.route_time_radius_sec
+        return max(0.0, first - radius - scan_stamp_sec, scan_stamp_sec - last - radius)
+
     def query(self, points_xyz, scan_stamp_sec=None, progress_callback=None):
         if self.candidate_source == CANDIDATE_SOURCE_ROUTE_CROP:
-            return self._query_route_crop(
-                points_xyz, scan_stamp_sec, progress_callback=progress_callback
+            in_session = (
+                self.occupancy_map is None
+                or scan_stamp_sec is None
+                or not math.isfinite(scan_stamp_sec)
+                or self._seconds_outside_reference(float(scan_stamp_sec)) <= 0.0
             )
+            if in_session:
+                return self._query_route_crop(
+                    points_xyz, scan_stamp_sec, progress_callback=progress_callback
+                )
+            return self._query_bbs(points_xyz, progress_callback)
+        return self._query_bbs(points_xyz, progress_callback)
+
+    def _query_bbs(self, points_xyz, progress_callback=None):
 
         config = self.config
         resolution_m = self.occupancy_map.resolution_m
@@ -462,7 +504,7 @@ class GlobalLocalizationEngine:
                     "g2_ndt_score" if self.registration_scorer is not None else None
                 ),
                 registration_scoring_error=self.registration_scoring_error,
-                candidate_source=self.candidate_source,
+                candidate_source=CANDIDATE_SOURCE_BBS,
             )
 
         if progress_callback is not None:
@@ -515,5 +557,5 @@ class GlobalLocalizationEngine:
                 "g2_ndt_score" if self.registration_scorer is not None else None
             ),
             registration_scoring_error=self.registration_scoring_error,
-            candidate_source=self.candidate_source,
+            candidate_source=CANDIDATE_SOURCE_BBS,
         )
