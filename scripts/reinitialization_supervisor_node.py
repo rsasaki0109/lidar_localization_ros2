@@ -248,6 +248,8 @@ class ReinitializationSupervisorNode(Node):
         )
         self._unstable_since_sec = None
         self._stable_samples = 0
+        # Start of the odometry gap whose episode gave up: that gap requests no more.
+        self._given_up_gap_start_sec = None
         self.bbs_shadow_required_samples = max(
             2, int(self.get_parameter("bbs_shadow_required_samples").value)
         )
@@ -529,7 +531,8 @@ class ReinitializationSupervisorNode(Node):
         now = self._last_sim_stamp_sec
         if now - self._unstable_since_sec < self.query_after_odometry_dropout_sec:
             return False
-        if self._odometry_continuous(now):
+        gap_start = self._last_odometry_gap_start(now)
+        if gap_start is None or gap_start == self._given_up_gap_start_sec:
             return False
         self.get_logger().info(
             f"scans failing for {now - self._unstable_since_sec:.0f} s after odometry "
@@ -682,6 +685,16 @@ class ReinitializationSupervisorNode(Node):
             odom_bridge_available=odom_bridge_pose is not None,
         )
         decision = rsp.decide(self.params, self.state, obs)
+        if (
+            decision.state.name == rsp.STATE_EXHAUSTED
+            and self.state.name != rsp.STATE_EXHAUSTED
+            and self._last_sim_stamp_sec is not None
+        ):
+            # Scans keep failing after a give-up, so the dropout request would
+            # hold the episode latched; leave it to the localizer's own request.
+            self._given_up_gap_start_sec = self._last_odometry_gap_start(
+                self._last_sim_stamp_sec
+            )
         self.state = decision.state
 
         if decision.reason in (
@@ -943,6 +956,18 @@ class ReinitializationSupervisorNode(Node):
             > self.odometry_confirmation_window_sec + self.odometry_max_gap_sec
         ):
             self._odometry_stamps.popleft()
+
+    def _last_odometry_gap_start(self, stamp_sec: float):
+        """Last odom stamp before the latest dropout in the window, if any."""
+        stamps = [s for s in self._odometry_stamps if s <= stamp_sec]
+        if not stamps:
+            return None
+        if stamp_sec - stamps[-1] > self.odometry_max_gap_sec:
+            return stamps[-1]
+        for earlier, later in reversed(list(itertools.pairwise(stamps))):
+            if later - earlier > self.odometry_max_gap_sec:
+                return earlier
+        return None
 
     def _odometry_continuous(self, stamp_sec: float) -> bool:
         """True when odom TF arrived without dropouts over the confirmation window."""

@@ -461,10 +461,27 @@ def test_failing_scans_after_odometry_dropout_request_a_query():
             sup._on_alignment_status(_status(31.0 + 0.2 * step, ok=True))
         assert not sup._requested_after_odometry_dropout(), "stable scans ignored"
 
-        sup._odometry_stamps.clear()
-        sup._odometry_stamps.extend(0.1 * step for step in range(0, 500))
-        for step in range(0, 40):
+        # A give-up ends the dropout's requests until odometry drops out again.
+        for step in range(0, 30):
             sup._on_alignment_status(_status(32.0 + 0.2 * step, ok=False))
+        assert sup._requested_after_odometry_dropout()
+        sup.state = replace(
+            sup.state,
+            name=rsn.rsp.STATE_COOLDOWN,
+            attempts=sup.params.max_attempts,
+            cooldown_since_sec=0.0,
+        )
+        sup._tick()
+        assert sup.state.name == rsn.rsp.STATE_EXHAUSTED
+        assert not sup._requested_after_odometry_dropout(), "request kept latched"
+        sup._odometry_stamps.extend(55.0 + 0.1 * step for step in range(0, 50))
+        sup._on_alignment_status(_status(56.0, ok=False))
+        assert sup._requested_after_odometry_dropout(), "new dropout ignored"
+
+        sup._odometry_stamps.clear()
+        sup._odometry_stamps.extend(0.1 * step for step in range(0, 900))
+        for step in range(0, 40):
+            sup._on_alignment_status(_status(70.0 + 0.2 * step, ok=False))
         assert not sup._requested_after_odometry_dropout(), (
             "queried while odometry was continuous"
         )
