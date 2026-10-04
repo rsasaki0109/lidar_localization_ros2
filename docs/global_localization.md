@@ -59,12 +59,16 @@ locally-perfect alignments and collapse walk candidates onto one pose. Lower
 `nms_radius_m` keeps more near-by or alternate-yaw candidates for G3 candidate
 walking; higher values return more spatially diverse candidates. Query latency
 on a validated window is a few seconds; see the roadmap for the speed/coverage
-envelope.
+envelope. Most of it is NDT scoring, and preparing the scoring target (map crop
+within `ndt_local_map_radius`, voxel filter, NDT cells, k-d tree) costs several
+times the alignment. Candidates whose scan, plus 10 m, fits inside one crop share it:
+on the Koide outdoor maps this scored 8 candidates 2.9x and 16 candidates 3.7x
+faster, with identical fitness.
 
 While a query runs, the node publishes JSON progress on
 `/global_localization_node/status` (`std_msgs/String`: `query_id`, `phase`
-`started`/`search`/`scoring`/`done`, `done`/`total` candidate counts,
-`elapsed_sec`). Watch it during a slow query instead of waiting blind:
+`started`/`search`/`scoring`/`done`, `done`/`total` counts (`total` is the
+number of candidates being scored), `elapsed_sec`). Watch it during a slow query instead of waiting blind:
 
 ```bash
 ros2 topic echo /global_localization_node/status
