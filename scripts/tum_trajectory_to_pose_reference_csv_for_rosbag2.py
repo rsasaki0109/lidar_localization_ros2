@@ -74,7 +74,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--output-initial-pose-yaml",
-        default="",
+        default=None,
         type=Path,
         help="Optional parameter YAML from the chosen initial row",
     )

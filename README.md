@@ -26,7 +26,7 @@
 - NDT/GICP localization against `.pcd` and `.ply` maps
 - standalone, Nav2, and Livox MID-360 launch configurations
 - odometry/IMU prediction, scan deskew, diagnostics, and guarded recovery
-- rosbag demo and regression tools
+- occupancy-map generation and a reproducible public-data run ([README run](docs/readme-media.md))
 
 ROS 2 Jazzy with NDT_OMP is the recommended starting point. Continuous-time deskew is
 enabled by default and safely leaves scans unchanged until point timing and motion data
@@ -44,6 +44,9 @@ cd lidar_localization_ros2
 scripts/bootstrap_colcon_workspace.sh --build
 source ~/lidarloc_ws/install/setup.bash
 ```
+
+The first build compiles `ndt_omp_ros2` and this package (about 30 minutes on an 8-core
+machine).
 
 For manual builds and no-sudo setup, see [local build](docs/local_build.md).
 
@@ -80,6 +83,8 @@ ros2 run lidar_localization_ros2 quickstart.py \
 
 Build the occupancy map from the same point-cloud map with
 `ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd --pcd map.pcd --output-dir maps`.
+If the sensor is not near z = 0 in the map frame, pass its height with `--global-seed-z`;
+candidates scored at the wrong height are rejected as weak.
 If no safe candidate is available, it asks for **2D Pose Estimate** in RViz; it never
 guesses the origin. See [quickstart and automatic initialization](docs/quickstart.md)
 and the [repeat-route site setup](docs/site_setup.md) guide.

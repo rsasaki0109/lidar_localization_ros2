@@ -175,6 +175,27 @@ class TestQuickstartCli(unittest.TestCase):
             self.assertEqual(result, 0)
             self.assertIn("Next: set 2D Pose Estimate in RViz", text)
 
+    def test_no_rviz_points_to_initialpose_instead_of_rviz(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            map_path = root / "site.pcd"
+            map_path.write_bytes(b"pcd")
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                result = QUICKSTART.main(
+                    [
+                        "--map",
+                        str(map_path),
+                        "--no-discover-topics",
+                        "--no-rviz",
+                        "--dry-run",
+                    ]
+                )
+            text = stdout.getvalue()
+            self.assertEqual(result, 0)
+            self.assertIn("Next: publish /initialpose (RViz is off)", text)
+            self.assertNotIn("RViz ", text.split("Launch:")[0])
+
     def test_next_step_mentions_stationary_search_with_route_crop(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
