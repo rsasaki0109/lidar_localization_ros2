@@ -142,6 +142,12 @@ publication off as appropriate.
   margin; do not loosen the margin without replay evidence. With `--reference-csv` and
   3D registration scoring, a top `registration_fitness` at or below **0.5** bypasses this
   gate and publishes after localizer verification instead.
+- `ambiguous_registration_retry`: the top candidate's `registration_fitness` is not at
+  most half of the best fitness at another place (>= 5 m away). Aliased areas score many
+  similar, mediocre poses; on the Koide outdoor map they scored 0.8–2.0 with a runner-up
+  close behind, while the true pose scored 0.04 against 0.82 elsewhere. Tune with the
+  startup node's `max_registration_fitness_ratio` (0 disables) and
+  `registration_alternative_min_separation_m`.
 - `global_attempts_exhausted`: automatic publication stopped; set the pose in RViz.
 - no detected sensor topic: start the driver or bag first, or pass the topic explicitly.
 

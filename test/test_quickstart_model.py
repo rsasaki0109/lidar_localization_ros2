@@ -5,6 +5,7 @@ import sys
 import tempfile
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -251,6 +252,74 @@ class TestStartupPolicy(unittest.TestCase):
         )
         self.assertEqual(decision.action, MODEL.ACTION_PUBLISH_GLOBAL)
         self.assertEqual(decision.reason, "global_registration_high_confidence")
+
+    def test_alternative_fitness_ignores_nearby_and_unscored_candidates(self):
+        candidates = [
+            {"x": 103.9, "y": -2.6, "registration_fitness": 0.05},
+            {"x": 106.0, "y": -2.6, "registration_fitness": 0.06},
+            {"x": -54.0, "y": -70.0, "registration_fitness": float("inf")},
+            {"x": -62.0, "y": -74.0, "registration_fitness": 0.93},
+            {"x": -50.0, "y": -70.0},
+            {"x": -47.0, "y": -69.0, "registration_fitness": 1.02},
+        ]
+        self.assertEqual(MODEL.alternative_registration_fitness(candidates, 5.0), 0.93)
+        self.assertEqual(MODEL.alternative_registration_fitness(candidates, 0.0), 0.06)
+        self.assertIsNone(MODEL.alternative_registration_fitness(candidates[:1], 5.0))
+
+    def test_aliased_registration_is_retried_and_distinct_one_proceeds(self):
+        # Koide outdoor: an aliased area scored many similar mediocre poses, while
+        # the true pose registered an order of magnitude better than anywhere else.
+        start = MODEL.decide_startup(self.params, MODEL.StartupState(), self.obs(0.0))
+        query = {
+            "query_candidate_age_sec": 0.1,
+            "query_top_pose": (-52.7, -82.0, -1.57),
+            "query_scan_stamp_sec": 10.0,
+        }
+        aliased = MODEL.decide_startup(
+            self.params,
+            start.state,
+            self.obs(
+                1.0,
+                query_candidate_scores=(0.77, 0.70),
+                query_top_registration_fitness=1.361,
+                query_alternative_registration_fitness=1.806,
+                **query,
+            ),
+        )
+        self.assertEqual(aliased.action, MODEL.ACTION_QUERY_GLOBAL)
+        self.assertEqual(aliased.reason, "ambiguous_registration_retry")
+
+        distinct = MODEL.decide_startup(
+            self.params,
+            aliased.state,
+            self.obs(
+                2.0,
+                query_candidate_scores=(0.99, 0.86),
+                query_top_registration_fitness=0.0441,
+                query_alternative_registration_fitness=0.8228,
+                **query,
+            ),
+        )
+        self.assertEqual(distinct.reason, "global_consensus_primed")
+
+        disabled = MODEL.decide_startup(
+            replace(self.params, max_registration_fitness_ratio=0.0),
+            start.state,
+            self.obs(
+                1.0,
+                query_candidate_scores=(0.77, 0.70),
+                query_top_registration_fitness=1.361,
+                query_alternative_registration_fitness=1.806,
+                **query,
+            ),
+        )
+        self.assertEqual(disabled.reason, "global_consensus_primed")
+        self.assertIn(
+            "non-negative",
+            MODEL.validate_startup_params(
+                MODEL.StartupParams(max_registration_fitness_ratio=-1.0)
+            ),
+        )
 
     def test_no_source_never_falls_back_to_identity(self):
         decision = MODEL.decide_startup(
