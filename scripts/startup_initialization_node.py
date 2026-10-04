@@ -73,6 +73,8 @@ class StartupInitializationNode(Node):
         self.declare_parameter("global_consensus_yaw_deg", 20.0)
         self.declare_parameter("global_consensus_history", 5)
         self.declare_parameter("global_consensus_translation_per_odom_m", 0.05)
+        self.declare_parameter("global_attempt_refund_travel_m", 5.0)
+        self.declare_parameter("max_global_queries", 30)
         self.declare_parameter("registration_fitness_high_confidence_threshold", 1.0e9)
         self.declare_parameter("max_registration_fitness_ratio", 0.5)
         self.declare_parameter("registration_alternative_min_separation_m", 5.0)
@@ -140,6 +142,12 @@ class StartupInitializationNode(Node):
             ),
             global_consensus_translation_per_odom_m=float(
                 self.get_parameter("global_consensus_translation_per_odom_m").value
+            ),
+            global_attempt_refund_travel_m=float(
+                self.get_parameter("global_attempt_refund_travel_m").value
+            ),
+            max_global_queries=max(
+                1, int(self.get_parameter("max_global_queries").value)
             ),
             registration_fitness_high_confidence_threshold=float(
                 self.get_parameter(

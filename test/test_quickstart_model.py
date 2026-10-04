@@ -519,6 +519,35 @@ class TestStartupPolicy(unittest.TestCase):
         )
         self.assertEqual(fixed.reason, "global_consensus_mismatch_retry")
 
+    def test_travel_refunds_attempts_until_the_query_cap(self):
+        params = replace(self.params, max_global_attempts=6, max_global_queries=30)
+
+        def run(step_m):
+            decision = MODEL.decide_startup(params, MODEL.StartupState(), self.obs(0.0))
+            for n in range(1, 100):
+                decision = MODEL.decide_startup(
+                    params,
+                    decision.state,
+                    self.obs(
+                        float(n),
+                        query_candidate_scores=(0.30, 0.20),
+                        query_candidate_age_sec=10.0,
+                        query_top_pose=(float(n), 0.0, 0.0),
+                        query_scan_stamp_sec=10.0 * n,
+                        query_odom_pose=(step_m * n, 0.0, 0.0),
+                    ),
+                )
+                if decision.action == MODEL.ACTION_NEEDS_OPERATOR:
+                    return decision
+            self.fail("startup never asked for the operator")
+
+        stationary = run(step_m=0.0)
+        self.assertEqual(stationary.reason, "global_attempts_exhausted")
+        self.assertEqual(stationary.state.global_queries, 6)
+        walking = run(step_m=8.0)
+        self.assertEqual(walking.reason, "global_queries_exhausted")
+        self.assertEqual(walking.state.global_queries, 30)
+
     def test_no_source_never_falls_back_to_identity(self):
         decision = MODEL.decide_startup(
             self.params,
