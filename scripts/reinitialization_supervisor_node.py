@@ -32,6 +32,7 @@ import time
 from collections import deque
 from pathlib import Path
 
+import quickstart_model
 import rclpy
 import reinitialization_supervisor_policy as rsp
 from diagnostic_msgs.msg import DiagnosticArray
@@ -121,6 +122,10 @@ class ReinitializationSupervisorNode(Node):
         # describe the same relative SE(2) motion as the odom bridge. This is a
         # shadow gate: withheld fixes never touch /initialpose or public TF.
         self.declare_parameter("enable_bbs_shadow_motion_gate", False)
+        # Same distinctiveness gate as startup: an aliased area scores several
+        # similar, mediocre poses, and walking them resets onto a wrong place.
+        self.declare_parameter("max_registration_fitness_ratio", 0.5)
+        self.declare_parameter("registration_alternative_min_separation_m", 5.0)
         self.declare_parameter("bbs_shadow_required_samples", 2)
         self.declare_parameter("bbs_shadow_max_translation_mismatch_m", 5.0)
         self.declare_parameter("bbs_shadow_max_yaw_mismatch_deg", 20.0)
@@ -197,6 +202,14 @@ class ReinitializationSupervisorNode(Node):
         )
         self.odom_bridge_yaw_std = float(
             self.get_parameter("odom_bridge_yaw_std_rad").value
+        )
+        self.registration_params = quickstart_model.StartupParams(
+            max_registration_fitness_ratio=float(
+                self.get_parameter("max_registration_fitness_ratio").value
+            ),
+            registration_alternative_min_separation_m=float(
+                self.get_parameter("registration_alternative_min_separation_m").value
+            ),
         )
         self.enable_bbs_shadow_motion_gate = bool(
             self.get_parameter("enable_bbs_shadow_motion_gate").value
@@ -771,6 +784,8 @@ class ReinitializationSupervisorNode(Node):
             return
         if self.enable_bbs_shadow_motion_gate:
             scores = self._apply_bbs_shadow_motion_gate(summary, candidates, scores)
+        if self.state.name != rsp.STATE_VERIFYING:
+            scores = self._withhold_aliased_answer(candidates, scores)
         self._candidates = candidates
         self._pending_reply = scores
         self._pending_reply_retryable = False
@@ -786,6 +801,25 @@ class ReinitializationSupervisorNode(Node):
             self._pending_cross_check_mismatch = self._cross_check_mismatch_m(
                 summary, candidates[0] if candidates else None
             )
+
+    def _withhold_aliased_answer(self, candidates, scores):
+        """Withhold an answer whose top does not register clearly better than elsewhere."""
+        top = candidates[0].get("registration_fitness") if candidates else None
+        alternative = quickstart_model.alternative_registration_fitness(
+            candidates,
+            self.registration_params.registration_alternative_min_separation_m,
+        )
+        if top is None or not quickstart_model.registration_ambiguous(
+            self.registration_params, float(top), alternative
+        ):
+            return scores
+        self.get_logger().info(
+            "aliased G2 answer withheld: top registration fitness "
+            f"{float(top):.3f} is not <= "
+            f"{self.registration_params.max_registration_fitness_ratio:.2f} x "
+            f"{alternative:.3f} elsewhere"
+        )
+        return tuple(0.0 for _ in scores)
 
     def _apply_bbs_shadow_motion_gate(self, summary, candidates, scores):
         """Withhold BBS candidates until their temporal motion matches odometry."""

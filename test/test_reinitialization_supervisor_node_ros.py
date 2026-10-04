@@ -53,7 +53,13 @@ class _Harness(Node):
     walked to the second candidate -- exercising the ranked-candidate walk glue.
     """
 
-    def __init__(self, recover_on_second=False, pose_z=None, top_candidate=None):
+    def __init__(
+        self,
+        recover_on_second=False,
+        pose_z=None,
+        top_candidate=None,
+        second_candidate=None,
+    ):
         super().__init__("g3_test_harness")
         self.create_service(Trigger, "/global_localization_node/query", self._on_query)
         self._reinit = self.create_publisher(Bool, "/reinitialization_requested", _REL)
@@ -68,6 +74,12 @@ class _Harness(Node):
             "y": 34.0,
             "yaw_deg": 45.0,
             "score": 0.99,
+        }
+        self._second_candidate = second_candidate or {
+            "x": 99.0,
+            "y": 88.0,
+            "yaw_deg": -90.0,
+            "score": 0.98,
         }
         self._pcl_pose = self.create_publisher(
             PoseWithCovarianceStamped, "/pcl_pose", _POSE_QOS
@@ -89,7 +101,7 @@ class _Harness(Node):
                 "candidate_count": 2,
                 "candidates": [
                     self._top_candidate,
-                    {"x": 99.0, "y": 88.0, "yaw_deg": -90.0, "score": 0.98},
+                    self._second_candidate,
                 ],
             }
         )
@@ -272,6 +284,46 @@ def test_reset_uses_registration_verified_candidate_height():
             "supervisor never published /initialpose"
         )
         assert abs(harness.initialpose.pose.pose.position.z - (-11.3)) < 1e-3
+    finally:
+        executor.shutdown()
+        sup.destroy_node()
+        harness.destroy_node()
+        rclpy.shutdown()
+
+
+def test_aliased_answer_is_not_published_as_a_reset():
+    # Koide 02b quickstart: while odometry bridged a correct pose, G2 answered from
+    # an aliased area (fitness 1.19 vs 1.78 elsewhere) and the walk reset onto it.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    sup.params = replace(sup.params, request_debounce_sec=0.5)
+    harness = _Harness(
+        top_candidate={
+            "x": -59.1,
+            "y": -79.8,
+            "yaw_deg": 25.0,
+            "score": 0.80,
+            "registration_fitness": 1.189,
+        },
+        second_candidate={
+            "x": -57.1,
+            "y": -70.8,
+            "yaw_deg": 100.0,
+            "score": 0.79,
+            "registration_fitness": 1.784,
+        },
+    )
+    executor = SingleThreadedExecutor()
+    executor.add_node(sup)
+    executor.add_node(harness)
+    spin = threading.Thread(target=executor.spin, daemon=True)
+    spin.start()
+    try:
+        deadline = time.monotonic() + 8.0
+        while time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert harness.query_calls >= 1, "supervisor never queried G2"
+        assert harness.initialpose is None, "aliased G2 answer was published"
     finally:
         executor.shutdown()
         sup.destroy_node()
