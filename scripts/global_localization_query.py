@@ -300,28 +300,28 @@ class GlobalLocalizationEngine:
         self,
         points_xyz,
         candidates: list[GlobalLocalizationCandidate],
-        progress_callback=None,
     ) -> list[GlobalLocalizationCandidate]:
         if self.registration_scorer is None:
             return candidates
 
+        score_zs = [
+            candidate.z_m
+            if math.isfinite(candidate.z_m) and abs(candidate.z_m) > 1.0e-6
+            else self._registration_seed_z_m
+            for candidate in candidates
+        ]
+        # One call, so the scorer can share a map crop among nearby candidates.
+        results = self.registration_scorer.score_candidates(
+            points_xyz,
+            [
+                (candidate.x_m, candidate.y_m, score_z, candidate.yaw_rad)
+                for candidate, score_z in zip(candidates, score_zs, strict=True)
+            ],
+        )
         ranked = []
-        total = len(candidates)
-        for index, candidate in enumerate(candidates):
-            if progress_callback is not None:
-                progress_callback("scoring", index, total)
-            score_z = (
-                candidate.z_m
-                if math.isfinite(candidate.z_m) and abs(candidate.z_m) > 1.0e-6
-                else self._registration_seed_z_m
-            )
-            result = self.registration_scorer.score_candidate(
-                points_xyz,
-                candidate.x_m,
-                candidate.y_m,
-                score_z,
-                candidate.yaw_rad,
-            )
+        for candidate, score_z, result in zip(
+            candidates, score_zs, results, strict=True
+        ):
             fitness = (
                 float(result.fitness)
                 if result.converged and math.isfinite(result.fitness)
@@ -454,9 +454,7 @@ class GlobalLocalizationEngine:
         if self.registration_scorer is not None:
             if progress_callback is not None:
                 progress_callback("scoring", 0, len(candidates))
-            candidates = self._score_with_registration(
-                points_xyz, candidates, progress_callback=progress_callback
-            )
+            candidates = self._score_with_registration(points_xyz, candidates)
         if progress_callback is not None:
             progress_callback("done", 1, 1)
         return GlobalLocalizationResult(candidates=candidates, **base_result)
@@ -543,9 +541,7 @@ class GlobalLocalizationEngine:
         if self.registration_scorer is not None:
             if progress_callback is not None:
                 progress_callback("scoring", 0, len(candidates))
-            candidates = self._score_with_registration(
-                points_xyz, candidates, progress_callback=progress_callback
-            )
+            candidates = self._score_with_registration(points_xyz, candidates)
 
         if progress_callback is not None:
             progress_callback("done", 1, 1)

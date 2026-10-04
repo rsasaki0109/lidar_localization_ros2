@@ -177,6 +177,18 @@ inline CloudPtr cloud_from_xyz(
   return voxel_downsample(cloud, scan_voxel_leaf_size);
 }
 
+struct G2NdtPose
+{
+  double x;
+  double y;
+  double z;
+  double yaw;
+};
+
+// Margin (m) between the transformed scan and the edge of a shared map crop: NDT
+// looks up neighbouring cells, and alignment moves the scan from its seed.
+constexpr double kSharedTargetMarginM = 10.0;
+
 class G2NdtCandidateScorer
 {
 public:
@@ -185,31 +197,81 @@ public:
   {
   }
 
-  G2NdtScoreResult score(
+  // Scores several poses of one scan. Preparing the NDT target (crop, voxel
+  // filter, cells and k-d tree) costs several times the alignment, so a crop is
+  // shared by every pose whose scan, plus kSharedTargetMarginM, lies inside it.
+  std::vector<G2NdtScoreResult> score_many(
     const CloudPtr & source,
-    double x,
-    double y,
-    double z,
-    double yaw) const
+    const std::vector<G2NdtPose> & poses) const
+  {
+    std::vector<G2NdtScoreResult> results(poses.size());
+    for (std::size_t i = 0; i < poses.size(); ++i) {
+      results[i] = seed_result(source, poses[i]);
+    }
+    if (!source || source->empty()) {
+      return results;
+    }
+
+    double scan_extent = 0.0;
+    for (const auto & point : source->points) {
+      scan_extent = std::max(scan_extent, std::hypot(double{point.x}, double{point.y}));
+    }
+    const double share_radius = params_.local_map_radius > 0.0 ?
+      params_.local_map_radius - scan_extent - kSharedTargetMarginM :
+      std::numeric_limits<double>::infinity();
+
+    std::vector<bool> scored(poses.size(), false);
+    for (std::size_t i = 0; i < poses.size(); ++i) {
+      if (scored[i]) {
+        continue;
+      }
+      CloudPtr target = crop_map_xy(full_map_, poses[i].x, poses[i].y, params_.local_map_radius);
+      const std::size_t target_point_count = target->size();
+      Ndt ndt;
+      const bool usable = target_point_count >= params_.min_target_points;
+      if (usable) {
+        configure(ndt, voxel_downsample(target, params_.target_voxel_leaf_size), source);
+      }
+      for (std::size_t j = i; j < poses.size(); ++j) {
+        if (scored[j] || (j != i && std::hypot(
+            poses[j].x - poses[i].x, poses[j].y - poses[i].y) > share_radius))
+        {
+          continue;
+        }
+        scored[j] = true;
+        results[j].target_point_count = target_point_count;
+        if (usable) {
+          align(ndt, poses[j], results[j]);
+        }
+      }
+    }
+    return results;
+  }
+
+  std::vector<G2NdtScoreResult> score_xyz_many(
+    const double * xyz,
+    std::size_t point_count,
+    const std::vector<G2NdtPose> & poses) const
+  {
+    return score_many(cloud_from_xyz(xyz, point_count, params_.scan_voxel_leaf_size), poses);
+  }
+
+private:
+  using Ndt = pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>;
+
+  static G2NdtScoreResult seed_result(const CloudPtr & source, const G2NdtPose & pose)
   {
     G2NdtScoreResult result;
-    result.refined_x = x;
-    result.refined_y = y;
-    result.refined_z = z;
-    result.refined_yaw = yaw;
+    result.refined_x = pose.x;
+    result.refined_y = pose.y;
+    result.refined_z = pose.z;
+    result.refined_yaw = pose.yaw;
     result.source_point_count = source ? source->size() : 0;
-    if (!source || source->empty()) {
-      return result;
-    }
+    return result;
+  }
 
-    CloudPtr target = crop_map_xy(full_map_, x, y, params_.local_map_radius);
-    result.target_point_count = target->size();
-    if (target->size() < params_.min_target_points) {
-      return result;
-    }
-    target = voxel_downsample(target, params_.target_voxel_leaf_size);
-
-    pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI> ndt;
+  void configure(Ndt & ndt, const CloudPtr & target, const CloudPtr & source) const
+  {
     ndt.setResolution(params_.ndt_resolution);
     ndt.setStepSize(params_.ndt_step_size);
     ndt.setTransformationEpsilon(params_.transform_epsilon);
@@ -219,8 +281,11 @@ public:
       static_cast<pclomp::NeighborSearchMethod>(params_.search_method));
     ndt.setInputTarget(target);
     ndt.setInputSource(source);
+  }
 
-    const Eigen::Matrix4f init = pose_matrix(x, y, z, yaw);
+  static void align(Ndt & ndt, const G2NdtPose & pose, G2NdtScoreResult & result)
+  {
+    const Eigen::Matrix4f init = pose_matrix(pose.x, pose.y, pose.z, pose.yaw);
     Cloud output;
     ndt.align(output, init);
     result.converged = ndt.hasConverged();
@@ -235,21 +300,8 @@ public:
         static_cast<double>(final(1, 0)),
         static_cast<double>(final(0, 0)));
     }
-    return result;
   }
 
-  G2NdtScoreResult score_xyz(
-    const double * xyz,
-    std::size_t point_count,
-    double x,
-    double y,
-    double z,
-    double yaw) const
-  {
-    return score(cloud_from_xyz(xyz, point_count, params_.scan_voxel_leaf_size), x, y, z, yaw);
-  }
-
-private:
   G2NdtScoreParams params_;
   CloudPtr full_map_;
 };

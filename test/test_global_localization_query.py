@@ -131,8 +131,8 @@ class _FakeRegistrationScorer:
     def __init__(self, results):
         self._results = results
 
-    def score_candidate(self, scan_xyz, x, y, z, yaw):
-        return self._results[(x, y, z, yaw)]
+    def score_candidates(self, scan_xyz, poses):
+        return [self._results[tuple(pose)] for pose in poses]
 
 
 def test_score_with_registration_rewrites_converged_candidate_pose():
