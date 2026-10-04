@@ -377,6 +377,33 @@ def test_odometry_dropout_waives_confirmation():
         rclpy.shutdown()
 
 
+def test_walk_skips_lower_candidates_from_other_places():
+    # Koide outdoor_kidnap_b: after the correct top (1.4 m) did not settle, the walk
+    # reset onto lower-ranked candidates 35 m and 136 m away.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    try:
+        candidates = [
+            {"x": 50.0, "y": -70.0, "yaw_deg": -80.0, "registration_fitness": 0.20},
+            {"x": 52.0, "y": -71.0, "yaw_deg": -80.0, "registration_fitness": 0.35},
+            {"x": 85.0, "y": -70.0, "yaw_deg": 10.0, "registration_fitness": 1.20},
+            {
+                "x": -80.0,
+                "y": -60.0,
+                "yaw_deg": 90.0,
+                "registration_fitness": float("inf"),
+            },
+            {"x": 20.0, "y": 10.0, "yaw_deg": 0.0},
+        ]
+        scores = sup._restrict_walk_to_distinct_candidates(
+            candidates, (0.9, 0.85, 0.8, 0.7, 0.6)
+        )
+        assert scores == (0.9, 0.85, 0.0, 0.0, 0.6), scores
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
 def test_seed_motion_history_uses_one_fix_per_query(monkeypatch):
     # Candidate walking inside one query must not overwrite the previous-query
     # motion sample. Otherwise a wrong walked candidate poisons the next query's

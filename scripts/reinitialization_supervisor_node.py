@@ -818,6 +818,7 @@ class ReinitializationSupervisorNode(Node):
             scores = self._apply_bbs_shadow_motion_gate(summary, candidates, scores)
         if self.state.name != rsp.STATE_VERIFYING:
             scores = self._withhold_aliased_answer(candidates, scores)
+            scores = self._restrict_walk_to_distinct_candidates(candidates, scores)
             scores = self._withhold_unconfirmed_answer(summary, candidates, scores)
         self._candidates = candidates
         self._pending_reply = scores
@@ -834,6 +835,37 @@ class ReinitializationSupervisorNode(Node):
             self._pending_cross_check_mismatch = self._cross_check_mismatch_m(
                 summary, candidates[0] if candidates else None
             )
+
+    def _restrict_walk_to_distinct_candidates(self, candidates, scores):
+        """Keep walk candidates near the top, or distinct on their own registration.
+
+        A lower-ranked candidate at another place registered worse than the top, so
+        walking to it after the top failed to settle resets onto an aliased place.
+        """
+        params = self.registration_params
+        restricted = list(scores)
+        top = candidates[0] if candidates else None
+        for index in range(1, min(len(candidates), len(scores))):
+            candidate = candidates[index]
+            fitness = candidate.get("registration_fitness")
+            if fitness is None or top is None:
+                continue
+            separation = math.hypot(
+                float(candidate["x"]) - float(top["x"]),
+                float(candidate["y"]) - float(top["y"]),
+            )
+            if separation < params.registration_alternative_min_separation_m:
+                continue
+            alternative = quickstart_model.alternative_registration_fitness(
+                candidates, params.registration_alternative_min_separation_m, index
+            )
+            if not math.isfinite(
+                float(fitness)
+            ) or quickstart_model.registration_ambiguous(
+                params, float(fitness), alternative
+            ):
+                restricted[index] = 0.0
+        return tuple(restricted)
 
     def _withhold_aliased_answer(self, candidates, scores):
         """Withhold an answer whose top does not register clearly better than elsewhere."""

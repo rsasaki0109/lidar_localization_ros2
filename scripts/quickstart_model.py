@@ -410,20 +410,22 @@ def registration_high_confidence(
 
 
 def alternative_registration_fitness(
-    candidates: Sequence[dict], min_separation_m: float
+    candidates: Sequence[dict], min_separation_m: float, index: int = 0
 ) -> float | None:
-    """Best finite NDT fitness among candidates away from the top candidate."""
-    if not candidates:
+    """Best finite NDT fitness among candidates away from candidate ``index``."""
+    if index >= len(candidates):
         return None
-    top = candidates[0]
+    reference = candidates[index]
     best = None
-    for candidate in candidates[1:]:
+    for other_index, candidate in enumerate(candidates):
+        if other_index == index:
+            continue
         fitness = candidate.get("registration_fitness")
         if fitness is None or not math.isfinite(float(fitness)):
             continue
         separation = math.hypot(
-            float(candidate["x"]) - float(top["x"]),
-            float(candidate["y"]) - float(top["y"]),
+            float(candidate["x"]) - float(reference["x"]),
+            float(candidate["y"]) - float(reference["y"]),
         )
         if separation < min_separation_m:
             continue
