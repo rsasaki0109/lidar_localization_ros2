@@ -65,7 +65,7 @@ def main():
         harness = Node("quickstart_test_harness")
         received_poses = []
         received_status = []
-        query_count = {"value": 0}
+        query_count = {"value": 0, "not_ready": 3}
 
         transient = QoSProfile(depth=1)
         transient.reliability = ReliabilityPolicy.RELIABLE
@@ -150,6 +150,9 @@ def main():
             assert any(
                 item["reason"] == "global_pose_verified" for item in received_status
             )
+            assert startup.state.global_attempts == 2, (
+                "G2 no_scan_received responses spent global attempts"
+            )
             # rclpy rejects changing severity at one dynamic logger callsite.
             # The manual fallback must remain callable after informational reports.
             startup._report("manual_fallback_smoke", level="error")
@@ -163,6 +166,11 @@ def main():
 
 
 def _query_response(response, query_count):
+    if query_count["not_ready"] > 0:
+        query_count["not_ready"] -= 1
+        response.success = False
+        response.message = json.dumps({"error": "no_scan_received"})
+        return response
     query_count["value"] += 1
     response.success = True
     response.message = json.dumps(

@@ -456,6 +456,10 @@ class StartupInitializationNode(Node):
             response = future.result()
             payload = json.loads(response.message)
             if not response.success:
+                if payload.get("error") == "no_scan_received":
+                    # G2 subscribed later than this node; retry without spending
+                    # a global attempt.
+                    return
                 raise RuntimeError("G2 query returned no candidate")
             if not model.global_registration_scoring_acceptable(
                 payload.get("registration_scoring_enabled"),
