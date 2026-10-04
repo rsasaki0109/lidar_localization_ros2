@@ -51,6 +51,14 @@ default and prints `ambiguous`; specify `--cloud-topic` or `--imu-topic` rather 
 guessing. Frame defaults also come from the profile and can be overridden with
 `--lidar-frame`, `--imu-frame`, `--base-frame`, `--odom-frame`, and `--global-frame`.
 
+If the robot already runs odometry that publishes `odom -> base_frame` (a LIO front end
+such as RKO-LIO, or wheel or leg odometry), add `--odom-tf-prediction`. Scan matching is
+then seeded from that odometry, `map -> odom` is published, and the odometry-bridged pose
+keeps flowing while scans are rejected. Handheld or other fast motion needs it: on the
+Koide `outdoor_hard_02b` handheld sequence at 1x, seeded at the true start pose, the
+standalone configuration lost track after 23 s without it and stayed within 1.4 m (median
+0.07 m) for the whole 298 s with it.
+
 ## Initialization order
 
 The startup manager uses this fixed order:

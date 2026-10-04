@@ -245,7 +245,14 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         "reinitialization_trigger_fitness_explosion_threshold": getattr(
             args, "reinitialization_trigger_fitness_explosion_threshold", 1000.0
         ),
-        "enable_map_odom_tf": _arg_or_profile(args, "enable_map_odom_tf"),
+        # An external odometry TF (e.g. a LIO front end) both seeds scan matching
+        # and bridges rejected scans; without it fast handheld motion outruns NDT.
+        "enable_map_odom_tf": bool(
+            _arg_or_profile(args, "enable_map_odom_tf")
+            or getattr(args, "odom_tf_prediction", False)
+        ),
+        "use_odom_tf_prediction": getattr(args, "odom_tf_prediction", False),
+        "publish_bridge_pose_when_lost": getattr(args, "odom_tf_prediction", False),
         "global_frame_id": args.global_frame,
         "odom_frame_id": args.odom_frame,
         "base_frame_id": args.base_frame,
@@ -406,7 +413,7 @@ def doctor_command(args: argparse.Namespace) -> str:
         "--base-frame",
         args.base_frame,
     ]
-    if args.profile in {"nav2", "mid360"}:
+    if args.profile in {"nav2", "mid360"} or getattr(args, "odom_tf_prediction", False):
         parts.append("--require-odom-base-tf")
     if args.profile == "nav2":
         parts.append("--require-map-odom-tf")
@@ -443,6 +450,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--base-frame", default="base_link")
     parser.add_argument("--odom-frame", default="odom")
+    parser.add_argument(
+        "--odom-tf-prediction",
+        action="store_true",
+        help="Seed scan matching from an external odom -> base TF (e.g. a LIO "
+        "front end), publish map -> odom, and keep publishing the odometry-bridged "
+        "pose while scan matching is rejected.",
+    )
     parser.add_argument("--global-frame", default="map")
     parser.add_argument(
         "--use-sim-time",

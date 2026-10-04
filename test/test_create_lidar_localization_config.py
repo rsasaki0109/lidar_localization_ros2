@@ -102,6 +102,18 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
             "imu_preintegration_use_base_frame_transform:=false", launch_command
         )
 
+    def test_odom_tf_prediction_uses_and_requires_external_odometry(self):
+        tool_args = args(odom_tf_prediction=True)
+        params = config_tool.make_params(tool_args)
+
+        self.assertTrue(params["enable_map_odom_tf"])
+        self.assertTrue(params["use_odom_tf_prediction"])
+        self.assertTrue(params["publish_bridge_pose_when_lost"])
+        self.assertIn("--require-odom-base-tf", config_tool.doctor_command(tool_args))
+        default = config_tool.make_params(args())
+        self.assertFalse(default["use_odom_tf_prediction"])
+        self.assertNotIn("--require-odom-base-tf", config_tool.doctor_command(args()))
+
     def test_relative_map_path_is_written_as_absolute_path(self):
         relative_path = "maps/site.pcd"
         params = config_tool.make_params(args(map_path=relative_path))

@@ -197,6 +197,29 @@ class TestQuickstartCli(unittest.TestCase):
             self.assertIn("Next: publish /initialpose (RViz is off)", text)
             self.assertNotIn("RViz ", text.split("Launch:")[0])
 
+    def test_odom_tf_prediction_is_written_to_generated_params(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            map_path = root / "site.pcd"
+            output = root / "generated.yaml"
+            map_path.write_bytes(b"pcd")
+            with contextlib.redirect_stdout(io.StringIO()):
+                result = QUICKSTART.main(
+                    [
+                        "--map",
+                        str(map_path),
+                        "--output",
+                        str(output),
+                        "--no-discover-topics",
+                        "--odom-tf-prediction",
+                        "--dry-run",
+                    ]
+                )
+            self.assertEqual(result, 0)
+            generated = output.read_text(encoding="utf-8")
+            self.assertIn("use_odom_tf_prediction: true", generated)
+            self.assertIn("enable_map_odom_tf: true", generated)
+
     def test_next_step_mentions_stationary_search_with_route_crop(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
