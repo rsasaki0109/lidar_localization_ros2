@@ -109,6 +109,21 @@ answer must match an earlier one, from another scan within
 resets onto aliased places 160-260 m away during a stretch where NDT fails but odometry
 holds the pose.
 
+Odometry that stops for more than `odometry_max_gap_sec` (2 s; for example a LIO front
+end blinded while the sensor is covered) cannot vouch for motion across the gap, and a
+robot carried meanwhile keeps a pose that is metres off. For
+`odometry_confirmation_window_sec` after such a dropout, the supervisor:
+
+- accepts a single gated answer without odometry confirmation;
+- queries G2 on its own once scans have failed for `query_after_odometry_dropout_sec`
+  (5 s; 0 disables). The localizer's own request needs 30 s without an accepted scan,
+  and one accepted scan at the wrong pose restarts that wait. If this episode gives
+  up, the dropout requests no more queries, and the localizer's request takes over.
+
+On the Koide `outdoor_kidnap_b` replay (sensor covered and carried several times), this
+raised the share of time within 3 m after the first carry from 0.11-0.34 to 0.60-0.62,
+with every reset within 2 m.
+
 A candidate is published only when:
 
 - G2 confirms that 3D NDT registration scoring is active (required by default);
