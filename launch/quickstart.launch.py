@@ -152,7 +152,7 @@ def generate_launch_description():
         DeclareLaunchArgument("g2_registration_refine_candidates", default_value="false"),
         DeclareLaunchArgument("g2_registration_seed_z_m", default_value="0.0"),
         DeclareLaunchArgument("g2_max_scan_points", default_value="256"),
-        DeclareLaunchArgument("g2_angular_resolution_deg", default_value="10.0"),
+        DeclareLaunchArgument("g2_angular_resolution_deg", default_value="5.0"),
         DeclareLaunchArgument("g2_max_candidates", default_value="8"),
         DeclareLaunchArgument("g2_nms_radius_m", default_value="3.0"),
         DeclareLaunchArgument("supervisor_min_candidate_score", default_value="0.15"),
