@@ -94,7 +94,8 @@ A candidate is published only when:
 - the score lead over candidate 2 is at least `--min-score-margin`;
 - `candidate_age_sec` is present and no greater than `--max-candidate-age-sec`;
 - at least `--global-consensus-samples` results from distinct scan timestamps agree
-  within the configured translation and yaw bounds;
+  within the configured translation and yaw bounds (with odometry, after moving each
+  earlier result to the new scan time; see below);
 - the localizer subsequently reports acceptable fitness and stable tracking for
   `--verification-samples` fresh diagnostic messages.
 
@@ -107,11 +108,10 @@ The compiled G2 backend and 3D scoring are enabled by default. If scorer loading
 scoring fails, quickstart rejects the 2D-only result instead of weakening the policy.
 Use `--global-seed-z` for maps whose sensor height is not near zero. HDL-style maps may
 need `--refine-global-candidates`; refinement remains opt-in because repeated geometry
-can make several BBS hypotheses converge to the same local optimum. Keep the robot
-stationary during cold-start search: the candidate age and query timeout defaults are
-30 seconds, and an over-time in-flight query falls back directly to the operator instead
-of issuing duplicate work. Quickstart uses 256 scan points, 10-degree yaw sampling,
-eight candidates, and 3 m BBS non-maximum suppression to keep the guarded query bounded;
+can make several BBS hypotheses converge to the same local optimum. The candidate age
+and query timeout defaults are 30 seconds, and an over-time in-flight query falls back
+directly to the operator instead of issuing duplicate work. Quickstart uses 256 scan
+points, 5-degree yaw sampling, eight candidates, and 3 m BBS non-maximum suppression to keep the guarded query bounded;
 all are available as `--global-*` overrides for measured site tuning. The
 `--no-require-global-registration-scoring` escape hatch is intended only for replay
 experiments, not unattended startup.
@@ -120,6 +120,33 @@ The occupancy grid must represent the same physical map as the 3D map. The packa
 not infer this relationship and cannot make a mismatched pair safe. Create a grid with
 `generate_occupancy_map_from_pcd` when its route-crop behavior fits the site, then
 inspect the result before use.
+
+### Starting while moving
+
+A G2 answer describes the scan it was computed from, which is 10-20 s old when it
+arrives. Without odometry, keep the robot stationary during cold-start search. When an
+`odom_frame_id -> base_frame_id` TF is available (the `mid360` profile requires one),
+the startup node uses it automatically:
+
+- each result is remembered as the map -> odom transform it implies (the last
+  `global_consensus_history`, default 5), including results that failed the score,
+  margin, or distinctiveness gates;
+- a result is confirmed when it matches an earlier result from another scan, moved to
+  the new scan time by odometry, and at least one of the two passed all gates. The
+  match allows 2 m plus `global_consensus_translation_per_odom_m` (5%) of the distance
+  travelled, for the 5-degree heading quantization of each result;
+- the published `/initialpose` is moved from the queried scan to the latest odometry,
+  and the log reports how far (`moved the global candidate by odometry ...`).
+
+The node logs `odometry at the queried scan` or `no odometry at the queried scan` for
+every result. It waits up to 2 s of scans for odometry before the first query, so a
+fix is not lost to a TF listener that started after the scan. Disable all of this with
+the startup node's `enable_odom_motion_compensation:=false`.
+
+On the Koide `outdoor_hard_02b` handheld sequence (about 1 m/s), only 9 of 37 G2
+answers 8 s apart had a correct top candidate. Replaying those answers, odometry let 12
+of 37 start points initialize within six answers (0 without odometry) and 35 of 37
+with an unlimited budget, with no accepted pose more than 3 m wrong.
 
 ## Profiles
 

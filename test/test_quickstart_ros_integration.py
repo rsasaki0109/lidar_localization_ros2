@@ -102,8 +102,14 @@ def main():
         executor.add_node(startup)
         executor.add_node(harness)
         try:
+            # No odometry here: the startup node waits 2 s of scans for it first.
+            warmup_cloud = PointCloud2()
+            warmup_cloud.header.stamp.sec = 1
+            for _ in range(3):
+                cloud_pub.publish(warmup_cloud)
+                executor.spin_once(timeout_sec=0.1)
             first_cloud = PointCloud2()
-            first_cloud.header.stamp.sec = 1
+            first_cloud.header.stamp.sec = 4
             for _ in range(3):
                 cloud_pub.publish(first_cloud)
                 executor.spin_once(timeout_sec=0.1)
@@ -111,7 +117,7 @@ def main():
                 "first global candidate did not prime consensus"
             )
             second_cloud = PointCloud2()
-            second_cloud.header.stamp.sec = 2
+            second_cloud.header.stamp.sec = 5
             cloud_pub.publish(second_cloud)
             assert spin_until(executor, lambda: bool(received_poses)), (
                 "startup node did not publish a global candidate"
@@ -177,7 +183,7 @@ def _query_response(response, query_count):
         {
             "registration_scoring_enabled": True,
             "candidate_age_sec": 0.1,
-            "scan_stamp_sec": float(query_count["value"]),
+            "scan_stamp_sec": 3.0 + query_count["value"],
             "candidates": [
                 {"x": 4.0, "y": 5.0, "z": 1.25, "yaw_deg": 30.0, "score": 0.9},
                 {"x": -4.0, "y": -5.0, "z": 1.25, "yaw_deg": 210.0, "score": 0.7},

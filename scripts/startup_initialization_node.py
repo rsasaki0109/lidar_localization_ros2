@@ -12,12 +12,15 @@ from pathlib import Path
 import rclpy
 from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from rclpy.duration import Duration
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.time import Time
 from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
+from tf2_ros import Buffer, TransformException, TransformListener
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -53,6 +56,9 @@ class StartupInitializationNode(Node):
         self.declare_parameter("query_service", "/global_localization_node/query")
         self.declare_parameter("status_topic", "~/status")
         self.declare_parameter("global_frame_id", "map")
+        self.declare_parameter("odom_frame_id", "odom")
+        self.declare_parameter("base_frame_id", "base_link")
+        self.declare_parameter("enable_odom_motion_compensation", True)
         self.declare_parameter("default_z_m", 0.0)
         self.declare_parameter("min_candidate_score", 0.6)
         self.declare_parameter("min_score_margin", 0.05)
@@ -65,6 +71,8 @@ class StartupInitializationNode(Node):
         self.declare_parameter("global_consensus_samples", 2)
         self.declare_parameter("global_consensus_translation_m", 2.0)
         self.declare_parameter("global_consensus_yaw_deg", 20.0)
+        self.declare_parameter("global_consensus_history", 5)
+        self.declare_parameter("global_consensus_translation_per_odom_m", 0.05)
         self.declare_parameter("registration_fitness_high_confidence_threshold", 1.0e9)
         self.declare_parameter("max_registration_fitness_ratio", 0.5)
         self.declare_parameter("registration_alternative_min_separation_m", 5.0)
@@ -73,6 +81,15 @@ class StartupInitializationNode(Node):
         self.declare_parameter("yaw_std_rad", 0.25)
 
         self.global_frame = str(self.get_parameter("global_frame_id").value)
+        self.odom_frame = str(self.get_parameter("odom_frame_id").value)
+        self.base_frame = str(self.get_parameter("base_frame_id").value)
+        self.tf_buffer = None
+        self.last_odom_error = "odometry compensation disabled"
+        self.odom_first_stamp_sec = None
+        if bool(self.get_parameter("enable_odom_motion_compensation").value):
+            # A G2 answer arrives 10-20 s after its scan; keep odometry that long.
+            self.tf_buffer = Buffer(cache_time=Duration(seconds=120.0))
+            self.tf_listener = TransformListener(self.tf_buffer, self)
         self.map_path = Path(str(self.get_parameter("map_path").value)).expanduser()
         state_value = str(self.get_parameter("pose_state_path").value)
         self.state_path = Path(state_value).expanduser() if state_value else None
@@ -117,6 +134,12 @@ class StartupInitializationNode(Node):
             ),
             global_consensus_yaw_deg=float(
                 self.get_parameter("global_consensus_yaw_deg").value
+            ),
+            global_consensus_history=max(
+                1, int(self.get_parameter("global_consensus_history").value)
+            ),
+            global_consensus_translation_per_odom_m=float(
+                self.get_parameter("global_consensus_translation_per_odom_m").value
             ),
             registration_fitness_high_confidence_threshold=float(
                 self.get_parameter(
@@ -214,7 +237,9 @@ class StartupInitializationNode(Node):
         self.pending_scan_stamp_sec = None
         self.pending_top_registration_fitness = None
         self.pending_alternative_registration_fitness = None
+        self.pending_odom_pose = None
         self.latest_cloud_stamp_sec = None
+        self.first_cloud_stamp_sec = None
         self.last_query_scan_stamp_sec = None
         self.candidates = []
         self.query_in_flight = False
@@ -231,6 +256,8 @@ class StartupInitializationNode(Node):
         self.latest_cloud_stamp_sec = (
             float(_msg.header.stamp.sec) + float(_msg.header.stamp.nanosec) * 1e-9
         )
+        if self.first_cloud_stamp_sec is None:
+            self.first_cloud_stamp_sec = self.latest_cloud_stamp_sec
         if self.saved_pose is not None and not self.saved_pose_preverified:
             if self.saved_pose_scorer is not None:
                 self._preverify_saved_pose(_msg)
@@ -413,6 +440,7 @@ class StartupInitializationNode(Node):
             query_alternative_registration_fitness=(
                 self.pending_alternative_registration_fitness
             ),
+            query_odom_pose=self.pending_odom_pose,
             diagnostic_fresh=self.diagnostic_fresh,
             tracking_good=self.latest_tracking_good,
             fitness=self.latest_fitness,
@@ -423,6 +451,7 @@ class StartupInitializationNode(Node):
         self.pending_scan_stamp_sec = None
         self.pending_top_registration_fitness = None
         self.pending_alternative_registration_fitness = None
+        self.pending_odom_pose = None
         self.diagnostic_fresh = False
         decision = model.decide_startup(self.params, self.state, observation)
         self.state = decision.state
@@ -453,6 +482,8 @@ class StartupInitializationNode(Node):
             return
         if not self.query_client.service_is_ready():
             self.get_logger().warning("global localization service is not ready")
+            return
+        if self._odom_starts_after_latest_scan():
             return
         if self.last_query_scan_stamp_sec is not None and (
             self.latest_cloud_stamp_sec is None
@@ -509,6 +540,21 @@ class StartupInitializationNode(Node):
                     candidates, self.params.registration_alternative_min_separation_m
                 )
             )
+            odom = (
+                None
+                if self.pending_scan_stamp_sec is None
+                else self._odom_pose(self.pending_scan_stamp_sec)
+            )
+            self.pending_odom_pose = None if odom is None else odom[:3]
+            if odom is None:
+                self.get_logger().info(
+                    f"no odometry at the queried scan: {self.last_odom_error}"
+                )
+            else:
+                self.get_logger().info(
+                    "odometry at the queried scan: "
+                    f"x={odom[0]:.2f} y={odom[1]:.2f} yaw={math.degrees(odom[2]):.1f}"
+                )
         except Exception as exc:  # noqa: BLE001
             self.get_logger().warning(f"global localization query failed: {exc}")
             self.candidates = []
@@ -518,6 +564,7 @@ class StartupInitializationNode(Node):
             self.pending_scan_stamp_sec = None
             self.pending_top_registration_fitness = None
             self.pending_alternative_registration_fitness = None
+            self.pending_odom_pose = None
 
     def _new_initialpose(self) -> PoseWithCovarianceStamped:
         msg = PoseWithCovarianceStamped()
@@ -547,14 +594,77 @@ class StartupInitializationNode(Node):
         self.initialpose_pub.publish(msg)
         self.get_logger().info("published map-matched saved pose for verification")
 
+    def _odom_pose(self, stamp_sec: float | None):
+        """odom -> base as (x, y, yaw, z) at ``stamp_sec`` (latest when None)."""
+        if self.tf_buffer is None:
+            return None
+        when = Time() if stamp_sec is None else Time(seconds=stamp_sec)
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                self.odom_frame, self.base_frame, when
+            ).transform
+        except TransformException as exc:
+            self.last_odom_error = str(exc)
+            return None
+        q = transform.rotation
+        yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y**2 + q.z**2))
+        t = transform.translation
+        return (t.x, t.y, yaw, t.z)
+
+    def _odom_starts_after_latest_scan(self) -> bool:
+        """True while odometry has not yet covered the newest scan.
+
+        G2 answers for its newest scan; when that scan predates the odometry this
+        node has received, the fix cannot be tied to odometry. Odometry gets a short
+        grace period to appear at all; without it, queries go ahead unaided.
+        """
+        if self.tf_buffer is None or self.latest_cloud_stamp_sec is None:
+            return False
+        if self.odom_first_stamp_sec is None:
+            try:
+                stamp = self.tf_buffer.lookup_transform(
+                    self.odom_frame, self.base_frame, Time()
+                ).header.stamp
+            except TransformException:
+                return self.latest_cloud_stamp_sec < self.first_cloud_stamp_sec + 2.0
+            self.odom_first_stamp_sec = stamp.sec + stamp.nanosec * 1.0e-9
+        # Leave a margin for G2 holding a slightly older scan than this node.
+        return self.latest_cloud_stamp_sec < self.odom_first_stamp_sec + 0.5
+
+    def _odom_motion(self, start_stamp_sec: float, end_stamp_sec: float | None):
+        """Planar odometry motion and height change between two stamps, or None."""
+        start = self._odom_pose(start_stamp_sec)
+        end = self._odom_pose(end_stamp_sec)
+        if start is None or end is None:
+            return None
+        return model.planar_motion_between(start[:3], end[:3]), end[3] - start[3]
+
     def _publish_global_candidate(self, index: int) -> None:
         if index >= len(self.candidates):
             return
         candidate = self.candidates[index]
+        x = float(candidate["x"])
+        y = float(candidate["y"])
         yaw = math.radians(float(candidate["yaw_deg"]))
+        dz = 0.0
+        # The candidate is where the robot was at the queried scan; move it to
+        # where odometry says the robot is now.
+        motion = (
+            None
+            if self.last_query_scan_stamp_sec is None
+            else self._odom_motion(self.last_query_scan_stamp_sec, None)
+        )
+        if motion is not None:
+            x, y, yaw = model.apply_planar_motion((x, y, yaw), motion[0])
+            dz = motion[1]
+            self.get_logger().info(
+                "moved the global candidate by odometry since its scan: "
+                f"{math.hypot(motion[0][0], motion[0][1]):.2f} m, "
+                f"{math.degrees(motion[0][2]):.1f} deg"
+            )
         msg = self._new_initialpose()
-        msg.pose.pose.position.x = float(candidate["x"])
-        msg.pose.pose.position.y = float(candidate["y"])
+        msg.pose.pose.position.x = x
+        msg.pose.pose.position.y = y
         if candidate.get("z") is not None:
             msg.pose.pose.position.z = float(candidate["z"])
         elif self.saved_pose is not None:
@@ -563,12 +673,13 @@ class StartupInitializationNode(Node):
             msg.pose.pose.position.z = self.latest_pose.pose.pose.position.z
         else:
             msg.pose.pose.position.z = self.default_z
+        msg.pose.pose.position.z += dz
         msg.pose.pose.orientation.z = math.sin(yaw * 0.5)
         msg.pose.pose.orientation.w = math.cos(yaw * 0.5)
         self.initialpose_pub.publish(msg)
         self.get_logger().info(
             "published globally searched pose for verification: "
-            f"x={candidate['x']} y={candidate['y']} yaw={candidate['yaw_deg']}"
+            f"x={x:.3f} y={y:.3f} yaw={math.degrees(yaw):.1f}"
         )
 
     def _report(self, reason: str, level: str = "info", extra=None) -> None:

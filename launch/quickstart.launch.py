@@ -303,6 +303,8 @@ def generate_launch_description():
                 value_type=float),
             "default_z_m": ParameterValue(
                 LaunchConfiguration("g2_registration_seed_z_m"), value_type=float),
+            "odom_frame_id": LaunchConfiguration("odom_frame_id"),
+            "base_frame_id": LaunchConfiguration("base_frame_id"),
             "use_sim_time": ParameterValue(
                 LaunchConfiguration("use_sim_time"), value_type=bool),
         }],
