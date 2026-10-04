@@ -90,6 +90,7 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
         launch_command = config_tool.launch_command(tool_args, Path(tool_args.output))
 
         self.assertEqual(params["map_path"], "/maps/site.pcd")
+        self.assertEqual(params["local_map_update_distance"], 10.0)
         self.assertFalse(params["enable_map_odom_tf"])
         self.assertFalse(params["use_imu"])
         self.assertFalse(params["use_imu_preintegration"])
