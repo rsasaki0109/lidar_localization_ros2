@@ -816,9 +816,11 @@ class ReinitializationSupervisorNode(Node):
             return
         if self.enable_bbs_shadow_motion_gate:
             scores = self._apply_bbs_shadow_motion_gate(summary, candidates, scores)
+        # A verify reply reseeds and walks on a mismatch, so it is gated the same
+        # way; recovery confirmation compares the raw top with the localizer pose.
+        scores = self._withhold_aliased_answer(candidates, scores)
+        scores = self._restrict_walk_to_distinct_candidates(candidates, scores)
         if self.state.name != rsp.STATE_VERIFYING:
-            scores = self._withhold_aliased_answer(candidates, scores)
-            scores = self._restrict_walk_to_distinct_candidates(candidates, scores)
             scores = self._withhold_unconfirmed_answer(summary, candidates, scores)
         self._candidates = candidates
         self._pending_reply = scores

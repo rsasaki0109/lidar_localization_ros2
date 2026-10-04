@@ -331,6 +331,52 @@ def test_aliased_answer_is_not_published_as_a_reset():
         rclpy.shutdown()
 
 
+def test_aliased_verify_reply_does_not_reseed():
+    # Koide outdoor_kidnap_b: a correct reset (1.0 m) was verified against an aliased
+    # answer (fitness 4.05 vs 4.72 elsewhere); the mismatch reseeded 46 m off.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    try:
+        sup.state = replace(sup.state, name=rsn.rsp.STATE_VERIFYING, attempts=1)
+        reply = {
+            "scan_stamp_sec": 100.0,
+            "candidates": [
+                {
+                    "x": -63.3,
+                    "y": -75.6,
+                    "yaw_deg": 90.0,
+                    "score": 0.32,
+                    "registration_fitness": 4.054,
+                },
+                {
+                    "x": -63.5,
+                    "y": -73.2,
+                    "yaw_deg": 90.0,
+                    "score": 0.27,
+                    "registration_fitness": 4.377,
+                },
+                {
+                    "x": -57.3,
+                    "y": -78.0,
+                    "yaw_deg": 100.0,
+                    "score": 0.21,
+                    "registration_fitness": 4.720,
+                },
+            ],
+        }
+
+        class _Future:
+            def result(self):
+                return Trigger.Response(success=True, message=json.dumps(reply))
+
+        sup._on_query_response(_Future())
+
+        assert sup._pending_reply == (0.0, 0.0, 0.0), sup._pending_reply
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
 def test_odometry_confirmation_needs_a_second_agreeing_answer():
     # Koide 02b quickstart: a single wrong answer (65 m off, ratio 0.30) passed
     # the distinctiveness gate while the odometry bridge held the right pose.
