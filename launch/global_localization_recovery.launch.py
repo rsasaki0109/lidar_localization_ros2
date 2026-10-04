@@ -481,6 +481,7 @@ def generate_launch_description():
             'alignment_status_topic': '/alignment_status',
             'initialpose_topic': '/initialpose',
             'global_frame_id': global_frame_id,
+            'odom_frame_id': odom_frame_id,
             'min_candidate_score': ParameterValue(
                 supervisor_min_candidate_score, value_type=float),
             'max_attempts': ParameterValue(supervisor_max_attempts, value_type=int),

@@ -26,6 +26,7 @@ Wiring::
 """
 
 import csv
+import itertools
 import json
 import math
 import time
@@ -42,6 +43,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
+from tf2_msgs.msg import TFMessage
 
 _ACCEPT_MEASUREMENT_ACTIONS = frozenset(
     {
@@ -131,6 +133,11 @@ class ReinitializationSupervisorNode(Node):
         # bridged motion (the startup consensus, applied to recovery).
         self.declare_parameter("require_odometry_confirmation", True)
         self.declare_parameter("odometry_confirmation_window_sec", 120.0)
+        # Odometry that dropped out (e.g. a LIO front end blinded by a cover) cannot
+        # vouch for motion across the gap; a robot carried away then needs a single
+        # gated answer to recover, as before confirmation existed.
+        self.declare_parameter("odom_frame_id", "odom")
+        self.declare_parameter("odometry_max_gap_sec", 2.0)
         self.declare_parameter("bbs_shadow_required_samples", 2)
         self.declare_parameter("bbs_shadow_max_translation_mismatch_m", 5.0)
         self.declare_parameter("bbs_shadow_max_yaw_mismatch_deg", 20.0)
@@ -227,6 +234,11 @@ class ReinitializationSupervisorNode(Node):
         )
         # (scan stamp, map pose relative to the bridged pose, bridged pose, gated)
         self._confirmation_anchors = deque(maxlen=5)
+        self.odom_frame = str(self.get_parameter("odom_frame_id").value)
+        self.odometry_max_gap_sec = float(
+            self.get_parameter("odometry_max_gap_sec").value
+        )
+        self._odometry_stamps = deque()
         self.bbs_shadow_required_samples = max(
             2, int(self.get_parameter("bbs_shadow_required_samples").value)
         )
@@ -361,6 +373,9 @@ class ReinitializationSupervisorNode(Node):
                 self._on_odom_bridge_pose,
                 pose_qos,
             )
+
+        if self.require_odometry_confirmation:
+            self.create_subscription(TFMessage, "/tf", self._on_tf, 100)
 
         self.create_subscription(
             Bool,
@@ -839,6 +854,29 @@ class ReinitializationSupervisorNode(Node):
         )
         return tuple(0.0 for _ in scores)
 
+    def _on_tf(self, msg: TFMessage) -> None:
+        for transform in msg.transforms:
+            if transform.header.frame_id != self.odom_frame:
+                continue
+            self._odometry_stamps.append(self._stamp_to_sec(transform.header.stamp))
+        while (
+            len(self._odometry_stamps) > 1
+            and self._odometry_stamps[-1] - self._odometry_stamps[0]
+            > self.odometry_confirmation_window_sec + self.odometry_max_gap_sec
+        ):
+            self._odometry_stamps.popleft()
+
+    def _odometry_continuous(self, stamp_sec: float) -> bool:
+        """True when odom TF arrived without dropouts over the confirmation window."""
+        start = stamp_sec - self.odometry_confirmation_window_sec
+        stamps = [s for s in self._odometry_stamps if start <= s <= stamp_sec]
+        if not stamps or stamp_sec - stamps[-1] > self.odometry_max_gap_sec:
+            return False
+        return all(
+            later - earlier <= self.odometry_max_gap_sec
+            for earlier, later in itertools.pairwise(stamps)
+        )
+
     def _withhold_unconfirmed_answer(self, summary, candidates, scores):
         """Withhold an answer until another answer agrees after bridged motion."""
         if not self.require_odometry_confirmation or not candidates:
@@ -850,6 +888,15 @@ class ReinitializationSupervisorNode(Node):
             else self._nearest_history_entry(self._odom_bridge_history, stamp, 0.5)
         )
         if bridge is None:
+            return scores
+        if not self._odometry_continuous(stamp):
+            self.get_logger().info(
+                "odometry dropped out within "
+                f"{self.odometry_confirmation_window_sec:.0f} s; not waiting for a "
+                "second G2 answer",
+                throttle_duration_sec=10.0,
+            )
+            self._confirmation_anchors.clear()
             return scores
         bridged = bridge[1:4]
         top = candidates[0]

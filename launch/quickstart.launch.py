@@ -225,6 +225,7 @@ def generate_launch_description():
             "initialpose_topic": "/initialpose",
             "pose_topic": LaunchConfiguration("pose_topic"),
             "global_frame_id": LaunchConfiguration("global_frame_id"),
+            "odom_frame_id": LaunchConfiguration("odom_frame_id"),
             "min_candidate_score": ParameterValue(
                 LaunchConfiguration("supervisor_min_candidate_score"), value_type=float),
             "query_timeout_sec": ParameterValue(
