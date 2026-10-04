@@ -99,7 +99,9 @@ The startup-only state machine is separate from the G3 lost-tracking
 supervisor because cold start has no previously trusted tracking episode.
 
 The G3 supervisor applies the startup distinctiveness gate to its G2 answers
-(`max_registration_fitness_ratio`). While `odom_bridge_pose` is available (for example
+(`max_registration_fitness_ratio`), including the reply that verifies a reset: a
+verify reply that disagrees with the reset reseeds from its own candidates only when
+they pass. While `odom_bridge_pose` is available (for example
 with `--odom-tf-prediction`), it also does not reset the bridged pose on one answer: an
 answer must match an earlier one, from another scan within
 `odometry_confirmation_window_sec` (120 s), moved forward by the bridged motion
