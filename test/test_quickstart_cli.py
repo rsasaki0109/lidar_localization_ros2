@@ -64,6 +64,7 @@ class TestQuickstartCli(unittest.TestCase):
             self.assertIn("restore_saved_pose:=true", text)
             self.assertIn("enable_global_initialization:=true", text)
             self.assertIn("g2_use_cpp_backend:=true", text)
+            self.assertIn("g2_angular_resolution_deg:=5.0", text)
             self.assertIn("g2_enable_registration_scoring:=true", text)
             self.assertIn("require_global_registration_scoring:=true", text)
             self.assertIn("guarded global search", text)

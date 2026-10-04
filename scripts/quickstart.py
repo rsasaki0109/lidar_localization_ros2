@@ -166,7 +166,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "the map's ground is not near z=0 (default: 0)",
     )
     parser.add_argument("--global-max-scan-points", type=int, default=256)
-    parser.add_argument("--global-angular-resolution-deg", type=float, default=10.0)
+    parser.add_argument(
+        "--global-angular-resolution-deg",
+        type=float,
+        default=5.0,
+        help="yaw step of the global search; coarser steps can miss the true "
+        "heading (default: 5)",
+    )
     parser.add_argument("--global-max-candidates", type=int, default=8)
     parser.add_argument("--global-nms-radius-m", type=float, default=3.0)
     parser.add_argument(
