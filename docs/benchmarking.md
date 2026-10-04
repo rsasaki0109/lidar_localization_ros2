@@ -36,7 +36,8 @@ source scripts/setup_local_env.sh
 
 ```bash
 cd ../build_ws
-colcon build --symlink-install --packages-up-to lidar_localization_ros2
+colcon build --symlink-install --packages-up-to lidar_localization_ros2 \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release
 cd ../repo
 source scripts/setup_local_env.sh
 ```

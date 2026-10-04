@@ -50,7 +50,8 @@ source scripts/setup_local_env.sh
 After sourcing the environment, build from `../build_ws`:
 
 ```bash
-colcon build --symlink-install --packages-up-to lidar_localization_ros2
+colcon build --symlink-install --packages-up-to lidar_localization_ros2 \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release
 ```
 
 ## Current Local Dependency Set
