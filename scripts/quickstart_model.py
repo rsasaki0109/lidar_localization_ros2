@@ -206,6 +206,12 @@ class StartupParams:
     # registration over occupancy score margin / distinct-scan consensus. Disabled
     # by default (inf). Route-crop quickstart sets ~0.5 for mapping-run seeds.
     registration_fitness_high_confidence_threshold: float = 1.0e9
+    # Reject a top G2 candidate whose NDT fitness is not clearly better than the
+    # best candidate at another place (an aliased area scores many similar,
+    # mediocre poses). Candidates within the separation radius may converge onto
+    # the same pose, so they are not alternatives. A ratio of 0 disables the gate.
+    max_registration_fitness_ratio: float = 0.5
+    registration_alternative_min_separation_m: float = 5.0
 
 
 def validate_startup_params(params: StartupParams) -> str | None:
@@ -219,11 +225,17 @@ def validate_startup_params(params: StartupParams) -> str | None:
         params.global_consensus_translation_m,
         params.global_consensus_yaw_deg,
         params.registration_fitness_high_confidence_threshold,
+        params.max_registration_fitness_ratio,
+        params.registration_alternative_min_separation_m,
     )
     if not _finite(finite_values):
         return "startup thresholds must be finite"
     if params.registration_fitness_high_confidence_threshold < 0.0:
         return "registration_fitness_high_confidence_threshold must be non-negative"
+    if params.max_registration_fitness_ratio < 0.0:
+        return "max_registration_fitness_ratio must be non-negative"
+    if params.registration_alternative_min_separation_m < 0.0:
+        return "registration_alternative_min_separation_m must be non-negative"
     if not 0.0 <= params.min_candidate_score <= 1.0:
         return "min_candidate_score must be between 0 and 1"
     if params.min_score_margin < 0.0:
@@ -271,6 +283,7 @@ class StartupObservation:
     query_top_pose: tuple[float, float, float] | None = None
     query_scan_stamp_sec: float | None = None
     query_top_registration_fitness: float | None = None
+    query_alternative_registration_fitness: float | None = None
     diagnostic_fresh: bool = False
     tracking_good: bool = False
     fitness: float | None = None
@@ -321,6 +334,43 @@ def registration_high_confidence(
     if fitness is None or not math.isfinite(fitness):
         return False
     return float(fitness) <= threshold
+
+
+def alternative_registration_fitness(
+    candidates: Sequence[dict], min_separation_m: float
+) -> float | None:
+    """Best finite NDT fitness among candidates away from the top candidate."""
+    if not candidates:
+        return None
+    top = candidates[0]
+    best = None
+    for candidate in candidates[1:]:
+        fitness = candidate.get("registration_fitness")
+        if fitness is None or not math.isfinite(float(fitness)):
+            continue
+        separation = math.hypot(
+            float(candidate["x"]) - float(top["x"]),
+            float(candidate["y"]) - float(top["y"]),
+        )
+        if separation < min_separation_m:
+            continue
+        if best is None or float(fitness) < best:
+            best = float(fitness)
+    return best
+
+
+def registration_ambiguous(
+    params: StartupParams,
+    top_fitness: float | None,
+    alternative_fitness: float | None,
+) -> bool:
+    """True when the top candidate does not register clearly better than elsewhere."""
+    ratio = params.max_registration_fitness_ratio
+    if ratio <= 0.0 or top_fitness is None or alternative_fitness is None:
+        return False
+    if not math.isfinite(top_fitness) or not math.isfinite(alternative_fitness):
+        return False
+    return top_fitness > ratio * alternative_fitness
 
 
 def decide_startup(
@@ -398,6 +448,12 @@ def decide_startup(
             and scores[0] - scores[1] < params.min_score_margin
         ):
             return _query(params, state, obs.now_sec, "ambiguous_candidate_retry")
+        if not high_confidence and registration_ambiguous(
+            params,
+            obs.query_top_registration_fitness,
+            obs.query_alternative_registration_fitness,
+        ):
+            return _query(params, state, obs.now_sec, "ambiguous_registration_retry")
         if (
             obs.query_candidate_age_sec is None
             or not math.isfinite(obs.query_candidate_age_sec)
