@@ -208,6 +208,11 @@ class StartupParams:
     # A fix's heading error (G2 searches in 5 degree steps) grows into a position
     # error along the distance travelled, so widen the match by this per metre.
     global_consensus_translation_per_odom_m: float = 0.05
+    # An answer from a place at least this far (by odometry) from the previous
+    # answer is new evidence, so it gives its attempt back; a stationary robot
+    # still stops after max_global_attempts. max_global_queries bounds the total.
+    global_attempt_refund_travel_m: float = 5.0
+    max_global_queries: int = 30
     # When the top G2 candidate's NDT fitness is at or below this threshold, trust
     # registration over occupancy score margin / distinct-scan consensus. Disabled
     # by default (inf). Route-crop quickstart sets ~0.5 for mapping-run seeds.
@@ -231,6 +236,7 @@ def validate_startup_params(params: StartupParams) -> str | None:
         params.global_consensus_translation_m,
         params.global_consensus_yaw_deg,
         params.global_consensus_translation_per_odom_m,
+        params.global_attempt_refund_travel_m,
         params.registration_fitness_high_confidence_threshold,
         params.max_registration_fitness_ratio,
         params.registration_alternative_min_separation_m,
@@ -259,6 +265,10 @@ def validate_startup_params(params: StartupParams) -> str | None:
         return "global_consensus_samples must be positive"
     if params.global_consensus_translation_per_odom_m < 0.0:
         return "global_consensus_translation_per_odom_m must be non-negative"
+    if params.global_attempt_refund_travel_m < 0.0:
+        return "global_attempt_refund_travel_m must be non-negative"
+    if params.max_global_queries < params.max_global_attempts:
+        return "max_global_queries must be at least max_global_attempts"
     if params.global_consensus_history < 1:
         return "global_consensus_history must be positive"
     if params.global_consensus_translation_m < 0.0:
@@ -285,6 +295,8 @@ class StartupState:
     source: str = ""
     deadline_sec: float | None = None
     global_attempts: int = 0
+    global_queries: int = 0
+    last_answer_odom_pose: tuple[float, float, float] | None = None
     confirmation_samples: int = 0
     saved_attempted: bool = False
     consensus_samples: int = 0
@@ -334,12 +346,15 @@ def _operator(state: StartupState, reason: str) -> StartupDecision:
 def _query(params: StartupParams, state: StartupState, now_sec: float, reason: str):
     if state.global_attempts >= params.max_global_attempts:
         return _operator(state, "global_attempts_exhausted")
+    if state.global_queries >= params.max_global_queries:
+        return _operator(state, "global_queries_exhausted")
     next_state = replace(
         state,
         name=STATE_QUERYING_GLOBAL,
         source="global",
         deadline_sec=now_sec + params.query_timeout_sec,
         global_attempts=state.global_attempts + 1,
+        global_queries=state.global_queries + 1,
         confirmation_samples=0,
     )
     return StartupDecision(ACTION_QUERY_GLOBAL, reason, next_state)
@@ -507,6 +522,27 @@ def _remember_odom_fix(
     )
 
 
+def _refund_attempt_after_travel(
+    params: StartupParams, state: StartupState, obs: StartupObservation
+) -> StartupState:
+    odom = obs.query_odom_pose
+    if odom is None:
+        return state
+    previous = state.last_answer_odom_pose
+    refund = (
+        previous is not None
+        and math.hypot(odom[0] - previous[0], odom[1] - previous[1])
+        >= params.global_attempt_refund_travel_m
+    )
+    return replace(
+        state,
+        global_attempts=max(0, state.global_attempts - 1)
+        if refund
+        else state.global_attempts,
+        last_answer_odom_pose=odom,
+    )
+
+
 def _publish_confirmed_fix(
     params: StartupParams, state: StartupState, obs: StartupObservation
 ) -> StartupDecision:
@@ -581,6 +617,7 @@ def decide_startup(
                 return _query(params, state, obs.now_sec, "query_timeout_retry")
             return StartupDecision(ACTION_WAIT, "awaiting_global_query", state)
         scores = obs.query_candidate_scores
+        state = _refund_attempt_after_travel(params, state, obs)
         odom_fix = _odom_fix_usable(params, obs)
         if (
             odom_fix

@@ -137,6 +137,10 @@ the startup node uses it automatically:
   travelled, for the 5-degree heading quantization of each result;
 - the published `/initialpose` is moved from the queried scan to the latest odometry,
   and the log reports how far (`moved the global candidate by odometry ...`).
+- a result whose scan is at least `global_attempt_refund_travel_m` (5 m) of odometry
+  away from the previous result's gives its attempt back: a moving robot keeps
+  searching new places, while a stationary one still stops after
+  `--max-global-attempts`. `max_global_queries` (30) bounds the total.
 
 The node logs `odometry at the queried scan` or `no odometry at the queried scan` for
 every result. It waits up to 2 s of scans for odometry before the first query, so a
