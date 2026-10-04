@@ -7,15 +7,22 @@ Use this when the robot follows a **known route** (warehouse aisle, outdoor loop
 etc.). Supply a reference trajectory CSV so G2 seeds candidates near the route
 instead of searching the full map (avoids corridor alias on hard outdoor maps).
 
+**Limit:** route-crop selects reference poses by the scan's timestamp, so it only
+re-localizes scans from the mapping run itself (replays and benchmarks). A robot running
+on a later day is outside that time span, and route-crop reports
+`scan is ... s outside the reference trajectory` instead of guessing. For a live robot,
+also supply `--occupancy-map`: G2 then uses map-wide BBS outside the recorded session.
+
 ## What you need
 
 | Asset | Purpose |
 | --- | --- |
 | 3D map `.pcd` or `.ply` | NDT localizer target |
 | Mapping-run reference CSV | Route-crop G2 candidates (`stamp_sec`, pose columns) |
+| Occupancy YAML | Map-wide BBS for scans outside the mapping run (needed on a live robot) |
 | LiDAR (+ IMU for MID-360) | Live `/cloud` and optional `/imu` |
 
-Occupancy YAML is **optional** when `--reference-csv` is supplied.
+Occupancy YAML is optional only when replaying the mapping run itself.
 
 ## 1. Create the reference CSV
 
@@ -42,6 +49,7 @@ ros2 run lidar_localization_ros2 quickstart.py \
   --profile mid360 \
   --map /absolute/path/to/map.pcd \
   --reference-csv /absolute/path/to/site_reference.csv \
+  --occupancy-map /absolute/path/to/map.yaml \
   --global-seed-z -11.05 \
   --cloud-topic /livox/points \
   --imu-topic /livox/imu

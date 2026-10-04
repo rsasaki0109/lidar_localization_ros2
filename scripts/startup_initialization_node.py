@@ -512,6 +512,8 @@ class StartupInitializationNode(Node):
                     # G2 subscribed later than this node; retry without spending
                     # a global attempt.
                     return
+                if payload.get("route_crop_error"):
+                    raise RuntimeError(f"G2 route-crop: {payload['route_crop_error']}")
                 raise RuntimeError("G2 query returned no candidate")
             if not model.global_registration_scoring_acceptable(
                 payload.get("registration_scoring_enabled"),
