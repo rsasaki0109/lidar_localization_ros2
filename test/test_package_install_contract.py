@@ -106,6 +106,15 @@ class TestPackageInstallContract(unittest.TestCase):
             os.access(path, os.X_OK), f"{BOOTSTRAP_SCRIPT} is not executable"
         )
 
+    def test_colcon_bootstrap_builds_optimized_release(self):
+        script = (REPO_ROOT / BOOTSTRAP_SCRIPT).read_text(encoding="utf-8")
+        joined = script.replace("\\\n", " ")
+        build_commands = re.findall(r"colcon build --[^\n]*", joined)
+
+        self.assertEqual(len(build_commands), 2)
+        for command in build_commands:
+            self.assertIn("-DCMAKE_BUILD_TYPE=Release", command)
+
     def test_dependencies_repos_lists_required_ndt_dependency(self):
         repos_text = (REPO_ROOT / "dependencies.repos").read_text(encoding="utf-8")
 

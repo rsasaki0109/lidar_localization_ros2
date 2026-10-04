@@ -118,7 +118,8 @@ if [[ "${build_after_fetch}" != true ]]; then
 Dependencies are ready. Build with:
   cd ${ws_root}
   source /opt/ros/${ros_distro:-<distro>}/setup.bash
-  colcon build --symlink-install --packages-up-to lidar_localization_ros2
+  colcon build --symlink-install --packages-up-to lidar_localization_ros2 \
+    --cmake-args -DCMAKE_BUILD_TYPE=Release
   source install/setup.bash
 EOF
   exit 0
@@ -136,7 +137,9 @@ set +u
 source "/opt/ros/${ros_distro}/setup.bash"
 set -u
 cd "${ws_root}"
-colcon build --symlink-install --packages-up-to lidar_localization_ros2
+# ndt_omp_ros2 sets no default build type; unoptimized NDT is too slow to track.
+colcon build --symlink-install --packages-up-to lidar_localization_ros2 \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 cat <<EOF
 
