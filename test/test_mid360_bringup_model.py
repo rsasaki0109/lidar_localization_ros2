@@ -348,6 +348,23 @@ class TestMid360BringupModel(unittest.TestCase):
         self.assertEqual(config.cloud_topic, "/livox/points")
         self.assertTrue(config.require_cloud_time_field)
 
+    def test_generic_cli_ignores_ros_args_from_launch(self):
+        # quickstart.launch.py starts the check as a Node, which appends --ros-args.
+        args = generic_bringup_cli.parse_args(
+            [
+                "--profile",
+                "mid360",
+                "--duration-sec",
+                "5.0",
+                "--ros-args",
+                "-r",
+                "__node:=quickstart_bringup_check",
+            ]
+        )
+
+        self.assertEqual(args.profile, "mid360")
+        self.assertEqual(args.duration_sec, 5.0)
+
     def test_report_lines_include_hints_after_failures(self):
         config = BringupCheckConfig()
         results = evaluate_snapshot(config, snapshot(config, TopicStats()))
