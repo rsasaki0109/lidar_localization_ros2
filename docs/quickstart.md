@@ -121,7 +121,7 @@ robot carried meanwhile keeps a pose that is metres off. For
   up, the dropout requests no more queries, and the localizer's request takes over.
 
 On the Koide `outdoor_kidnap_b` replay (sensor covered and carried several times), this
-raised the share of time within 3 m after the first carry from 0.11-0.34 to 0.60-0.62,
+raised the share of time within 3 m after the first carry from 0.11-0.34 to 0.57-0.62,
 with every reset within 2 m.
 
 A candidate is published only when:
