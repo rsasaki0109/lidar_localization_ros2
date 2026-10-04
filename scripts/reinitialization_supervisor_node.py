@@ -126,6 +126,11 @@ class ReinitializationSupervisorNode(Node):
         # similar, mediocre poses, and walking them resets onto a wrong place.
         self.declare_parameter("max_registration_fitness_ratio", 0.5)
         self.declare_parameter("registration_alternative_min_separation_m", 5.0)
+        # While the odometry bridge holds a pose, one G2 answer is not enough to
+        # reset it: the answer must agree with an earlier one moved forward by the
+        # bridged motion (the startup consensus, applied to recovery).
+        self.declare_parameter("require_odometry_confirmation", True)
+        self.declare_parameter("odometry_confirmation_window_sec", 120.0)
         self.declare_parameter("bbs_shadow_required_samples", 2)
         self.declare_parameter("bbs_shadow_max_translation_mismatch_m", 5.0)
         self.declare_parameter("bbs_shadow_max_yaw_mismatch_deg", 20.0)
@@ -214,6 +219,14 @@ class ReinitializationSupervisorNode(Node):
         self.enable_bbs_shadow_motion_gate = bool(
             self.get_parameter("enable_bbs_shadow_motion_gate").value
         )
+        self.require_odometry_confirmation = bool(
+            self.get_parameter("require_odometry_confirmation").value
+        )
+        self.odometry_confirmation_window_sec = float(
+            self.get_parameter("odometry_confirmation_window_sec").value
+        )
+        # (scan stamp, map pose relative to the bridged pose, bridged pose, gated)
+        self._confirmation_anchors = deque(maxlen=5)
         self.bbs_shadow_required_samples = max(
             2, int(self.get_parameter("bbs_shadow_required_samples").value)
         )
@@ -335,9 +348,13 @@ class ReinitializationSupervisorNode(Node):
         pose_qos.reliability = ReliabilityPolicy.RELIABLE
         pose_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
 
-        if self.use_odom_bridge_candidate or self.enable_bbs_shadow_motion_gate:
-            # Subscribe only when the bridge is consumed either as a candidate
-            # or as the independent relative-motion reference for shadow BBS.
+        if (
+            self.use_odom_bridge_candidate
+            or self.enable_bbs_shadow_motion_gate
+            or self.require_odometry_confirmation
+        ):
+            # Subscribe only when the bridge is consumed as a candidate, as the
+            # relative-motion reference for shadow BBS, or to confirm answers.
             self.create_subscription(
                 PoseWithCovarianceStamped,
                 self.get_parameter("odom_bridge_pose_topic").value,
@@ -786,6 +803,7 @@ class ReinitializationSupervisorNode(Node):
             scores = self._apply_bbs_shadow_motion_gate(summary, candidates, scores)
         if self.state.name != rsp.STATE_VERIFYING:
             scores = self._withhold_aliased_answer(candidates, scores)
+            scores = self._withhold_unconfirmed_answer(summary, candidates, scores)
         self._candidates = candidates
         self._pending_reply = scores
         self._pending_reply_retryable = False
@@ -819,6 +837,70 @@ class ReinitializationSupervisorNode(Node):
             f"{self.registration_params.max_registration_fitness_ratio:.2f} x "
             f"{alternative:.3f} elsewhere"
         )
+        return tuple(0.0 for _ in scores)
+
+    def _withhold_unconfirmed_answer(self, summary, candidates, scores):
+        """Withhold an answer until another answer agrees after bridged motion."""
+        if not self.require_odometry_confirmation or not candidates:
+            return scores
+        stamp = self._parse_nonnegative_float(summary.get("scan_stamp_sec"))
+        bridge = (
+            None
+            if stamp is None
+            else self._nearest_history_entry(self._odom_bridge_history, stamp, 0.5)
+        )
+        if bridge is None:
+            return scores
+        bridged = bridge[1:4]
+        top = candidates[0]
+        pose = (float(top["x"]), float(top["y"]), math.radians(float(top["yaw_deg"])))
+        gated = any(score > 0.0 for score in scores)
+        params = self.registration_params
+        agrees = False
+        for (
+            prev_stamp,
+            prev_offset,
+            prev_bridged,
+            prev_gated,
+        ) in self._confirmation_anchors:
+            if not (
+                prev_stamp < stamp - 1.0e-9
+                and stamp - prev_stamp <= self.odometry_confirmation_window_sec
+            ):
+                continue
+            predicted = quickstart_model.apply_planar_motion(prev_offset, bridged)
+            travelled = math.hypot(
+                bridged[0] - prev_bridged[0], bridged[1] - prev_bridged[1]
+            )
+            tolerance = (
+                params.global_consensus_translation_m
+                + params.global_consensus_translation_per_odom_m * travelled
+            )
+            yaw_error = abs(
+                math.atan2(
+                    math.sin(pose[2] - predicted[2]), math.cos(pose[2] - predicted[2])
+                )
+            )
+            if (
+                math.hypot(pose[0] - predicted[0], pose[1] - predicted[1]) <= tolerance
+                and math.degrees(yaw_error) <= params.global_consensus_yaw_deg
+                and (gated or prev_gated)
+            ):
+                agrees = True
+                break
+        if not any(a[0] >= stamp - 1.0e-9 for a in self._confirmation_anchors):
+            offset = quickstart_model.apply_planar_motion(
+                pose, quickstart_model.planar_motion_between(bridged, (0.0, 0.0, 0.0))
+            )
+            self._confirmation_anchors.append((stamp, offset, bridged, gated))
+        if agrees and gated:
+            self._confirmation_anchors.clear()
+            return scores
+        if gated:
+            self.get_logger().info(
+                "unconfirmed G2 answer withheld: waiting for another answer that "
+                f"agrees after odometry with ({pose[0]:.1f}, {pose[1]:.1f})"
+            )
         return tuple(0.0 for _ in scores)
 
     def _apply_bbs_shadow_motion_gate(self, summary, candidates, scores):

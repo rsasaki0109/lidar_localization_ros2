@@ -95,6 +95,15 @@ re-seed `/initialpose` after startup.
 The startup-only state machine is separate from the G3 lost-tracking
 supervisor because cold start has no previously trusted tracking episode.
 
+The G3 supervisor applies the startup distinctiveness gate to its G2 answers
+(`max_registration_fitness_ratio`). While `odom_bridge_pose` is available (for example
+with `--odom-tf-prediction`), it also does not reset the bridged pose on one answer: an
+answer must match an earlier one, from another scan within
+`odometry_confirmation_window_sec` (120 s), moved forward by the bridged motion
+(`require_odometry_confirmation`). On the Koide `outdoor_hard_02b` replay this stopped
+resets onto aliased places 160-260 m away during a stretch where NDT fails but odometry
+holds the pose.
+
 A candidate is published only when:
 
 - G2 confirms that 3D NDT registration scoring is active (required by default);

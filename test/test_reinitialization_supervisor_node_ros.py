@@ -331,6 +331,30 @@ def test_aliased_answer_is_not_published_as_a_reset():
         rclpy.shutdown()
 
 
+def test_odometry_confirmation_needs_a_second_agreeing_answer():
+    # Koide 02b quickstart: a single wrong answer (65 m off, ratio 0.30) passed
+    # the distinctiveness gate while the odometry bridge held the right pose.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    try:
+        for stamp in range(0, 40):
+            sup._odom_bridge_history.append((float(stamp), 1.0 * stamp, 0.0, 0.0))
+
+        def answer(stamp, x, y, yaw_deg=0.0):
+            summary = {"scan_stamp_sec": float(stamp)}
+            candidates = [{"x": x, "y": y, "yaw_deg": yaw_deg, "score": 0.9}]
+            return sup._withhold_unconfirmed_answer(summary, candidates, (0.9,))
+
+        # The bridge drifted: the robot is really 30 m north of the bridged pose.
+        assert answer(10, 10.0, 30.0) == (0.0,)
+        assert answer(20, -40.0, -70.0) == (0.0,), "unrelated answer accepted"
+        assert answer(30, 30.5, 30.4) == (0.9,), "agreeing answer withheld"
+        assert answer(35, 35.0, 30.0) == (0.0,), "confirmation was not consumed"
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
 def test_seed_motion_history_uses_one_fix_per_query(monkeypatch):
     # Candidate walking inside one query must not overwrite the previous-query
     # motion sample. Otherwise a wrong walked candidate poisons the next query's
