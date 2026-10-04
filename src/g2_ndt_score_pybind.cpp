@@ -64,46 +64,53 @@ public:
     double z,
     double yaw) const
   {
-    const auto info = scan_xyz.request();
-    if (info.ndim != 2 || info.shape[1] != 3) {
-      throw std::invalid_argument("scan_xyz must have shape (N, 3)");
-    }
-    const auto * ptr = static_cast<const double *>(info.ptr);
-    const std::size_t count = static_cast<std::size_t>(info.shape[0]);
-    g2::G2NdtScoreResult result;
-    {
-      py::gil_scoped_release release;
-      result = scorer_.score_xyz(ptr, count, x, y, z, yaw);
-    }
-    return ScoreResultPy{
-      result.fitness,
-      result.converged,
-      result.target_point_count,
-      result.source_point_count,
-      result.refined_x,
-      result.refined_y,
-      result.refined_z,
-      result.refined_yaw,
-    };
+    py::list poses;
+    poses.append(py::make_tuple(x, y, z, yaw));
+    return score_candidates(scan_xyz, poses).front();
   }
 
+  // Scores (x, y, z, yaw) poses of one scan; nearby poses share a map crop.
   std::vector<ScoreResultPy> score_candidates(
     py::array_t<double, py::array::c_style | py::array::forcecast> scan_xyz,
     py::list poses) const
   {
-    std::vector<ScoreResultPy> results;
-    results.reserve(poses.size());
+    const auto info = scan_xyz.request();
+    if (info.ndim != 2 || info.shape[1] != 3) {
+      throw std::invalid_argument("scan_xyz must have shape (N, 3)");
+    }
+    std::vector<g2::G2NdtPose> seeds;
+    seeds.reserve(poses.size());
     for (py::handle item : poses) {
       py::tuple pose = py::cast<py::tuple>(item);
       if (pose.size() != 4) {
         throw std::invalid_argument("each pose must be (x, y, z, yaw)");
       }
-      results.push_back(score_candidate(
-        scan_xyz,
+      seeds.push_back(g2::G2NdtPose{
         py::cast<double>(pose[0]),
         py::cast<double>(pose[1]),
         py::cast<double>(pose[2]),
-        py::cast<double>(pose[3])));
+        py::cast<double>(pose[3])});
+    }
+    const auto * ptr = static_cast<const double *>(info.ptr);
+    const std::size_t count = static_cast<std::size_t>(info.shape[0]);
+    std::vector<g2::G2NdtScoreResult> scored;
+    {
+      py::gil_scoped_release release;
+      scored = scorer_.score_xyz_many(ptr, count, seeds);
+    }
+    std::vector<ScoreResultPy> results;
+    results.reserve(scored.size());
+    for (const auto & result : scored) {
+      results.push_back(ScoreResultPy{
+        result.fitness,
+        result.converged,
+        result.target_point_count,
+        result.source_point_count,
+        result.refined_x,
+        result.refined_y,
+        result.refined_z,
+        result.refined_yaw,
+      });
     }
     return results;
   }
