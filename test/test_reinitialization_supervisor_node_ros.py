@@ -339,6 +339,7 @@ def test_odometry_confirmation_needs_a_second_agreeing_answer():
     try:
         for stamp in range(0, 40):
             sup._odom_bridge_history.append((float(stamp), 1.0 * stamp, 0.0, 0.0))
+        sup._odometry_stamps.extend(0.1 * step for step in range(0, 400))
 
         def answer(stamp, x, y, yaw_deg=0.0):
             summary = {"scan_stamp_sec": float(stamp)}
@@ -350,6 +351,27 @@ def test_odometry_confirmation_needs_a_second_agreeing_answer():
         assert answer(20, -40.0, -70.0) == (0.0,), "unrelated answer accepted"
         assert answer(30, 30.5, 30.4) == (0.9,), "agreeing answer withheld"
         assert answer(35, 35.0, 30.0) == (0.0,), "confirmation was not consumed"
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
+def test_odometry_dropout_waives_confirmation():
+    # Koide outdoor_kidnap_b: the LIO front end stops for 14-34 s while the sensor is
+    # covered, so bridged motion across the gap cannot confirm the next answer.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    try:
+        for stamp in range(0, 40):
+            sup._odom_bridge_history.append((float(stamp), 1.0 * stamp, 0.0, 0.0))
+        sup._odometry_stamps.extend(0.1 * step for step in range(0, 100))
+        sup._odometry_stamps.extend(30.0 + 0.1 * step for step in range(0, 100))
+
+        summary = {"scan_stamp_sec": 35.0}
+        candidates = [{"x": 35.0, "y": 30.0, "yaw_deg": 0.0, "score": 0.9}]
+        scores = sup._withhold_unconfirmed_answer(summary, candidates, (0.9,))
+
+        assert scores == (0.9,), "answer after an odometry dropout was withheld"
     finally:
         sup.destroy_node()
         rclpy.shutdown()
