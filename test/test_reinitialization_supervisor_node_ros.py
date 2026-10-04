@@ -423,6 +423,56 @@ def test_odometry_dropout_waives_confirmation():
         rclpy.shutdown()
 
 
+def _status(stamp_sec, ok):
+    def kv(key, value):
+        item = KeyValue()
+        item.key, item.value = key, value
+        return item
+
+    status = DiagnosticStatus()
+    status.message = "ok" if ok else "fitness_score_over_threshold_rejected"
+    status.values = [
+        kv("fitness_score", "0.2" if ok else "15.0"),
+        kv("reinitialization_requested", "false"),
+        kv("recovery_state", "recovering"),
+        kv("recovery_action", "accept_measurement" if ok else "reject_measurement"),
+    ]
+    array = DiagnosticArray()
+    array.header.stamp.sec = int(stamp_sec)
+    array.header.stamp.nanosec = round((stamp_sec % 1.0) * 1e9)
+    array.status = [status]
+    return array
+
+
+def test_failing_scans_after_odometry_dropout_request_a_query():
+    # Koide outdoor_kidnap_b: after the sensor was covered and the robot carried
+    # 12 m, one accepted scan restarted the localizer's 30 s request timer, so the
+    # pose stayed 12 m off for 40 s.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    try:
+        sup._odometry_stamps.extend(0.1 * step for step in range(0, 100))
+        sup._odometry_stamps.extend(20.0 + 0.1 * step for step in range(0, 300))
+        for step in range(0, 30):
+            sup._on_alignment_status(_status(25.0 + 0.2 * step, ok=step == 10))
+        assert sup._requested_after_odometry_dropout(), "no query after the dropout"
+
+        for step in range(0, 3):
+            sup._on_alignment_status(_status(31.0 + 0.2 * step, ok=True))
+        assert not sup._requested_after_odometry_dropout(), "stable scans ignored"
+
+        sup._odometry_stamps.clear()
+        sup._odometry_stamps.extend(0.1 * step for step in range(0, 500))
+        for step in range(0, 40):
+            sup._on_alignment_status(_status(32.0 + 0.2 * step, ok=False))
+        assert not sup._requested_after_odometry_dropout(), (
+            "queried while odometry was continuous"
+        )
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
 def test_walk_skips_lower_candidates_from_other_places():
     # Koide outdoor_kidnap_b: after the correct top (1.4 m) did not settle, the walk
     # reset onto lower-ranked candidates 35 m and 136 m away.
