@@ -158,7 +158,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=False,
     )
-    parser.add_argument("--global-seed-z", type=float, default=0.0)
+    parser.add_argument(
+        "--global-seed-z",
+        type=float,
+        default=0.0,
+        help="map-frame sensor height used to score global candidates; set it when "
+        "the map's ground is not near z=0 (default: 0)",
+    )
     parser.add_argument("--global-max-scan-points", type=int, default=256)
     parser.add_argument("--global-angular-resolution-deg", type=float, default=10.0)
     parser.add_argument("--global-max-candidates", type=int, default=8)
@@ -175,11 +181,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def manual_pose_step(args) -> str:
+    """How the operator supplies a pose when automatic initialization stops."""
+    if args.rviz:
+        return "set 2D Pose Estimate in RViz"
+    return "publish /initialpose (RViz is off)"
+
+
 def next_step_line(args) -> str:
     """One actionable next step printed after the launch/bringup commands.
 
     Display only: never changes launch arguments or runtime behavior.
     """
+    manual = manual_pose_step(args)
     if args.initial_pose is not None:
         return (
             "wait 5s, then verify pose output "
@@ -189,15 +203,15 @@ def next_step_line(args) -> str:
     if args.auto_initialize and has_global_asset:
         return (
             "keep robot stationary ~30s for guarded search; "
-            "if no_safe_automatic_source, set 2D Pose Estimate in RViz "
+            f"if no_safe_automatic_source, {manual} "
             "or add --reference-csv (see docs/site_setup.md)"
         )
     if args.auto_initialize:
         return (
-            "set 2D Pose Estimate in RViz, or restart with "
+            f"{manual}, or restart with "
             "--occupancy-map / --reference-csv for automatic search"
         )
-    return "set 2D Pose Estimate in RViz or pass --initial-pose"
+    return f"{manual} or pass --initial-pose"
 
 
 def _config_args(args, cloud_topic: str, imu_topic: str):
@@ -461,25 +475,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Pose state:    {state_path}")
     if discovery_notes:
         print("Discovery:     " + ", ".join(discovery_notes))
+    fallback = "RViz" if args.rviz else "/initialpose"
     if args.initial_pose:
         print("Initialization: explicit pose")
     elif args.auto_initialize and args.reference_csv:
         suffix = " + guarded G3 recovery" if args.g3_recovery else ""
         print(
-            f"Initialization: verified saved pose -> guarded route-crop search{suffix} -> RViz"
+            f"Initialization: verified saved pose -> guarded route-crop search{suffix} -> {fallback}"
         )
     elif args.auto_initialize and args.occupancy_yaml:
         suffix = " + guarded G3 recovery" if args.g3_recovery else ""
         print(
-            f"Initialization: verified saved pose -> guarded global search{suffix} -> RViz"
+            f"Initialization: verified saved pose -> guarded global search{suffix} -> {fallback}"
         )
     elif args.auto_initialize:
         print(
-            "Initialization: verified saved pose -> RViz "
+            f"Initialization: verified saved pose -> {fallback} "
             "(add --occupancy-map or --reference-csv for automatic global search)"
         )
     else:
-        print("Initialization: explicit pose or RViz")
+        print(f"Initialization: explicit pose or {fallback}")
     print("Launch:")
     print("  " + shlex.join(parts))
     print("Bringup check:")
