@@ -799,6 +799,10 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_quickstart_cli.py
   )
   add_test(
+    NAME tum_trajectory_to_pose_reference_csv
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_tum_trajectory_to_pose_reference_csv.py
+  )
+  add_test(
     NAME quickstart_ros_integration
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_quickstart_ros_integration.py
   )
