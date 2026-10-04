@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import importlib.util
+import math
 import sys
 import tempfile
 import time
@@ -320,6 +321,203 @@ class TestStartupPolicy(unittest.TestCase):
                 MODEL.StartupParams(max_registration_fitness_ratio=-1.0)
             ),
         )
+
+    def test_planar_motion_round_trips(self):
+        start = (10.0, -2.0, math.radians(30.0))
+        end = (14.0, 5.0, math.radians(-120.0))
+        motion = MODEL.planar_motion_between(start, end)
+        moved = MODEL.apply_planar_motion(start, motion)
+        for actual, expected in zip(moved, end, strict=True):
+            self.assertAlmostEqual(actual, expected)
+        self.assertAlmostEqual(motion[2], math.radians(-150.0))
+
+    def test_consensus_follows_odometry_while_moving(self):
+        # Koide 02b at 1x: correct G2 fixes 45 s apart while the robot walked 50 m,
+        # with a wrong fix from an aliased area in between.
+        first_gt = (103.6, -1.7, math.radians(4.5))
+        last_gt = (103.6, -51.3, math.radians(9.0))
+        odom_first = (0.0, 0.0, 0.0)
+        odom_last = MODEL.planar_motion_between(first_gt, last_gt)
+        odom_middle = MODEL.planar_motion_between(
+            first_gt, (104.3, -25.0, math.radians(-40.0))
+        )
+        query = {
+            "query_candidate_scores": (0.99, 0.80),
+            "query_candidate_age_sec": 11.0,
+        }
+        fixes = [
+            ((103.1, -2.4, math.radians(5.0)), 4.8, odom_first),
+            ((-57.1, -75.6, math.radians(-140.0)), 28.1, odom_middle),
+            ((103.1, -51.6, math.radians(10.0)), 50.1, odom_last),
+        ]
+
+        def run(with_odometry):
+            decision = MODEL.decide_startup(
+                self.params, MODEL.StartupState(), self.obs(0.0)
+            )
+            reasons = []
+            for index, (pose, stamp, odom) in enumerate(fixes, start=1):
+                decision = MODEL.decide_startup(
+                    self.params,
+                    decision.state,
+                    self.obs(
+                        float(index),
+                        query_top_pose=pose,
+                        query_scan_stamp_sec=stamp,
+                        query_odom_pose=odom if with_odometry else None,
+                        **query,
+                    ),
+                )
+                reasons.append(decision.reason)
+            return decision, reasons
+
+        _, unaided = run(with_odometry=False)
+        self.assertEqual(unaided[-1], "global_consensus_mismatch_retry")
+        aided, reasons = run(with_odometry=True)
+        self.assertEqual(
+            reasons,
+            [
+                "global_consensus_primed",
+                "global_consensus_mismatch_retry",
+                "global_candidate_accepted",
+            ],
+        )
+        self.assertEqual(aided.action, MODEL.ACTION_PUBLISH_GLOBAL)
+
+    def test_odometry_agreement_confirms_a_weak_later_fix(self):
+        # Koide 02b run: the later correct fix scored weak (G2 fitness 5.9) on its own.
+        first_gt = (103.6, -1.7, math.radians(4.5))
+        later_gt = (103.7, -37.6, math.radians(55.0))
+        decision = MODEL.decide_startup(
+            self.params, MODEL.StartupState(), self.obs(0.0)
+        )
+        decision = MODEL.decide_startup(
+            self.params,
+            decision.state,
+            self.obs(
+                1.0,
+                query_candidate_scores=(0.99, 0.80),
+                query_candidate_age_sec=8.0,
+                query_top_pose=(102.9, -2.2, math.radians(5.0)),
+                query_scan_stamp_sec=6.3,
+                query_odom_pose=(0.0, 0.0, 0.0),
+            ),
+        )
+        self.assertEqual(decision.reason, "global_consensus_primed")
+        weak = {
+            "query_candidate_scores": (0.30, 0.28),
+            "query_candidate_age_sec": 7.0,
+            "query_scan_stamp_sec": 37.8,
+            "query_odom_pose": MODEL.planar_motion_between(first_gt, later_gt),
+        }
+        confirmed = MODEL.decide_startup(
+            self.params,
+            decision.state,
+            self.obs(2.0, query_top_pose=later_gt, **weak),
+        )
+        self.assertEqual(confirmed.action, MODEL.ACTION_PUBLISH_GLOBAL)
+        elsewhere = MODEL.decide_startup(
+            self.params,
+            decision.state,
+            self.obs(2.0, query_top_pose=(-50.3, -79.0, math.radians(-125.0)), **weak),
+        )
+        self.assertEqual(elsewhere.reason, "weak_candidate_retry")
+
+    def test_odometry_pairs_need_one_gated_fix_from_another_scan(self):
+        # Koide 02b run: the fix at 17 s was right but failed the distinctiveness
+        # gate; the gated fix at 28 s is confirmed by it once moved by odometry.
+        gt_17 = (102.3, -12.4, math.radians(10.0))
+        gt_28 = (103.9, -25.4, math.radians(-35.0))
+        odom_17 = (0.0, 0.0, 0.0)
+        odom_28 = MODEL.planar_motion_between(gt_17, gt_28)
+        ungated = {
+            "query_candidate_scores": (0.90, 0.80),
+            "query_candidate_age_sec": 11.0,
+            "query_top_registration_fitness": 1.8,
+            "query_alternative_registration_fitness": 2.0,
+        }
+        gated = {
+            "query_candidate_scores": (0.95, 0.70),
+            "query_candidate_age_sec": 11.0,
+        }
+        start = MODEL.decide_startup(self.params, MODEL.StartupState(), self.obs(0.0))
+        first = MODEL.decide_startup(
+            self.params,
+            start.state,
+            self.obs(
+                1.0,
+                query_top_pose=gt_17,
+                query_scan_stamp_sec=17.3,
+                query_odom_pose=odom_17,
+                **ungated,
+            ),
+        )
+        self.assertEqual(first.reason, "ambiguous_registration_retry")
+        self.assertFalse(first.state.consensus_odom_anchors[0].gated)
+
+        later = {"query_scan_stamp_sec": 28.5, "query_odom_pose": odom_28}
+        confirmed = MODEL.decide_startup(
+            self.params,
+            first.state,
+            self.obs(2.0, query_top_pose=gt_28, **later, **gated),
+        )
+        self.assertEqual(confirmed.action, MODEL.ACTION_PUBLISH_GLOBAL)
+        both_ungated = MODEL.decide_startup(
+            self.params,
+            first.state,
+            self.obs(2.0, query_top_pose=gt_28, **later, **ungated),
+        )
+        self.assertEqual(both_ungated.reason, "ambiguous_registration_retry")
+        same_scan = MODEL.decide_startup(
+            self.params,
+            first.state,
+            self.obs(
+                2.0,
+                query_top_pose=gt_17,
+                query_scan_stamp_sec=17.3,
+                query_odom_pose=odom_17,
+                **gated,
+            ),
+        )
+        self.assertEqual(same_scan.reason, "global_consensus_mismatch_retry")
+
+    def test_odometry_match_widens_with_distance_travelled(self):
+        # Koide 02b run: fixes 47 s and 56 m apart disagreed by 2.36 m after
+        # odometry because of the first fix's 5 degree heading quantization.
+        first_odom = (0.0, 0.0, 0.0)
+        later_odom = (-2.73, -56.02, math.radians(14.0))
+        gated = {
+            "query_candidate_scores": (0.95, 0.70),
+            "query_candidate_age_sec": 10.0,
+        }
+        start = MODEL.decide_startup(self.params, MODEL.StartupState(), self.obs(0.0))
+        primed = MODEL.decide_startup(
+            self.params,
+            start.state,
+            self.obs(
+                1.0,
+                query_top_pose=(102.9, -2.4, math.radians(5.0)),
+                query_scan_stamp_sec=7.3,
+                query_odom_pose=first_odom,
+                **gated,
+            ),
+        )
+        later = {
+            "query_top_pose": (103.9, -56.4, math.radians(15.0)),
+            "query_scan_stamp_sec": 54.3,
+            "query_odom_pose": later_odom,
+            **gated,
+        }
+        widened = MODEL.decide_startup(
+            self.params, primed.state, self.obs(2.0, **later)
+        )
+        self.assertEqual(widened.action, MODEL.ACTION_PUBLISH_GLOBAL)
+        fixed = MODEL.decide_startup(
+            replace(self.params, global_consensus_translation_per_odom_m=0.0),
+            primed.state,
+            self.obs(2.0, **later),
+        )
+        self.assertEqual(fixed.reason, "global_consensus_mismatch_retry")
 
     def test_no_source_never_falls_back_to_identity(self):
         decision = MODEL.decide_startup(

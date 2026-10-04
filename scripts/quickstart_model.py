@@ -202,6 +202,12 @@ class StartupParams:
     global_consensus_samples: int = 2
     global_consensus_translation_m: float = 2.0
     global_consensus_yaw_deg: float = 20.0
+    # With odometry, a fix is confirmed by any of this many earlier fixes moved to
+    # the new scan time, so one wrong fix does not discard an earlier good one.
+    global_consensus_history: int = 5
+    # A fix's heading error (G2 searches in 5 degree steps) grows into a position
+    # error along the distance travelled, so widen the match by this per metre.
+    global_consensus_translation_per_odom_m: float = 0.05
     # When the top G2 candidate's NDT fitness is at or below this threshold, trust
     # registration over occupancy score margin / distinct-scan consensus. Disabled
     # by default (inf). Route-crop quickstart sets ~0.5 for mapping-run seeds.
@@ -224,6 +230,7 @@ def validate_startup_params(params: StartupParams) -> str | None:
         params.verification_fitness_threshold,
         params.global_consensus_translation_m,
         params.global_consensus_yaw_deg,
+        params.global_consensus_translation_per_odom_m,
         params.registration_fitness_high_confidence_threshold,
         params.max_registration_fitness_ratio,
         params.registration_alternative_min_separation_m,
@@ -250,11 +257,26 @@ def validate_startup_params(params: StartupParams) -> str | None:
         return "verification samples and global attempts must be positive"
     if params.global_consensus_samples < 1:
         return "global_consensus_samples must be positive"
+    if params.global_consensus_translation_per_odom_m < 0.0:
+        return "global_consensus_translation_per_odom_m must be non-negative"
+    if params.global_consensus_history < 1:
+        return "global_consensus_history must be positive"
     if params.global_consensus_translation_m < 0.0:
         return "global_consensus_translation_m must be non-negative"
     if not 0.0 <= params.global_consensus_yaw_deg <= 180.0:
         return "global_consensus_yaw_deg must be between 0 and 180"
     return None
+
+
+@dataclass(frozen=True)
+class OdomAnchor:
+    """map -> odom implied by one G2 fix, so it can be moved to later scan times."""
+
+    map_from_odom: tuple[float, float, float]
+    odom_pose: tuple[float, float, float]
+    scan_stamp_sec: float
+    # Whether the fix passed the score, margin, and distinctiveness gates itself.
+    gated: bool
 
 
 @dataclass(frozen=True)
@@ -268,6 +290,8 @@ class StartupState:
     consensus_samples: int = 0
     consensus_pose: tuple[float, float, float] | None = None
     consensus_scan_stamp_sec: float | None = None
+    # Earlier fixes that had odometry, newest last.
+    consensus_odom_anchors: tuple[OdomAnchor, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -284,6 +308,8 @@ class StartupObservation:
     query_scan_stamp_sec: float | None = None
     query_top_registration_fitness: float | None = None
     query_alternative_registration_fitness: float | None = None
+    # odom -> base at this query's scan; None when odometry is unavailable.
+    query_odom_pose: tuple[float, float, float] | None = None
     diagnostic_fresh: bool = False
     tracking_good: bool = False
     fitness: float | None = None
@@ -321,6 +347,38 @@ def _query(params: StartupParams, state: StartupState, now_sec: float, reason: s
 
 def _angle_error_rad(first: float, second: float) -> float:
     return abs(math.atan2(math.sin(first - second), math.cos(first - second)))
+
+
+def _wrap_angle_rad(angle: float) -> float:
+    return math.atan2(math.sin(angle), math.cos(angle))
+
+
+def planar_motion_between(
+    start: tuple[float, float, float], end: tuple[float, float, float]
+) -> tuple[float, float, float]:
+    """Motion from planar pose ``start`` to ``end``, expressed in the start frame."""
+    cos_yaw = math.cos(start[2])
+    sin_yaw = math.sin(start[2])
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    return (
+        cos_yaw * dx + sin_yaw * dy,
+        -sin_yaw * dx + cos_yaw * dy,
+        _wrap_angle_rad(end[2] - start[2]),
+    )
+
+
+def apply_planar_motion(
+    pose: tuple[float, float, float], motion: tuple[float, float, float]
+) -> tuple[float, float, float]:
+    """Move planar ``pose`` by ``motion`` expressed in the pose's own frame."""
+    cos_yaw = math.cos(pose[2])
+    sin_yaw = math.sin(pose[2])
+    return (
+        pose[0] + cos_yaw * motion[0] - sin_yaw * motion[1],
+        pose[1] + sin_yaw * motion[0] + cos_yaw * motion[1],
+        _wrap_angle_rad(pose[2] + motion[2]),
+    )
 
 
 def registration_high_confidence(
@@ -371,6 +429,97 @@ def registration_ambiguous(
     if not math.isfinite(top_fitness) or not math.isfinite(alternative_fitness):
         return False
     return top_fitness > ratio * alternative_fitness
+
+
+def _consensus_consistent(
+    params: StartupParams,
+    pose: tuple[float, float, float],
+    reference: tuple[float, float, float],
+    travelled_m: float = 0.0,
+) -> bool:
+    return (
+        math.hypot(pose[0] - reference[0], pose[1] - reference[1])
+        <= params.global_consensus_translation_m
+        + params.global_consensus_translation_per_odom_m * travelled_m
+        and math.degrees(_angle_error_rad(pose[2], reference[2]))
+        <= params.global_consensus_yaw_deg
+    )
+
+
+def _odom_fix_usable(params: StartupParams, obs: StartupObservation) -> bool:
+    return (
+        bool(obs.query_candidate_scores)
+        and params.global_consensus_samples > 1
+        and obs.query_odom_pose is not None
+        and obs.query_top_pose is not None
+        and obs.query_scan_stamp_sec is not None
+        and obs.query_candidate_age_sec is not None
+        and math.isfinite(obs.query_candidate_age_sec)
+        and obs.query_candidate_age_sec <= params.max_candidate_age_sec
+    )
+
+
+def _odom_agreements(
+    params: StartupParams,
+    state: StartupState,
+    obs: StartupObservation,
+    gated_only: bool,
+) -> int:
+    """Earlier fixes (from other scans) that, moved by odometry, match this fix."""
+    return sum(
+        anchor.scan_stamp_sec < obs.query_scan_stamp_sec - 1.0e-9
+        and (anchor.gated or not gated_only)
+        and _consensus_consistent(
+            params,
+            obs.query_top_pose,
+            apply_planar_motion(anchor.map_from_odom, obs.query_odom_pose),
+            math.hypot(
+                obs.query_odom_pose[0] - anchor.odom_pose[0],
+                obs.query_odom_pose[1] - anchor.odom_pose[1],
+            ),
+        )
+        for anchor in state.consensus_odom_anchors
+    )
+
+
+def _remember_odom_fix(
+    params: StartupParams, state: StartupState, obs: StartupObservation, gated: bool
+) -> StartupState:
+    if any(
+        anchor.scan_stamp_sec >= obs.query_scan_stamp_sec - 1.0e-9
+        for anchor in state.consensus_odom_anchors
+    ):
+        return state
+    anchor = OdomAnchor(
+        map_from_odom=apply_planar_motion(
+            obs.query_top_pose,
+            planar_motion_between(obs.query_odom_pose, (0.0, 0.0, 0.0)),
+        ),
+        odom_pose=obs.query_odom_pose,
+        scan_stamp_sec=obs.query_scan_stamp_sec,
+        gated=gated,
+    )
+    return replace(
+        state,
+        consensus_odom_anchors=(*state.consensus_odom_anchors, anchor)[
+            -params.global_consensus_history :
+        ],
+    )
+
+
+def _publish_confirmed_fix(
+    params: StartupParams, state: StartupState, obs: StartupObservation
+) -> StartupDecision:
+    verifying = replace(
+        state,
+        name=STATE_VERIFYING,
+        source="global",
+        deadline_sec=obs.now_sec + params.verification_timeout_sec,
+        confirmation_samples=0,
+    )
+    return StartupDecision(
+        ACTION_PUBLISH_GLOBAL, "global_candidate_accepted", verifying
+    )
 
 
 def decide_startup(
@@ -432,12 +581,25 @@ def decide_startup(
                 return _query(params, state, obs.now_sec, "query_timeout_retry")
             return StartupDecision(ACTION_WAIT, "awaiting_global_query", state)
         scores = obs.query_candidate_scores
+        odom_fix = _odom_fix_usable(params, obs)
+        if (
+            odom_fix
+            and _odom_agreements(params, state, obs, gated_only=True) + 1
+            >= params.global_consensus_samples
+        ):
+            # Matching where an earlier gated fix has moved to is stronger evidence
+            # than this scan's own score or distinctiveness.
+            return _publish_confirmed_fix(params, state, obs)
+        # A fix that fails the gates below may still confirm a later gated one.
+        retry_state = (
+            _remember_odom_fix(params, state, obs, gated=False) if odom_fix else state
+        )
         if (
             not scores
             or not math.isfinite(scores[0])
             or scores[0] < params.min_candidate_score
         ):
-            return _query(params, state, obs.now_sec, "weak_candidate_retry")
+            return _query(params, retry_state, obs.now_sec, "weak_candidate_retry")
         high_confidence = registration_high_confidence(
             params, obs.query_top_registration_fitness
         )
@@ -447,13 +609,15 @@ def decide_startup(
             and math.isfinite(scores[1])
             and scores[0] - scores[1] < params.min_score_margin
         ):
-            return _query(params, state, obs.now_sec, "ambiguous_candidate_retry")
+            return _query(params, retry_state, obs.now_sec, "ambiguous_candidate_retry")
         if not high_confidence and registration_ambiguous(
             params,
             obs.query_top_registration_fitness,
             obs.query_alternative_registration_fitness,
         ):
-            return _query(params, state, obs.now_sec, "ambiguous_registration_retry")
+            return _query(
+                params, retry_state, obs.now_sec, "ambiguous_registration_retry"
+            )
         if (
             obs.query_candidate_age_sec is None
             or not math.isfinite(obs.query_candidate_age_sec)
@@ -475,6 +639,17 @@ def decide_startup(
                 "global_registration_high_confidence",
                 next_state,
             )
+        if odom_fix:
+            agreeing = _odom_agreements(params, state, obs, gated_only=False)
+            remembered = _remember_odom_fix(params, state, obs, gated=True)
+            if agreeing + 1 >= params.global_consensus_samples:
+                return _publish_confirmed_fix(params, remembered, obs)
+            reason = (
+                "global_consensus_mismatch_retry"
+                if state.consensus_odom_anchors
+                else "global_consensus_primed"
+            )
+            return _query(params, remembered, obs.now_sec, reason)
         if state.consensus_samples == 0 or state.consensus_pose is None:
             primed = replace(
                 state,
@@ -490,14 +665,9 @@ def decide_startup(
                 or obs.query_scan_stamp_sec <= state.consensus_scan_stamp_sec + 1.0e-9
             ):
                 return StartupDecision(ACTION_WAIT, "awaiting_fresh_global_scan", state)
-            dx = obs.query_top_pose[0] - state.consensus_pose[0]
-            dy = obs.query_top_pose[1] - state.consensus_pose[1]
-            yaw_error = _angle_error_rad(obs.query_top_pose[2], state.consensus_pose[2])
-            consistent = (
-                math.hypot(dx, dy) <= params.global_consensus_translation_m
-                and math.degrees(yaw_error) <= params.global_consensus_yaw_deg
-            )
-            if not consistent:
+            if not _consensus_consistent(
+                params, obs.query_top_pose, state.consensus_pose
+            ):
                 restarted = replace(
                     state,
                     consensus_samples=1,
