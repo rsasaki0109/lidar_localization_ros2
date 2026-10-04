@@ -138,6 +138,10 @@ class ReinitializationSupervisorNode(Node):
         # gated answer to recover, as before confirmation existed.
         self.declare_parameter("odom_frame_id", "odom")
         self.declare_parameter("odometry_max_gap_sec", 2.0)
+        # After such a dropout the bridged pose may be far off while the localizer
+        # keeps rejecting scans; its own request needs 30 s without an accepted scan,
+        # and one lucky accept restarts that. Query once scans have failed this long.
+        self.declare_parameter("query_after_odometry_dropout_sec", 5.0)
         self.declare_parameter("bbs_shadow_required_samples", 2)
         self.declare_parameter("bbs_shadow_max_translation_mismatch_m", 5.0)
         self.declare_parameter("bbs_shadow_max_yaw_mismatch_deg", 20.0)
@@ -239,6 +243,13 @@ class ReinitializationSupervisorNode(Node):
             self.get_parameter("odometry_max_gap_sec").value
         )
         self._odometry_stamps = deque()
+        self.query_after_odometry_dropout_sec = float(
+            self.get_parameter("query_after_odometry_dropout_sec").value
+        )
+        self._unstable_since_sec = None
+        self._stable_samples = 0
+        # Start of the odometry gap whose episode gave up: that gap requests no more.
+        self._given_up_gap_start_sec = None
         self.bbs_shadow_required_samples = max(
             2, int(self.get_parameter("bbs_shadow_required_samples").value)
         )
@@ -494,7 +505,41 @@ class ReinitializationSupervisorNode(Node):
                     self._stable_tracking = status.message == "ok"
             except ValueError:
                 pass
+            self._update_unstable_since(self._stamp_to_sec(msg.header.stamp))
             return
+
+    def _update_unstable_since(self, stamp_sec: float) -> None:
+        """Track since when scans fail; a few stable samples in a row end it."""
+        if self._stable_tracking:
+            self._stable_samples += 1
+            if self._stable_samples >= self.params.recovery_confirmation_samples:
+                self._unstable_since_sec = None
+            return
+        self._stable_samples = 0
+        if self._unstable_since_sec is None:
+            self._unstable_since_sec = stamp_sec
+
+    def _requested_after_odometry_dropout(self) -> bool:
+        """True while scans have failed for a while after odometry dropped out."""
+        if (
+            self.query_after_odometry_dropout_sec <= 0.0
+            or self._unstable_since_sec is None
+            or self._last_sim_stamp_sec is None
+            or not self._odometry_stamps
+        ):
+            return False
+        now = self._last_sim_stamp_sec
+        if now - self._unstable_since_sec < self.query_after_odometry_dropout_sec:
+            return False
+        gap_start = self._last_odometry_gap_start(now)
+        if gap_start is None or gap_start == self._given_up_gap_start_sec:
+            return False
+        self.get_logger().info(
+            f"scans failing for {now - self._unstable_since_sec:.0f} s after odometry "
+            "dropped out; querying G2 without the localizer's request",
+            throttle_duration_sec=10.0,
+        )
+        return True
 
     def _pose_velocity_trusted(self) -> bool:
         return bool(self._stable_tracking) and self.state.name in (
@@ -628,7 +673,9 @@ class ReinitializationSupervisorNode(Node):
 
         obs = rsp.SupervisorObservation(
             now_sec=now,
-            reinitialization_requested=self._requested,
+            reinitialization_requested=(
+                self._requested or self._requested_after_odometry_dropout()
+            ),
             candidate_scores=candidate_scores,
             retryable_empty_reply=retryable_empty_reply,
             best_fitness=best_fitness,
@@ -638,6 +685,16 @@ class ReinitializationSupervisorNode(Node):
             odom_bridge_available=odom_bridge_pose is not None,
         )
         decision = rsp.decide(self.params, self.state, obs)
+        if (
+            decision.state.name == rsp.STATE_EXHAUSTED
+            and self.state.name != rsp.STATE_EXHAUSTED
+            and self._last_sim_stamp_sec is not None
+        ):
+            # Scans keep failing after a give-up, so the dropout request would
+            # hold the episode latched; leave it to the localizer's own request.
+            self._given_up_gap_start_sec = self._last_odometry_gap_start(
+                self._last_sim_stamp_sec
+            )
         self.state = decision.state
 
         if decision.reason in (
@@ -899,6 +956,18 @@ class ReinitializationSupervisorNode(Node):
             > self.odometry_confirmation_window_sec + self.odometry_max_gap_sec
         ):
             self._odometry_stamps.popleft()
+
+    def _last_odometry_gap_start(self, stamp_sec: float):
+        """Last odom stamp before the latest dropout in the window, if any."""
+        stamps = [s for s in self._odometry_stamps if s <= stamp_sec]
+        if not stamps:
+            return None
+        if stamp_sec - stamps[-1] > self.odometry_max_gap_sec:
+            return stamps[-1]
+        for earlier, later in reversed(list(itertools.pairwise(stamps))):
+            if later - earlier > self.odometry_max_gap_sec:
+                return earlier
+        return None
 
     def _odometry_continuous(self, stamp_sec: float) -> bool:
         """True when odom TF arrived without dropouts over the confirmation window."""
