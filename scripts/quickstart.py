@@ -102,6 +102,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--global-frame", default="map")
     parser.add_argument("--odom-frame", default="odom")
     parser.add_argument("--base-frame", default="base_link")
+    parser.add_argument(
+        "--odom-tf-prediction",
+        action="store_true",
+        help="use an external odom -> base TF (e.g. a LIO front end) to predict "
+        "motion between scans; needed for fast or handheld motion",
+    )
     parser.add_argument("--initial-pose", type=float, nargs=7)
     parser.add_argument("--use-sim-time", action="store_true")
     parser.add_argument(
@@ -249,6 +255,8 @@ def _config_args(args, cloud_topic: str, imu_topic: str):
         argv.extend(str(value) for value in args.initial_pose)
     if args.use_sim_time:
         argv.append("--use-sim-time")
+    if args.odom_tf_prediction:
+        argv.append("--odom-tf-prediction")
     return config_tool.build_arg_parser().parse_args(argv)
 
 
