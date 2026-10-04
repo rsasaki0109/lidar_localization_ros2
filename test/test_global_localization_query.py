@@ -496,6 +496,71 @@ def test_query_progress_callback_reports_phases():
         assert phases[-1] == "done"
 
 
+def _write_wall_map_pcd(path: Path) -> None:
+    # Vertical walls along a 200 m strip, sampled every 0.2 m up to 3 m high.
+    rng = np.random.default_rng(7)
+    points = []
+    for wall_y in (-6.0, 6.0):
+        for x in np.arange(-100.0, 100.0, 0.2):
+            for z in np.arange(0.0, 3.0, 0.2):
+                points.append((x, wall_y + rng.normal(0.0, 0.01), z))
+    for wall_x in np.arange(-95.0, 100.0, 15.0):
+        for y in np.arange(-6.0, 6.0, 0.2):
+            for z in np.arange(0.0, 3.0, 0.2):
+                points.append((wall_x + 0.37 * abs(wall_x) % 3.0, y, z))
+    lines = [
+        "VERSION .7",
+        "FIELDS x y z",
+        "SIZE 4 4 4",
+        "TYPE F F F",
+        "COUNT 1 1 1",
+        f"WIDTH {len(points)}",
+        "HEIGHT 1",
+        "VIEWPOINT 0 0 0 1 0 0 0",
+        f"POINTS {len(points)}",
+        "DATA ascii",
+    ]
+    lines += [f"{x:.3f} {y:.3f} {z:.3f}" for x, y, z in points]
+    path.write_text("\n".join(lines) + "\n")
+
+
+def test_registration_scorer_shares_map_crops_without_changing_scores():
+    try:
+        glq._append_module_dirs("g2_ndt_score")
+        import g2_ndt_score
+    except ImportError:
+        print("skipping: g2_ndt_score is not built")
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        map_path = Path(tmp) / "walls.pcd"
+        _write_wall_map_pcd(map_path)
+        scorer = g2_ndt_score.MapNdtScorer(
+            str(map_path),
+            target_voxel_leaf_size=0.2,
+            local_map_radius=60.0,
+        )
+        map_points = np.loadtxt(map_path, skiprows=10)
+        sensor = np.array([40.0, 0.0, 0.0])
+        offsets = map_points - sensor
+        scan = offsets[np.hypot(offsets[:, 0], offsets[:, 1]) < 25.0]
+        # Two candidates whose 25 m scan fits one 60 m crop (the second crop alone
+        # would reach past the map's end at x = 100), and one far away.
+        poses = [(40.0, 0.0, 0.0, 0.0), (48.0, 0.5, 0.0, 0.05), (-40.0, 0.0, 0.0, 0.0)]
+
+        together = scorer.score_candidates(scan, poses)
+        alone = [scorer.score_candidate(scan, *pose) for pose in poses]
+
+        for shared, single in zip(together, alone, strict=True):
+            assert shared.converged == single.converged
+            assert math.isclose(shared.fitness, single.fitness, rel_tol=1e-6)
+            assert math.isclose(shared.refined_x, single.refined_x, abs_tol=1e-6)
+        assert together[0].fitness < together[2].fitness
+        # The near candidate reused the first crop; the far one needed its own.
+        assert together[1].target_point_count == together[0].target_point_count
+        assert alone[1].target_point_count != alone[0].target_point_count
+        assert together[2].target_point_count == alone[2].target_point_count
+
+
 if __name__ == "__main__":
     test_query_recovers_known_pose()
     test_query_handles_empty_scan()
@@ -510,4 +575,5 @@ if __name__ == "__main__":
     test_route_crop_falls_back_to_bbs_outside_the_session()
     test_default_candidate_source_is_bbs()
     test_query_progress_callback_reports_phases()
+    test_registration_scorer_shares_map_crops_without_changing_scores()
     print("test_global_localization_query: all tests passed")
