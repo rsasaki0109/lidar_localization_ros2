@@ -118,19 +118,26 @@ def wait_for_typed_topics(
 
 
 def discover_ros_graph(
-    odom_frame: str, timeout_sec: float = 5.0, tf_listen_sec: float = 1.0
+    odom_frame: str,
+    cloud_topic_for=None,
+    timeout_sec: float = 5.0,
+    listen_sec: float = 1.5,
 ):
-    """Return live (topic, type) pairs and the (parent, child) TF edges seen."""
+    """Return live (topic, type) pairs, the (parent, child) TF edges seen, and
+    the frame_id of one message on the cloud topic cloud_topic_for(topics) picks.
+    """
     try:
         import rclpy
-        from rclpy.qos import DurabilityPolicy, QoSProfile
+        from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
+        from sensor_msgs.msg import PointCloud2
         from tf2_msgs.msg import TFMessage
     except ImportError:
-        return [], set()
+        return [], set(), None
     rclpy.init(args=[])
     try:
         node = rclpy.create_node("lidar_localization_quickstart_discovery")
         edges = set()
+        cloud_frames = []
 
         def record(message):
             for transform in message.transforms:
@@ -155,13 +162,26 @@ def discover_ros_graph(
         typed = wait_for_typed_topics(
             node.get_topic_names_and_types, timeout_sec, sleep=spin
         )
-        if ("/tf", "tf2_msgs/msg/TFMessage") in typed:
-            deadline = time.monotonic() + tf_listen_sec
-            while time.monotonic() < deadline and not any(
-                parent == odom_frame for parent, _ in edges
-            ):
-                spin(0.1)
-        return typed, edges
+        cloud_topic = cloud_topic_for(typed) if cloud_topic_for else None
+        if (cloud_topic, CLOUD_TYPE) in typed:
+            node.create_subscription(
+                PointCloud2,
+                cloud_topic,
+                lambda message: cloud_frames.append(message.header.frame_id),
+                qos_profile_sensor_data,
+            )
+        else:
+            cloud_topic = None
+        # With TF topics, listen for the whole window: a static base -> LiDAR TF
+        # that is missed would be published a second time.
+        has_tf = any(name in ("/tf", "/tf_static") for name, _ in typed)
+        deadline = time.monotonic() + listen_sec
+        while time.monotonic() < deadline and (
+            has_tf or (cloud_topic and not cloud_frames)
+        ):
+            spin(0.1)
+        cloud_frame = cloud_frames[0].lstrip("/") if cloud_frames else None
+        return typed, edges, cloud_frame or None
     finally:
         rclpy.shutdown()
 
@@ -246,7 +266,10 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     sensors = parser.add_argument_group("topics and frames")
     sensors.add_argument("--cloud-topic", help="PointCloud2 topic (default: detected)")
     sensors.add_argument("--imu-topic", help="Imu topic (default: detected)")
-    sensors.add_argument("--lidar-frame", help="LiDAR frame (default: profile)")
+    sensors.add_argument(
+        "--lidar-frame",
+        help="LiDAR frame (default: the cloud's frame_id, else profile)",
+    )
     sensors.add_argument("--imu-frame", help="IMU frame (default: profile)")
     sensors.add_argument(
         "--base-frame",
@@ -257,8 +280,9 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     sensors.add_argument(
         "--publish-lidar-tf",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="publish a static base -> LiDAR TF; turn off when the robot already does",
+        default=None,
+        help="publish a static identity base -> LiDAR TF (default: on unless the "
+        "frames are the same or already linked in TF)",
     )
     sensors.add_argument(
         "--publish-imu-tf",
@@ -676,9 +700,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.use_sim_time,
         args.odom_tf_prediction,
         args.base_frame,
+        args.lidar_frame,
+        args.publish_lidar_tf,
     )
+    tf_edges = set()
     if args.discover_topics and None in undecided:
-        typed, tf_edges = discover_ros_graph(args.odom_frame)
+
+        def cloud_topic_for(typed):
+            if args.cloud_topic is not None:
+                return args.cloud_topic
+            return model.select_discovered_topic(typed, CLOUD_TYPE, cloud_topic)[0]
+
+        typed, tf_edges, cloud_frame = discover_ros_graph(
+            args.odom_frame, cloud_topic_for if args.lidar_frame is None else None
+        )
         if args.cloud_topic is None:
             cloud_topic, reason = model.select_discovered_topic(
                 typed, CLOUD_TYPE, cloud_topic
@@ -708,9 +743,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if odom_live
                 else f"odometry=none (no {args.odom_frame}->{base_frame} TF)"
             )
+        if args.lidar_frame is None and cloud_frame:
+            args.lidar_frame = cloud_frame
+            discovery_notes.append(f"lidar_frame={cloud_frame} (cloud header)")
     args.use_sim_time = bool(args.use_sim_time)
     args.odom_tf_prediction = bool(args.odom_tf_prediction)
     args.base_frame = args.base_frame or "base_link"
+    if args.publish_lidar_tf is None:
+        lidar_frame = args.lidar_frame or str(defaults["lidar_frame"])
+        args.publish_lidar_tf = model.lidar_tf_needed(
+            tf_edges, args.base_frame, lidar_frame
+        )
 
     occupancy_note = None
     if (

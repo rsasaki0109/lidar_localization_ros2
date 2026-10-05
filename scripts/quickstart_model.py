@@ -217,6 +217,32 @@ def select_odometry_frame(
     return candidate, False
 
 
+def lidar_tf_needed(
+    tf_edges: Iterable[tuple[str, str]], base_frame: str, lidar_frame: str
+) -> bool:
+    """Publish a static base -> LiDAR TF only when nothing links the frames yet.
+
+    A second publisher for a TF the robot already provides would make it flip
+    between two transforms.
+    """
+    if lidar_frame == base_frame:
+        return False
+    neighbours: dict[str, set[str]] = {}
+    for parent, child in tf_edges:
+        neighbours.setdefault(parent, set()).add(child)
+        neighbours.setdefault(child, set()).add(parent)
+    seen = {base_frame}
+    stack = [base_frame]
+    while stack:
+        for frame in neighbours.get(stack.pop(), ()):
+            if frame == lidar_frame:
+                return False
+            if frame not in seen:
+                seen.add(frame)
+                stack.append(frame)
+    return True
+
+
 def detect_sim_time(typed_topics: Sequence[tuple[str, str]]) -> bool:
     """A live /clock publisher means a bag replay or simulator drives ROS time."""
     return ("/clock", "rosgraph_msgs/msg/Clock") in typed_topics
