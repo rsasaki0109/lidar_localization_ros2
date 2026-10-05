@@ -111,9 +111,10 @@ The launch's defaults fit a MID-360 without a robot TF tree: `/livox/lidar`,
 (`lidar_topic`, `imu_topic`, `base_frame`, and `rko_param_file` override them).
 quickstart detects the topics, the `odom -> livox_frame` TF (which sets the base frame
 and turns on odometry prediction), the cloud's `livox_frame` (the same frame, so no
-LiDAR TF is published), and `/clock`, and prints them on the `Discovery:` line. The
-default `--global-seed-z 0` is the sensor height near the mapping start. With a known
-start pose, use `--initial-pose 0 0 0 0 0 0 1` instead of global search. For a bag,
+LiDAR TF is published), and `/clock`, and prints them on the `Discovery:` line. Global
+candidates are scored at the map's ground under them plus 1.0 m (`Seed height:`; see
+below). With a known start pose, use `--initial-pose 0 0 0 0 0 0 1` instead of global
+search. For a bag,
 add `use_sim_time:=true` to the odometry launch; quickstart picks up `/clock` itself
 once the bag plays.
 
