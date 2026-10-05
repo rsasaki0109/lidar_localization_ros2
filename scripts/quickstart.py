@@ -71,125 +71,209 @@ def discover_typed_topics(timeout_sec: float = 2.0):
     return parse_typed_topics(result.stdout)
 
 
-def build_arg_parser() -> argparse.ArgumentParser:
+def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
+    """Quickstart options; tuning options are listed only with --help-all."""
+
+    def advanced(text: str | None = None) -> str | None:
+        return text if show_all else argparse.SUPPRESS
+
     parser = argparse.ArgumentParser(
-        description="One-command lidar_localization_ros2 setup and guarded startup."
+        description="One-command lidar_localization_ros2 setup and guarded startup.",
+        epilog=None if show_all else "Tuning options: --help-all.",
     )
-    parser.add_argument("--map", "--map-path", dest="map_path", required=True)
-    parser.add_argument("--occupancy-map", dest="occupancy_yaml")
     parser.add_argument(
+        "--help-all", action="store_true", help="show the tuning options as well"
+    )
+
+    start = parser.add_argument_group("map and start")
+    start.add_argument(
+        "--map",
+        "--map-path",
+        dest="map_path",
+        required=True,
+        help="3D point cloud map (.pcd or .ply)",
+    )
+    start.add_argument(
+        "--occupancy-map",
+        dest="occupancy_yaml",
+        help="2D occupancy grid (map.yaml) of the same map, for start without a pose",
+    )
+    start.add_argument(
         "--reference-csv",
         dest="reference_csv",
         help="Mapping-run reference trajectory CSV for route-crop G2 candidates "
         "(same format as make_route_grid_relocalization_attempts.py). "
         "Use with --occupancy-map or alone when the route is known.",
     )
-    parser.add_argument("--route-time-radius-sec", type=float, default=20.0)
-    parser.add_argument("--route-min-spacing-m", type=float, default=8.0)
-    parser.add_argument("--route-max-poses", type=int, default=32)
-    parser.add_argument("--route-yaw-offsets-deg", default="-15,0,15")
-    parser.add_argument("--route-lateral-offsets-m", default="-2,0,2")
-    parser.add_argument("--route-longitudinal-offsets-m", default="-1,0,1")
-    parser.add_argument(
-        "--profile", choices=sorted(config_tool.PROFILE_DEFAULTS), default="standalone"
+    start.add_argument(
+        "--initial-pose",
+        type=float,
+        nargs=7,
+        metavar=("X", "Y", "Z", "QX", "QY", "QZ", "QW"),
+        help="known start pose in the map frame",
     )
-    parser.add_argument("--output", type=Path, default=default_config_path())
-    parser.add_argument("--state-file", type=Path)
-    parser.add_argument("--cloud-topic")
-    parser.add_argument("--imu-topic")
-    parser.add_argument("--lidar-frame")
-    parser.add_argument("--imu-frame")
-    parser.add_argument("--global-frame", default="map")
-    parser.add_argument("--odom-frame", default="odom")
-    parser.add_argument("--base-frame", default="base_link")
-    parser.add_argument(
-        "--odom-tf-prediction",
-        action="store_true",
-        help="use an external odom -> base TF (e.g. a LIO front end) to predict "
-        "motion between scans; needed for fast or handheld motion",
-    )
-    parser.add_argument("--initial-pose", type=float, nargs=7)
-    parser.add_argument("--use-sim-time", action="store_true")
-    parser.add_argument(
-        "--auto-initialize",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Restore a verified saved pose, then use global search when configured.",
-    )
-    parser.add_argument(
-        "--restore-saved-pose", action=argparse.BooleanOptionalAction, default=True
-    )
-    parser.add_argument("--saved-pose-max-age-sec", type=float, default=0.0)
-    parser.add_argument(
-        "--discover-topics", action=argparse.BooleanOptionalAction, default=True
-    )
-    parser.add_argument("--rviz", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument(
-        "--bringup-check", action=argparse.BooleanOptionalAction, default=True
-    )
-    parser.add_argument(
-        "--publish-lidar-tf", action=argparse.BooleanOptionalAction, default=True
-    )
-    parser.add_argument(
-        "--publish-imu-tf", action=argparse.BooleanOptionalAction, default=False
-    )
-    parser.add_argument("--min-candidate-score", type=float, default=0.6)
-    parser.add_argument("--min-score-margin", type=float, default=0.05)
-    parser.add_argument("--max-candidate-age-sec", type=float, default=30.0)
-    parser.add_argument("--global-query-timeout-sec", type=float, default=30.0)
-    parser.add_argument("--verification-samples", type=int, default=3)
-    parser.add_argument("--verification-fitness-threshold", type=float, default=1.5)
-    parser.add_argument("--max-global-attempts", type=int, default=6)
-    parser.add_argument("--global-consensus-samples", type=int, default=2)
-    parser.add_argument("--global-consensus-translation-m", type=float, default=2.0)
-    parser.add_argument("--global-consensus-yaw-deg", type=float, default=20.0)
-    parser.add_argument(
-        "--global-cpp-backend", action=argparse.BooleanOptionalAction, default=True
-    )
-    parser.add_argument(
-        "--global-registration-scoring",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Use the 3D NDT scorer to validate and rank G2 candidates.",
-    )
-    parser.add_argument(
-        "--require-global-registration-scoring",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Refuse automatic global pose publication if 3D scoring is unavailable.",
-    )
-    parser.add_argument("--global-registration-score-gate", type=float, default=6.0)
-    parser.add_argument(
-        "--refine-global-candidates",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-    )
-    parser.add_argument(
+    start.add_argument(
         "--global-seed-z",
         type=float,
         default=0.0,
         help="map-frame sensor height used to score global candidates; set it when "
         "the map's ground is not near z=0 (default: 0)",
     )
-    parser.add_argument("--global-max-scan-points", type=int, default=256)
-    parser.add_argument(
+    start.add_argument(
+        "--profile",
+        choices=sorted(config_tool.PROFILE_DEFAULTS),
+        default="standalone",
+        help="sensor and output preset (default: standalone)",
+    )
+    start.add_argument(
+        "--odom-tf-prediction",
+        action="store_true",
+        help="use an external odom -> base TF (e.g. a LIO front end) to predict "
+        "motion between scans; needed for fast or handheld motion",
+    )
+    start.add_argument(
+        "--use-sim-time", action="store_true", help="replay a bag on /clock"
+    )
+
+    sensors = parser.add_argument_group("topics and frames")
+    sensors.add_argument("--cloud-topic", help="PointCloud2 topic (default: detected)")
+    sensors.add_argument("--imu-topic", help="Imu topic (default: detected)")
+    sensors.add_argument("--lidar-frame", help="LiDAR frame (default: profile)")
+    sensors.add_argument("--imu-frame", help="IMU frame (default: profile)")
+    sensors.add_argument("--base-frame", default="base_link", help="robot base frame")
+    sensors.add_argument("--odom-frame", default="odom", help="odometry frame")
+    sensors.add_argument("--global-frame", default="map", help="map frame")
+    sensors.add_argument(
+        "--publish-lidar-tf",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="publish a static base -> LiDAR TF; turn off when the robot already does",
+    )
+    sensors.add_argument(
+        "--publish-imu-tf",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="publish a static base -> IMU TF",
+    )
+
+    session = parser.add_argument_group("session")
+    session.add_argument(
+        "--rviz",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="start RViz (turn off on a headless robot)",
+    )
+    session.add_argument(
+        "--bringup-check",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="check topics and TF five seconds after launch",
+    )
+    session.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="write the configuration and print the commands without starting",
+    )
+    session.add_argument(
+        "--output",
+        type=Path,
+        default=default_config_path(),
+        help=advanced("generated parameter file"),
+    )
+    session.add_argument("--state-file", type=Path, help=advanced("saved pose file"))
+    session.add_argument(
+        "--auto-initialize",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=advanced(
+            "Restore a verified saved pose, then use global search when configured."
+        ),
+    )
+    session.add_argument(
+        "--restore-saved-pose",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=advanced(),
+    )
+    session.add_argument(
+        "--saved-pose-max-age-sec", type=float, default=0.0, help=advanced()
+    )
+    session.add_argument(
+        "--discover-topics",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=advanced(),
+    )
+
+    tuning = parser.add_argument_group("global search and recovery tuning")
+    for flag, kwargs in (
+        ("--route-time-radius-sec", {"type": float, "default": 20.0}),
+        ("--route-min-spacing-m", {"type": float, "default": 8.0}),
+        ("--route-max-poses", {"type": int, "default": 32}),
+        ("--route-yaw-offsets-deg", {"default": "-15,0,15"}),
+        ("--route-lateral-offsets-m", {"default": "-2,0,2"}),
+        ("--route-longitudinal-offsets-m", {"default": "-1,0,1"}),
+        ("--min-candidate-score", {"type": float, "default": 0.6}),
+        ("--min-score-margin", {"type": float, "default": 0.05}),
+        ("--max-candidate-age-sec", {"type": float, "default": 30.0}),
+        ("--global-query-timeout-sec", {"type": float, "default": 30.0}),
+        ("--verification-samples", {"type": int, "default": 3}),
+        ("--verification-fitness-threshold", {"type": float, "default": 1.5}),
+        ("--max-global-attempts", {"type": int, "default": 6}),
+        ("--global-consensus-samples", {"type": int, "default": 2}),
+        ("--global-consensus-translation-m", {"type": float, "default": 2.0}),
+        ("--global-consensus-yaw-deg", {"type": float, "default": 20.0}),
+        ("--global-registration-score-gate", {"type": float, "default": 6.0}),
+        ("--global-max-scan-points", {"type": int, "default": 256}),
+        ("--global-max-candidates", {"type": int, "default": 8}),
+        ("--global-nms-radius-m", {"type": float, "default": 3.0}),
+        ("--supervisor-query-timeout-sec", {"type": float, "default": 45.0}),
+        ("--supervisor-max-walk-candidates", {"type": int, "default": 4}),
+    ):
+        tuning.add_argument(flag, help=advanced(), **kwargs)
+    tuning.add_argument(
+        "--global-cpp-backend",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=advanced(),
+    )
+    tuning.add_argument(
+        "--global-registration-scoring",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=advanced("Use the 3D NDT scorer to validate and rank G2 candidates."),
+    )
+    tuning.add_argument(
+        "--require-global-registration-scoring",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=advanced(
+            "Refuse automatic global pose publication if 3D scoring is unavailable."
+        ),
+    )
+    tuning.add_argument(
+        "--refine-global-candidates",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=advanced(),
+    )
+    tuning.add_argument(
         "--global-angular-resolution-deg",
         type=float,
         default=5.0,
-        help="yaw step of the global search; coarser steps can miss the true "
-        "heading (default: 5)",
+        help=advanced(
+            "yaw step of the global search; coarser steps can miss the true "
+            "heading (default: 5)"
+        ),
     )
-    parser.add_argument("--global-max-candidates", type=int, default=8)
-    parser.add_argument("--global-nms-radius-m", type=float, default=3.0)
-    parser.add_argument(
+    tuning.add_argument(
         "--g3-recovery",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Launch guarded G3 reinitialization when global search is configured.",
+        help=advanced(
+            "Launch guarded G3 reinitialization when global search is configured."
+        ),
     )
-    parser.add_argument("--supervisor-query-timeout-sec", type=float, default=45.0)
-    parser.add_argument("--supervisor-max-walk-candidates", type=int, default=4)
-    parser.add_argument("--dry-run", action="store_true")
     return parser
 
 
@@ -444,6 +528,10 @@ def _validate(args) -> str | None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if "--help-all" in argv:
+        build_arg_parser(show_all=True).print_help()
+        return 0
     args = build_arg_parser().parse_args(argv)
     error = _validate(args)
     if error:
