@@ -115,6 +115,12 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
   Eigen::Matrix4f odom_tf_prediction = Eigen::Matrix4f::Identity();
   const bool odom_tf_bridge_available =
     use_odom_tf_prediction_ && lookupOdomBridgePoseMatrix(stamp, odom_tf_prediction);
+  if (odom_tf_bridge_available) {
+    if (lidar_localization::isOdomSeedGap(last_odom_seed_stamp_sec_, scan_stamp_sec)) {
+      settled_accepts_since_reset_ = 0;
+    }
+    last_odom_seed_stamp_sec_ = scan_stamp_sec;
+  }
   local_reacquisition_confirmation_scan_ = false;
   scan_seeded_from_reacquisition_ = false;
   if (odom_tf_bridge_available && pending_reacquisition_map_to_odom_) {
@@ -528,7 +534,9 @@ lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurement
     attempt.correction_yaw_deg,
     consecutive_rejected_updates_,
     use_odom_tf_prediction_ && has_last_good_map_to_odom_,
-    accepted_updates_since_reset_);
+    settled_accepts_since_reset_);
+  last_gated_correction_translation_m_ = attempt.correction_translation_m;
+  last_gated_correction_yaw_deg_ = attempt.correction_yaw_deg;
   auto gate =
     lidar_localization::evaluateMeasurementGate(measurementGateParams(), gate_input);
   if (gate.status_level == lidar_localization::kMeasurementGateWarn) {

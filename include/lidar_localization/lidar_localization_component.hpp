@@ -496,6 +496,12 @@ public:
   Eigen::Matrix4f last_relative_motion_matrix_{Eigen::Matrix4f::Identity()};
   double last_relative_motion_duration_sec_{0.0};
   std::size_t accepted_updates_since_reset_{0};
+  // Seed correction guard warmup: consecutive small-correction accepts since
+  // the last reset or odometry gap, and the correction of the last gated scan.
+  std::size_t settled_accepts_since_reset_{0};
+  double last_gated_correction_translation_m_{std::numeric_limits<double>::infinity()};
+  double last_gated_correction_yaw_deg_{std::numeric_limits<double>::infinity()};
+  double last_odom_seed_stamp_sec_{std::numeric_limits<double>::quiet_NaN()};
   std::size_t consecutive_rejected_updates_{0};
   double last_accepted_pose_time_sec_{0.0};
   double predicted_pose_time_sec_{0.0};

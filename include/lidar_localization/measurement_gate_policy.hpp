@@ -66,9 +66,10 @@ struct MeasurementGateParams
   double seed_correction_guard_translation_m{0.5};
   double seed_correction_guard_yaw_deg{15.0};
   int seed_correction_guard_release_rejections{10};
-  // The guard only protects an established track: until this many updates
-  // have been accepted since the last (re)initialization the seed is an
-  // external initial pose, not a tracked one.
+  // The guard only protects an established track: it waits for this many
+  // consecutive accepted updates whose corrections stayed within its limits
+  // (see nextSettledAccepts). A pose from global search can be metres off,
+  // and NDT must be free to pull it in before the guard holds it.
   int seed_correction_guard_warmup_accepts{5};
 
   bool enable_rejected_seed_update{false};
@@ -91,6 +92,8 @@ struct MeasurementGateInput
   // back to previous_delta because the live TF lookup briefly missed; that
   // is exactly when an aliased NDT result must not replace the good anchor.
   bool odom_tf_prediction_guard_applicable{false};
+  // Consecutive accepted updates within the seed correction guard's limits
+  // since the last reset or odometry gap (see nextSettledAccepts).
   std::size_t accepted_updates_since_reset{std::numeric_limits<std::size_t>::max()};
 };
 
@@ -187,6 +190,35 @@ inline bool isBorderlineSeedGateActive(
          input.fitness_score <= effective_score_threshold &&
          input.seed_translation_since_accept_m >=
          params.borderline_seed_gate_min_seed_translation_m;
+}
+
+// Count of consecutive accepted updates that needed only a small correction:
+// an accept that moved the pose further than the seed correction guard allows
+// means the track is still converging, so the count starts over.
+inline std::size_t nextSettledAccepts(
+  std::size_t settled_accepts,
+  const MeasurementGateParams & params,
+  double correction_translation_m,
+  double correction_yaw_deg)
+{
+  const bool settled =
+    correction_translation_m <= params.seed_correction_guard_translation_m &&
+    correction_yaw_deg <= params.seed_correction_guard_yaw_deg;
+  if (!settled) {
+    return 0;
+  }
+  return settled_accepts < std::numeric_limits<std::size_t>::max() ?
+         settled_accepts + 1 : settled_accepts;
+}
+
+// Odometry seeds more than this far apart in time bridge a gap (a stalled or
+// restarted front end, a covered sensor): the seed may be far off afterwards.
+constexpr double kOdomSeedGapSec = 1.0;
+
+inline bool isOdomSeedGap(double previous_seed_stamp_sec, double seed_stamp_sec)
+{
+  return std::isfinite(previous_seed_stamp_sec) &&
+         seed_stamp_sec - previous_seed_stamp_sec > kOdomSeedGapSec;
 }
 
 inline MeasurementGateDecision evaluateMeasurementGate(
