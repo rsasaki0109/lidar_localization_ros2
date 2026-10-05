@@ -11,6 +11,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -91,29 +92,42 @@ def generate_occupancy_map(
     return None
 
 
-def parse_typed_topics(output: str):
-    topics = []
-    for line in output.splitlines():
-        match = re.match(r"^(\S+)\s+\[([^,\]]+)", line.strip())
-        if match:
-            topics.append((match.group(1), match.group(2)))
-    return topics
+CLOUD_TYPE = "sensor_msgs/msg/PointCloud2"
+IMU_TYPE = "sensor_msgs/msg/Imu"
 
 
-def discover_typed_topics(timeout_sec: float = 2.0):
+def wait_for_typed_topics(
+    list_topics, timeout_sec: float, clock=time.monotonic, sleep=time.sleep
+):
+    """Poll the ROS graph until a cloud and an IMU appear or the timeout passes.
+
+    DDS discovery of an already running publisher takes from 0.1 s to a few
+    seconds, so a single fixed wait either misses topics or always waits long.
+    """
+    deadline = clock() + timeout_sec
+    while True:
+        typed = [
+            (name, type_name)
+            for name, type_names in list_topics()
+            for type_name in type_names
+        ]
+        found = {type_name for _, type_name in typed}
+        if {CLOUD_TYPE, IMU_TYPE} <= found or clock() >= deadline:
+            return typed
+        sleep(0.1)
+
+
+def discover_typed_topics(timeout_sec: float = 5.0):
     try:
-        result = subprocess.run(
-            ["ros2", "topic", "list", "--types"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=timeout_sec,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+        import rclpy
+    except ImportError:
         return []
-    if result.returncode != 0:
-        return []
-    return parse_typed_topics(result.stdout)
+    rclpy.init(args=[])
+    try:
+        node = rclpy.create_node("lidar_localization_quickstart_discovery")
+        return wait_for_typed_topics(node.get_topic_names_and_types, timeout_sec)
+    finally:
+        rclpy.shutdown()
 
 
 def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
@@ -600,12 +614,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         typed = discover_typed_topics()
         if args.cloud_topic is None:
             cloud_topic, reason = model.select_discovered_topic(
-                typed, "sensor_msgs/msg/PointCloud2", cloud_topic
+                typed, CLOUD_TYPE, cloud_topic
             )
             discovery_notes.append(f"cloud={cloud_topic} ({reason})")
         if args.imu_topic is None:
             imu_topic, reason = model.select_discovered_topic(
-                typed, "sensor_msgs/msg/Imu", imu_topic
+                typed, IMU_TYPE, imu_topic
             )
             discovery_notes.append(f"imu={imu_topic} ({reason})")
 
