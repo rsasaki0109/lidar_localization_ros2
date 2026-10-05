@@ -66,14 +66,18 @@ guessing. Frame defaults also come from the profile and can be overridden with
 `--lidar-frame`, `--imu-frame`, `--base-frame`, `--odom-frame`, and `--global-frame`.
 
 If the robot already runs odometry that publishes `odom -> base_frame` (a LIO front end
-such as RKO-LIO, or wheel or leg odometry), add `--odom-tf-prediction`. Scan matching is
-then seeded from that odometry, `map -> odom` is published, and the odometry-bridged pose
-keeps flowing while scans are rejected. Handheld or other fast motion needs it: on the
+such as RKO-LIO, or wheel or leg odometry), quickstart sees that TF and turns on odometry
+prediction (`--odom-tf-prediction`); the choice is printed as `odometry=odom->...`.
+Without `--base-frame`, a single child of `odom` (RKO-LIO's `livox_frame`, for example)
+becomes the base frame, and `base_link` is kept otherwise. Start odometry before
+quickstart, or pass `--odom-tf-prediction` (`--no-odom-tf-prediction` turns it off).
+Scan matching is then seeded from that odometry, `map -> odom` is published, and the
+odometry-bridged pose keeps flowing while scans are rejected. Handheld or other fast motion needs it: on the
 Koide `outdoor_hard_02b` handheld sequence at 1x, seeded at the true start pose, the
 standalone configuration lost track after 23 s without it and stayed within 1.4 m (median
 0.07 m) for the whole 298 s with it.
 
-`--odom-tf-prediction` also enables the seed correction guard: once tracking has settled,
+Odometry prediction also enables the seed correction guard: once tracking has settled,
 a scan match that moves the pose more than 0.3 m or 15 degrees from the odometry
 prediction is rejected, since with good odometry such a jump is a local minimum, not
 motion. On a Unitree Go2 indoor aisle (JEPLO `EIL_Box`), objects missing from the map
@@ -98,17 +102,16 @@ ros2 run rko_lio online_node --ros-args \
   -p "extrinsic_lidar2base_quat_xyzw_xyz:=[0.0,0.0,0.0,1.0,0.0,0.0,0.0]" \
   -p "extrinsic_imu2base_quat_xyzw_xyz:=[0.0,0.0,0.0,1.0,0.0,0.0,0.0]"
 
-# 2. Localization with automatic global initialization
-ros2 run lidar_localization_ros2 quickstart.py --profile standalone \
-  --map /path/to/output/my_map/map.pcd \
-  --global-seed-z 0 --odom-tf-prediction \
-  --cloud-topic /livox/lidar --imu-topic /livox/imu \
-  --lidar-frame livox_frame --base-frame livox_frame --no-publish-lidar-tf
+# 2. Localization with automatic global initialization, once odometry runs
+ros2 run lidar_localization_ros2 quickstart.py --map /path/to/output/my_map/map.pcd \
+  --lidar-frame livox_frame --no-publish-lidar-tf
 ```
 
 Give the extrinsics explicitly. Without them RKO-LIO looks them up in TF, and with no
-`livox_frame` in the tree it publishes no odometry. `--global-seed-z` is the sensor
-height in the map frame; it is about 0 near the mapping start. With a known start pose,
+`livox_frame` in the tree it publishes no odometry. quickstart detects the topics, the
+`odom -> livox_frame` TF (which sets the base frame and turns on odometry prediction),
+and `/clock`, and prints them on the `Discovery:` line. The default `--global-seed-z 0`
+is the sensor height near the mapping start. With a known start pose,
 use `--initial-pose 0 0 0 0 0 0 1` instead of global search. For a bag, add `-p
 use_sim_time:=true` to RKO-LIO; quickstart picks up `/clock` itself once the bag plays.
 
@@ -117,7 +120,7 @@ map built from the same bag and its SLAM trajectory as the reference:
 
 | setup | result |
 | --- | --- |
-| above, global initialization | initialized from 2 G2 answers, tracking 12 s into the bag; within 1.0 m (median 0.30 m) to the end |
+| above, global initialization | initialized from 2 G2 answers, tracking 12 s into the bag; within 1.0 m (median 0.30 m) to the end; the same with every option given explicitly |
 | `--initial-pose` without odometry | lost when the car reached 6 m/s, after 100-125 s |
 
 ## Initialization order
