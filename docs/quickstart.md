@@ -100,24 +100,22 @@ the same package's RKO-LIO front end provides the odometry. For a Livox MID-360:
 
 ```bash
 # 1. Odometry: RKO-LIO from lidar_slam_ros2, publishing odom -> livox_frame
-ros2 run rko_lio online_node --ros-args \
-  -p lidar_topic:=/livox/lidar -p imu_topic:=/livox/imu -p base_frame:=livox_frame \
-  -p initialization_phase:=true \
-  -p "extrinsic_lidar2base_quat_xyzw_xyz:=[0.0,0.0,0.0,1.0,0.0,0.0,0.0]" \
-  -p "extrinsic_imu2base_quat_xyzw_xyz:=[0.0,0.0,0.0,1.0,0.0,0.0,0.0]"
+ros2 launch lidarslam rko_lio_odometry.launch.py
 
 # 2. Localization with automatic global initialization, once odometry runs
 ros2 run lidar_localization_ros2 quickstart.py --map /path/to/output/my_map/map.pcd
 ```
 
-Give the extrinsics explicitly. Without them RKO-LIO looks them up in TF, and with no
-`livox_frame` in the tree it publishes no odometry. quickstart detects the topics, the
-`odom -> livox_frame` TF (which sets the base frame and turns on odometry prediction),
-the cloud's `livox_frame` (the same frame, so no LiDAR TF is published), and `/clock`,
-and prints them on the `Discovery:` line. The default `--global-seed-z 0`
-is the sensor height near the mapping start. With a known start pose,
-use `--initial-pose 0 0 0 0 0 0 1` instead of global search. For a bag, add `-p
-use_sim_time:=true` to RKO-LIO; quickstart picks up `/clock` itself once the bag plays.
+The launch's defaults fit a MID-360 without a robot TF tree: `/livox/lidar`,
+`/livox/imu`, identity extrinsics, and an odom frame levelled with gravity at startup
+(`lidar_topic`, `imu_topic`, `base_frame`, and `rko_param_file` override them).
+quickstart detects the topics, the `odom -> livox_frame` TF (which sets the base frame
+and turns on odometry prediction), the cloud's `livox_frame` (the same frame, so no
+LiDAR TF is published), and `/clock`, and prints them on the `Discovery:` line. The
+default `--global-seed-z 0` is the sensor height near the mapping start. With a known
+start pose, use `--initial-pose 0 0 0 0 0 0 1` instead of global search. For a bag,
+add `use_sim_time:=true` to the odometry launch; quickstart picks up `/clock` itself
+once the bag plays.
 
 Measured on the lidar_slam_ros2 MID-360 demo bag (a 1 km drive at up to 6 m/s), with a
 map built from the same bag and its SLAM trajectory as the reference:
