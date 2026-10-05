@@ -46,6 +46,51 @@ def default_state_path(map_path: Path) -> Path:
     )
 
 
+def default_occupancy_dir() -> Path:
+    return Path.home() / ".cache" / "lidar_localization_ros2" / "occupancy"
+
+
+# Generated grids ignore points this high above the ground (a ceiling, tree
+# canopy); obstacles still need points from 0.4 m up. Checked indoors (Go2
+# aisle), outdoors (Koide campus) and on a driving loop.
+AUTO_OCCUPANCY_MAX_OBSTACLE_HEIGHT_M = 2.0
+
+
+def cached_occupancy_map(map_path: Path, cache_dir: Path) -> Path:
+    """Occupancy YAML for these map contents (renaming the map keeps it)."""
+    identity = model.compute_map_identity(map_path)
+    return cache_dir / f"{identity.sha256[:16]}.yaml"
+
+
+def generate_occupancy_map(
+    map_path: Path, yaml_path: Path, run=subprocess.run
+) -> str | None:
+    """Write yaml_path from the point cloud map; return an error, or None."""
+    yaml_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        "ros2",
+        "run",
+        "lidar_localization_ros2",
+        "generate_occupancy_map_from_pcd",
+        "--pcd",
+        str(map_path),
+        "--output-dir",
+        str(yaml_path.parent),
+        "--map-name",
+        yaml_path.stem,
+        "--max-obstacle-height-m",
+        str(AUTO_OCCUPANCY_MAX_OBSTACLE_HEIGHT_M),
+    ]
+    try:
+        result = run(command, check=False, capture_output=True, text=True, timeout=600)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return str(exc)
+    if result.returncode != 0 or not yaml_path.is_file():
+        lines = (result.stderr or result.stdout or "").strip().splitlines()
+        return lines[-1] if lines else f"exit code {result.returncode}"
+    return None
+
+
 def parse_typed_topics(output: str):
     topics = []
     for line in output.splitlines():
@@ -203,6 +248,15 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
         help=advanced(),
+    )
+    session.add_argument(
+        "--auto-occupancy-map",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=advanced(
+            "without a pose or grid, generate (and cache) an occupancy grid from the "
+            "map for global search"
+        ),
     )
 
     tuning = parser.add_argument_group("global search and recovery tuning")
@@ -555,6 +609,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             discovery_notes.append(f"imu={imu_topic} ({reason})")
 
+    occupancy_note = None
+    if (
+        args.auto_initialize
+        and args.auto_occupancy_map
+        and not (args.initial_pose or args.occupancy_yaml)
+    ):
+        map_path = Path(args.map_path).expanduser().resolve()
+        cached = cached_occupancy_map(map_path, default_occupancy_dir())
+        if cached.is_file():
+            args.occupancy_yaml = str(cached)
+            occupancy_note = f"{cached} (cached for this map)"
+        elif args.dry_run:
+            occupancy_note = f"would generate {cached} from the map"
+        else:
+            print(f"Generating an occupancy grid for global search: {cached}")
+            error = generate_occupancy_map(map_path, cached)
+            if error:
+                occupancy_note = f"not generated ({error}); set the pose manually"
+            else:
+                args.occupancy_yaml = str(cached)
+                occupancy_note = f"{cached} (generated from the map)"
+
     config_args = _config_args(args, cloud_topic, imu_topic)
     validation_error = config_tool.validate_args(config_args)
     if validation_error:
@@ -577,6 +653,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Pose state:    {state_path}")
     if discovery_notes:
         print("Discovery:     " + ", ".join(discovery_notes))
+    if occupancy_note:
+        print(f"Occupancy map: {occupancy_note}")
     fallback = "RViz" if args.rviz else "/initialpose"
     if args.initial_pose:
         print("Initialization: explicit pose")

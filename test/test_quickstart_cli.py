@@ -55,6 +55,82 @@ class TestQuickstartCli(unittest.TestCase):
         self.assertEqual(args.global_max_candidates, 16)
         self.assertFalse(args.g3_recovery)
 
+    def _dry_run(self, root, extra):
+        map_path = root / "site.pcd"
+        map_path.write_bytes(b"pcd")
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            result = QUICKSTART.main(
+                [
+                    "--map",
+                    str(map_path),
+                    "--output",
+                    str(root / "generated.yaml"),
+                    "--state-file",
+                    str(root / "pose.json"),
+                    "--no-discover-topics",
+                    "--dry-run",
+                    *extra,
+                ]
+            )
+        self.assertEqual(result, 0)
+        return map_path, stdout.getvalue()
+
+    def test_occupancy_grid_is_generated_for_a_map_without_one(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "cache"
+            original = QUICKSTART.default_occupancy_dir
+            QUICKSTART.default_occupancy_dir = lambda: cache
+            try:
+                map_path, text = self._dry_run(root, [])
+                cached = QUICKSTART.cached_occupancy_map(map_path, cache)
+                self.assertIn(f"would generate {cached}", text)
+                self.assertNotIn("occupancy_yaml:=", text)
+
+                # A grid cached for the same map contents is used.
+                cached.parent.mkdir(parents=True)
+                cached.write_text("image: x.pgm\n", encoding="utf-8")
+                _, text = self._dry_run(root, [])
+                self.assertIn(f"occupancy_yaml:={cached}", text)
+                self.assertIn("guarded global search", text)
+
+                _, text = self._dry_run(root, ["--no-auto-occupancy-map"])
+                self.assertNotIn("occupancy_yaml:=", text)
+                _, text = self._dry_run(
+                    root, ["--initial-pose", "0", "0", "0", "0", "0", "0", "1"]
+                )
+                self.assertNotIn("occupancy_yaml:=", text)
+            finally:
+                QUICKSTART.default_occupancy_dir = original
+
+    def test_generate_occupancy_map_reports_failures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            yaml_path = Path(directory) / "grids" / "abc.yaml"
+            calls = []
+
+            def ok(command, **kwargs):
+                calls.append(command)
+                yaml_path.write_text("image: abc.pgm\n", encoding="utf-8")
+                return QUICKSTART.subprocess.CompletedProcess(command, 0, "", "")
+
+            self.assertIsNone(
+                QUICKSTART.generate_occupancy_map(Path("m.pcd"), yaml_path, ok)
+            )
+            self.assertIn("--max-obstacle-height-m", calls[0])
+            self.assertEqual(calls[0][calls[0].index("--map-name") + 1], "abc")
+
+            def fails(command, **kwargs):
+                return QUICKSTART.subprocess.CompletedProcess(
+                    command, 1, "", "cannot read point cloud: m.pcd\n"
+                )
+
+            yaml_path.unlink()
+            self.assertEqual(
+                QUICKSTART.generate_occupancy_map(Path("m.pcd"), yaml_path, fails),
+                "cannot read point cloud: m.pcd",
+            )
+
     def test_dry_run_generates_one_command_global_workflow(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

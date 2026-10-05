@@ -15,15 +15,19 @@ ros2 run lidar_localization_ros2 quickstart.py \
   --initial-pose X Y Z QX QY QZ QW
 ```
 
-Without a known pose, enable map-wide search by supplying the 2D occupancy map used by
-the existing G2 BBS_2D engine, or route-crop search from a mapping-run reference CSV:
+Without a known pose, quickstart searches the whole map. It generates the 2D occupancy
+grid that the G2 BBS_2D engine needs from the point cloud map (points from 0.4 m to
+2.0 m above the ground are obstacles, so ceilings and tree canopy are not) and caches it
+under `~/.cache/lidar_localization_ros2/occupancy/` by map contents:
 
 ```bash
 ros2 run lidar_localization_ros2 quickstart.py \
   --profile mid360 \
-  --map /absolute/path/to/map.pcd \
-  --occupancy-map /absolute/path/to/map.yaml
+  --map /absolute/path/to/map.pcd
 ```
+
+Pass `--occupancy-map /absolute/path/to/map.yaml` to use your own grid, or
+`--no-auto-occupancy-map` to start from RViz instead.
 
 Replays of a recorded mapping run (route-crop needs the run's timestamps; see below):
 
@@ -82,21 +86,16 @@ mapping pose, so a robot that starts where mapping started is near `(0, 0, 0)`, 
 the same package's RKO-LIO front end provides the odometry. For a Livox MID-360:
 
 ```bash
-# 1. Occupancy grid for global search, from the map written by lidarslam-map
-#    (indoors, add --max-obstacle-height-m 1.5 so the ceiling is not an obstacle)
-ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd \
-  --pcd /path/to/output/my_map/map.pcd --output-dir maps --map-name my_map
-
-# 2. Odometry: RKO-LIO from lidar_slam_ros2, publishing odom -> livox_frame
+# 1. Odometry: RKO-LIO from lidar_slam_ros2, publishing odom -> livox_frame
 ros2 run rko_lio online_node --ros-args \
   -p lidar_topic:=/livox/lidar -p imu_topic:=/livox/imu -p base_frame:=livox_frame \
   -p initialization_phase:=true \
   -p "extrinsic_lidar2base_quat_xyzw_xyz:=[0.0,0.0,0.0,1.0,0.0,0.0,0.0]" \
   -p "extrinsic_imu2base_quat_xyzw_xyz:=[0.0,0.0,0.0,1.0,0.0,0.0,0.0]"
 
-# 3. Localization with automatic global initialization
+# 2. Localization with automatic global initialization
 ros2 run lidar_localization_ros2 quickstart.py --profile standalone \
-  --map /path/to/output/my_map/map.pcd --occupancy-map maps/my_map.yaml \
+  --map /path/to/output/my_map/map.pcd \
   --global-seed-z 0 --odom-tf-prediction \
   --cloud-topic /livox/lidar --imu-topic /livox/imu \
   --lidar-frame livox_frame --base-frame livox_frame --no-publish-lidar-tf
@@ -105,7 +104,7 @@ ros2 run lidar_localization_ros2 quickstart.py --profile standalone \
 Give the extrinsics explicitly. Without them RKO-LIO looks them up in TF, and with no
 `livox_frame` in the tree it publishes no odometry. `--global-seed-z` is the sensor
 height in the map frame; it is about 0 near the mapping start. With a known start pose,
-use `--initial-pose 0 0 0 0 0 0 1` instead of the occupancy grid. Add `-p
+use `--initial-pose 0 0 0 0 0 0 1` instead of global search. Add `-p
 use_sim_time:=true` to RKO-LIO and `--use-sim-time` to quickstart for a bag.
 
 Measured on the lidar_slam_ros2 MID-360 demo bag (a 1 km drive at up to 6 m/s), with a
@@ -122,8 +121,8 @@ The startup manager uses this fixed order:
 
 1. an explicit `--initial-pose`, when supplied;
 2. the last verified pose saved for the exact same pointcloud map contents;
-3. guarded global search when `--occupancy-map` is supplied, or guarded route-crop
-   search when `--reference-csv` is supplied;
+3. guarded global search over an occupancy grid (`--occupancy-map`, or one generated
+   from the map), or guarded route-crop search when `--reference-csv` is supplied;
 4. an operator pose from RViz **2D Pose Estimate**.
 
 There is no implicit `(0, 0, 0)` fallback. An explicit pose disables both saved-pose
@@ -212,8 +211,9 @@ not infer this relationship and cannot make a mismatched pair safe. Create a gri
 `generate_occupancy_map_from_pcd` when its route-crop behavior fits the site, then
 inspect the result before use.
 
-Indoors, pass `--max-obstacle-height-m` (for example `1.5`). By default a cell is
-occupied when its points span 0.4 m in height, and floor plus ceiling does that
+When you generate a grid yourself indoors, pass `--max-obstacle-height-m` (for example
+`1.5`; quickstart's own grids use 2.0). Without it a cell is occupied when its points
+span 0.4 m in height, and floor plus ceiling does that
 everywhere, so the whole room becomes occupied and global search has no free space to
 match. On a Unitree Go2 map of an indoor aisle (lidar_slam_ros2, JEPLO `EIL_Mix`), 1.5 m
 left the walls as outlines with free floor inside. Global initialization on another
@@ -265,7 +265,8 @@ publication off as appropriate.
 ## Troubleshooting
 
 - `no_safe_automatic_source`: no matching saved pose and no occupancy map or reference
-  CSV; use RViz or restart with `--occupancy-map` / `--reference-csv`.
+  CSV (for example `--no-auto-occupancy-map`, or the grid could not be generated); use
+  RViz or restart with `--occupancy-map` / `--reference-csv`.
 - `map_mismatch`: the stored pose belongs to different map contents and was ignored.
 - `ambiguous_candidate_retry`: similar places are not distinguishable at the configured
   margin; do not loosen the margin without replay evidence. With `--reference-csv` and

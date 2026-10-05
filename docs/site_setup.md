@@ -11,7 +11,8 @@ instead of searching the full map (avoids corridor alias on hard outdoor maps).
 re-localizes scans from the mapping run itself (replays and benchmarks). A robot running
 on a later day is outside that time span, and route-crop reports
 `scan is ... s outside the reference trajectory` instead of guessing. For a live robot,
-also supply `--occupancy-map`: G2 then uses map-wide BBS outside the recorded session.
+G2 then uses map-wide BBS over the occupancy grid quickstart generates from the map
+(or the one passed with `--occupancy-map`).
 
 ## What you need
 
@@ -19,10 +20,8 @@ also supply `--occupancy-map`: G2 then uses map-wide BBS outside the recorded se
 | --- | --- |
 | 3D map `.pcd` or `.ply` | NDT localizer target |
 | Mapping-run reference CSV | Route-crop G2 candidates (`stamp_sec`, pose columns) |
-| Occupancy YAML | Map-wide BBS for scans outside the mapping run (needed on a live robot) |
+| Occupancy YAML (optional) | Map-wide BBS for scans outside the mapping run; quickstart generates one from the 3D map when omitted |
 | LiDAR (+ IMU for MID-360) | Live `/cloud` and optional `/imu` |
-
-Occupancy YAML is optional only when replaying the mapping run itself.
 
 ## 1. Create the reference CSV
 
@@ -49,7 +48,6 @@ ros2 run lidar_localization_ros2 quickstart.py \
   --profile mid360 \
   --map /absolute/path/to/map.pcd \
   --reference-csv /absolute/path/to/site_reference.csv \
-  --occupancy-map /absolute/path/to/map.yaml \
   --global-seed-z -11.05 \
   --cloud-topic /livox/points \
   --imu-topic /livox/imu
