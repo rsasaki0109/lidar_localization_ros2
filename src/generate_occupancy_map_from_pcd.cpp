@@ -28,6 +28,8 @@ constexpr const char * kUsage =
   "  --map-name NAME             output base name (default occupancy_map)\n"
   "  --resolution M              cell size (default 0.2)\n"
   "  --obstacle-height-m M       occupied above this height (default 0.4)\n"
+  "  --max-obstacle-height-m M   ignore points higher than this above the ground, e.g.\n"
+  "                              a ceiling indoors (default 0: no limit)\n"
   "  --min-points-per-cell N     points needed to observe a cell (default 2)\n"
   "  --inflate-radius-m M        inflate occupied cells (default 0.6)\n"
   "  --padding-m M               padding around the map extent (default 5.0)\n"
@@ -123,6 +125,7 @@ int main(int argc, char ** argv)
     options.min_points_per_cell = std::stoi(get("min-points-per-cell", "2"));
     options.inflate_radius_m = std::stod(get("inflate-radius-m", "0.6"));
     options.ground_band_m = std::stod(get("ground-band-m", "1.0"));
+    options.max_obstacle_height_m = std::stod(get("max-obstacle-height-m", "0.0"));
 
     ll::OccupancyMapBounds bounds;
     if (args.count("reference-csv") != 0) {
