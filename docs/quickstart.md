@@ -52,7 +52,12 @@ search and recovery tuning options, which keep their defaults unless replay evid
 says otherwise. Use `--dry-run` to generate the configuration and inspect both the launch
 and bringup check commands without starting ROS nodes. A five-second topic/TF check runs after
 launch by default; disable it with `--no-bringup-check`. Use `--no-rviz` on a headless
-robot and `--use-sim-time` for rosbag replay.
+robot.
+
+ROS time follows `/clock` when quickstart sees one, as during `ros2 bag play --clock`
+or in a simulator, and the wall clock otherwise; the choice is printed as
+`clock=sim` or `clock=wall`. Start the bag before quickstart, or pass `--use-sim-time`
+(`--no-use-sim-time` forces the wall clock).
 
 When exactly one live `sensor_msgs/msg/PointCloud2` or `sensor_msgs/msg/Imu` topic is
 visible, quickstart selects it. If several exist, it keeps the selected profile's safe
@@ -104,8 +109,8 @@ ros2 run lidar_localization_ros2 quickstart.py --profile standalone \
 Give the extrinsics explicitly. Without them RKO-LIO looks them up in TF, and with no
 `livox_frame` in the tree it publishes no odometry. `--global-seed-z` is the sensor
 height in the map frame; it is about 0 near the mapping start. With a known start pose,
-use `--initial-pose 0 0 0 0 0 0 1` instead of global search. Add `-p
-use_sim_time:=true` to RKO-LIO and `--use-sim-time` to quickstart for a bag.
+use `--initial-pose 0 0 0 0 0 0 1` instead of global search. For a bag, add `-p
+use_sim_time:=true` to RKO-LIO; quickstart picks up `/clock` itself once the bag plays.
 
 Measured on the lidar_slam_ros2 MID-360 demo bag (a 1 km drive at up to 6 m/s), with a
 map built from the same bag and its SLAM trajectory as the reference:
