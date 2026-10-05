@@ -52,18 +52,30 @@ For manual builds and no-sudo setup, see [local build](docs/local_build.md).
 
 ## Quick Start
 
-Start localization and RViz with one command:
+Start localization and RViz with one command, once the sensors (and odometry, if any)
+are running:
 
 ```bash
-ros2 run lidar_localization_ros2 quickstart.py \
-  --profile standalone \
-  --map /absolute/path/to/map.pcd
+ros2 run lidar_localization_ros2 quickstart.py --map /absolute/path/to/map.pcd
 ```
 
-Quickstart detects unambiguous sensor topics, generates a reusable configuration,
-restores only a pose saved against the same map, and verifies tracking. Without a pose it
-runs guarded global initialization with 3D NDT scoring over an occupancy grid generated
-from the map (or pass your own with `--occupancy-map`):
+Quickstart detects the sensor topics, `/clock`, an `odom -> base` odometry TF, and the
+LiDAR frame, and prints them on its `Discovery:` line. It generates a reusable
+configuration, restores only a pose saved against the same map, and verifies tracking.
+Without a pose it runs guarded global initialization with 3D NDT scoring over an
+occupancy grid generated from the map (or pass your own with `--occupancy-map`).
+`--help` lists the options a bringup may need; `--help-all` adds the tuning ones.
+
+On a [lidar_slam_ros2](https://github.com/rsasaki0109/lidar_slam_ros2) map with a Livox
+MID-360, start its RKO-LIO odometry first
+([details](docs/quickstart.md#localizing-on-a-lidar_slam_ros2-map)):
+
+```bash
+ros2 launch lidarslam rko_lio_odometry.launch.py
+ros2 run lidar_localization_ros2 quickstart.py --map /path/to/output/my_map/map.pcd
+```
+
+For a Nav2 robot with the MID-360 preset:
 
 ```bash
 ros2 run lidar_localization_ros2 quickstart.py \
