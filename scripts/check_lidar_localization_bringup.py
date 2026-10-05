@@ -130,8 +130,18 @@ def config_from_args(args: argparse.Namespace) -> BringupCheckConfig:
     )
 
 
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parse CLI arguments, ignoring the --ros-args block a launch Node appends."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if "--ros-args" in argv:
+        from rclpy.utilities import remove_ros_args
+
+        argv = remove_ros_args(["check_lidar_localization_bringup", *argv])[1:]
+    return build_arg_parser().parse_args(argv)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_arg_parser().parse_args(argv)
+    args = parse_args(argv)
 
     import rclpy
     from lidar_localization_mid360.ros_doctor import Mid360BringupDoctor
