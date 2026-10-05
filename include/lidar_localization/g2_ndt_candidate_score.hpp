@@ -4,10 +4,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cctype>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <Eigen/Geometry>
@@ -185,6 +187,70 @@ struct G2NdtPose
   double yaw;
 };
 
+// A 2D global candidate has no height of its own. The ground under it plus the
+// sensor height is a seed NDT registers from on a map with hills or ramps, where
+// one fixed seed height is metres off away from where it was measured.
+constexpr double kGroundCellM = 1.0;
+
+// The lowest map point in each kGroundCellM column.
+class GroundHeightIndex
+{
+public:
+  explicit GroundHeightIndex(const Cloud & map)
+  {
+    for (const auto & point : map.points) {
+      if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+        continue;
+      }
+      const auto [lowest, inserted] = lowest_.try_emplace(key(point.x, point.y), point.z);
+      if (!inserted && point.z < lowest->second) {
+        lowest->second = point.z;
+      }
+    }
+  }
+
+  // Median of the lowest points of the 3 x 3 columns around (x, y), so a stray
+  // return below the ground does not count; NaN where the map has no points.
+  double ground_z(double x, double y) const
+  {
+    const std::int64_t ix = index(x);
+    const std::int64_t iy = index(y);
+    std::vector<float> lows;
+    for (std::int64_t dx = -1; dx <= 1; ++dx) {
+      for (std::int64_t dy = -1; dy <= 1; ++dy) {
+        const auto found = lowest_.find(key(ix + dx, iy + dy));
+        if (found != lowest_.end()) {
+          lows.push_back(found->second);
+        }
+      }
+    }
+    if (lows.empty()) {
+      return std::numeric_limits<double>::quiet_NaN();
+    }
+    const auto middle = lows.begin() + static_cast<std::ptrdiff_t>(lows.size() / 2);
+    std::nth_element(lows.begin(), middle, lows.end());
+    return static_cast<double>(*middle);
+  }
+
+private:
+  static std::int64_t index(double value)
+  {
+    return static_cast<std::int64_t>(std::floor(value / kGroundCellM));
+  }
+
+  static std::uint64_t key(std::int64_t ix, std::int64_t iy)
+  {
+    return (static_cast<std::uint64_t>(ix) << 32) ^ (static_cast<std::uint64_t>(iy) & 0xffffffffULL);
+  }
+
+  static std::uint64_t key(double x, double y)
+  {
+    return key(index(x), index(y));
+  }
+
+  std::unordered_map<std::uint64_t, float> lowest_;
+};
+
 // Margin (m) between the transformed scan and the edge of a shared map crop: NDT
 // looks up neighbouring cells, and alignment moves the scan from its seed.
 constexpr double kSharedTargetMarginM = 10.0;
@@ -193,9 +259,11 @@ class G2NdtCandidateScorer
 {
 public:
   G2NdtCandidateScorer(const std::string & map_path, G2NdtScoreParams params)
-  : params_(params), full_map_(load_cloud_xyzi(map_path))
+  : params_(params), full_map_(load_cloud_xyzi(map_path)), ground_(*full_map_)
   {
   }
+
+  double ground_z(double x, double y) const {return ground_.ground_z(x, y);}
 
   // Scores several poses of one scan. Preparing the NDT target (crop, voxel
   // filter, cells and k-d tree) costs several times the alignment, so a crop is
@@ -304,6 +372,7 @@ private:
 
   G2NdtScoreParams params_;
   CloudPtr full_map_;
+  GroundHeightIndex ground_;
 };
 
 }  // namespace g2_ndt

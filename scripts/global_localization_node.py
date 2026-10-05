@@ -90,6 +90,7 @@ class GlobalLocalizationNode(Node):
         self.declare_parameter("ndt_local_map_radius", 150.0)
         self.declare_parameter("ndt_min_target_points", 100)
         self.declare_parameter("registration_seed_z_m", 0.0)
+        self.declare_parameter("registration_sensor_height_m", -1.0)
         self.declare_parameter("candidate_source", "bbs")
         self.declare_parameter("reference_csv", "")
         self.declare_parameter("route_time_radius_sec", 20.0)
@@ -162,6 +163,9 @@ class GlobalLocalizationNode(Node):
             ),
             registration_seed_z_m=float(
                 self.get_parameter("registration_seed_z_m").value
+            ),
+            registration_sensor_height_m=float(
+                self.get_parameter("registration_sensor_height_m").value
             ),
             candidate_source=candidate_source,
             reference_csv=reference_csv or None,
