@@ -15,8 +15,10 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
 import rclpy
 from geometry_msgs.msg import Pose, PoseArray
+from rclpy.duration import Duration
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import (
@@ -25,9 +27,11 @@ from rclpy.qos import (
     ReliabilityPolicy,
     qos_profile_sensor_data,
 )
+from rclpy.time import Time
 from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
+from tf2_ros import Buffer, TransformException, TransformListener
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -35,6 +39,8 @@ import make_bbs_relocalization_attempts as bbs_engine
 from global_localization_query import (
     GlobalLocalizationConfig,
     GlobalLocalizationEngine,
+    level_attitude,
+    quaternion_matrix,
 )
 
 
@@ -46,6 +52,19 @@ def _round_optional(value, digits: int):
     if value is None:
         return None
     return round(value, digits)
+
+
+def _quaternion_from_rpy(roll: float, pitch: float, yaw: float):
+    """Quaternion (x, y, z, w) of Rz(yaw) Ry(pitch) Rx(roll)."""
+    cy, sy = math.cos(yaw * 0.5), math.sin(yaw * 0.5)
+    cp, sp = math.cos(pitch * 0.5), math.sin(pitch * 0.5)
+    cr, sr = math.cos(roll * 0.5), math.sin(roll * 0.5)
+    return (
+        sr * cp * cy - cr * sp * sy,
+        cr * sp * cy + sr * cp * sy,
+        cr * cp * sy - sr * sp * cy,
+        cr * cp * cy + sr * sp * sy,
+    )
 
 
 def _scan_age_sec(now_sec: float, scan_stamp_sec: float):
@@ -61,6 +80,11 @@ class GlobalLocalizationNode(Node):
         self.declare_parameter("occupancy_yaml", "")
         self.declare_parameter("cloud_topic", "cloud")
         self.declare_parameter("global_frame_id", "map")
+        # The scan is moved into base_frame_id and levelled with the roll and
+        # pitch of odom_frame_id -> base_frame_id (a gravity-aligned odometry
+        # frame) before the 2D search; empty frames keep the scan as received.
+        self.declare_parameter("base_frame_id", "")
+        self.declare_parameter("odom_frame_id", "")
         self.declare_parameter("z_min_m", 0.5)
         self.declare_parameter("z_max_m", 5.0)
         self.declare_parameter("min_range_m", 1.0)
@@ -210,6 +234,11 @@ class GlobalLocalizationNode(Node):
             self.get_parameter("global_frame_id").get_parameter_value().string_value
         )
         self.latest_cloud = None
+        self.base_frame_id = self.get_parameter("base_frame_id").value
+        self.odom_frame_id = self.get_parameter("odom_frame_id").value
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=True)
+        self._warned_frames = set()
 
         cloud_topic = (
             self.get_parameter("cloud_topic").get_parameter_value().string_value
@@ -238,6 +267,50 @@ class GlobalLocalizationNode(Node):
     def cloud_received(self, msg: PointCloud2) -> None:
         self.latest_cloud = msg
 
+    def _lookup(self, target: str, source: str, stamp):
+        """Transform at the scan stamp, else the latest one, else None."""
+        for when in (Time.from_msg(stamp), Time()):
+            try:
+                return self.tf_buffer.lookup_transform(
+                    target, source, when, timeout=Duration(seconds=0.1)
+                )
+            except TransformException:
+                continue
+        if (target, source) not in self._warned_frames:
+            self._warned_frames.add((target, source))
+            self.get_logger().warn(
+                f"no TF {target} <- {source}; the global search uses the scan without it"
+            )
+        return None
+
+    def _level_scan(self, cloud: PointCloud2, points_xyz):
+        """Scan points in a levelled base frame, with the base roll and pitch."""
+        rotation = np.eye(3)
+        translation = np.zeros(3)
+        scan_frame = cloud.header.frame_id.lstrip("/")
+        if self.base_frame_id and scan_frame and scan_frame != self.base_frame_id:
+            transform = self._lookup(self.base_frame_id, scan_frame, cloud.header.stamp)
+            if transform is not None:
+                q = transform.transform.rotation
+                v = transform.transform.translation
+                rotation = quaternion_matrix(q.x, q.y, q.z, q.w)
+                translation = np.array([v.x, v.y, v.z])
+        roll = pitch = 0.0
+        if self.base_frame_id and self.odom_frame_id:
+            transform = self._lookup(
+                self.odom_frame_id, self.base_frame_id, cloud.header.stamp
+            )
+            if transform is not None:
+                q = transform.transform.rotation
+                roll, pitch, level = level_attitude(
+                    quaternion_matrix(q.x, q.y, q.z, q.w)
+                )
+                rotation = level @ rotation
+                translation = level @ translation
+        if np.allclose(rotation, np.eye(3)) and not translation.any():
+            return points_xyz, roll, pitch
+        return points_xyz @ rotation.T + translation, roll, pitch
+
     def handle_query(self, request, response):
         if self.latest_cloud is None:
             response.success = False
@@ -248,7 +321,9 @@ class GlobalLocalizationNode(Node):
         query_start_ros_sec = _stamp_to_sec(self.get_clock().now().to_msg())
         scan_stamp_sec = _stamp_to_sec(cloud.header.stamp)
         scan_age_at_start_sec = _scan_age_sec(query_start_ros_sec, scan_stamp_sec)
-        points_xyz = bbs_engine.pointcloud2_xyz_array(cloud)
+        points_xyz, roll, pitch = self._level_scan(
+            cloud, bbs_engine.pointcloud2_xyz_array(cloud)
+        )
         started = time.monotonic()
         self._query_seq += 1
         query_id = self._query_seq
@@ -304,8 +379,12 @@ class GlobalLocalizationNode(Node):
             pose.position.x = candidate.x_m
             pose.position.y = candidate.y_m
             pose.position.z = candidate.z_m
-            pose.orientation.z = math.sin(candidate.yaw_rad / 2.0)
-            pose.orientation.w = math.cos(candidate.yaw_rad / 2.0)
+            (
+                pose.orientation.x,
+                pose.orientation.y,
+                pose.orientation.z,
+                pose.orientation.w,
+            ) = _quaternion_from_rpy(roll, pitch, candidate.yaw_rad)
             pose_array.poses.append(pose)
         self.candidates_pub.publish(pose_array)
 
@@ -316,6 +395,9 @@ class GlobalLocalizationNode(Node):
                 "y": round(candidate.y_m, 3),
                 "z": round(candidate.z_m, 3),
                 "yaw_deg": round(math.degrees(candidate.yaw_rad), 1),
+                # Attitude of the base frame the scan was levelled with.
+                "roll_deg": round(math.degrees(roll), 2),
+                "pitch_deg": round(math.degrees(pitch), 2),
                 "score": round(candidate.score, 4),
                 "bbs_score": round(candidate.bbs_score, 4),
             }

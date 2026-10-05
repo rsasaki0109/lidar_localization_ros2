@@ -17,6 +17,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import g2_candidate_registration_rank_policy as g2_rank
@@ -116,6 +118,35 @@ PCLOMP_SEARCH_METHOD_VALUES = {
     "direct7": 2,
     "direct1": 3,
 }
+
+
+def quaternion_matrix(qx: float, qy: float, qz: float, qw: float) -> np.ndarray:
+    norm = math.sqrt(qx * qx + qy * qy + qz * qz + qw * qw)
+    if not math.isfinite(norm) or norm < 1.0e-9:
+        return np.eye(3)
+    x, y, z, w = qx / norm, qy / norm, qz / norm, qw / norm
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
+
+
+def level_attitude(rotation: np.ndarray) -> tuple[float, float, np.ndarray]:
+    """Roll and pitch (ZYX) of a frame whose orientation in a gravity-aligned frame
+    is rotation, and Ry(pitch) @ Rx(roll), which levels points of that frame while
+    keeping its heading. The 2D global search needs level scans: an upside-down
+    LiDAR (Unitree Go2) otherwise yields a mirrored scan.
+    """
+    pitch = math.asin(max(-1.0, min(1.0, -float(rotation[2, 0]))))
+    roll = math.atan2(float(rotation[2, 1]), float(rotation[2, 2]))
+    cr, sr = math.cos(roll), math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    rx = np.array([[1.0, 0.0, 0.0], [0.0, cr, -sr], [0.0, sr, cr]])
+    ry = np.array([[cp, 0.0, sp], [0.0, 1.0, 0.0], [-sp, 0.0, cp]])
+    return roll, pitch, ry @ rx
 
 
 def normalize_candidate_source(value: str) -> str:
