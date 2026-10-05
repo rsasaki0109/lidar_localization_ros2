@@ -66,6 +66,9 @@ class GlobalLocalizationConfig:
     dilate_cells: int = 1
     seed_z_m: float = 0.0
     registration_seed_z_m: float = 0.0
+    # Score a candidate without a height of its own at the map's ground under it
+    # plus this sensor height; a negative value uses registration_seed_z_m.
+    registration_sensor_height_m: float = -1.0
     # Opt-in: use the compiled C++ branch-and-bound backend (bbs_cpp) when it is
     # importable. Defaults to False so a stock checkout runs pure Python; if the
     # module is missing the engine logs once and silently falls back to Python.
@@ -296,6 +299,22 @@ class GlobalLocalizationEngine:
                 except TypeError as exc:
                     self.registration_scoring_error = str(exc)
 
+    def _registration_seed_z(self, candidate: GlobalLocalizationCandidate) -> float:
+        """Height to register a candidate from.
+
+        A candidate's own height wins; a 2D one is seeded at the ground under it
+        plus the sensor height, so a map with hills or ramps needs no seed height.
+        """
+        if math.isfinite(candidate.z_m) and abs(candidate.z_m) > 1.0e-6:
+            return candidate.z_m
+        sensor_height = self.config.registration_sensor_height_m
+        ground_z = getattr(self.registration_scorer, "ground_z", None)
+        if sensor_height >= 0.0 and ground_z is not None:
+            ground = ground_z(candidate.x_m, candidate.y_m)
+            if math.isfinite(ground):
+                return ground + sensor_height
+        return self._registration_seed_z_m
+
     def _score_with_registration(
         self,
         points_xyz,
@@ -304,12 +323,7 @@ class GlobalLocalizationEngine:
         if self.registration_scorer is None:
             return candidates
 
-        score_zs = [
-            candidate.z_m
-            if math.isfinite(candidate.z_m) and abs(candidate.z_m) > 1.0e-6
-            else self._registration_seed_z_m
-            for candidate in candidates
-        ]
+        score_zs = [self._registration_seed_z(candidate) for candidate in candidates]
         # One call, so the scorer can share a map crop among nearby candidates.
         results = self.registration_scorer.score_candidates(
             points_xyz,

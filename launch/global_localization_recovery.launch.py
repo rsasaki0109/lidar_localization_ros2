@@ -161,6 +161,11 @@ def generate_launch_description():
             'g2_registration_seed_z_m', default_value='0.0',
             description='Map-frame z used for NDT registration scoring on 2D candidates.'),
         DeclareLaunchArgument(
+            'g2_registration_sensor_height_m', default_value='-1.0',
+            description='Sensor height above the ground; when set, 2D candidates are '
+                        'scored at the map ground under them plus this height. '
+                        'Negative uses g2_registration_seed_z_m.'),
+        DeclareLaunchArgument(
             'global_frame_id', default_value='map',
             description='Map frame shared by all three nodes and /initialpose.'),
         DeclareLaunchArgument('odom_frame_id', default_value='odom'),
@@ -439,6 +444,8 @@ def generate_launch_description():
                 value_type=bool),
             'registration_seed_z_m': ParameterValue(
                 LaunchConfiguration('g2_registration_seed_z_m'), value_type=float),
+            'registration_sensor_height_m': ParameterValue(
+                LaunchConfiguration('g2_registration_sensor_height_m'), value_type=float),
             'ndt_scan_voxel_leaf_size': ParameterValue(
                 g2_ndt_scan_voxel_leaf_size, value_type=float),
             'ndt_target_voxel_leaf_size': ParameterValue(

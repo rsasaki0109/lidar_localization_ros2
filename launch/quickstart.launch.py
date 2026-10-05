@@ -151,6 +151,7 @@ def generate_launch_description():
         DeclareLaunchArgument("g2_registration_score_gate", default_value="6.0"),
         DeclareLaunchArgument("g2_registration_refine_candidates", default_value="false"),
         DeclareLaunchArgument("g2_registration_seed_z_m", default_value="0.0"),
+        DeclareLaunchArgument("g2_registration_sensor_height_m", default_value="-1.0"),
         DeclareLaunchArgument("g2_max_scan_points", default_value="256"),
         DeclareLaunchArgument("g2_angular_resolution_deg", default_value="5.0"),
         DeclareLaunchArgument("g2_max_candidates", default_value="8"),
@@ -189,6 +190,8 @@ def generate_launch_description():
                 LaunchConfiguration("g2_registration_seed_z_m"), value_type=float),
             "seed_z_m": ParameterValue(
                 LaunchConfiguration("g2_registration_seed_z_m"), value_type=float),
+            "registration_sensor_height_m": ParameterValue(
+                LaunchConfiguration("g2_registration_sensor_height_m"), value_type=float),
             "max_scan_points": ParameterValue(
                 LaunchConfiguration("g2_max_scan_points"), value_type=int),
             "angular_resolution_deg": ParameterValue(

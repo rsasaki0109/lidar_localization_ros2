@@ -204,7 +204,15 @@ available as JSON on `/startup_initialization/status`.
 
 The compiled G2 backend and 3D scoring are enabled by default. If scorer loading or
 scoring fails, quickstart rejects the 2D-only result instead of weakening the policy.
-Use `--global-seed-z` for maps whose sensor height is not near zero. HDL-style maps may
+Global candidates have no height of their own, and NDT scores them at a seed height.
+`--global-seed-z` gives one map-frame z for the whole map. `--sensor-height` gives the
+sensor's height above the ground instead, and each candidate is scored at the lowest
+map points under it plus that height, which also holds on maps with hills or ramps. On
+the lidar_slam_ros2 MID-360 demo map, whose drive spans 12 m of height, global
+initialization started 125 s into the bag (11 m below the map origin) took 29 s and 12
+retries with the default seed z of 0, and the first query with `--sensor-height 1.66`
+(or `1.0`). On Koide `outdoor_hard_02b`, `--sensor-height 1.33` (or `1.0`) replaces
+`--global-seed-z -11.4` with the same result (median 0.09 m). HDL-style maps may
 need `--refine-global-candidates`; refinement remains opt-in because repeated geometry
 can make several BBS hypotheses converge to the same local optimum. The candidate age
 and query timeout defaults are 30 seconds, and an over-time in-flight query falls back

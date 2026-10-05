@@ -215,6 +215,13 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
         "the map's ground is not near z=0 (default: 0)",
     )
     start.add_argument(
+        "--sensor-height",
+        type=float,
+        help="sensor height above the ground in metres, instead of --global-seed-z; "
+        "global candidates are then scored at the map's ground under them plus this "
+        "height, which also suits maps with hills or ramps",
+    )
+    start.add_argument(
         "--profile",
         choices=sorted(config_tool.PROFILE_DEFAULTS),
         default="standalone",
@@ -539,6 +546,9 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         "g2_registration_score_gate": args.global_registration_score_gate,
         "g2_registration_refine_candidates": str(args.refine_global_candidates).lower(),
         "g2_registration_seed_z_m": args.global_seed_z,
+        "g2_registration_sensor_height_m": (
+            -1.0 if args.sensor_height is None else args.sensor_height
+        ),
         "g2_max_scan_points": args.global_max_scan_points,
         "g2_angular_resolution_deg": args.global_angular_resolution_deg,
         "g2_max_candidates": g2_max_candidates,
@@ -619,6 +629,11 @@ def _validate(args) -> str | None:
         return (
             "Global search resolution, NMS radius, and seed z must be finite and valid."
         )
+    if args.sensor_height is not None:
+        if not math.isfinite(args.sensor_height) or args.sensor_height < 0.0:
+            return "--sensor-height must be a finite height above the ground."
+        if abs(args.global_seed_z) > 1.0e-9:
+            return "Give --sensor-height or --global-seed-z, not both."
     policy_params = model.StartupParams(
         min_candidate_score=args.min_candidate_score,
         min_score_margin=args.min_score_margin,

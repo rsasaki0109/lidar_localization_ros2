@@ -115,6 +115,9 @@ public:
     return results;
   }
 
+  // Height of the ground under (x, y): NaN where the map has no points.
+  double ground_z(double x, double y) const {return scorer_.ground_z(x, y);}
+
 private:
   g2::G2NdtCandidateScorer scorer_;
 };
@@ -161,5 +164,6 @@ PYBIND11_MODULE(g2_ndt_score, m)
       py::arg("local_map_radius") = 150.0,
       py::arg("min_target_points") = 100)
     .def("score_candidate", &MapNdtScorerPy::score_candidate)
-    .def("score_candidates", &MapNdtScorerPy::score_candidates);
+    .def("score_candidates", &MapNdtScorerPy::score_candidates)
+    .def("ground_z", &MapNdtScorerPy::ground_z, py::arg("x"), py::arg("y"));
 }

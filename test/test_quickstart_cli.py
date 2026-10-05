@@ -210,6 +210,28 @@ class TestQuickstartCli(unittest.TestCase):
                 "cannot read point cloud: m.pcd",
             )
 
+    def test_sensor_height_seeds_global_candidates_at_the_ground(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, text = self._dry_run(root, ["--no-auto-occupancy-map"])
+            self.assertIn("g2_registration_sensor_height_m:=-1.0", text)
+            _, text = self._dry_run(
+                root, ["--no-auto-occupancy-map", "--sensor-height", "1.3"]
+            )
+            self.assertIn("g2_registration_sensor_height_m:=1.3", text)
+            self.assertIn("g2_registration_seed_z_m:=0.0", text)
+            for extra in (
+                ["--sensor-height", "1.3", "--global-seed-z", "-11.4"],
+                ["--sensor-height", "-0.5"],
+            ):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(
+                        QUICKSTART.main(
+                            ["--map", str(root / "site.pcd"), "--dry-run", *extra]
+                        ),
+                        2,
+                    )
+
     def test_dry_run_generates_one_command_global_workflow(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

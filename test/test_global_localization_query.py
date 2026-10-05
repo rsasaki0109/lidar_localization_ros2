@@ -524,6 +524,110 @@ def _write_wall_map_pcd(path: Path) -> None:
     path.write_text("\n".join(lines) + "\n")
 
 
+class _GroundScorer:
+    """Unconverged results; the ground is at z = -10 for x > 0 and unknown elsewhere."""
+
+    def __init__(self):
+        self.poses = []
+
+    def ground_z(self, x, y):
+        return -10.0 if x > 0.0 else float("nan")
+
+    def score_candidates(self, scan_xyz, poses):
+        self.poses.extend(poses)
+        return [
+            _FakeScoreResult(
+                fitness=float("nan"),
+                converged=False,
+                refined_x=0.0,
+                refined_y=0.0,
+                refined_z=0.0,
+                refined_yaw=0.0,
+            )
+            for _ in poses
+        ]
+
+
+def test_flat_candidates_are_scored_at_the_ground_plus_the_sensor_height():
+    def candidate(x_m, z_m=0.0):
+        return glq.GlobalLocalizationCandidate(
+            x_m=x_m,
+            y_m=0.0,
+            z_m=z_m,
+            yaw_rad=0.0,
+            score=0.9,
+            hit_count=100,
+            point_count=512,
+            bbs_score=0.9,
+        )
+
+    candidates = [candidate(5.0), candidate(-5.0), candidate(5.0, z_m=-3.0)]
+    with tempfile.TemporaryDirectory() as tmp:
+        yaml_path = write_occupancy_map(Path(tmp))
+        for sensor_height, expected in (
+            (1.5, [-8.5, 0.4, -3.0]),
+            (-1.0, [0.4, 0.4, -3.0]),
+        ):
+            engine = glq.GlobalLocalizationEngine(
+                glq.GlobalLocalizationConfig(
+                    registration_seed_z_m=0.4,
+                    registration_sensor_height_m=sensor_height,
+                ),
+                occupancy_yaml=yaml_path,
+            )
+            engine.registration_scorer = _GroundScorer()
+            ranked = engine._score_with_registration(
+                np.zeros((8, 3), dtype=np.float64), candidates
+            )
+            # A candidate with a height keeps it; without ground, the seed height.
+            assert [pose[2] for pose in engine.registration_scorer.poses] == expected
+            assert sorted(c.z_m for c in ranked) == sorted(expected)
+
+
+def test_registration_scorer_reports_the_ground_height():
+    try:
+        glq._append_module_dirs("g2_ndt_score")
+        import g2_ndt_score
+    except ImportError:
+        print("skipping: g2_ndt_score is not built")
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        # A ramp rising 1 m every 10 m, a wall on it, and one stray return 3 m
+        # below the ground at the origin.
+        points = [
+            (x, y, 0.1 * x)
+            for x in np.arange(-20.0, 20.0, 0.2)
+            for y in np.arange(-5.0, 5.0, 0.2)
+        ]
+        points += [
+            (x, 5.0, 0.1 * x + z)
+            for x in np.arange(-20.0, 20.0, 0.2)
+            for z in (1.0, 2.0)
+        ]
+        points.append((0.1, 0.1, -3.0))
+        lines = [
+            "VERSION .7",
+            "FIELDS x y z",
+            "SIZE 4 4 4",
+            "TYPE F F F",
+            "COUNT 1 1 1",
+            f"WIDTH {len(points)}",
+            "HEIGHT 1",
+            "VIEWPOINT 0 0 0 1 0 0 0",
+            f"POINTS {len(points)}",
+            "DATA ascii",
+        ]
+        lines += [f"{x:.3f} {y:.3f} {z:.3f}" for x, y, z in points]
+        map_path = Path(tmp) / "ramp.pcd"
+        map_path.write_text("\n".join(lines) + "\n")
+        scorer = g2_ndt_score.MapNdtScorer(str(map_path))
+
+        assert abs(scorer.ground_z(10.5, 0.5) - 1.0) < 0.15
+        assert abs(scorer.ground_z(-10.5, 4.5) + 1.1) < 0.15
+        assert abs(scorer.ground_z(0.5, 0.5)) < 0.15
+        assert math.isnan(scorer.ground_z(500.0, 0.0))
+
+
 def test_registration_scorer_shares_map_crops_without_changing_scores():
     try:
         glq._append_module_dirs("g2_ndt_score")
