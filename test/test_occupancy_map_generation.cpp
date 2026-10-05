@@ -101,11 +101,45 @@ void testWrittenMapLoadsForReacquisition()
   std::remove("/tmp/ll_generated_occupancy.pgm");
 }
 
+void testCeilingIgnoredAboveMaxObstacleHeight()
+{
+  // 3 x 1 cells of 1 m indoors: floor at 0, ceiling at 2.6 m everywhere.
+  Points points;
+  for (float x : {0.5F, 1.5F, 2.5F}) {
+    add(points, x, 0.5, 0.0);
+    add(points, x, 0.5, 2.6);
+  }
+  add(points, 1.5, 0.5, 1.0);  // a wall in the middle cell
+  ll::OccupancyMapOptions options;
+  options.resolution_m = 1.0;
+  options.inflate_radius_m = 0.0;
+  const ll::OccupancyMapBounds no_route{0.0, 3.0, 0.0, 1.0, std::nullopt};
+  const ll::OccupancyMapBounds route{0.0, 3.0, 0.0, 1.0, 0.0};
+
+  // Without a limit the ceiling makes every cell occupied.
+  for (const auto & bounds : {no_route, route}) {
+    const auto map = ll::generateOccupancyMap(points, bounds, options);
+    for (int x = 0; x < 3; ++x) {
+      assert(pixelAt(map, x, 0) == ll::kOccupancyOccupied);
+    }
+  }
+
+  options.max_obstacle_height_m = 2.0;
+  for (const auto & bounds : {no_route, route}) {
+    const auto map = ll::generateOccupancyMap(points, bounds, options);
+    assert(pixelAt(map, 0, 0) == ll::kOccupancyFree);
+    assert(pixelAt(map, 1, 0) == ll::kOccupancyOccupied);
+    assert(pixelAt(map, 2, 0) == ll::kOccupancyFree);
+  }
+}
+
 int main()
 {
   testRouteBounds();
   testRouteGroundClassification();
   testHeightExtentClassificationAndInflation();
   testWrittenMapLoadsForReacquisition();
+  testCeilingIgnoredAboveMaxObstacleHeight();
+  std::puts("test_occupancy_map_generation: all tests passed");
   return 0;
 }

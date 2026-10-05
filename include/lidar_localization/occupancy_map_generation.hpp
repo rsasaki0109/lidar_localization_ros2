@@ -9,6 +9,11 @@
 // also has points at least obstacle_height_m above the ground, free when it
 // has none. Without one, a cell is occupied when its z extent reaches
 // obstacle_height_m. Occupied cells are inflated; all others stay unknown.
+//
+// max_obstacle_height_m (> 0) ignores points higher than that above the ground
+// (the route ground, or else the cell's lowest point), so a ceiling does not make
+// every indoor cell occupied. Without a route, a cell is then occupied when it has
+// points between obstacle_height_m and max_obstacle_height_m above its lowest point.
 
 #include <algorithm>
 #include <array>
@@ -31,6 +36,7 @@ struct OccupancyMapOptions
   int min_points_per_cell{2};
   double inflate_radius_m{0.6};
   double ground_band_m{1.0};
+  double max_obstacle_height_m{0.0};
 };
 
 struct OccupancyMapBounds
@@ -151,7 +157,10 @@ inline GeneratedOccupancyMap generateOccupancyMap(
       if (point[2] <= *bounds.route_ground_z + options.ground_band_m) {
         ++low_count[cell];
       }
-      if (point[2] >= *bounds.route_ground_z + options.obstacle_height_m) {
+      const double height = point[2] - *bounds.route_ground_z;
+      if (height >= options.obstacle_height_m &&
+        (options.max_obstacle_height_m <= 0.0 || height <= options.max_obstacle_height_m))
+      {
         ++high_count[cell];
       }
     }
@@ -159,6 +168,27 @@ inline GeneratedOccupancyMap generateOccupancyMap(
   }
   if (map.point_count == 0) {
     throw std::runtime_error("no points inside the occupancy bounds");
+  }
+
+  const bool height_band = !bounds.route_ground_z && options.max_obstacle_height_m > 0.0;
+  std::vector<int> band_count(height_band ? cells : 0, 0);
+  if (height_band) {
+    for (const auto & point : points) {
+      if (point[0] < bounds.min_x || point[0] > bounds.max_x ||
+        point[1] < bounds.min_y || point[1] > bounds.max_y)
+      {
+        continue;
+      }
+      const int ix = std::clamp(
+        static_cast<int>((point[0] - bounds.min_x) / options.resolution_m), 0, map.width - 1);
+      const int iy = std::clamp(
+        static_cast<int>((point[1] - bounds.min_y) / options.resolution_m), 0, map.height - 1);
+      const std::size_t cell = static_cast<std::size_t>(iy) * map.width + ix;
+      const double height = point[2] - min_z[cell];
+      if (height >= options.obstacle_height_m && height <= options.max_obstacle_height_m) {
+        ++band_count[cell];
+      }
+    }
   }
 
   std::vector<bool> occupied(cells, false);
@@ -171,7 +201,9 @@ inline GeneratedOccupancyMap generateOccupancyMap(
       occupied[cell] = high_count[cell] >= options.min_points_per_cell;
       free[cell] = high_count[cell] == 0;
     } else if (count[cell] >= options.min_points_per_cell) {
-      occupied[cell] = max_z[cell] - min_z[cell] >= options.obstacle_height_m;
+      occupied[cell] = height_band ?
+        band_count[cell] >= options.min_points_per_cell :
+        max_z[cell] - min_z[cell] >= options.obstacle_height_m;
       free[cell] = !occupied[cell];
     }
   }

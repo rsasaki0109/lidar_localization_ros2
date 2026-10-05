@@ -71,6 +71,7 @@ the same package's RKO-LIO front end provides the odometry. For a Livox MID-360:
 
 ```bash
 # 1. Occupancy grid for global search, from the map written by lidarslam-map
+#    (indoors, add --max-obstacle-height-m 1.5 so the ceiling is not an obstacle)
 ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd \
   --pcd /path/to/output/my_map/map.pcd --output-dir maps --map-name my_map
 
@@ -198,6 +199,13 @@ The occupancy grid must represent the same physical map as the 3D map. The packa
 not infer this relationship and cannot make a mismatched pair safe. Create a grid with
 `generate_occupancy_map_from_pcd` when its route-crop behavior fits the site, then
 inspect the result before use.
+
+Indoors, pass `--max-obstacle-height-m` (for example `1.5`). By default a cell is
+occupied when its points span 0.4 m in height, and floor plus ceiling does that
+everywhere, so the whole room becomes occupied and global search has no free space to
+match. On a Unitree Go2 map of an indoor aisle (lidar_slam_ros2, JEPLO `EIL_Mix`), 1.5 m
+left the walls as outlines with free floor inside. Global initialization on another
+session then succeeded where the default grid failed (`ambiguous_candidate_retry`).
 
 ### Starting while moving
 
