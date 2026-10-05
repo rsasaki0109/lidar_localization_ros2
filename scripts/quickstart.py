@@ -56,6 +56,11 @@ def default_occupancy_dir() -> Path:
 # aisle), outdoors (Koide campus) and on a driving loop.
 AUTO_OCCUPANCY_MAX_OBSTACLE_HEIGHT_M = 2.0
 
+# Global candidates are scored at the map's ground under them plus this height
+# unless --global-seed-z fixes one map-frame z. Measured sensor heights were
+# 0.51 m (Go2), 1.33 m (handheld) and 1.66 m (car); 1.0 m initialized all three.
+DEFAULT_SENSOR_HEIGHT_M = 1.0
+
 
 def cached_occupancy_map(map_path: Path, cache_dir: Path) -> Path:
     """Occupancy YAML for these map contents (renaming the map keeps it)."""
@@ -230,16 +235,14 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     start.add_argument(
         "--global-seed-z",
         type=float,
-        default=0.0,
-        help="map-frame sensor height used to score global candidates; set it when "
-        "the map's ground is not near z=0 (default: 0)",
+        help="score global candidates at this one map-frame sensor z instead of "
+        "the map's ground under them plus --sensor-height",
     )
     start.add_argument(
         "--sensor-height",
         type=float,
-        help="sensor height above the ground in metres, instead of --global-seed-z; "
-        "global candidates are then scored at the map's ground under them plus this "
-        "height, which also suits maps with hills or ramps",
+        help="sensor height above the ground in metres; global candidates are scored "
+        f"at the map's ground under them plus this (default: {DEFAULT_SENSOR_HEIGHT_M})",
     )
     start.add_argument(
         "--profile",
@@ -488,7 +491,17 @@ def _config_args(args, cloud_topic: str, imu_topic: str):
     return config_tool.build_arg_parser().parse_args(argv)
 
 
+def global_seed(args) -> tuple[float, float]:
+    """Seed z and sensor height for scoring global candidates (height < 0: off)."""
+    if args.global_seed_z is not None:
+        return args.global_seed_z, -1.0
+    if args.sensor_height is not None:
+        return 0.0, args.sensor_height
+    return 0.0, DEFAULT_SENSOR_HEIGHT_M
+
+
 def launch_parts(args, config_args, config_path: Path, state_path: Path):
+    seed_z, sensor_height = global_seed(args)
     cloud_topic = str(config_tool._arg_or_profile(config_args, "cloud_topic"))
     imu_topic = str(config_tool._arg_or_profile(config_args, "imu_topic"))
     lidar_frame = str(config_tool._arg_or_profile(config_args, "lidar_frame"))
@@ -569,10 +582,8 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         ).lower(),
         "g2_registration_score_gate": args.global_registration_score_gate,
         "g2_registration_refine_candidates": str(args.refine_global_candidates).lower(),
-        "g2_registration_seed_z_m": args.global_seed_z,
-        "g2_registration_sensor_height_m": (
-            -1.0 if args.sensor_height is None else args.sensor_height
-        ),
+        "g2_registration_seed_z_m": seed_z,
+        "g2_registration_sensor_height_m": sensor_height,
         "g2_max_scan_points": args.global_max_scan_points,
         "g2_angular_resolution_deg": args.global_angular_resolution_deg,
         "g2_max_candidates": g2_max_candidates,
@@ -591,9 +602,7 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         "supervisor_recovery_confirmation_samples": supervisor_confirm_samples,
         "supervisor_enable_seed_motion_compensation": str(not route_crop).lower(),
         "supervisor_confirm_cross_check": str(not route_crop).lower(),
-        "supervisor_prefer_reset_default_z_m": str(
-            abs(args.global_seed_z) > 1.0e-9
-        ).lower(),
+        "supervisor_prefer_reset_default_z_m": str(abs(seed_z) > 1.0e-9).lower(),
     }
     parts = ["ros2", "launch", "lidar_localization_ros2", "quickstart.launch.py"]
     parts.extend(
@@ -648,7 +657,7 @@ def _validate(args) -> str | None:
         or args.global_angular_resolution_deg <= 0.0
         or not math.isfinite(args.global_nms_radius_m)
         or args.global_nms_radius_m < 0.0
-        or not math.isfinite(args.global_seed_z)
+        or not math.isfinite(0.0 if args.global_seed_z is None else args.global_seed_z)
     ):
         return (
             "Global search resolution, NMS radius, and seed z must be finite and valid."
@@ -656,7 +665,7 @@ def _validate(args) -> str | None:
     if args.sensor_height is not None:
         if not math.isfinite(args.sensor_height) or args.sensor_height < 0.0:
             return "--sensor-height must be a finite height above the ground."
-        if abs(args.global_seed_z) > 1.0e-9:
+        if args.global_seed_z is not None:
             return "Give --sensor-height or --global-seed-z, not both."
     policy_params = model.StartupParams(
         min_candidate_score=args.min_candidate_score,
@@ -801,6 +810,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("Discovery:     " + ", ".join(discovery_notes))
     if occupancy_note:
         print(f"Occupancy map: {occupancy_note}")
+    if args.auto_initialize and not args.initial_pose and args.occupancy_yaml:
+        seed_z, sensor_height = global_seed(args)
+        print(
+            f"Seed height:   map ground + {sensor_height:g} m"
+            if sensor_height >= 0.0
+            else f"Seed height:   map z {seed_z:g} m"
+        )
     fallback = "RViz" if args.rviz else "/initialpose"
     if args.initial_pose:
         print("Initialization: explicit pose")

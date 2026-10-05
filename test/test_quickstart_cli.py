@@ -251,18 +251,21 @@ class TestQuickstartCli(unittest.TestCase):
                 "cannot read point cloud: m.pcd",
             )
 
-    def test_sensor_height_seeds_global_candidates_at_the_ground(self):
+    def test_global_candidates_are_seeded_at_the_ground_by_default(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            _, text = self._dry_run(root, ["--no-auto-occupancy-map"])
-            self.assertIn("g2_registration_sensor_height_m:=-1.0", text)
-            _, text = self._dry_run(
-                root, ["--no-auto-occupancy-map", "--sensor-height", "1.3"]
-            )
-            self.assertIn("g2_registration_sensor_height_m:=1.3", text)
-            self.assertIn("g2_registration_seed_z_m:=0.0", text)
+            for extra, height, seed_z in (
+                ([], "1.0", "0.0"),
+                (["--sensor-height", "1.3"], "1.3", "0.0"),
+                (["--global-seed-z", "-11.4"], "-1.0", "-11.4"),
+                (["--global-seed-z", "0"], "-1.0", "0.0"),
+            ):
+                _, text = self._dry_run(root, ["--no-auto-occupancy-map", *extra])
+                self.assertIn(f"g2_registration_sensor_height_m:={height}", text, extra)
+                self.assertIn(f"g2_registration_seed_z_m:={seed_z}", text, extra)
             for extra in (
                 ["--sensor-height", "1.3", "--global-seed-z", "-11.4"],
+                ["--sensor-height", "1.3", "--global-seed-z", "0"],
                 ["--sensor-height", "-0.5"],
             ):
                 with contextlib.redirect_stderr(io.StringIO()):

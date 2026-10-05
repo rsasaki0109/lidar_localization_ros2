@@ -83,10 +83,10 @@ ros2 run lidar_localization_ros2 quickstart.py \
 
 To build a grid yourself, use
 `ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd --pcd map.pcd --output-dir maps`.
-If the sensor is not near z = 0 in the map frame, pass its height above the ground with
-`--sensor-height` (candidates are then scored at the map's ground under them plus that
-height) or its map-frame z with `--global-seed-z`; candidates scored at the wrong
-height are rejected as weak.
+Candidates are scored at the map's ground under them plus 1.0 m. If the sensor sits much
+higher or lower, pass its height above the ground with `--sensor-height`, or one fixed
+map-frame z with `--global-seed-z`; candidates scored at the wrong height are rejected
+as weak.
 If no safe candidate is available, it asks for **2D Pose Estimate** in RViz; it never
 guesses the origin. See [quickstart and automatic initialization](docs/quickstart.md)
 and the [repeat-route site setup](docs/site_setup.md) guide.

@@ -111,9 +111,10 @@ The launch's defaults fit a MID-360 without a robot TF tree: `/livox/lidar`,
 (`lidar_topic`, `imu_topic`, `base_frame`, and `rko_param_file` override them).
 quickstart detects the topics, the `odom -> livox_frame` TF (which sets the base frame
 and turns on odometry prediction), the cloud's `livox_frame` (the same frame, so no
-LiDAR TF is published), and `/clock`, and prints them on the `Discovery:` line. The
-default `--global-seed-z 0` is the sensor height near the mapping start. With a known
-start pose, use `--initial-pose 0 0 0 0 0 0 1` instead of global search. For a bag,
+LiDAR TF is published), and `/clock`, and prints them on the `Discovery:` line. Global
+candidates are scored at the map's ground under them plus 1.0 m (`Seed height:`; see
+below). With a known start pose, use `--initial-pose 0 0 0 0 0 0 1` instead of global
+search. For a bag,
 add `use_sim_time:=true` to the odometry launch; quickstart picks up `/clock` itself
 once the bag plays.
 
@@ -206,15 +207,17 @@ available as JSON on `/startup_initialization/status`.
 
 The compiled G2 backend and 3D scoring are enabled by default. If scorer loading or
 scoring fails, quickstart rejects the 2D-only result instead of weakening the policy.
-Global candidates have no height of their own, and NDT scores them at a seed height.
-`--global-seed-z` gives one map-frame z for the whole map. `--sensor-height` gives the
-sensor's height above the ground instead, and each candidate is scored at the lowest
-map points under it plus that height, which also holds on maps with hills or ramps. On
-the lidar_slam_ros2 MID-360 demo map, whose drive spans 12 m of height, global
-initialization started 125 s into the bag (11 m below the map origin) took 29 s and 12
-retries with the default seed z of 0, and the first query with `--sensor-height 1.66`
-(or `1.0`). On Koide `outdoor_hard_02b`, `--sensor-height 1.33` (or `1.0`) replaces
-`--global-seed-z -11.4` with the same result (median 0.09 m). HDL-style maps may
+Global candidates have no height of their own, and NDT scores them at a seed height:
+the lowest map points under each candidate plus `--sensor-height` (default 1.0 m), so it
+holds on maps with hills or ramps and on maps whose origin is not at sensor height.
+`--global-seed-z` fixes one map-frame z for the whole map instead. Measured sensor
+heights were 0.51 m (Unitree Go2), 1.33 m (handheld) and 1.66 m (car), and the default
+initialized all of them: on the lidar_slam_ros2 MID-360 demo map, whose drive spans 12 m
+of height, global initialization started 125 s into the bag (11 m below the map origin)
+took 29 s and 12 retries with a fixed seed z of 0 and the first query with the ground
+seed; on Koide `outdoor_hard_02b` it replaces `--global-seed-z -11.4` with the same
+result (median 0.09 m); on the Go2 `EIL_Box` and `EIL_Stairs` sequences it matched the
+fixed z of 0. HDL-style maps may
 need `--refine-global-candidates`; refinement remains opt-in because repeated geometry
 can make several BBS hypotheses converge to the same local optimum. The candidate age
 and query timeout defaults are 30 seconds, and an over-time in-flight query falls back
