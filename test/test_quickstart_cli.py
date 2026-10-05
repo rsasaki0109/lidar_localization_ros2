@@ -20,17 +20,39 @@ SPEC.loader.exec_module(QUICKSTART)
 
 
 class TestQuickstartCli(unittest.TestCase):
-    def test_typed_topic_parser_and_safe_discovery(self):
-        parsed = QUICKSTART.parse_typed_topics(
-            "/cloud [sensor_msgs/msg/PointCloud2]\n/imu [sensor_msgs/msg/Imu]\n"
+    def test_topic_discovery_stops_once_cloud_and_imu_appear(self):
+        graph = [
+            [("/rosout", ["rcl_interfaces/msg/Log"])],
+            [("/cloud", ["sensor_msgs/msg/PointCloud2"])],
+            [
+                ("/cloud", ["sensor_msgs/msg/PointCloud2"]),
+                ("/imu", ["sensor_msgs/msg/Imu"]),
+            ],
+        ]
+        now = [0.0]
+
+        def sleep(seconds):
+            now[0] += seconds
+
+        typed = QUICKSTART.wait_for_typed_topics(
+            lambda: graph[min(round(now[0] * 10), 2)], 3.0, lambda: now[0], sleep
         )
         self.assertEqual(
-            parsed,
+            typed,
             [
                 ("/cloud", "sensor_msgs/msg/PointCloud2"),
                 ("/imu", "sensor_msgs/msg/Imu"),
             ],
         )
+        self.assertAlmostEqual(now[0], 0.2)
+
+        # Without an IMU it returns what it saw at the timeout.
+        now[0] = 0.0
+        typed = QUICKSTART.wait_for_typed_topics(
+            lambda: graph[1], 3.0, lambda: now[0], sleep
+        )
+        self.assertEqual(typed, [("/cloud", "sensor_msgs/msg/PointCloud2")])
+        self.assertGreaterEqual(now[0], 3.0)
 
     def test_help_lists_tuning_options_only_with_help_all(self):
         core = QUICKSTART.build_arg_parser().format_help()
