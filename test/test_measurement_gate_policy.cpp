@@ -346,8 +346,41 @@ void test_nonfinite_fitness_is_never_accepted_or_seeded()
   }
 }
 
+void test_seed_guard_warmup_counts_only_settled_accepts()
+{
+  ll::MeasurementGateParams params;
+  params.seed_correction_guard_translation_m = 0.3;
+  params.seed_correction_guard_yaw_deg = 15.0;
+
+  // A global-search pose 2.6 m off converges over a few large corrections; none
+  // of them counts towards the warmup.
+  std::size_t settled = 0;
+  for (double correction : {2.6, 1.4, 0.7}) {
+    settled = ll::nextSettledAccepts(settled, params, correction, 1.0);
+    assert(settled == 0);
+  }
+  for (int i = 1; i <= 5; ++i) {
+    settled = ll::nextSettledAccepts(settled, params, 0.05, 0.5);
+    assert(settled == static_cast<std::size_t>(i));
+  }
+  // A large accepted correction (e.g. after the guard released) restarts it.
+  assert(ll::nextSettledAccepts(settled, params, 0.05, 20.0) == 0);
+  assert(ll::nextSettledAccepts(settled, params, 1.2, 0.0) == 0);
+}
+
+void test_odom_seed_gap_detection()
+{
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  assert(!ll::isOdomSeedGap(nan, 100.0));  // first odometry seed
+  assert(!ll::isOdomSeedGap(100.0, 100.1));
+  assert(!ll::isOdomSeedGap(100.0, 101.0));
+  assert(ll::isOdomSeedGap(100.0, 101.2));  // e.g. a covered sensor
+}
+
 int main()
 {
+  test_seed_guard_warmup_counts_only_settled_accepts();
+  test_odom_seed_gap_detection();
   test_seed_correction_guard_rejects_jumps_until_release();
   test_param_and_input_builders_map_fields();
   test_default_ok_gate();

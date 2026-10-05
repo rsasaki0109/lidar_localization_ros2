@@ -256,6 +256,15 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         ),
         "use_odom_tf_prediction": getattr(args, "odom_tf_prediction", False),
         "publish_bridge_pose_when_lost": getattr(args, "odom_tf_prediction", False),
+        # With odometry seeding each scan, a well-fitting result far from the seed
+        # is usually a local minimum (an unmapped or moved object, a repeating
+        # corridor), not motion. The guard waits for a settled track after any
+        # reset or odometry gap, and gives way after 30 rejections in a row.
+        "enable_seed_correction_guard": getattr(args, "odom_tf_prediction", False),
+        "seed_correction_guard_translation_m": 0.3,
+        "seed_correction_guard_yaw_deg": 15.0,
+        "seed_correction_guard_warmup_accepts": 5,
+        "seed_correction_guard_release_rejections": 30,
         "global_frame_id": args.global_frame,
         "odom_frame_id": args.odom_frame,
         "base_frame_id": args.base_frame,

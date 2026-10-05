@@ -84,6 +84,7 @@ void PCLLocalization::resetPredictionState(const Eigen::Matrix4f & pose_matrix, 
   apply_prediction_state(*this, state);
   last_relative_motion_duration_sec_ = 0.0;
   accepted_updates_since_reset_ = 0;
+  settled_accepts_since_reset_ = 0;
 }
 
 void PCLLocalization::updatePredictionState(
@@ -108,6 +109,9 @@ void PCLLocalization::updatePredictionState(
   if (accepted_updates_since_reset_ < std::numeric_limits<std::size_t>::max()) {
     ++accepted_updates_since_reset_;
   }
+  settled_accepts_since_reset_ = lidar_localization::nextSettledAccepts(
+    settled_accepts_since_reset_, measurementGateParams(),
+    last_gated_correction_translation_m_, last_gated_correction_yaw_deg_);
 }
 
 void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)

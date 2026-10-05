@@ -62,6 +62,16 @@ Koide `outdoor_hard_02b` handheld sequence at 1x, seeded at the true start pose,
 standalone configuration lost track after 23 s without it and stayed within 1.4 m (median
 0.07 m) for the whole 298 s with it.
 
+`--odom-tf-prediction` also enables the seed correction guard: once tracking has settled,
+a scan match that moves the pose more than 0.3 m or 15 degrees from the odometry
+prediction is rejected, since with good odometry such a jump is a local minimum, not
+motion. On a Unitree Go2 indoor aisle (JEPLO `EIL_Box`), objects missing from the map
+made NDT jump 1-2 m along the aisle with excellent fitness; the guard took the median
+error from 0.71 m to 0.11 m on a lidar_slam_ros2 map. It waits for five accepted scans
+in a row within those limits after any reset or odometry gap (more than 1 s between
+odometry seeds), so it neither holds an imprecise global-search pose nor blocks the
+correction after the robot was carried. It gives way after 30 rejections in a row.
+
 ## Localizing on a lidar_slam_ros2 map
 
 A map built with [lidar_slam_ros2](https://github.com/rsasaki0109/lidar_slam_ros2)
