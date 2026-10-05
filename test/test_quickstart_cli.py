@@ -131,7 +131,7 @@ class TestQuickstartCli(unittest.TestCase):
             ("/clock", "rosgraph_msgs/msg/Clock"),
             ("/livox/lidar", "sensor_msgs/msg/PointCloud2"),
         ]
-        original = QUICKSTART.discover_typed_topics
+        original = QUICKSTART.discover_ros_graph
         try:
             for topics, extra, expected, note in (
                 (replay, [], "true", "clock=sim (/clock published)"),
@@ -139,7 +139,7 @@ class TestQuickstartCli(unittest.TestCase):
                 (replay, ["--no-use-sim-time"], "false", None),
                 ([], ["--use-sim-time"], "true", None),
             ):
-                QUICKSTART.discover_typed_topics = lambda topics=topics: topics
+                QUICKSTART.discover_ros_graph = lambda _, topics=topics: (topics, set())
                 with tempfile.TemporaryDirectory() as directory:
                     _, text = self._dry_run(
                         Path(directory),
@@ -151,7 +151,37 @@ class TestQuickstartCli(unittest.TestCase):
                 else:
                     self.assertNotIn("clock=", text)
         finally:
-            QUICKSTART.discover_typed_topics = original
+            QUICKSTART.discover_ros_graph = original
+
+    def test_odometry_tf_turns_on_prediction_and_sets_the_base_frame(self):
+        topics = [("/tf", "tf2_msgs/msg/TFMessage")]
+        original = QUICKSTART.discover_ros_graph
+        try:
+            for edges, extra, base, prediction in (
+                ({("odom", "livox_frame")}, [], "livox_frame", "true"),
+                (set(), [], "base_link", "false"),
+                (
+                    {("odom", "livox_frame")},
+                    ["--no-odom-tf-prediction"],
+                    "livox_frame",
+                    "false",
+                ),
+                (set(), ["--odom-tf-prediction"], "base_link", "true"),
+            ):
+                QUICKSTART.discover_ros_graph = lambda _, edges=edges: (topics, edges)
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    _, text = self._dry_run(
+                        root, ["--discover-topics", "--no-auto-occupancy-map", *extra]
+                    )
+                    params = (root / "generated.yaml").read_text(encoding="utf-8")
+                self.assertIn(f"base_frame_id:={base}", text, extra)
+                self.assertIn(f"use_odom_tf_prediction: {prediction}", params, extra)
+                self.assertEqual(
+                    "--require-odom-base-tf" in text, prediction == "true", extra
+                )
+        finally:
+            QUICKSTART.discover_ros_graph = original
 
     def test_generate_occupancy_map_reports_failures(self):
         with tempfile.TemporaryDirectory() as directory:

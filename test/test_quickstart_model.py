@@ -119,6 +119,26 @@ class TestDiscovery(unittest.TestCase):
         )
         self.assertEqual((selected, reason), ("/velodyne_points", "ambiguous"))
 
+    def test_odometry_frame_follows_the_odom_tf_tree(self):
+        select = MODEL.select_odometry_frame
+        rko = {("odom", "livox_frame")}
+        # RKO-LIO's single odom child becomes the base frame.
+        self.assertEqual(select(rko, "odom", None), ("livox_frame", True))
+        # An explicit base frame is kept, and must hang below odom.
+        self.assertEqual(select(rko, "odom", "base_link"), ("base_link", False))
+        chain = {
+            ("map", "odom"),
+            ("odom", "base_footprint"),
+            ("base_footprint", "base_link"),
+            ("base_link", "velodyne"),
+        }
+        self.assertEqual(select(chain, "odom", None), ("base_link", True))
+        self.assertEqual(select(chain, "odom", "velodyne"), ("velodyne", True))
+        # Several odom children are ambiguous; no TF at all means no odometry.
+        two = {("odom", "robot_a"), ("odom", "robot_b")}
+        self.assertEqual(select(two, "odom", None), ("base_link", False))
+        self.assertEqual(select(set(), "odom", None), ("base_link", False))
+
 
 class TestStartupPolicy(unittest.TestCase):
     def setUp(self):

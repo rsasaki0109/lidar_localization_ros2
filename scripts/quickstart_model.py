@@ -189,6 +189,34 @@ def select_discovered_topic(
     return preferred, "ambiguous"
 
 
+def select_odometry_frame(
+    tf_edges: Iterable[tuple[str, str]], odom_frame: str, base_frame: str | None
+) -> tuple[str, bool]:
+    """Choose the base frame and whether a live odom -> base TF can seed matching.
+
+    tf_edges are (parent, child) pairs seen on /tf and /tf_static. Without an
+    explicit base frame, a single child of odom (e.g. RKO-LIO's odom -> livox_frame)
+    becomes the base; otherwise the default base_link is kept.
+    """
+    children: dict[str, set[str]] = {}
+    for parent, child in tf_edges:
+        children.setdefault(parent, set()).add(child)
+    below_odom: set[str] = set()
+    stack = [odom_frame]
+    while stack:
+        for child in children.get(stack.pop(), ()):
+            if child not in below_odom:
+                below_odom.add(child)
+                stack.append(child)
+    candidate = base_frame or "base_link"
+    if candidate in below_odom:
+        return candidate, True
+    direct = children.get(odom_frame, set())
+    if base_frame is None and len(direct) == 1:
+        return next(iter(direct)), True
+    return candidate, False
+
+
 def detect_sim_time(typed_topics: Sequence[tuple[str, str]]) -> bool:
     """A live /clock publisher means a bag replay or simulator drives ROS time."""
     return ("/clock", "rosgraph_msgs/msg/Clock") in typed_topics

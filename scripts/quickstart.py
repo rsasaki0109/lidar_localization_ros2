@@ -117,15 +117,51 @@ def wait_for_typed_topics(
         sleep(0.1)
 
 
-def discover_typed_topics(timeout_sec: float = 5.0):
+def discover_ros_graph(
+    odom_frame: str, timeout_sec: float = 5.0, tf_listen_sec: float = 1.0
+):
+    """Return live (topic, type) pairs and the (parent, child) TF edges seen."""
     try:
         import rclpy
+        from rclpy.qos import DurabilityPolicy, QoSProfile
+        from tf2_msgs.msg import TFMessage
     except ImportError:
-        return []
+        return [], set()
     rclpy.init(args=[])
     try:
         node = rclpy.create_node("lidar_localization_quickstart_discovery")
-        return wait_for_typed_topics(node.get_topic_names_and_types, timeout_sec)
+        edges = set()
+
+        def record(message):
+            for transform in message.transforms:
+                edges.add(
+                    (
+                        transform.header.frame_id.lstrip("/"),
+                        transform.child_frame_id.lstrip("/"),
+                    )
+                )
+
+        node.create_subscription(TFMessage, "/tf", record, 100)
+        node.create_subscription(
+            TFMessage,
+            "/tf_static",
+            record,
+            QoSProfile(depth=100, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+        )
+
+        def spin(seconds):
+            rclpy.spin_once(node, timeout_sec=seconds)
+
+        typed = wait_for_typed_topics(
+            node.get_topic_names_and_types, timeout_sec, sleep=spin
+        )
+        if ("/tf", "tf2_msgs/msg/TFMessage") in typed:
+            deadline = time.monotonic() + tf_listen_sec
+            while time.monotonic() < deadline and not any(
+                parent == odom_frame for parent, _ in edges
+            ):
+                spin(0.1)
+        return typed, edges
     finally:
         rclpy.shutdown()
 
@@ -186,9 +222,11 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     )
     start.add_argument(
         "--odom-tf-prediction",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help="use an external odom -> base TF (e.g. a LIO front end) to predict "
-        "motion between scans; needed for fast or handheld motion",
+        "motion between scans; needed for fast or handheld motion (default: on "
+        "when that TF is published)",
     )
     start.add_argument(
         "--use-sim-time",
@@ -203,7 +241,10 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     sensors.add_argument("--imu-topic", help="Imu topic (default: detected)")
     sensors.add_argument("--lidar-frame", help="LiDAR frame (default: profile)")
     sensors.add_argument("--imu-frame", help="IMU frame (default: profile)")
-    sensors.add_argument("--base-frame", default="base_link", help="robot base frame")
+    sensors.add_argument(
+        "--base-frame",
+        help="robot base frame (default: the single child of odom in TF, else base_link)",
+    )
     sensors.add_argument("--odom-frame", default="odom", help="odometry frame")
     sensors.add_argument("--global-frame", default="map", help="map frame")
     sensors.add_argument(
@@ -614,10 +655,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     cloud_topic = args.cloud_topic or str(defaults["cloud_topic"])
     imu_topic = args.imu_topic or str(defaults["imu_topic"])
     discovery_notes = []
-    if args.discover_topics and (
-        args.cloud_topic is None or args.imu_topic is None or args.use_sim_time is None
-    ):
-        typed = discover_typed_topics()
+    undecided = (
+        args.cloud_topic,
+        args.imu_topic,
+        args.use_sim_time,
+        args.odom_tf_prediction,
+        args.base_frame,
+    )
+    if args.discover_topics and None in undecided:
+        typed, tf_edges = discover_ros_graph(args.odom_frame)
         if args.cloud_topic is None:
             cloud_topic, reason = model.select_discovered_topic(
                 typed, CLOUD_TYPE, cloud_topic
@@ -635,7 +681,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if args.use_sim_time
                 else "clock=wall (no /clock)"
             )
+        if args.odom_tf_prediction is None or args.base_frame is None:
+            base_frame, odom_live = model.select_odometry_frame(
+                tf_edges, args.odom_frame, args.base_frame
+            )
+            args.base_frame = base_frame
+            if args.odom_tf_prediction is None:
+                args.odom_tf_prediction = odom_live
+            discovery_notes.append(
+                f"odometry={args.odom_frame}->{base_frame} (live TF)"
+                if odom_live
+                else f"odometry=none (no {args.odom_frame}->{base_frame} TF)"
+            )
     args.use_sim_time = bool(args.use_sim_time)
+    args.odom_tf_prediction = bool(args.odom_tf_prediction)
+    args.base_frame = args.base_frame or "base_link"
 
     occupancy_note = None
     if (
