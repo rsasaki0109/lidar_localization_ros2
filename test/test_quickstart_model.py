@@ -139,6 +139,18 @@ class TestDiscovery(unittest.TestCase):
         self.assertEqual(select(two, "odom", None), ("base_link", False))
         self.assertEqual(select(set(), "odom", None), ("base_link", False))
 
+    def test_lidar_tf_is_published_only_when_nothing_links_the_frames(self):
+        needed = MODEL.lidar_tf_needed
+        robot = {("odom", "base_link"), ("base_link", "velodyne")}
+        self.assertFalse(needed(robot, "base_link", "velodyne"))
+        self.assertFalse(needed(robot, "velodyne", "base_link"))
+        self.assertTrue(needed(robot, "base_link", "livox_frame"))
+        self.assertTrue(needed(set(), "base_link", "velodyne"))
+        # RKO-LIO tracks the LiDAR frame itself.
+        self.assertFalse(
+            needed({("odom", "livox_frame")}, "livox_frame", "livox_frame")
+        )
+
 
 class TestStartupPolicy(unittest.TestCase):
     def setUp(self):

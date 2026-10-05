@@ -62,8 +62,12 @@ or in a simulator, and the wall clock otherwise; the choice is printed as
 When exactly one live `sensor_msgs/msg/PointCloud2` or `sensor_msgs/msg/Imu` topic is
 visible, quickstart selects it. If several exist, it keeps the selected profile's safe
 default and prints `ambiguous`; specify `--cloud-topic` or `--imu-topic` rather than
-guessing. Frame defaults also come from the profile and can be overridden with
-`--lidar-frame`, `--imu-frame`, `--base-frame`, `--odom-frame`, and `--global-frame`.
+guessing. The LiDAR frame is the `frame_id` of one received cloud (the profile default
+when none arrives). quickstart publishes an identity `base -> LiDAR` TF only when the two
+frames differ and nothing in TF links them yet, since a second publisher of a TF the
+robot already provides makes it flip. Every choice can be overridden with
+`--lidar-frame`, `--imu-frame`, `--base-frame`, `--odom-frame`, `--global-frame`, and
+`--[no-]publish-lidar-tf`.
 
 If the robot already runs odometry that publishes `odom -> base_frame` (a LIO front end
 such as RKO-LIO, or wheel or leg odometry), quickstart sees that TF and turns on odometry
@@ -103,14 +107,14 @@ ros2 run rko_lio online_node --ros-args \
   -p "extrinsic_imu2base_quat_xyzw_xyz:=[0.0,0.0,0.0,1.0,0.0,0.0,0.0]"
 
 # 2. Localization with automatic global initialization, once odometry runs
-ros2 run lidar_localization_ros2 quickstart.py --map /path/to/output/my_map/map.pcd \
-  --lidar-frame livox_frame --no-publish-lidar-tf
+ros2 run lidar_localization_ros2 quickstart.py --map /path/to/output/my_map/map.pcd
 ```
 
 Give the extrinsics explicitly. Without them RKO-LIO looks them up in TF, and with no
 `livox_frame` in the tree it publishes no odometry. quickstart detects the topics, the
 `odom -> livox_frame` TF (which sets the base frame and turns on odometry prediction),
-and `/clock`, and prints them on the `Discovery:` line. The default `--global-seed-z 0`
+the cloud's `livox_frame` (the same frame, so no LiDAR TF is published), and `/clock`,
+and prints them on the `Discovery:` line. The default `--global-seed-z 0`
 is the sensor height near the mapping start. With a known start pose,
 use `--initial-pose 0 0 0 0 0 0 1` instead of global search. For a bag, add `-p
 use_sim_time:=true` to RKO-LIO; quickstart picks up `/clock` itself once the bag plays.
@@ -267,8 +271,9 @@ with an unlimited budget, with no accepted pose more than 3 m wrong.
 | `mid360` | `/livox/points` | `/livox/imu` | `/localization/pose_with_covariance` | external `odom -> base_link` required |
 
 Do not enable quickstart's static TF publishers when `robot_state_publisher`, the sensor
-driver, or a bag already owns the same edge. Use `--no-publish-lidar-tf` and leave IMU TF
-publication off as appropriate.
+driver, or a bag already owns the same edge. quickstart leaves its LiDAR TF off when it
+sees such a TF at startup; if that publisher starts later, pass `--no-publish-lidar-tf`.
+Leave IMU TF publication off as appropriate.
 
 ## Troubleshooting
 

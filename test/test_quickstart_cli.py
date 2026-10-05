@@ -139,7 +139,11 @@ class TestQuickstartCli(unittest.TestCase):
                 (replay, ["--no-use-sim-time"], "false", None),
                 ([], ["--use-sim-time"], "true", None),
             ):
-                QUICKSTART.discover_ros_graph = lambda _, topics=topics: (topics, set())
+                QUICKSTART.discover_ros_graph = lambda *_, topics=topics: (
+                    topics,
+                    set(),
+                    None,
+                )
                 with tempfile.TemporaryDirectory() as directory:
                     _, text = self._dry_run(
                         Path(directory),
@@ -168,7 +172,11 @@ class TestQuickstartCli(unittest.TestCase):
                 ),
                 (set(), ["--odom-tf-prediction"], "base_link", "true"),
             ):
-                QUICKSTART.discover_ros_graph = lambda _, edges=edges: (topics, edges)
+                QUICKSTART.discover_ros_graph = lambda *_, edges=edges: (
+                    topics,
+                    edges,
+                    None,
+                )
                 with tempfile.TemporaryDirectory() as directory:
                     root = Path(directory)
                     _, text = self._dry_run(
@@ -180,6 +188,39 @@ class TestQuickstartCli(unittest.TestCase):
                 self.assertEqual(
                     "--require-odom-base-tf" in text, prediction == "true", extra
                 )
+        finally:
+            QUICKSTART.discover_ros_graph = original
+
+    def test_lidar_frame_comes_from_the_cloud_header(self):
+        topics = [
+            ("/points", "sensor_msgs/msg/PointCloud2"),
+            ("/tf", "tf2_msgs/msg/TFMessage"),
+        ]
+        robot = {("odom", "base_link"), ("base_link", "velodyne")}
+        original = QUICKSTART.discover_ros_graph
+        try:
+            for edges, frame, extra, lidar, publish in (
+                ({("odom", "livox_frame")}, "livox_frame", [], "livox_frame", "false"),
+                (robot, "velodyne", [], "velodyne", "false"),
+                ({("odom", "base_link")}, "os_sensor", [], "os_sensor", "true"),
+                (robot, "velodyne", ["--publish-lidar-tf"], "velodyne", "true"),
+                (robot, "velodyne", ["--lidar-frame", "lidar"], "lidar", "true"),
+            ):
+
+                def discover(odom_frame, cloud_topic_for, edges=edges, frame=frame):
+                    if cloud_topic_for is None:
+                        return topics, edges, None
+                    self.assertEqual(cloud_topic_for(topics), "/points")
+                    return topics, edges, frame
+
+                QUICKSTART.discover_ros_graph = discover
+                with tempfile.TemporaryDirectory() as directory:
+                    _, text = self._dry_run(
+                        Path(directory),
+                        ["--discover-topics", "--no-auto-occupancy-map", *extra],
+                    )
+                self.assertIn(f"lidar_frame_id:={lidar}", text, extra)
+                self.assertIn(f"publish_lidar_tf:={publish}", text, extra)
         finally:
             QUICKSTART.discover_ros_graph = original
 
