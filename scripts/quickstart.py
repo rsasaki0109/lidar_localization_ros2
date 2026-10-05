@@ -254,8 +254,8 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
         help=advanced(
-            "without a pose, grid or reference CSV, generate (and cache) an occupancy "
-            "grid from the map for global search"
+            "without a pose or grid, generate (and cache) an occupancy grid from the "
+            "map for global search"
         ),
     )
 
@@ -613,7 +613,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if (
         args.auto_initialize
         and args.auto_occupancy_map
-        and not (args.initial_pose or args.occupancy_yaml or args.reference_csv)
+        and not (args.initial_pose or args.occupancy_yaml)
     ):
         map_path = Path(args.map_path).expanduser().resolve()
         cached = cached_occupancy_map(map_path, default_occupancy_dir())

@@ -61,19 +61,18 @@ ros2 run lidar_localization_ros2 quickstart.py \
 ```
 
 Quickstart detects unambiguous sensor topics, generates a reusable configuration,
-restores only a pose saved against the same map, and verifies tracking. Add the matching
-occupancy map or a mapping-run reference CSV for guarded global initialization with
-3D NDT scoring:
+restores only a pose saved against the same map, and verifies tracking. Without a pose it
+runs guarded global initialization with 3D NDT scoring over an occupancy grid generated
+from the map (or pass your own with `--occupancy-map`):
 
 ```bash
 ros2 run lidar_localization_ros2 quickstart.py \
   --profile mid360 \
-  --map /absolute/path/to/map.pcd \
-  --occupancy-map /absolute/path/to/map.yaml
+  --map /absolute/path/to/map.pcd
 ```
 
-Replays of the recorded mapping run (route-crop selects poses by time, so add
-`--occupancy-map` for a live robot):
+Replays of the recorded mapping run (route-crop selects poses by time; outside the
+recorded session, G2 falls back to the occupancy grid):
 
 ```bash
 ros2 run lidar_localization_ros2 quickstart.py \
@@ -82,7 +81,7 @@ ros2 run lidar_localization_ros2 quickstart.py \
   --reference-csv /absolute/path/to/mapping_run/reference.csv
 ```
 
-Build the occupancy map from the same point-cloud map with
+To build a grid yourself, use
 `ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd --pcd map.pcd --output-dir maps`.
 If the sensor is not near z = 0 in the map frame, pass its height with `--global-seed-z`;
 candidates scored at the wrong height are rejected as weak.
