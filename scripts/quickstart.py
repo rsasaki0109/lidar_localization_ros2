@@ -191,7 +191,11 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
         "motion between scans; needed for fast or handheld motion",
     )
     start.add_argument(
-        "--use-sim-time", action="store_true", help="replay a bag on /clock"
+        "--use-sim-time",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="follow /clock (default: on when /clock is published, as during "
+        "ros2 bag play --clock)",
     )
 
     sensors = parser.add_argument_group("topics and frames")
@@ -610,7 +614,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     cloud_topic = args.cloud_topic or str(defaults["cloud_topic"])
     imu_topic = args.imu_topic or str(defaults["imu_topic"])
     discovery_notes = []
-    if args.discover_topics and (args.cloud_topic is None or args.imu_topic is None):
+    if args.discover_topics and (
+        args.cloud_topic is None or args.imu_topic is None or args.use_sim_time is None
+    ):
         typed = discover_typed_topics()
         if args.cloud_topic is None:
             cloud_topic, reason = model.select_discovered_topic(
@@ -622,6 +628,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 typed, IMU_TYPE, imu_topic
             )
             discovery_notes.append(f"imu={imu_topic} ({reason})")
+        if args.use_sim_time is None:
+            args.use_sim_time = model.detect_sim_time(typed)
+            discovery_notes.append(
+                "clock=sim (/clock published)"
+                if args.use_sim_time
+                else "clock=wall (no /clock)"
+            )
+    args.use_sim_time = bool(args.use_sim_time)
 
     occupancy_note = None
     if (

@@ -126,6 +126,33 @@ class TestQuickstartCli(unittest.TestCase):
             finally:
                 QUICKSTART.default_occupancy_dir = original
 
+    def test_sim_time_follows_a_published_clock(self):
+        replay = [
+            ("/clock", "rosgraph_msgs/msg/Clock"),
+            ("/livox/lidar", "sensor_msgs/msg/PointCloud2"),
+        ]
+        original = QUICKSTART.discover_typed_topics
+        try:
+            for topics, extra, expected, note in (
+                (replay, [], "true", "clock=sim (/clock published)"),
+                (replay[1:], [], "false", "clock=wall (no /clock)"),
+                (replay, ["--no-use-sim-time"], "false", None),
+                ([], ["--use-sim-time"], "true", None),
+            ):
+                QUICKSTART.discover_typed_topics = lambda topics=topics: topics
+                with tempfile.TemporaryDirectory() as directory:
+                    _, text = self._dry_run(
+                        Path(directory),
+                        ["--discover-topics", "--no-auto-occupancy-map", *extra],
+                    )
+                self.assertIn(f"use_sim_time:={expected}", text, extra)
+                if note:
+                    self.assertIn(note, text)
+                else:
+                    self.assertNotIn("clock=", text)
+        finally:
+            QUICKSTART.discover_typed_topics = original
+
     def test_generate_occupancy_map_reports_failures(self):
         with tempfile.TemporaryDirectory() as directory:
             yaml_path = Path(directory) / "grids" / "abc.yaml"

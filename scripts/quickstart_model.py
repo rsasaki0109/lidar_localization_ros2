@@ -189,6 +189,11 @@ def select_discovered_topic(
     return preferred, "ambiguous"
 
 
+def detect_sim_time(typed_topics: Sequence[tuple[str, str]]) -> bool:
+    """A live /clock publisher means a bag replay or simulator drives ROS time."""
+    return ("/clock", "rosgraph_msgs/msg/Clock") in typed_topics
+
+
 @dataclass(frozen=True)
 class StartupParams:
     min_candidate_score: float = 0.6
