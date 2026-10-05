@@ -62,6 +62,47 @@ Koide `outdoor_hard_02b` handheld sequence at 1x, seeded at the true start pose,
 standalone configuration lost track after 23 s without it and stayed within 1.4 m (median
 0.07 m) for the whole 298 s with it.
 
+## Localizing on a lidar_slam_ros2 map
+
+A map built with [lidar_slam_ros2](https://github.com/rsasaki0109/lidar_slam_ros2)
+(`lidarslam-map start <bag>`) can be used directly. Its frame starts at the first
+mapping pose, so a robot that starts where mapping started is near `(0, 0, 0)`, and
+the same package's RKO-LIO front end provides the odometry. For a Livox MID-360:
+
+```bash
+# 1. Occupancy grid for global search, from the map written by lidarslam-map
+ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd \
+  --pcd /path/to/output/my_map/map.pcd --output-dir maps --map-name my_map
+
+# 2. Odometry: RKO-LIO from lidar_slam_ros2, publishing odom -> livox_frame
+ros2 run rko_lio online_node --ros-args \
+  -p lidar_topic:=/livox/lidar -p imu_topic:=/livox/imu -p base_frame:=livox_frame \
+  -p initialization_phase:=true \
+  -p "extrinsic_lidar2base_quat_xyzw_xyz:=[0.0,0.0,0.0,1.0,0.0,0.0,0.0]" \
+  -p "extrinsic_imu2base_quat_xyzw_xyz:=[0.0,0.0,0.0,1.0,0.0,0.0,0.0]"
+
+# 3. Localization with automatic global initialization
+ros2 run lidar_localization_ros2 quickstart.py --profile standalone \
+  --map /path/to/output/my_map/map.pcd --occupancy-map maps/my_map.yaml \
+  --global-seed-z 0 --odom-tf-prediction \
+  --cloud-topic /livox/lidar --imu-topic /livox/imu \
+  --lidar-frame livox_frame --base-frame livox_frame --no-publish-lidar-tf
+```
+
+Give the extrinsics explicitly. Without them RKO-LIO looks them up in TF, and with no
+`livox_frame` in the tree it publishes no odometry. `--global-seed-z` is the sensor
+height in the map frame; it is about 0 near the mapping start. With a known start pose,
+use `--initial-pose 0 0 0 0 0 0 1` instead of the occupancy grid. Add `-p
+use_sim_time:=true` to RKO-LIO and `--use-sim-time` to quickstart for a bag.
+
+Measured on the lidar_slam_ros2 MID-360 demo bag (a 1 km drive at up to 6 m/s), with a
+map built from the same bag and its SLAM trajectory as the reference:
+
+| setup | result |
+| --- | --- |
+| above, global initialization | initialized from 2 G2 answers, tracking 12 s into the bag; within 1.0 m (median 0.30 m) to the end |
+| `--initial-pose` without odometry | lost when the car reached 6 m/s, after 100-125 s |
+
 ## Initialization order
 
 The startup manager uses this fixed order:
