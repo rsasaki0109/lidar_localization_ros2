@@ -32,6 +32,29 @@ class TestQuickstartCli(unittest.TestCase):
             ],
         )
 
+    def test_help_lists_tuning_options_only_with_help_all(self):
+        core = QUICKSTART.build_arg_parser().format_help()
+        full = io.StringIO()
+        with contextlib.redirect_stdout(full):
+            self.assertEqual(QUICKSTART.main(["--help-all"]), 0)
+        for flag in ("--map", "--occupancy-map", "--odom-tf-prediction", "--rviz"):
+            self.assertIn(flag, core)
+        for flag in (
+            "--min-score-margin",
+            "--global-max-candidates",
+            "--route-max-poses",
+        ):
+            self.assertNotIn(flag, core)
+            self.assertIn(flag, full.getvalue())
+        self.assertIn("--help-all", core)
+
+        # Hidden options still parse.
+        args = QUICKSTART.build_arg_parser().parse_args(
+            ["--map", "m.pcd", "--global-max-candidates", "16", "--no-g3-recovery"]
+        )
+        self.assertEqual(args.global_max_candidates, 16)
+        self.assertFalse(args.g3_recovery)
+
     def test_dry_run_generates_one_command_global_workflow(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
