@@ -769,6 +769,13 @@ def _evaluate_deskew_readiness_status(
     strict_deskew = config.require_cloud_time_field and (
         config.require_imu or config.require_imu_base_tf
     )
+    if (
+        not strict_deskew
+        and status.status_values.get("continuous_time_deskew_enabled") == "false"
+    ):
+        # The localizer does not deskew (the quickstart default), so its inputs
+        # not being ready is not something to fix.
+        return
     level = FAIL if strict_deskew else WARN
     results.append(
         CheckResult(

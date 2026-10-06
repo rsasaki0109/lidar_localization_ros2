@@ -25,6 +25,7 @@ Wiring::
     /initialpose (geometry_msgs/PoseWithCovarianceStamped) <-pub- supervisor
 """
 
+import contextlib
 import csv
 import itertools
 import json
@@ -1550,9 +1551,10 @@ def main() -> None:
         # shutdown (the latter raises ExternalShutdownException from spin).
         pass
     finally:
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        # A second Ctrl-C (from both the terminal and ros2 launch) can land here.
+        with contextlib.suppress(KeyboardInterrupt):
+            node.destroy_node()
+            rclpy.try_shutdown()
 
 
 if __name__ == "__main__":

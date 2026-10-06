@@ -9,6 +9,7 @@ service response. Opt-in only: nothing is published or changed unless the
 service is called, and the node is never part of the default launch files.
 """
 
+import contextlib
 import json
 import math
 import sys
@@ -448,9 +449,10 @@ def main() -> None:
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        # A second Ctrl-C (from both the terminal and ros2 launch) can land here.
+        with contextlib.suppress(KeyboardInterrupt):
+            node.destroy_node()
+            rclpy.try_shutdown()
 
 
 if __name__ == "__main__":

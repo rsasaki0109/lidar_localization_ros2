@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import sys
@@ -746,9 +747,10 @@ def main() -> None:
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        # A second Ctrl-C (from both the terminal and ros2 launch) can land here.
+        with contextlib.suppress(KeyboardInterrupt):
+            node.destroy_node()
+            rclpy.try_shutdown()
 
 
 if __name__ == "__main__":
