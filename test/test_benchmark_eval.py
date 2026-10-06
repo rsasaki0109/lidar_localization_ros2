@@ -62,8 +62,26 @@ def test_summary_counts_initializations_and_wrong_ones():
     assert row.startswith("| case | 3 | 2 | 1 |")
 
 
+def test_health_flags_score_how_well_the_status_tracks_the_error():
+    truth = _trajectory(np.arange(0.0, 20.0, 0.01), 0.0)
+    stamps = np.arange(1.0, 20.0, 0.1)
+    x = np.where(stamps < 10.0, 0.1, 3.0)  # right, then 3 m off
+    estimate = _trajectory(stamps, x)
+    # The status reports OK, turns to WARN at 12 s, and stops at 18 s.
+    levels = np.array(
+        [[t, 0.0 if t < 12.0 else 1.0] for t in np.arange(1.0, 18.0, 0.1)]
+    )
+    score = bench.score_run(estimate, truth, 0.0, levels)
+    # Off from 10 s and flagged from 12 s on: by the WARN status, and from 19 s
+    # because the reports stopped.
+    assert abs(score.flagged_when_off - 0.8) < 0.02
+    assert score.flagged_when_right == 0.0
+    assert bench.score_run(estimate, truth, 0.0).flagged_when_off is None
+
+
 if __name__ == "__main__":
     test_tracking_is_scored_in_the_map_frame_without_alignment()
     test_a_consistently_offset_track_is_a_wrong_initialization()
     test_runs_without_poses_or_overlap_are_reported()
     test_summary_counts_initializations_and_wrong_ones()
+    test_health_flags_score_how_well_the_status_tracks_the_error()

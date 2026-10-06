@@ -113,12 +113,7 @@ def run_once(
     rate = float(case.get("rate", 1.0))
 
     recorder = start(
-        [
-            sys.executable,
-            str(TOOL_DIR / "record_pose.py"),
-            str(run_dir / "est.tum"),
-            str(run_dir / "status.jsonl"),
-        ],
+        [sys.executable, str(TOOL_DIR / "record_pose.py"), str(run_dir)],
         run_dir / "recorder.log",
         env,
     )
@@ -173,6 +168,7 @@ def score(case: dict, run_dir: Path) -> benchmark_eval.RunScore:
         benchmark_eval.load_tum(run_dir / "est.tum"),
         benchmark_eval.load_tum(case["gt"]),
         start_sec,
+        benchmark_eval.load_alignment_levels(run_dir / "alignment.jsonl"),
     )
     (run_dir / "score.json").write_text(json.dumps(result.as_dict(), indent=2) + "\n")
     return result
@@ -217,7 +213,11 @@ def main(argv=None) -> int:
             flush=True,
         )
 
-    table = benchmark_eval.summary_table(results)
+    table = (
+        benchmark_eval.summary_table(results)
+        + "\n\n"
+        + benchmark_eval.health_table(results)
+    )
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "summary.md").write_text(table + "\n", encoding="utf-8")
     (args.out / "results.json").write_text(
