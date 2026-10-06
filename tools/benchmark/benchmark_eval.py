@@ -8,6 +8,7 @@ consistently (it looked like 0.2 m on a Unitree Go2 while it was 1.8 m off).
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import asdict, dataclass
 
@@ -35,6 +36,10 @@ class RunScore:
     frac_over_0_5_m: float | None
     frac_over_1_m: float | None
     median_abs_z_m: float | None
+    # Share of poses more than 1 m off that /alignment_status did not report OK,
+    # and of poses within 0.3 m that it did not report OK (None without data).
+    flagged_when_off: float | None = None
+    flagged_when_right: float | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -69,6 +74,37 @@ def match_to_ground_truth(estimate: np.ndarray, truth: np.ndarray):
     return estimate[close], truth[index[close]]
 
 
+def load_alignment_levels(path) -> np.ndarray:
+    """(N, 2) rows of /alignment_status stamp and level (0 = OK), sorted."""
+    rows = []
+    try:
+        with open(path, encoding="utf-8") as stream:
+            for line in stream:
+                record = json.loads(line)
+                rows.append((float(record["stamp"]), float(record["level"])))
+    except (OSError, ValueError, KeyError):
+        return np.empty((0, 2))
+    rows.sort()
+    return np.array(rows) if rows else np.empty((0, 2))
+
+
+def health_flags(
+    stamps: np.ndarray, levels: np.ndarray, max_age_sec: float = 1.0
+) -> np.ndarray:
+    """Whether the latest status at or before each stamp was not OK.
+
+    A pose with no status in the last max_age_sec counts as flagged: the
+    localizer has stopped reporting.
+    """
+    if len(levels) == 0:
+        return np.ones(len(stamps), dtype=bool)
+    index = np.searchsorted(levels[:, 0], stamps, side="right") - 1
+    valid = index >= 0
+    age = np.where(valid, stamps - levels[index.clip(0), 0], np.inf)
+    level = np.where(valid, levels[index.clip(0), 1], 2.0)
+    return (age > max_age_sec) | (level != 0.0)
+
+
 def _coverage(matched_stamps: np.ndarray, truth_stamps: np.ndarray) -> float:
     """Share of the ground-truth time (in 0.1 s bins) that has a matched estimate."""
     wanted = set(np.round(truth_stamps / 0.1).astype(np.int64).tolist())
@@ -78,7 +114,12 @@ def _coverage(matched_stamps: np.ndarray, truth_stamps: np.ndarray) -> float:
     return len(have & wanted) / len(wanted)
 
 
-def score_run(estimate: np.ndarray, truth: np.ndarray, start_sec: float) -> RunScore:
+def score_run(
+    estimate: np.ndarray,
+    truth: np.ndarray,
+    start_sec: float,
+    alignment_levels: np.ndarray | None = None,
+) -> RunScore:
     """Score poses published after start_sec (the replay start) against truth."""
     estimate = estimate[estimate[:, 0] >= start_sec] if len(estimate) else estimate
     if len(estimate) == 0:
@@ -96,7 +137,16 @@ def score_run(estimate: np.ndarray, truth: np.ndarray, start_sec: float) -> RunS
     after_init = truth[
         (truth[:, 0] >= first_stamp) & (truth[:, 0] <= estimate[-1, 0]), 0
     ]
+    flagged_when_off = flagged_when_right = None
+    if alignment_levels is not None and len(alignment_levels):
+        flagged = health_flags(est[:, 0], alignment_levels)
+        off = xy > 1.0
+        right = xy < 0.3
+        flagged_when_off = float(np.mean(flagged[off])) if off.any() else None
+        flagged_when_right = float(np.mean(flagged[right])) if right.any() else None
     return RunScore(
+        flagged_when_off=flagged_when_off,
+        flagged_when_right=flagged_when_right,
         initialized=True,
         time_to_first_pose_sec=first_stamp - start_sec,
         first_fix_error_m=first_fix_error,
@@ -116,6 +166,24 @@ def _fmt(value, digits=2) -> str:
     if value is None or (isinstance(value, float) and not math.isfinite(value)):
         return "-"
     return f"{value:.{digits}f}"
+
+
+def health_table(results: dict[str, list[RunScore]]) -> str:
+    """Markdown table of how well /alignment_status flags wrong poses."""
+    lines = [
+        "| case | runs with >1 m poses | flagged when >1 m off | flagged when <0.3 m |",
+        "|---|---|---|---|",
+    ]
+    for case, scores in results.items():
+        off = [s.flagged_when_off for s in scores if s.flagged_when_off is not None]
+        right = [
+            s.flagged_when_right for s in scores if s.flagged_when_right is not None
+        ]
+        lines.append(
+            f"| {case} | {len(off)} | {_fmt(float(np.mean(off)) if off else None)} | "
+            f"{_fmt(float(np.mean(right)) if right else None)} |"
+        )
+    return "\n".join(lines)
 
 
 def summary_table(results: dict[str, list[RunScore]]) -> str:
