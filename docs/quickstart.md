@@ -260,6 +260,10 @@ the startup node uses it automatically:
   away from the previous result's gives its attempt back: a moving robot keeps
   searching new places, while a stationary one still stops after
   `--max-global-attempts`. `max_global_queries` (30) bounds the total.
+- a retry waits for a view the previous result did not have: 0.5 m of travel or 15
+  degrees of turn by odometry, or 2 s. A Unitree Go2 that starts lying down otherwise
+  spent all six attempts on the same view in 1.5 s while standing up (2 of 3 replays of
+  `EIL_Box`); with the wait, 3 of 3 initialized within 0.11 m.
 
 The node logs `odometry at the queried scan` or `no odometry at the queried scan` for
 every result. It waits up to 2 s of scans for odometry before the first query, so a
