@@ -178,6 +178,8 @@ def generate_launch_description():
             "map_path": LaunchConfiguration("map_path"),
             "cloud_topic": LaunchConfiguration("cloud_topic"),
             "global_frame_id": LaunchConfiguration("global_frame_id"),
+            "base_frame_id": LaunchConfiguration("base_frame_id"),
+            "odom_frame_id": LaunchConfiguration("odom_frame_id"),
             "use_cpp_backend": ParameterValue(
                 LaunchConfiguration("g2_use_cpp_backend"), value_type=bool),
             "enable_registration_scoring": ParameterValue(

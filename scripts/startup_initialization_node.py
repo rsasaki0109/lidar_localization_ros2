@@ -684,8 +684,18 @@ class StartupInitializationNode(Node):
         else:
             msg.pose.pose.position.z = self.default_z
         msg.pose.pose.position.z += dz
-        msg.pose.pose.orientation.z = math.sin(yaw * 0.5)
-        msg.pose.pose.orientation.w = math.cos(yaw * 0.5)
+        # The global search levels the scan with the base roll and pitch (an
+        # upside-down LiDAR has roll 180 deg); the pose must carry them too.
+        (
+            msg.pose.pose.orientation.x,
+            msg.pose.pose.orientation.y,
+            msg.pose.pose.orientation.z,
+            msg.pose.pose.orientation.w,
+        ) = model.quaternion_from_rpy(
+            math.radians(float(candidate.get("roll_deg", 0.0))),
+            math.radians(float(candidate.get("pitch_deg", 0.0))),
+            yaw,
+        )
         self.initialpose_pub.publish(msg)
         self.get_logger().info(
             "published globally searched pose for verification: "

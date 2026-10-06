@@ -524,6 +524,35 @@ def _write_wall_map_pcd(path: Path) -> None:
     path.write_text("\n".join(lines) + "\n")
 
 
+def _zyx(yaw_deg, pitch_deg, roll_deg):
+    y, p, r = np.radians([yaw_deg, pitch_deg, roll_deg])
+    rz = np.array([[np.cos(y), -np.sin(y), 0], [np.sin(y), np.cos(y), 0], [0, 0, 1]])
+    ry = np.array([[np.cos(p), 0, np.sin(p)], [0, 1, 0], [-np.sin(p), 0, np.cos(p)]])
+    rx = np.array([[1, 0, 0], [0, np.cos(r), -np.sin(r)], [0, np.sin(r), np.cos(r)]])
+    return rz @ ry @ rx
+
+
+def test_level_attitude_levels_an_upside_down_or_tilted_scan():
+    roll, pitch, level = glq.level_attitude(_zyx(90.0, 0.0, 180.0))
+    assert math.isclose(abs(math.degrees(roll)), 180.0, abs_tol=1e-6)
+    assert math.isclose(pitch, 0.0, abs_tol=1e-9)
+    # A point above an upside-down sensor has negative z in its own frame.
+    assert np.allclose(level @ np.array([1.0, 2.0, -3.0]), [1.0, -2.0, 3.0])
+
+    tilted = _zyx(30.0, 7.0, -4.0)
+    roll, pitch, level = glq.level_attitude(tilted)
+    assert math.isclose(math.degrees(roll), -4.0, abs_tol=1e-6)
+    assert math.isclose(math.degrees(pitch), 7.0, abs_tol=1e-6)
+    # Levelling keeps the heading: tilted == Rz(30 deg) @ level.
+    assert np.allclose(_zyx(30.0, 0.0, 0.0) @ level, tilted)
+
+
+def test_quaternion_matrix_matches_the_zyx_rotation():
+    # Roll 180 deg about x then yaw 90 deg: q = qz(90) * qx(180).
+    s = math.sqrt(0.5)
+    assert np.allclose(glq.quaternion_matrix(s, s, 0.0, 0.0), _zyx(90.0, 0.0, 180.0))
+
+
 class _GroundScorer:
     """Unconverged results; the ground is at z = -10 for x > 0 and unknown elsewhere."""
 

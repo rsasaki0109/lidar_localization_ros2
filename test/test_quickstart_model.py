@@ -119,6 +119,22 @@ class TestDiscovery(unittest.TestCase):
         )
         self.assertEqual((selected, reason), ("/velodyne_points", "ambiguous"))
 
+    def test_quaternion_from_rpy_matches_zyx_euler(self):
+        for roll, pitch, yaw in (
+            (math.pi, 0.0, 0.5),
+            (0.1, -0.2, 2.0),
+            (0.0, 0.0, -1.0),
+        ):
+            x, y, z, w = MODEL.quaternion_from_rpy(roll, pitch, yaw)
+            # Rotate the x axis and compare with the ZYX composition.
+            rx = 1 - 2 * (y * y + z * z)
+            ry = 2 * (x * y + z * w)
+            rz = 2 * (x * z - y * w)
+            self.assertAlmostEqual(rx, math.cos(yaw) * math.cos(pitch))
+            self.assertAlmostEqual(ry, math.sin(yaw) * math.cos(pitch))
+            self.assertAlmostEqual(rz, -math.sin(pitch))
+            self.assertAlmostEqual(x * x + y * y + z * z + w * w, 1.0)
+
     def test_odometry_frame_follows_the_odom_tf_tree(self):
         select = MODEL.select_odometry_frame
         rko = {("odom", "livox_frame")}

@@ -442,6 +442,19 @@ def planar_motion_between(
     )
 
 
+def quaternion_from_rpy(roll: float, pitch: float, yaw: float):
+    """Quaternion (x, y, z, w) of Rz(yaw) Ry(pitch) Rx(roll)."""
+    cy, sy = math.cos(yaw * 0.5), math.sin(yaw * 0.5)
+    cp, sp = math.cos(pitch * 0.5), math.sin(pitch * 0.5)
+    cr, sr = math.cos(roll * 0.5), math.sin(roll * 0.5)
+    return (
+        sr * cp * cy - cr * sp * sy,
+        cr * sp * cy + sr * cp * sy,
+        cr * cp * sy - sr * sp * cy,
+        cr * cp * cy + sr * sp * sy,
+    )
+
+
 def apply_planar_motion(
     pose: tuple[float, float, float], motion: tuple[float, float, float]
 ) -> tuple[float, float, float]:

@@ -1246,8 +1246,14 @@ class ReinitializationSupervisorNode(Node):
                 if self._last_pose_z is not None
                 else self.reset_default_z
             )
+        # Prefer the attitude the scan was levelled with for the global search
+        # over the last localizer pose, which may be lost.
+        roll = self._finite_float(top.get("roll_deg"))
+        pitch = self._finite_float(top.get("pitch_deg"))
         qx, qy, qz, qw = _quat_from_rpy(
-            self._last_pose_roll, self._last_pose_pitch, yaw
+            self._last_pose_roll if roll is None else math.radians(roll),
+            self._last_pose_pitch if pitch is None else math.radians(pitch),
+            yaw,
         )
         msg = PoseWithCovarianceStamped()
         if self._current_query_scan_stamp_sec is not None:

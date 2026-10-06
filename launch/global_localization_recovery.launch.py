@@ -429,6 +429,8 @@ def generate_launch_description():
             'occupancy_yaml': occupancy_yaml,
             'cloud_topic': cloud_topic,
             'global_frame_id': global_frame_id,
+            'base_frame_id': base_frame_id,
+            'odom_frame_id': odom_frame_id,
             'map_path': map_path,
             'enable_registration_scoring': ParameterValue(
                 LaunchConfiguration('g2_enable_registration_scoring'), value_type=bool),
