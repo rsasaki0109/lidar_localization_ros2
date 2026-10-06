@@ -72,4 +72,38 @@ the wrong pose. A map from lidar_slam_ros2 of the same room has its floor within
 
 ## Results
 
-RESULTS_PLACEHOLDER
+Measured 2026-10-06 on `main` (Jazzy, replay at 1x, three runs per case unless noted).
+
+**Handheld MID-360 outdoors (Koide):** every run initialized, none wrongly.
+
+| case | runs | initialized | wrong init | time to first pose (s) | median xy (m) | p95 xy (m) | max xy (m) | >1 m |
+|---|---|---|---|---|---|---|---|---|
+| outdoor_hard_01a | 3 | 3 | 0 | 15.8 | 0.12 | 0.91 | 1.82 | 0.032 |
+| outdoor_hard_01b | 3 | 3 | 0 | 22.2 | 0.08 | 0.21 | 0.87 | 0.000 |
+| outdoor_hard_02a | 3 | 3 | 0 | 15.3 | 0.10 | 0.68 | 1.45 | 0.023 |
+| outdoor_hard_02b | 3 | 3 | 0 | 12.3 | 0.09 | 0.37 | 128.81 | 0.008 |
+| outdoor_kidnap_a | 3 | 3 | 0 | 14.5 | 0.04 | 60.50 | 180.96 | 0.073 |
+| outdoor_kidnap_b | 3 | 3 | 0 | 18.6 | 0.12 | 15.85 | 150.50 | 0.328 |
+
+The kidnap cases are far off while the sensor is carried, until recovery. In one
+outdoor_hard_02b run the RKO-LIO odometry dropped scans with too few ICP keypoints;
+the recovery supervisor then reset on a single unconfirmed answer 128 m away
+(the confirmation is waived while odometry is out).
+
+**Unitree Go2 (JEPLO), lidar_slam_ros2 map of EIL_Mix:** a run that initializes
+tracks within 3 cm (median); one in three does not initialize (global attempts run
+out on ambiguous answers in the symmetric capture room), and none initialized wrongly.
+
+| case | runs | initialized | wrong init | time to first pose (s) | median xy (m) | p95 xy (m) | max xy (m) | >1 m |
+|---|---|---|---|---|---|---|---|---|
+| EIL_Box | 3 | 3 | 0 | 10.1 | 0.03 | 0.09 | 0.67 | 0.000 |
+| EIL_Stairs | 3 | 2 | 0 | 10.3 | 0.03 | 0.14 | 1.38 | 0.001 |
+| EIL_Mask1 | 3 | 1 | 0 | 9.5 | 0.03 | 0.10 | 1.38 | 0.005 |
+| EIL_Mask2 | 3 | 2 | 0 | 8.7 | 0.03 | 0.33 | 1.16 | 0.003 |
+| Long_Stairs_self_map | 3 | 0 | 0 | - | - | - | - | - |
+| Outdoor1_self_map | 1 | 0 | 0 | - | - | - | - | - |
+| Outdoor2_self_map | 1 | 0 | 0 | - | - | - | - | - |
+
+On the large Long_Stairs and Outdoor maps, global search does not find the Go2:
+its candidates are 1.7-2.3 m off on the 2D grid (with only 60-100 scan points left
+in the height band of a sensor 0.4 m above the ground), so they never agree.

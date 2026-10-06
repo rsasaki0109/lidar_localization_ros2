@@ -1,5 +1,8 @@
 # Benchmarking
 
+> **Current benchmark:** [docs/benchmark.md](benchmark.md) replays public datasets through
+> the quickstart and scores them in the ground-truth frame (`tools/benchmark`).
+
 > **Note:** the offline Python tooling these commands use (benchmark runners, regression
 > suites, dataset fetchers, validators) was removed from the package in 6825f05. The
 > commands are kept as a record of how the published results were produced; check out a
