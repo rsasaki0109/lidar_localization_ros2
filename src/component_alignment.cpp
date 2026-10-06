@@ -495,14 +495,13 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
         last_accepted_pose_matrix_, last_accepted_pose_matrix_, scan_stamp_sec,
         state_lock, seed_generation);
     },
-    [this, seed_source](const lidar_localization::AlignmentAttempt & attempt) {
-      return evaluateMeasurementGateForAttempt(attempt, seed_source);
+    [this](const lidar_localization::AlignmentAttempt & attempt) {
+      return evaluateMeasurementGateForAttempt(attempt);
     });
 }
 
 lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurementGateForAttempt(
-  const lidar_localization::AlignmentAttempt & attempt,
-  lidar_localization::RegistrationSeedSource seed_source)
+  const lidar_localization::AlignmentAttempt & attempt)
 {
   const auto gate_input = lidar_localization::makeMeasurementGateInput(
     attempt.fitness_score,

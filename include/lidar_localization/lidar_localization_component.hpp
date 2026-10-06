@@ -555,8 +555,7 @@ public:
     lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
     std::uint64_t seed_generation);
   lidar_localization::MeasurementGateDecision evaluateMeasurementGateForAttempt(
-    const lidar_localization::AlignmentAttempt & attempt,
-    lidar_localization::RegistrationSeedSource seed_source);
+    const lidar_localization::AlignmentAttempt & attempt);
   void logAlignmentPipelineRecovery(
     const lidar_localization::AlignmentPipelineResult & pipeline_result);
   bool handleTerminalAlignmentPipelineResult(
