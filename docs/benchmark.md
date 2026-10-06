@@ -41,12 +41,34 @@ instead of the installed package.
 Datasets:
 
 - JEPLO (Unitree Go2): <https://huggingface.co/datasets/ASIG-X/JEPLO>. The suite uses
-  `bags_pc2_merged`, `gt` and leave-one-out maps in the motion-capture frame. Ground
-  truth covers the 10 m x 4 m capture area. Long_Stairs and Outdoor* only have maps
-  built from the same sequence.
+  `bags_pc2_merged` and `gt`. Ground truth covers the 10 m x 4 m capture area.
+  Long_Stairs and Outdoor* only have maps built from the same sequence (`maps_loc`).
 - Koide et al., hard localization: the outdoor MID-360 sequences with
   `map_outdoor_hard.ply` / `map_outdoor_kidnap.ply`. The kidnap sequences cover the
   sensor and carry it elsewhere.
+
+### The Go2 map
+
+The EIL_* cases localize the way a user would: on a lidar_slam_ros2 map of another
+run, EIL_Mix, moved into the ground-truth frame by fitting its trajectory to the
+ground truth (residual 0.09 m, the SLAM trajectory's own error):
+
+```bash
+bash <lidar_slam_ros2>/scripts/run_rko_lio_graph_autoware_dogfood.sh \
+  --bag $JEPLO_ROOT/bags_pc2_merged/EIL_Mix --lidar-topic /livox/lidar --imu-topic /livox/imu \
+  --lidarslam-param <lidar_slam_ros2>/lidarslam/param/lidarslam_mid360_rko_graph.yaml \
+  --rko-param tools/benchmark/suites/rko_lio_jeplo.yaml \
+  --output-dir maps/eil_mix --wait-for-offline-completion --skip-viewer --base-frame base_link
+python3 tools/benchmark/align_map_to_ground_truth.py --map maps/eil_mix/map.pcd \
+  --trajectory maps/eil_mix/traj_raw.tum --ground-truth $JEPLO_ROOT/gt/EIL_Mix.txt \
+  --out maps/eil_mix_gt/map.pcd
+export JEPLO_LIDARSLAM_MAP=$PWD/maps/eil_mix_gt/map.pcd
+```
+
+The dataset's own leave-one-out maps (`maps_loo_*`) are not used: their floor is
+smeared over 0.7 m (-0.4 to +0.3 m), so the occupancy grid generated for global
+search marks almost the whole room as occupied, and initialization fails or lands on
+the wrong pose. A map from lidar_slam_ros2 of the same room has its floor within 0.1 m.
 
 ## Results
 

@@ -1,11 +1,12 @@
 # Unitree Go2 with an upside-down Livox MID-360 (JEPLO dataset,
 # https://huggingface.co/datasets/ASIG-X/JEPLO). Set JEPLO_ROOT to the dataset
-# directory with bags_pc2_merged/, gt/ and the maps below.
+# directory with bags_pc2_merged/, gt/ and maps_loc/.
 #
-# Maps are in the motion-capture (ground-truth) frame. The EIL_* maps leave the
-# localized sequence out; Long_Stairs and Outdoor* only have maps built from
-# the same sequence, so they test initialization and tracking, not map change.
-# Ground truth covers the 10 m x 4 m motion-capture area only.
+# The EIL_* sequences localize on a lidar_slam_ros2 map of the separate EIL_Mix
+# run, moved into the motion-capture (ground-truth) frame; set JEPLO_LIDARSLAM_MAP
+# to it (see docs/benchmark.md). Long_Stairs and Outdoor* only have maps built
+# from the same sequence, so they test initialization and tracking, not map
+# change. Ground truth covers the 10 m x 4 m motion-capture area only.
 defaults:
   repeats: 3
   odometry_launch: lidarslam rko_lio_odometry.launch.py
@@ -17,24 +18,20 @@ defaults:
 cases:
   - name: EIL_Box
     bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
-    map: ${JEPLO_ROOT}/maps_loo_deskew_complete_005/EIL_Box/map.pcd
+    map: ${JEPLO_LIDARSLAM_MAP}
     gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
   - name: EIL_Stairs
     bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Stairs
-    map: ${JEPLO_ROOT}/maps_loo_deskew_complete_005/EIL_Stairs/map.pcd
+    map: ${JEPLO_LIDARSLAM_MAP}
     gt: ${JEPLO_ROOT}/gt/EIL_Stairs.txt
   - name: EIL_Mask1
     bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Mask1
-    map: ${JEPLO_ROOT}/maps_loo_deskew_complete_005/EIL_Mask1/map.pcd
+    map: ${JEPLO_LIDARSLAM_MAP}
     gt: ${JEPLO_ROOT}/gt/EIL_Mask1.txt
   - name: EIL_Mask2
     bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Mask2
-    map: ${JEPLO_ROOT}/maps_loo_deskew_complete_005/EIL_Mask2/map.pcd
+    map: ${JEPLO_LIDARSLAM_MAP}
     gt: ${JEPLO_ROOT}/gt/EIL_Mask2.txt
-  - name: EIL_Mix
-    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Mix
-    map: ${JEPLO_ROOT}/maps_loo_deskew_complete_005/EIL_Mix/map.pcd
-    gt: ${JEPLO_ROOT}/gt/EIL_Mix.txt
   - name: Long_Stairs_self_map
     bag: ${JEPLO_ROOT}/bags_pc2_merged/Long_Stairs
     map: ${JEPLO_ROOT}/maps_loc/Long_Stairs/map.pcd
