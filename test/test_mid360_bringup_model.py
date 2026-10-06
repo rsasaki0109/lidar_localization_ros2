@@ -17,6 +17,7 @@ from lidar_localization_mid360.bringup_model import (
     BringupSnapshot,
     TopicStats,
     build_tf_checks,
+    diagnostic_level,
     docs_hint_for_alignment,
     evaluate_snapshot,
     exit_code,
@@ -61,6 +62,14 @@ def snapshot(
 
 
 class TestMid360BringupModel(unittest.TestCase):
+    def test_diagnostic_level_accepts_bytes_from_jazzy(self):
+        # rclpy on Jazzy delivers DiagnosticStatus.level as bytes; int() of it
+        # crashed the bringup check after every quickstart launch.
+        self.assertEqual(diagnostic_level(b"\x00"), 0)
+        self.assertEqual(diagnostic_level(b"\x02"), 2)
+        self.assertEqual(diagnostic_level(1), 1)
+        self.assertEqual(diagnostic_level("2"), 2)
+
     def test_missing_cloud_is_hard_failure(self):
         config = BringupCheckConfig()
         results = evaluate_snapshot(config, snapshot(config, TopicStats()))

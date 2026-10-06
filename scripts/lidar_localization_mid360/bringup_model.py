@@ -86,6 +86,17 @@ class BringupSnapshot:
     topic_types: dict[str, Sequence[str]] = field(default_factory=dict)
 
 
+def diagnostic_level(value) -> int:
+    """DiagnosticStatus.level as an int.
+
+    rclpy delivers this byte field as bytes on Jazzy (b'\\x00') and as an int
+    or str elsewhere; int(b'\\x00') raises.
+    """
+    if isinstance(value, (bytes, bytearray)):
+        return value[0] if value else 0
+    return int(value)
+
+
 def build_tf_checks(
     config: BringupCheckConfig, availability: dict[str, bool]
 ) -> list[TfCheck]:

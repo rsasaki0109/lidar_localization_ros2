@@ -18,6 +18,7 @@ from lidar_localization_mid360.bringup_model import (
     BringupSnapshot,
     TopicStats,
     build_tf_checks,
+    diagnostic_level,
 )
 
 
@@ -95,7 +96,7 @@ class Mid360BringupDoctor(Node):
         )
         if msg.status:
             latest = msg.status[0]
-            self.status.last_status_level = int(latest.level)
+            self.status.last_status_level = diagnostic_level(latest.level)
             self.status.last_status_message = latest.message
             self.status.status_values = {
                 key_value.key: key_value.value for key_value in latest.values
