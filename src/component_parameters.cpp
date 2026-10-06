@@ -5,6 +5,7 @@ void PCLLocalization::declareImuPreintegrationParameters()
   declare_parameter("use_imu_preintegration", true);
   declare_parameter("imu_preintegration_use_base_frame_transform", false);
   declare_parameter("imu_accel_scale", 1.0);
+  declare_parameter("imu_preintegration_max_window_sec", 0.0);
   declare_parameter("imu_dual_queue_enabled", true);
 
   // Seed safety and correction guards.
@@ -47,6 +48,7 @@ void PCLLocalization::loadImuPreintegrationParameters()
     "imu_preintegration_use_base_frame_transform",
     imu_preintegration_use_base_frame_transform_);
   get_parameter("imu_accel_scale", imu_accel_scale_);
+  get_parameter("imu_preintegration_max_window_sec", imu_preintegration_max_window_sec_);
   get_parameter("imu_dual_queue_enabled", imu_dual_queue_enabled_);
   if (!std::isfinite(imu_accel_scale_) || imu_accel_scale_ <= 0.0) {
     RCLCPP_WARN(

@@ -292,6 +292,8 @@ public:
   bool use_imu_preintegration_{false};
   bool imu_preintegration_use_base_frame_transform_{false};
   double imu_accel_scale_{1.0};
+  // 0 keeps the scan-period based limit (max(1 s, 5 scan periods)).
+  double imu_preintegration_max_window_sec_{0.0};
   bool use_continuous_time_deskew_{true};
   std::string continuous_time_deskew_mode_{"relative_motion"};
   std::string continuous_time_cloud_stamp_reference_{"start"};

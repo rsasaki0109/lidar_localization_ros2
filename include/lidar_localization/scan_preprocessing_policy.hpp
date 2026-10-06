@@ -31,7 +31,7 @@ struct ScanTimeRangeEvaluationInput
   std::size_t valid_point_count{0};
   std::size_t invalid_point_count{0};
   double expected_scan_period_sec{0.0};
-  double max_duration_to_scan_period_ratio{2.0};
+  double max_duration_to_scan_period_ratio{5.0};
 };
 
 enum class ScanPreparationStatus

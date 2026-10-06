@@ -269,7 +269,8 @@ PCLLocalization::makeImuPreintegrationDiagnosticsInput(
     latest_imu_seed_last_sample_age_sec_,
     latest_imu_seed_integration_window_sec_,
     lidar_localization::imuStaleSampleAgeThresholdSec(scan_period_),
-    lidar_localization::imuMaximumIntegrationWindowSec(scan_period_),
+    lidar_localization::imuMaximumIntegrationWindowSec(
+        scan_period_, imu_preintegration_max_window_sec_),
     imu_seed_consistency_gate_enabled_,
     imu_seed_consistency_state_.seed_allowed,
     imu_seed_consistency_state_.valid_comparison_count,
