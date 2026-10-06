@@ -7,12 +7,11 @@
 
 namespace ll = lidar_localization;
 
-void test_direct_range_filter_path_requires_no_voxel_no_imu_and_same_frame()
+void test_direct_range_filter_path_requires_no_imu_and_same_frame()
 {
-  assert(ll::shouldUseDirectRangeFilter({false, false, "base_link", "base_link"}));
-  assert(!ll::shouldUseDirectRangeFilter({true, false, "base_link", "base_link"}));
-  assert(!ll::shouldUseDirectRangeFilter({false, true, "base_link", "base_link"}));
-  assert(!ll::shouldUseDirectRangeFilter({false, false, "livox_frame", "base_link"}));
+  assert(ll::shouldUseDirectRangeFilter({false, "base_link", "base_link"}));
+  assert(!ll::shouldUseDirectRangeFilter({true, "base_link", "base_link"}));
+  assert(!ll::shouldUseDirectRangeFilter({false, "livox_frame", "base_link"}));
 }
 
 void test_scan_xyz_field_availability()
@@ -115,7 +114,7 @@ void test_non_finite_points_are_rejected()
 
 int main()
 {
-  test_direct_range_filter_path_requires_no_voxel_no_imu_and_same_frame();
+  test_direct_range_filter_path_requires_no_imu_and_same_frame();
   test_scan_xyz_field_availability();
   test_scan_time_range_statuses_are_explicit();
   test_scan_time_range_ratio_is_configurable();

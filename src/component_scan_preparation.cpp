@@ -155,21 +155,22 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
         point_relative_times.valid_point_count);
       break;
   }
+  const auto * x_field = lidar_localization::findPointField(msg->fields, "x");
+  const auto * y_field = lidar_localization::findPointField(msg->fields, "y");
+  const auto * z_field = lidar_localization::findPointField(msg->fields, "z");
   const bool can_direct_range_filter =
     lidar_localization::shouldUseDirectRangeFilter(
     lidar_localization::ScanPreprocessingPathInput{
-      enable_scan_voxel_filter_,
       use_imu_,
       msg->header.frame_id,
-      base_frame_id_});
+      base_frame_id_}) &&
+    // Preserve the voxel path's empty-cloud diagnostics for missing XYZ.
+    (!enable_scan_voxel_filter_ || (x_field && y_field && z_field));
 
   const bool collect_relative_times =
     use_continuous_time_deskew_ && point_relative_times.has_time_field;
 
   if (can_direct_range_filter) {
-    const auto * x_field = lidar_localization::findPointField(msg->fields, "x");
-    const auto * y_field = lidar_localization::findPointField(msg->fields, "y");
-    const auto * z_field = lidar_localization::findPointField(msg->fields, "z");
     const auto * intensity_field = lidar_localization::findPointField(msg->fields, "intensity");
     if (!lidar_localization::hasRequiredXyzFields(
         lidar_localization::ScanXyzFieldAvailability{
@@ -211,6 +212,9 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
       }
     }
     prepared_scan.cloud.reset(new pcl::PointCloud<pcl::PointXYZI>(std::move(tmp)));
+    if (enable_scan_voxel_filter_) {
+      prepared_scan.filtered_point_count = prepared_scan.cloud->size();
+    }
     if (collect_relative_times) {
       prepared_scan.relative_times_aligned_with_cloud =
         prepared_scan.relative_times_sec.size() == prepared_scan.cloud->size();
@@ -276,19 +280,19 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
         prepared_scan.relative_times_sec.size() == prepared_scan.cloud->size();
     }
     applyContinuousTimeDeskewIfEnabled(prepared_scan, scan_stamp_sec);
+  }
 
-    if (enable_scan_voxel_filter_ && !prepared_scan.cloud->empty()) {
-      pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(
-        new pcl::PointCloud<pcl::PointXYZI>());
-      pcl::VoxelGrid<pcl::PointXYZI> scan_voxel_grid_filter;
-      scan_voxel_grid_filter.setLeafSize(voxel_leaf_size_, voxel_leaf_size_, voxel_leaf_size_);
-      scan_voxel_grid_filter.setInputCloud(prepared_scan.cloud);
-      scan_voxel_grid_filter.filter(*filtered_cloud_ptr);
-      prepared_scan.filtered_point_count = filtered_cloud_ptr->size();
-      prepared_scan.cloud = filtered_cloud_ptr;
-      prepared_scan.relative_times_sec.clear();
-      prepared_scan.relative_times_aligned_with_cloud = false;
-    }
+  if (enable_scan_voxel_filter_ && !prepared_scan.cloud->empty()) {
+    pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(
+      new pcl::PointCloud<pcl::PointXYZI>());
+    pcl::VoxelGrid<pcl::PointXYZI> scan_voxel_grid_filter;
+    scan_voxel_grid_filter.setLeafSize(voxel_leaf_size_, voxel_leaf_size_, voxel_leaf_size_);
+    scan_voxel_grid_filter.setInputCloud(prepared_scan.cloud);
+    scan_voxel_grid_filter.filter(*filtered_cloud_ptr);
+    prepared_scan.filtered_point_count = filtered_cloud_ptr->size();
+    prepared_scan.cloud = filtered_cloud_ptr;
+    prepared_scan.relative_times_sec.clear();
+    prepared_scan.relative_times_aligned_with_cloud = false;
   }
 
   prepared_scan.status = lidar_localization::classifyPreparedScan(

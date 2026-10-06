@@ -10,7 +10,6 @@ namespace lidar_localization
 
 struct ScanPreprocessingPathInput
 {
-  bool enable_scan_voxel_filter{true};
   bool use_imu_undistortion{false};
   std::string scan_frame_id;
   std::string base_frame_id;
@@ -52,8 +51,7 @@ enum class ScanTimeRangeStatus
 
 inline bool shouldUseDirectRangeFilter(const ScanPreprocessingPathInput & input)
 {
-  return !input.enable_scan_voxel_filter &&
-         !input.use_imu_undistortion &&
+  return !input.use_imu_undistortion &&
          input.scan_frame_id == input.base_frame_id;
 }
 
