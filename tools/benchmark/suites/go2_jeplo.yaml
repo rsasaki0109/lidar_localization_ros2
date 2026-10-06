@@ -1,0 +1,48 @@
+# Unitree Go2 with an upside-down Livox MID-360 (JEPLO dataset,
+# https://huggingface.co/datasets/ASIG-X/JEPLO). Set JEPLO_ROOT to the dataset
+# directory with bags_pc2_merged/, gt/ and maps_loc/.
+#
+# The EIL_* sequences localize on a lidar_slam_ros2 map of the separate EIL_Mix
+# run, moved into the motion-capture (ground-truth) frame; set JEPLO_LIDARSLAM_MAP
+# to it (see docs/benchmark.md). Long_Stairs and Outdoor* only have maps built
+# from the same sequence, so they test initialization and tracking, not map
+# change. Ground truth covers the 10 m x 4 m motion-capture area only.
+defaults:
+  repeats: 3
+  odometry_launch: lidarslam rko_lio_odometry.launch.py
+  odometry_args:
+    - lidar_topic:=/livox/lidar
+    - imu_topic:=/livox/imu
+    - rko_param_file:=${SUITE_DIR}/rko_lio_jeplo.yaml
+  topics: [/livox/lidar, /livox/imu]
+cases:
+  - name: EIL_Box
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
+  - name: EIL_Stairs
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Stairs
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Stairs.txt
+  - name: EIL_Mask1
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Mask1
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Mask1.txt
+  - name: EIL_Mask2
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Mask2
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Mask2.txt
+  - name: Long_Stairs_self_map
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/Long_Stairs
+    map: ${JEPLO_ROOT}/maps_loc/Long_Stairs/map.pcd
+    gt: ${JEPLO_ROOT}/gt/Long_Stairs.txt
+  - name: Outdoor1_self_map
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/Outdoor1
+    map: ${JEPLO_ROOT}/maps_loc/Outdoor1/map.pcd
+    gt: ${JEPLO_ROOT}/gt/Outdoor1.txt
+    repeats: 1
+  - name: Outdoor2_self_map
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/Outdoor2
+    map: ${JEPLO_ROOT}/maps_loc/Outdoor2/map.pcd
+    gt: ${JEPLO_ROOT}/gt/Outdoor2.txt
+    repeats: 1

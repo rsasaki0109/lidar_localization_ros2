@@ -1,0 +1,6 @@
+# RKO-LIO for the JEPLO Go2 bags (bags_pc2_merged): MID-360 defaults plus
+# absolute point times, since the merged clouds are stamped mid-sweep.
+extrinsic_imu2base_quat_xyzw_xyz: [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+extrinsic_lidar2base_quat_xyzw_xyz: [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+initialization_phase: true
+lidar_timestamps.force_absolute: true
