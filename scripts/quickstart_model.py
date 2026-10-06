@@ -469,6 +469,8 @@ _SEARCH_DETAIL = {
     "global_consensus_mismatch_retry": "two views disagreed; trying again",
     "query_timeout_retry": "the search took too long; trying again",
     "stale_candidate_retry": "the answer was too old; trying again",
+    "global_verification_failed": "the found pose did not match the next scans; "
+    "trying again",
 }
 _OPERATOR_REASON = {
     "global_attempts_exhausted": "no unambiguous match was found",
@@ -476,6 +478,9 @@ _OPERATOR_REASON = {
     "global_query_timeout": "the global search did not answer",
     "no_safe_automatic_source": "there is no saved pose for this map and no grid to search",
     "nonfinite_pose": "the pose was invalid",
+    "global_verification_failed": "the found pose did not match the next scans",
+    "saved_verification_failed": "the saved pose did not match the scans",
+    "explicit_verification_failed": "the given pose did not match the scans",
 }
 _SOURCE = {
     "saved": "the saved pose",

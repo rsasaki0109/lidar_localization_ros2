@@ -492,7 +492,9 @@ class StartupInitializationNode(Node):
         if self.query_in_flight:
             return
         if not self.query_client.service_is_ready():
-            self.get_logger().warning("global localization service is not ready")
+            self.get_logger().info(
+                "Waiting for the global search to load the map.", once=True
+            )
             return
         if self._odom_starts_after_latest_scan():
             return

@@ -156,6 +156,16 @@ class TestDiscovery(unittest.TestCase):
             describe(MODEL.STATE_ACTIVE, "tracking", "saved"),
             "Localized from the saved pose.",
         )
+        self.assertIn(
+            "did not match the next scans",
+            describe(
+                MODEL.STATE_QUERYING_GLOBAL,
+                "global_verification_failed",
+                "global",
+                3,
+                6,
+            ),
+        )
         needs_pose = describe(MODEL.STATE_NEEDS_OPERATOR, "global_attempts_exhausted")
         self.assertIn("no unambiguous match was found", needs_pose)
         self.assertIn("2D Pose Estimate", needs_pose)

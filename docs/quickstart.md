@@ -202,8 +202,27 @@ A candidate is published only when:
 
 Failed saved poses fall through to global search. Weak, ambiguous, stale, inconsistent,
 timed-out, or unverified global candidates consume a bounded query attempt; after
-`--max-global-attempts`, the node publishes nothing and requests RViz input. Status is
-available as JSON on `/startup_initialization/status`.
+`--max-global-attempts`, the node publishes nothing and requests RViz input.
+
+The terminal shows one line per step, for example:
+
+```text
+Waiting for the first LiDAR scan.
+Searching the map for the robot (try 1 of 6).
+Searching the map for the robot (try 2 of 6): found a candidate; confirming it from another view.
+Checking the found pose against the next scans.
+Localized from a map search.
+```
+
+or, when the robot cannot be found:
+
+```text
+Searching the map for the robot (try 6 of 6): the view matches more than one place; trying again.
+Could not localize automatically: no unambiguous match was found. Set 2D Pose Estimate in RViz, or restart with --initial-pose.
+```
+
+The machine-readable status, with the reason names listed under Troubleshooting, is
+published as JSON on `/startup_initialization/status` (and logged at debug level).
 
 The compiled G2 backend and 3D scoring are enabled by default. If scorer loading or
 scoring fails, quickstart rejects the 2D-only result instead of weakening the policy.
