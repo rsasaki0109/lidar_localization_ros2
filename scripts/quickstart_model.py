@@ -272,6 +272,13 @@ class StartupParams:
     # still stops after max_global_attempts. max_global_queries bounds the total.
     global_attempt_refund_travel_m: float = 5.0
     max_global_queries: int = 30
+    # With odometry, a retry waits for a view the last answer did not have: this
+    # much travel or turn, or this long. Without it a robot that is still (or
+    # standing up, like a Unitree Go2) spends every attempt on the same view in
+    # about a second.
+    global_retry_new_view_travel_m: float = 0.5
+    global_retry_new_view_turn_deg: float = 15.0
+    global_retry_max_wait_sec: float = 2.0
     # When the top G2 candidate's NDT fitness is at or below this threshold, trust
     # registration over occupancy score margin / distinct-scan consensus. Disabled
     # by default (inf). Route-crop quickstart sets ~0.5 for mapping-run seeds.
@@ -296,6 +303,9 @@ def validate_startup_params(params: StartupParams) -> str | None:
         params.global_consensus_yaw_deg,
         params.global_consensus_translation_per_odom_m,
         params.global_attempt_refund_travel_m,
+        params.global_retry_new_view_travel_m,
+        params.global_retry_new_view_turn_deg,
+        params.global_retry_max_wait_sec,
         params.registration_fitness_high_confidence_threshold,
         params.max_registration_fitness_ratio,
         params.registration_alternative_min_separation_m,
@@ -326,6 +336,12 @@ def validate_startup_params(params: StartupParams) -> str | None:
         return "global_consensus_translation_per_odom_m must be non-negative"
     if params.global_attempt_refund_travel_m < 0.0:
         return "global_attempt_refund_travel_m must be non-negative"
+    if (
+        params.global_retry_new_view_travel_m < 0.0
+        or params.global_retry_new_view_turn_deg < 0.0
+        or params.global_retry_max_wait_sec < 0.0
+    ):
+        return "global retry new-view limits must be non-negative"
     if params.max_global_queries < params.max_global_attempts:
         return "max_global_queries must be at least max_global_attempts"
     if params.global_consensus_history < 1:
@@ -425,6 +441,24 @@ def _angle_error_rad(first: float, second: float) -> float:
 
 def _wrap_angle_rad(angle: float) -> float:
     return math.atan2(math.sin(angle), math.cos(angle))
+
+
+def retry_sees_new_view(
+    params: StartupParams,
+    waited_sec: float,
+    motion: tuple[float, float, float] | None,
+) -> bool:
+    """Whether another global query would see something the last one did not.
+
+    motion is the planar odometry motion since the last answered scan, or None
+    without odometry (then every retry goes ahead, as before).
+    """
+    if motion is None or waited_sec >= params.global_retry_max_wait_sec:
+        return True
+    return (
+        math.hypot(motion[0], motion[1]) >= params.global_retry_new_view_travel_m
+        or abs(math.degrees(motion[2])) >= params.global_retry_new_view_turn_deg
+    )
 
 
 def planar_motion_between(
