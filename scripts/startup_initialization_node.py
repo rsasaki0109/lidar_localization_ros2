@@ -498,6 +498,8 @@ class StartupInitializationNode(Node):
             or self.latest_cloud_stamp_sec <= self.last_query_scan_stamp_sec + 1.0e-9
         ):
             return
+        if self.last_query_scan_stamp_sec is not None and not self._sees_new_view():
+            return
         self.query_in_flight = True
         future = self.query_client.call_async(Trigger.Request())
         future.add_done_callback(self._on_query_response)
@@ -640,6 +642,18 @@ class StartupInitializationNode(Node):
             self.odom_first_stamp_sec = stamp.sec + stamp.nanosec * 1.0e-9
         # Leave a margin for G2 holding a slightly older scan than this node.
         return self.latest_cloud_stamp_sec < self.odom_first_stamp_sec + 0.5
+
+    def _sees_new_view(self) -> bool:
+        motion = (
+            None
+            if self.tf_buffer is None
+            else self._odom_motion(self.last_query_scan_stamp_sec, None)
+        )
+        return model.retry_sees_new_view(
+            self.params,
+            self.latest_cloud_stamp_sec - self.last_query_scan_stamp_sec,
+            None if motion is None else motion[0],
+        )
 
     def _odom_motion(self, start_stamp_sec: float, end_stamp_sec: float | None):
         """Planar odometry motion and height change between two stamps, or None."""

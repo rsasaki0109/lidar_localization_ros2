@@ -567,6 +567,24 @@ class TestStartupPolicy(unittest.TestCase):
         )
         self.assertEqual(fixed.reason, "global_consensus_mismatch_retry")
 
+    def test_retry_waits_for_a_new_view_with_odometry(self):
+        params = MODEL.StartupParams()
+        sees = MODEL.retry_sees_new_view
+        # Without odometry every retry goes ahead, as before.
+        self.assertTrue(sees(params, 0.1, None))
+        # Still (or standing up): wait until 2 s have passed.
+        self.assertFalse(sees(params, 0.5, (0.05, 0.0, 0.02)))
+        self.assertTrue(sees(params, 2.0, (0.05, 0.0, 0.02)))
+        # Walking 0.5 m or turning 15 degrees gives a new view sooner.
+        self.assertTrue(sees(params, 0.5, (0.4, 0.3, 0.0)))
+        self.assertTrue(sees(params, 0.5, (0.0, 0.0, math.radians(-16.0))))
+        self.assertIsNone(MODEL.validate_startup_params(params))
+        self.assertIsNotNone(
+            MODEL.validate_startup_params(
+                replace(params, global_retry_max_wait_sec=-1.0)
+            )
+        )
+
     def test_travel_refunds_attempts_until_the_query_cap(self):
         params = replace(self.params, max_global_attempts=6, max_global_queries=30)
 
