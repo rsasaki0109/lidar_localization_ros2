@@ -239,6 +239,45 @@ class TestStartupPolicy(unittest.TestCase):
         decision = MODEL.decide_startup(self.params, decision.state, self.obs(9.0))
         self.assertEqual(decision.action, MODEL.ACTION_QUERY_GLOBAL)
 
+    def test_ndt_distinctiveness_replaces_the_bbs_score_margin(self):
+        # Go2 in the JEPLO capture room: BBS scores saturate (0.99 vs 0.98) but
+        # the top fix registers 18 times better than the best fix elsewhere.
+        start = MODEL.decide_startup(self.params, MODEL.StartupState(), self.obs(0.0))
+        common = {
+            "query_candidate_scores": (0.99, 0.98),
+            "query_candidate_age_sec": 0.2,
+            "query_top_pose": (1.0, 2.0, 0.1),
+            "query_scan_stamp_sec": 10.0,
+        }
+        judged = MODEL.decide_startup(
+            self.params,
+            start.state,
+            self.obs(
+                1.0,
+                query_top_registration_fitness=0.017,
+                query_alternative_registration_fitness=0.30,
+                **common,
+            ),
+        )
+        self.assertEqual(judged.reason, "global_consensus_primed")
+        # Without NDT scores to compare, the margin still decides.
+        unscored = MODEL.decide_startup(
+            self.params, start.state, self.obs(1.0, **common)
+        )
+        self.assertEqual(unscored.reason, "ambiguous_candidate_retry")
+        # And an NDT tie is still ambiguous.
+        tie = MODEL.decide_startup(
+            self.params,
+            start.state,
+            self.obs(
+                1.0,
+                query_top_registration_fitness=0.20,
+                query_alternative_registration_fitness=0.30,
+                **common,
+            ),
+        )
+        self.assertEqual(tie.reason, "ambiguous_registration_retry")
+
     def test_global_candidate_needs_score_margin_freshness_and_confirmation(self):
         decision = MODEL.decide_startup(
             self.params, MODEL.StartupState(), self.obs(0.0)

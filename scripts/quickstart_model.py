@@ -540,6 +540,27 @@ def alternative_registration_fitness(
     return best
 
 
+def registration_distinctiveness_judged(
+    params: StartupParams,
+    top_fitness: float | None,
+    alternative_fitness: float | None,
+) -> bool:
+    """Whether NDT fitness can tell the top candidate from the best one elsewhere.
+
+    The 2D score margin is then not needed: in a small room the BBS scores of
+    many candidates saturate near 1, and the top two are often the same place
+    in two headings, so the margin rejected fixes whose NDT fitness was 10-20
+    times better than anywhere else (Unitree Go2, JEPLO capture room).
+    """
+    return (
+        params.max_registration_fitness_ratio > 0.0
+        and top_fitness is not None
+        and alternative_fitness is not None
+        and math.isfinite(top_fitness)
+        and math.isfinite(alternative_fitness)
+    )
+
+
 def registration_ambiguous(
     params: StartupParams,
     top_fitness: float | None,
@@ -750,6 +771,11 @@ def decide_startup(
         )
         if (
             not high_confidence
+            and not registration_distinctiveness_judged(
+                params,
+                obs.query_top_registration_fitness,
+                obs.query_alternative_registration_fitness,
+            )
             and len(scores) > 1
             and math.isfinite(scores[1])
             and scores[0] - scores[1] < params.min_score_margin
