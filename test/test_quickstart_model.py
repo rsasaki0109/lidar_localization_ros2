@@ -135,6 +135,41 @@ class TestDiscovery(unittest.TestCase):
             self.assertAlmostEqual(rz, -math.sin(pitch))
             self.assertAlmostEqual(x * x + y * y + z * z + w * w, 1.0)
 
+    def test_startup_is_described_in_plain_words(self):
+        describe = MODEL.describe_startup
+        self.assertEqual(
+            describe(MODEL.STATE_WAITING_FOR_SCAN, "waiting_for_scan"),
+            "Waiting for the first LiDAR scan.",
+        )
+        self.assertEqual(
+            describe(
+                MODEL.STATE_QUERYING_GLOBAL, "ambiguous_candidate_retry", "global", 2, 6
+            ),
+            "Searching the map for the robot (try 2 of 6): the view matches more than "
+            "one place; trying again.",
+        )
+        self.assertEqual(
+            describe(MODEL.STATE_VERIFYING, "verifying_pose", "global"),
+            "Checking the found pose against the next scans.",
+        )
+        self.assertEqual(
+            describe(MODEL.STATE_ACTIVE, "tracking", "saved"),
+            "Localized from the saved pose.",
+        )
+        self.assertIn(
+            "did not match the next scans",
+            describe(
+                MODEL.STATE_QUERYING_GLOBAL,
+                "global_verification_failed",
+                "global",
+                3,
+                6,
+            ),
+        )
+        needs_pose = describe(MODEL.STATE_NEEDS_OPERATOR, "global_attempts_exhausted")
+        self.assertIn("no unambiguous match was found", needs_pose)
+        self.assertIn("2D Pose Estimate", needs_pose)
+
     def test_odometry_frame_follows_the_odom_tf_tree(self):
         select = MODEL.select_odometry_frame
         rko = {("odom", "livox_frame")}

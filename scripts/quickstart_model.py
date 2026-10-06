@@ -461,6 +461,62 @@ def retry_sees_new_view(
     )
 
 
+_SEARCH_DETAIL = {
+    "ambiguous_candidate_retry": "the view matches more than one place; trying again",
+    "ambiguous_registration_retry": "the view matches more than one place; trying again",
+    "weak_candidate_retry": "no good match yet; trying again",
+    "global_consensus_primed": "found a candidate; confirming it from another view",
+    "global_consensus_mismatch_retry": "two views disagreed; trying again",
+    "query_timeout_retry": "the search took too long; trying again",
+    "stale_candidate_retry": "the answer was too old; trying again",
+    "global_verification_failed": "the found pose did not match the next scans; "
+    "trying again",
+}
+_OPERATOR_REASON = {
+    "global_attempts_exhausted": "no unambiguous match was found",
+    "global_queries_exhausted": "no unambiguous match was found",
+    "global_query_timeout": "the global search did not answer",
+    "no_safe_automatic_source": "there is no saved pose for this map and no grid to search",
+    "nonfinite_pose": "the pose was invalid",
+    "global_verification_failed": "the found pose did not match the next scans",
+    "saved_verification_failed": "the saved pose did not match the scans",
+    "explicit_verification_failed": "the given pose did not match the scans",
+}
+_SOURCE = {
+    "saved": "the saved pose",
+    "global": "a map search",
+    "explicit": "the given pose",
+}
+
+
+def describe_startup(
+    state: str, reason: str, source: str = "", attempts: int = 0, max_attempts: int = 0
+) -> str:
+    """One line for the terminal: what localization is doing and what to do."""
+    if state == STATE_ACTIVE:
+        return f"Localized from {_SOURCE.get(source, 'a pose')}."
+    if state == STATE_NEEDS_OPERATOR:
+        why = _OPERATOR_REASON.get(reason, "the automatic start did not succeed")
+        return (
+            f"Could not localize automatically: {why}. Set 2D Pose Estimate in RViz, "
+            "or restart with --initial-pose."
+        )
+    if state == STATE_VERIFYING:
+        found = {"saved": "saved", "global": "found", "explicit": "given"}.get(
+            source, ""
+        )
+        return (
+            f"Checking the {found + ' ' if found else ''}pose against the next scans."
+        )
+    if state == STATE_QUERYING_GLOBAL:
+        tries = f" (try {attempts} of {max_attempts})" if max_attempts else ""
+        detail = _SEARCH_DETAIL.get(reason)
+        return f"Searching the map for the robot{tries}" + (
+            f": {detail}." if detail else "."
+        )
+    return "Waiting for the first LiDAR scan."
+
+
 def planar_motion_between(
     start: tuple[float, float, float], end: tuple[float, float, float]
 ) -> tuple[float, float, float]:

@@ -253,6 +253,8 @@ class StartupInitializationNode(Node):
         self.candidates = []
         self.query_in_flight = False
         self.last_report = None
+        self.last_line = None
+        self.last_line_key = None
         self._report(
             "starting",
             extra={
@@ -327,7 +329,7 @@ class StartupInitializationNode(Node):
             ):
                 self.saved_pose_preverified = True
                 self.saved_pose_reason = "scan_preverified"
-                self.get_logger().info(
+                self.get_logger().debug(
                     "saved pose passed pre-publication NDT verification: "
                     f"fitness={result.fitness:.3f}"
                 )
@@ -490,7 +492,9 @@ class StartupInitializationNode(Node):
         if self.query_in_flight:
             return
         if not self.query_client.service_is_ready():
-            self.get_logger().warning("global localization service is not ready")
+            self.get_logger().info(
+                "Waiting for the global search to load the map.", once=True
+            )
             return
         if self._odom_starts_after_latest_scan():
             return
@@ -560,11 +564,11 @@ class StartupInitializationNode(Node):
             )
             self.pending_odom_pose = None if odom is None else odom[:3]
             if odom is None:
-                self.get_logger().info(
+                self.get_logger().debug(
                     f"no odometry at the queried scan: {self.last_odom_error}"
                 )
             else:
-                self.get_logger().info(
+                self.get_logger().debug(
                     "odometry at the queried scan: "
                     f"x={odom[0]:.2f} y={odom[1]:.2f} yaw={math.degrees(odom[2]):.1f}"
                 )
@@ -605,7 +609,7 @@ class StartupInitializationNode(Node):
         ) = orientation
         msg.pose.covariance = list(self.saved_pose.covariance)
         self.initialpose_pub.publish(msg)
-        self.get_logger().info("published map-matched saved pose for verification")
+        self.get_logger().debug("published map-matched saved pose for verification")
 
     def _odom_pose(self, stamp_sec: float | None):
         """odom -> base as (x, y, yaw, z) at ``stamp_sec`` (latest when None)."""
@@ -682,7 +686,7 @@ class StartupInitializationNode(Node):
         if motion is not None:
             x, y, yaw = model.apply_planar_motion((x, y, yaw), motion[0])
             dz = motion[1]
-            self.get_logger().info(
+            self.get_logger().debug(
                 "moved the global candidate by odometry since its scan: "
                 f"{math.hypot(motion[0][0], motion[0][1]):.2f} m, "
                 f"{math.degrees(motion[0][2]):.1f} deg"
@@ -712,7 +716,7 @@ class StartupInitializationNode(Node):
             yaw,
         )
         self.initialpose_pub.publish(msg)
-        self.get_logger().info(
+        self.get_logger().debug(
             "published globally searched pose for verification: "
             f"x={x:.3f} y={y:.3f} yaw={math.degrees(yaw):.1f}"
         )
@@ -731,12 +735,28 @@ class StartupInitializationNode(Node):
             return
         self.last_report = text
         self.status_pub.publish(String(data=text))
+        self.get_logger().debug(f"quickstart: {text}")
+        # The terminal gets one plain line per change of what is going on.
+        line = model.describe_startup(
+            self.state.name,
+            reason,
+            self.state.source,
+            self.state.global_attempts,
+            self.params.max_global_attempts,
+        )
+        # One line per state and attempt: the retry reason comes first, and a
+        # bare "searching" or a second "could not localize" adds nothing.
+        key = (self.state.name, self.state.global_attempts)
+        if line == self.last_line or key == self.last_line_key:
+            return
+        self.last_line = line
+        self.last_line_key = key
         if level == "error":
-            self.get_logger().error(f"quickstart: {text}")
+            self.get_logger().error(line)
         elif level == "warning":
-            self.get_logger().warning(f"quickstart: {text}")
+            self.get_logger().warning(line)
         else:
-            self.get_logger().info(f"quickstart: {text}")
+            self.get_logger().info(line)
 
 
 def main() -> None:
