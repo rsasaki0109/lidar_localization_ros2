@@ -364,6 +364,7 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
   auto state_lock = callback_state_coordinator_.lockState();
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
   odom_source_wait_.reset();
+  experimental_scan_motion_.reset();
   RCLCPP_INFO(get_logger(), "mapReceived");
   pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
 
@@ -733,6 +734,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
   double scan_stamp_sec = 0.0;
   if (!admitScanMessage(msg, &scan_stamp_sec)) {
+    experimental_scan_motion_.reset();
     return;
   }
   // Select by source time, then copy before alignment releases the state lock. Keep the
@@ -749,6 +751,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   republishFrozenMapToOdomTransform(msg->header.stamp);
   const PreparedScanCloud prepared_scan = prepareScanForRegistration(msg, scan_stamp_sec);
   if (!lidar_localization::isPreparedScanReady(prepared_scan.status)) {
+    experimental_scan_motion_.reset();
     handleScanPreparationFailure(msg->header.stamp, prepared_scan, scan_stamp_sec);
     publishBridgePoseAsRejectedOutput(msg->header.stamp);
     return;
@@ -759,8 +762,24 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
 
   const std::uint64_t seed_generation =
     callback_state_coordinator_.initialPoseGeneration();
-  const SelectedRegistrationSeed selected_seed =
+  SelectedRegistrationSeed selected_seed =
     selectRegistrationSeed(msg->header.stamp, scan_stamp_sec);
+  // Isolated experiment: retain TF priority and preserve the existing NDT gates.
+  using Seed = lidar_localization::RegistrationSeedSource;
+  if (!use_odom_tf_prediction_ || !have_last_accepted_pose_ || msg->header.frame_id != base_frame_id_) {
+    experimental_scan_motion_.reset();
+  } else if (selected_seed.source == Seed::kOdomTfPrediction) {
+    experimental_scan_motion_.anchor(msg, selected_seed.init_guess, seed_generation);
+  } else if (selected_seed.source == Seed::kTwistPrediction ||
+    selected_seed.source == Seed::kPreviousDelta || selected_seed.source == Seed::kCurrentPose) {
+    Eigen::Matrix4f motion;
+    if (experimental_scan_motion_.predict(msg, seed_generation, motion)) {
+      selected_seed.init_guess = motion;
+      selected_seed.source = Seed::kExperimentalScanMotion;
+    }
+  } else {
+    experimental_scan_motion_.reset();
+  }
   const bool imu_prediction_ready = selected_seed.imu_prediction_ready;
   const std::string registration_seed_source =
     lidar_localization::registrationSeedSourceName(selected_seed.source);
@@ -811,5 +830,8 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     return;
   }
 
+  if (use_odom_tf_prediction_ && msg->header.frame_id == base_frame_id_) {
+    experimental_scan_motion_.anchor(msg, currentPoseMatrix(), seed_generation);
+  }
   printAlignmentDebugInfo(init_guess, pipeline_result.selected_attempt, filtered_point_count);
 }

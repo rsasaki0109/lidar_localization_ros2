@@ -361,6 +361,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
 {
   shutting_down_.store(true, std::memory_order_release);
   auto state_lock = callback_state_coordinator_.lockState();
+  experimental_scan_motion_.reset();
 
 #ifdef LIDAR_LOCALIZATION_HAVE_NAV2_BOND
   bond_.reset();

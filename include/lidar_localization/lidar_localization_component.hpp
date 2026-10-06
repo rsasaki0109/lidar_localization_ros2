@@ -1,4 +1,5 @@
 #pragma once
+#include "lidar_localization/experimental_scan_motion.hpp"
 
 // PCLLocalization: the lifecycle-managed localization component.  The
 // implementation is split by concern into src/component_*.cpp translation
@@ -256,6 +257,7 @@ public:
   // dedicated group so a reset can interrupt long registration. Every access
   // shared with that group is protected by callback_state_coordinator_.
   lidar_localization::CallbackStateCoordinator callback_state_coordinator_;
+  lidar_localization::ExperimentalScanMotion experimental_scan_motion_;
   geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr corrent_pose_with_cov_stamped_ptr_;
   nav_msgs::msg::Path::SharedPtr path_ptr_;
   sensor_msgs::msg::PointCloud2::ConstSharedPtr last_scan_ptr_;

@@ -17,6 +17,7 @@ enum class RegistrationSeedSource
   kPreviousDelta,
   kLocalizabilityGuard,
   kOdomTfPrediction,
+  kExperimentalScanMotion,
 };
 
 struct RegistrationSeedPolicyInput
@@ -170,6 +171,8 @@ inline const char * registrationSeedSourceName(RegistrationSeedSource source)
       return "previous_delta";
     case RegistrationSeedSource::kLocalizabilityGuard:
       return "localizability_guard_current_pose";
+    case RegistrationSeedSource::kExperimentalScanMotion:
+      return "experimental_scan_motion";
     case RegistrationSeedSource::kOdomTfPrediction:
       return "odom_tf_prediction";
   }

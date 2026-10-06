@@ -56,6 +56,7 @@ add_library(lidar_localization_component SHARED
   src/component_lifecycle.cpp
   src/component_parameters.cpp
   src/component_subscribers.cpp
+  src/experimental_scan_motion.cpp
   src/component_scan_preparation.cpp
   src/component_alignment.cpp
   src/component_prediction_state.cpp
@@ -277,6 +278,12 @@ if(BUILD_TESTING)
     NAME glim_prior_map_ply_loader
     COMMAND test_glim_prior_map_ply_loader
   )
+
+  add_executable(test_experimental_scan_motion test/test_experimental_scan_motion.cpp)
+  target_include_directories(test_experimental_scan_motion PRIVATE include ${PCL_INCLUDE_DIRS})
+  ament_target_dependencies(test_experimental_scan_motion sensor_msgs pcl_conversions)
+  target_link_libraries(test_experimental_scan_motion lidar_localization_component ${PCL_LIBRARIES})
+  add_test(NAME experimental_scan_motion COMMAND test_experimental_scan_motion)
 
   add_executable(test_registration_seed_policy
     test/test_registration_seed_policy.cpp)
