@@ -17,6 +17,7 @@ from lidar_localization_mid360.bringup_model import (
     BringupSnapshot,
     TopicStats,
     build_tf_checks,
+    diagnostic_level,
     docs_hint_for_alignment,
     evaluate_snapshot,
     exit_code,
@@ -61,6 +62,14 @@ def snapshot(
 
 
 class TestMid360BringupModel(unittest.TestCase):
+    def test_diagnostic_level_accepts_bytes_from_jazzy(self):
+        # rclpy on Jazzy delivers DiagnosticStatus.level as bytes; int() of it
+        # crashed the bringup check after every quickstart launch.
+        self.assertEqual(diagnostic_level(b"\x00"), 0)
+        self.assertEqual(diagnostic_level(b"\x02"), 2)
+        self.assertEqual(diagnostic_level(1), 1)
+        self.assertEqual(diagnostic_level("2"), 2)
+
     def test_missing_cloud_is_hard_failure(self):
         config = BringupCheckConfig()
         results = evaluate_snapshot(config, snapshot(config, TopicStats()))
@@ -601,6 +610,20 @@ class TestMid360BringupModel(unittest.TestCase):
         ]
         self.assertEqual(deskew_results[0].level, FAIL)
         self.assertIn("base_link <- livox_imu_frame", deskew_results[0].hint)
+
+    def test_unused_deskew_is_not_reported(self):
+        # The quickstart does not deskew; its users were told to enable IMU
+        # preintegration to make an unused feature "ready".
+        config = BringupCheckConfig(require_cloud_time_field=False, require_imu=False)
+        cloud = marked_cloud("livox_frame", fields=("x", "y", "z", "t"))
+        status = marked_status(
+            values={
+                "deskew_readiness_status": "deskew_imu_preintegration_disabled",
+                "continuous_time_deskew_enabled": "false",
+            }
+        )
+        results = evaluate_snapshot(config, snapshot(config, cloud, status=status))
+        self.assertFalse([r for r in results if "continuous-time deskew" in r.message])
 
     def test_alignment_status_reports_optional_deskew_blocker_as_warning(self):
         config = BringupCheckConfig(require_cloud_time_field=False, require_imu=False)
