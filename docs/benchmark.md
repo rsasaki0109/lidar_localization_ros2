@@ -21,6 +21,12 @@ tracked consistently. On a Unitree Go2, such runs were 1.8 m off but looked like
 | median / p95 / max xy | horizontal error of the matched poses |
 | >1 m | share of poses more than 1 m off (median over runs) |
 
+Runs also record the localizer's per-scan `/alignment_status`. A second table scores it
+as a health signal: the share of poses more than 1 m off that it did not report OK
+(the higher the better), and of poses within 0.3 m that it did not report OK (false
+alarms, the lower the better). A pose with no status in the last second counts as
+flagged.
+
 ## Running it
 
 Build lidar_slam_ros2 (for `rko_lio_odometry.launch.py`) and this package, then:
@@ -89,6 +95,21 @@ The kidnap cases are far off while the sensor is carried, until recovery. In one
 outdoor_hard_02b run the RKO-LIO odometry dropped scans with too few ICP keypoints;
 the recovery supervisor then reset on a single unconfirmed answer 128 m away
 (the confirmation is waived while odometry is out).
+
+How `/alignment_status` tracked the error on the Koide runs (two per case, with #201):
+
+| case | runs with >1 m poses | flagged when >1 m off | flagged when <0.3 m |
+|---|---|---|---|
+| outdoor_hard_01a | 2 | 0.98 | 0.13 |
+| outdoor_hard_01b | 2 | 0.60 | 0.33 |
+| outdoor_hard_02a | 2 | 0.93 | 0.41 |
+| outdoor_hard_02b | 2 | 0.41 | 0.20 |
+| outdoor_kidnap_a | 2 | 0.61 | 0.06 |
+| outdoor_kidnap_b | 2 | 0.17 | 0.02 |
+
+It catches slow loss of tracking (01a, 02a), but it reports OK on most poses after a
+wrong reset (01b, kidnap_b: a confident match at the wrong place), and it raises
+false alarms on 20-41% of good poses in 01b-02b.
 
 **Unitree Go2 (JEPLO), lidar_slam_ros2 map of EIL_Mix:** a run that initializes
 tracks within 3 cm (median); one in three does not initialize (global attempts run
