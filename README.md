@@ -163,6 +163,7 @@ launch command needed to replay it and check the 0.26 m result.
 - [Frames](docs/frame_contract.md) and [troubleshooting](docs/troubleshooting.md)
 - [Benchmark: quickstart replays scored against ground truth](docs/benchmark.md) and the
   [earlier benchmarking record](docs/benchmarking.md)
+- [Unitree Go2 / MID-360 in five minutes](docs/go2_mid360_quickstart.md)
 - [MID-360 bringup](docs/mid360_legged_jetson.md)
 - [IMU estimation](docs/imu_estimation.md) and [pose covariance](docs/pose_covariance.md)
 - [Global localization](docs/global_localization.md)
