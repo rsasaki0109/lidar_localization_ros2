@@ -4,6 +4,7 @@ import argparse
 import sys
 import time
 from collections.abc import Sequence
+from pathlib import Path
 
 from lidar_localization_mid360.bringup_model import (
     BringupCheckConfig,
@@ -98,6 +99,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Require map <- odom TF. Enable for Nav2 map->odom integration.",
     )
     parser.add_argument("--require-localization-output", action="store_true")
+    parser.add_argument(
+        "--wait-for-localization-sec",
+        type=float,
+        default=0.0,
+        help=(
+            "Wait up to this long for the quickstart startup to report an active pose "
+            "before checking, so a running global search is not reported as missing "
+            "pose or TF (0: check right away)."
+        ),
+    )
+    parser.add_argument(
+        "--startup-status-topic", default="/startup_initialization/status"
+    )
     return parser
 
 
@@ -140,6 +154,40 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return build_arg_parser().parse_args(argv)
 
 
+def wait_for_active_startup(node, topic: str, timeout_sec: float) -> str | None:
+    """Spin until the startup status is active; the message to print otherwise."""
+    import rclpy
+    from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+    from std_msgs.msg import String
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import quickstart_model
+
+    latest: dict = {}
+    qos = QoSProfile(
+        depth=1,
+        reliability=ReliabilityPolicy.RELIABLE,
+        durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    )
+    subscription = node.create_subscription(
+        String,
+        topic,
+        lambda msg: latest.update(status=quickstart_model.parse_startup_status(msg.data)),
+        qos,
+    )
+    started = time.monotonic()
+    try:
+        while rclpy.ok() and time.monotonic() - started < timeout_sec:
+            rclpy.spin_once(node, timeout_sec=0.2)
+            if quickstart_model.startup_is_active(latest.get("status", {})):
+                return None
+        return quickstart_model.bringup_wait_message(
+            latest.get("status", {}), time.monotonic() - started
+        )
+    finally:
+        node.destroy_subscription(subscription)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
 
@@ -153,6 +201,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         node_name="lidar_localization_bringup_doctor",
     )
     try:
+        if args.wait_for_localization_sec > 0:
+            message = wait_for_active_startup(
+                node, args.startup_status_topic, args.wait_for_localization_sec
+            )
+            if message:
+                print(message)
         deadline = time.monotonic() + max(args.duration_sec, 0.1)
         while rclpy.ok() and time.monotonic() < deadline:
             rclpy.spin_once(node, timeout_sec=0.1)

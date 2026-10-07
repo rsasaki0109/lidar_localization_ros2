@@ -517,6 +517,38 @@ def describe_startup(
     return "Waiting for the first LiDAR scan."
 
 
+def parse_startup_status(text: str | None) -> dict:
+    """The JSON payload of /startup_initialization/status, or {} when unreadable."""
+    if not text:
+        return {}
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def startup_is_active(status: dict) -> bool:
+    return status.get("state") == STATE_ACTIVE
+
+
+def bringup_wait_message(status: dict, waited_sec: float) -> str:
+    """What the bringup check prints when localization has not started in time."""
+    if not status:
+        return (
+            f"Bringup check: no startup status after {waited_sec:.0f} s; checking anyway."
+        )
+    line = describe_startup(
+        str(status.get("state", "")),
+        str(status.get("reason", "")),
+        str(status.get("source", "")),
+    )
+    return (
+        f"Bringup check: localization is not active after {waited_sec:.0f} s "
+        f"({line}) Checking anyway."
+    )
+
+
 def planar_motion_between(
     start: tuple[float, float, float], end: tuple[float, float, float]
 ) -> tuple[float, float, float]:
