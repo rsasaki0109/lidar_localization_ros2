@@ -1,6 +1,7 @@
 """User-facing localization bringup with guarded startup initialization."""
 
 import os
+import tempfile
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -11,7 +12,31 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+import yaml
 
+
+
+def rviz_config_for(config_text, cloud_topic, pose_topic):
+    """The RViz config with the scan and pose this launch actually uses.
+
+    The bundled configs name one cloud topic per profile, but quickstart detects
+    the topic (a Go2 or lidar_slam_ros2 MID-360 publishes /livox/lidar). Best
+    effort also receives reliable publishers, and the local map is latched once,
+    so it is subscribed transient local to show up whatever starts first.
+    """
+    config = yaml.safe_load(config_text)
+    for display in config["Visualization Manager"]["Displays"]:
+        topic = display.get("Topic")
+        if not topic:
+            continue
+        if display.get("Name") == "Live Scan":
+            topic["Value"] = cloud_topic
+            topic["Reliability Policy"] = "Best Effort"
+        elif display.get("Class") == "rviz_default_plugins/PoseWithCovariance":
+            topic["Value"] = pose_topic
+        elif topic.get("Value") == "/initial_map":
+            topic["Durability Policy"] = "Transient Local"
+    return yaml.safe_dump(config, sort_keys=False)
 
 def _localization_include(context):
     package_share = get_package_share_directory("lidar_localization_ros2")
@@ -327,11 +352,19 @@ def generate_launch_description():
         rviz_file = (
             "localization_mid360.rviz" if profile == "mid360"
             else "localization.rviz")
+        with open(os.path.join(package_share_inner, "rviz", rviz_file), encoding="utf-8") as source:
+            config_text = rviz_config_for(
+                source.read(),
+                LaunchConfiguration("cloud_topic").perform(context),
+                LaunchConfiguration("pose_topic").perform(context))
+        with tempfile.NamedTemporaryFile(
+                "w", suffix=".rviz", prefix="quickstart_", delete=False) as generated:
+            generated.write(config_text)
         return [Node(
             package="rviz2",
             executable="rviz2",
             name="quickstart_rviz",
-            arguments=["-d", os.path.join(package_share_inner, "rviz", rviz_file)],
+            arguments=["-d", generated.name],
             condition=IfCondition(LaunchConfiguration("start_rviz")),
             output="screen",
         )]
