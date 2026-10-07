@@ -111,16 +111,17 @@ It catches slow loss of tracking (01a, 02a), but it reports OK on most poses aft
 wrong reset (01b, kidnap_b: a confident match at the wrong place), and it raises
 false alarms on 20-41% of good poses in 01b-02b.
 
-**Unitree Go2 (JEPLO), lidar_slam_ros2 map of EIL_Mix:** a run that initializes
-tracks within 3 cm (median); one in three does not initialize (global attempts run
-out on ambiguous answers in the symmetric capture room), and none initialized wrongly.
+**Unitree Go2 (JEPLO), lidar_slam_ros2 map of EIL_Mix:** every run initializes by
+itself and none at a wrong place, and tracking stays within 3 cm (median). Before the
+NDT score could judge ambiguity on its own (#201), one run in three ran out of global
+attempts on ambiguous answers in the symmetric capture room.
 
 | case | runs | initialized | wrong init | time to first pose (s) | median xy (m) | p95 xy (m) | max xy (m) | >1 m |
 |---|---|---|---|---|---|---|---|---|
-| EIL_Box | 3 | 3 | 0 | 10.1 | 0.03 | 0.09 | 0.67 | 0.000 |
-| EIL_Stairs | 3 | 2 | 0 | 10.3 | 0.03 | 0.14 | 1.38 | 0.001 |
-| EIL_Mask1 | 3 | 1 | 0 | 9.5 | 0.03 | 0.10 | 1.38 | 0.005 |
-| EIL_Mask2 | 3 | 2 | 0 | 8.7 | 0.03 | 0.33 | 1.16 | 0.003 |
+| EIL_Box | 3 | 3 | 0 | 17.1 | 0.03 | 0.09 | 4.61 | 0.001 |
+| EIL_Stairs | 3 | 3 | 0 | 10.9 | 0.03 | 0.13 | 0.94 | 0.000 |
+| EIL_Mask1 | 3 | 3 | 0 | 9.8 | 0.03 | 0.10 | 0.94 | 0.000 |
+| EIL_Mask2 | 3 | 3 | 0 | 9.8 | 0.03 | 0.13 | 1.19 | 0.000 |
 | Long_Stairs_self_map | 3 | 0 | 0 | - | - | - | - | - |
 | Outdoor1_self_map | 1 | 0 | 0 | - | - | - | - | - |
 | Outdoor2_self_map | 1 | 0 | 0 | - | - | - | - | - |

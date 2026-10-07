@@ -93,6 +93,9 @@ correction after the robot was carried. It gives way after 30 rejections in a ro
 
 ## Localizing on a lidar_slam_ros2 map
 
+For a step-by-step walk-through on a robot, see
+[Unitree Go2 / MID-360 in five minutes](go2_mid360_quickstart.md).
+
 A map built with [lidar_slam_ros2](https://github.com/rsasaki0109/lidar_slam_ros2)
 (`lidarslam-map start <bag>`) can be used directly. Its frame starts at the first
 mapping pose, so a robot that starts where mapping started is near `(0, 0, 0)`, and
