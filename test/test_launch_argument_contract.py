@@ -138,6 +138,38 @@ class TestLaunchArgumentContract(unittest.TestCase):
                 source, r"'use_continuous_time_deskew': \(bool, True\)", launch_file
             )
 
+    def test_quickstart_rviz_shows_the_detected_scan_and_the_latched_map(self):
+        spec = importlib.util.spec_from_file_location(
+            "quickstart_launch_for_rviz", REPO_ROOT / "launch" / "quickstart.launch.py"
+        )
+        launch = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(launch)
+        import yaml
+
+        for rviz_file in ("localization.rviz", "localization_mid360.rviz"):
+            text = (REPO_ROOT / "rviz" / rviz_file).read_text(encoding="utf-8")
+            config = yaml.safe_load(
+                launch.rviz_config_for(text, "/livox/lidar", "/localization/pose")
+            )
+            displays = {
+                display["Name"]: display.get("Topic", {})
+                for display in config["Visualization Manager"]["Displays"]
+            }
+            self.assertEqual(displays["Live Scan"]["Value"], "/livox/lidar", rviz_file)
+            self.assertEqual(
+                displays["Live Scan"]["Reliability Policy"], "Best Effort", rviz_file
+            )
+            self.assertEqual(
+                displays["Local Map"]["Durability Policy"], "Transient Local", rviz_file
+            )
+            pose = [
+                display["Topic"]["Value"]
+                for display in config["Visualization Manager"]["Displays"]
+                if display["Class"] == "rviz_default_plugins/PoseWithCovariance"
+            ]
+            self.assertEqual(pose, ["/localization/pose"], rviz_file)
+
     def test_quickstart_defaults_to_asset_gated_global_initialization(self):
         source = (REPO_ROOT / "launch" / "quickstart.launch.py").read_text(
             encoding="utf-8"
