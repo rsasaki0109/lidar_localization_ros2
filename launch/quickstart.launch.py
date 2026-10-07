@@ -50,6 +50,8 @@ def _bringup_check(context):
     arguments = [
         "--profile", profile,
         "--duration-sec", "5.0",
+        # Check once localization is up, not while the global search runs.
+        "--wait-for-localization-sec", LaunchConfiguration("bringup_check_wait_sec"),
         "--cloud-topic", LaunchConfiguration("cloud_topic"),
         "--imu-topic", LaunchConfiguration("imu_topic"),
         "--lidar-frame", LaunchConfiguration("lidar_frame_id"),
@@ -132,6 +134,10 @@ def generate_launch_description():
                         "are configured."),
         DeclareLaunchArgument("start_rviz", default_value="true"),
         DeclareLaunchArgument("run_bringup_check", default_value="true"),
+        DeclareLaunchArgument(
+            "bringup_check_wait_sec",
+            default_value="120.0",
+            description="How long the bringup check waits for localization to start."),
         DeclareLaunchArgument("saved_pose_max_age_sec", default_value="0.0"),
         DeclareLaunchArgument("min_candidate_score", default_value="0.6"),
         DeclareLaunchArgument("min_score_margin", default_value="0.05"),

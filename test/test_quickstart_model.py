@@ -135,6 +135,28 @@ class TestDiscovery(unittest.TestCase):
             self.assertAlmostEqual(rz, -math.sin(pitch))
             self.assertAlmostEqual(x * x + y * y + z * z + w * w, 1.0)
 
+    def test_bringup_check_reads_the_startup_status(self):
+        active = MODEL.parse_startup_status(
+            '{"state": "active", "source": "global", "reason": "global_pose_verified"}'
+        )
+        self.assertTrue(MODEL.startup_is_active(active))
+        self.assertEqual(MODEL.parse_startup_status("not json"), {})
+        self.assertEqual(MODEL.parse_startup_status(None), {})
+        self.assertFalse(MODEL.startup_is_active({}))
+
+        searching = MODEL.parse_startup_status(
+            '{"state": "querying_global", "reason": "global_query_sent", "global_attempts": 2}'
+        )
+        self.assertEqual(
+            MODEL.bringup_wait_message(searching, 120.4),
+            "Bringup check: localization is not active after 120 s "
+            "(Searching the map for the robot.) Checking anyway.",
+        )
+        self.assertEqual(
+            MODEL.bringup_wait_message({}, 30),
+            "Bringup check: no startup status after 30 s; checking anyway.",
+        )
+
     def test_startup_is_described_in_plain_words(self):
         describe = MODEL.describe_startup
         self.assertEqual(
