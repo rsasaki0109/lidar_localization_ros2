@@ -104,6 +104,9 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("enable_odom_tf_prediction_correction_guard", false);
   declare_parameter("odom_tf_prediction_correction_guard_translation_m", 2.0);
   declare_parameter("odom_tf_prediction_correction_guard_yaw_deg", 30.0);
+  // SỬA 2026-10-06: thử nghiệm — thay chặn cứng guard trên bằng trộn trọng số Huber
+  // (xem applySoftOdomCorrectionGate() trong component_alignment.cpp). Mặc định tắt.
+  declare_parameter("enable_soft_odom_correction_gate", false);
   declare_parameter("enable_odom_tf_prediction_recovery_correction_guard", false);
   declare_parameter("odom_tf_prediction_recovery_min_rejections", 30);
   declare_parameter("odom_tf_prediction_recovery_max_fitness", 1.5);

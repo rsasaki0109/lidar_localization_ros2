@@ -246,6 +246,15 @@ checks pass, and deployments that regress can set `use_continuous_time_deskew: f
 The full negative result is in
 [`research_driven_development_plan.md`](research_driven_development_plan.md).
 
+Livox `livox_ros_driver2` clouds carry `timestamp` as FLOAT64 **absolute nanoseconds**
+(~1.8e18). A FLOAT64 `timestamp` above 1e12 is therefore read as nanoseconds; before
+that fix such a scan spanned ~1e8 "seconds", `scan_time_status` was
+`scan_time_range_too_large`, and deskew was never applied. With no IMU, set
+`continuous_time_deskew_mode: lidar_constant_velocity` (the default `relative_motion`
+needs IMU preintegration and reports `continuous_time_deskew_imu_preintegration_disabled`).
+Check `continuous_time_deskew_applied` and `scan_time_duration_sec` (~0.1 s) in
+`/alignment_status`.
+
 ## Runtime diagnostics
 
 `/alignment_status` includes IMU preintegration state next to the alignment

@@ -344,6 +344,7 @@ void PCLLocalization::initializeParameters()
   get_parameter(
     "odom_tf_prediction_correction_guard_yaw_deg",
     measurement_gate_config_.odom_tf_prediction_correction_guard_yaw_deg);
+  get_parameter("enable_soft_odom_correction_gate", enable_soft_odom_correction_gate_);
   get_parameter(
     "enable_odom_tf_prediction_recovery_correction_guard",
     measurement_gate_config_.enable_odom_tf_prediction_recovery_correction_guard);
@@ -622,6 +623,9 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "enable_odom_tf_prediction_correction_guard: %d",
     measurement_gate_config_.enable_odom_tf_prediction_correction_guard);
+  RCLCPP_INFO(
+    get_logger(), "enable_soft_odom_correction_gate: %d",
+    enable_soft_odom_correction_gate_);
   RCLCPP_INFO(
     get_logger(), "odom_tf_prediction_correction_guard_translation_m: %lf",
     measurement_gate_config_.odom_tf_prediction_correction_guard_translation_m);

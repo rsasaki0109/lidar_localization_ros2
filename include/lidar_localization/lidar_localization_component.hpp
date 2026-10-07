@@ -448,6 +448,12 @@ public:
   lidar_localization::HorizontalLocalizability latest_horizontal_localizability_;
   bool latest_localizability_guard_active_{false};
   lidar_localization::MeasurementGateParamConfig measurement_gate_config_;
+  // SỬA 2026-10-06: hậu xử lý RIÊNG applySoftOdomCorrectionGate(), KHÔNG sửa
+  // measurement_gate_policy.hpp — thử nghiệm thay chặn cứng
+  // odom_tf_prediction_correction_guard bằng trộn trọng số Huber (ý tưởng từ
+  // r3dl_core, xem experiments/soft_odom_correction_gate/). Mặc định TẮT,
+  // không đổi hành vi cũ khi tắt.
+  bool enable_soft_odom_correction_gate_{false};
   lidar_localization::RecoveryRetryFromLastPoseParams recovery_retry_from_last_pose_config_;
   bool enable_reinitialization_request_output_{true};
   lidar_localization::ReinitializationTriggerParams reinitialization_trigger_config_;
@@ -548,6 +554,12 @@ public:
   lidar_localization::MeasurementGateDecision evaluateMeasurementGateForAttempt(
     const lidar_localization::AlignmentAttempt & attempt,
     lidar_localization::RegistrationSeedSource seed_source);
+  // SỬA 2026-10-06: hậu xử lý thử nghiệm sau khi runAlignmentPipelineForScan() đã
+  // quyết định accept/reject như bình thường — chỉ chạm tới đúng 1 lý do reject
+  // ("odom_tf_prediction_correction_guard_rejected"), các lý do reject khác (vượt
+  // score_threshold, borderline_seed...) không đổi gì. Xem định nghĩa để biết rõ.
+  void applySoftOdomCorrectionGate(
+    lidar_localization::AlignmentPipelineResult & pipeline_result);
   void logAlignmentPipelineRecovery(
     const lidar_localization::AlignmentPipelineResult & pipeline_result);
   bool handleTerminalAlignmentPipelineResult(

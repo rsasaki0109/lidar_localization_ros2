@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixed
+
+- A `timestamp` point field of type FLOAT64 whose values exceed 1e12 is now read as
+  nanoseconds (livox_ros_driver2 publishes absolute nanoseconds there). Before, such a
+  scan spanned ~1e8 "seconds", `scan_time_status` stayed `scan_time_range_too_large`, and
+  continuous-time deskew was silently never applied for Livox MID-360. FLOAT64 stamps in
+  seconds (epoch or relative) keep their meaning. For a lidar-only (no IMU) setup also set
+  `continuous_time_deskew_mode: lidar_constant_velocity`.
+
 ### Changed
 
 - Continuous-time deskew now defaults on in the component, launch files, and shipped

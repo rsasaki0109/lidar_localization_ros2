@@ -6,9 +6,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -196,16 +198,48 @@ inline bool pointFieldFitsPointStep(
          static_cast<std::size_t>(point_step);
 }
 
-inline double pointTimeFieldScaleToSeconds(const sensor_msgs::msg::PointField & field)
+// livox_ros_driver2 publishes `timestamp` as FLOAT64 nanoseconds, but NOT always absolute epoch-scale
+// (~1.8e18): the LIVE driver was found (2026-10-05) to emit RELATIVE within-scan nanoseconds instead
+// (~1e8, i.e. up to ~0.1 s of a scan re-expressed in ns) -- a bag-converted/recorded topic can still
+// carry the absolute ~1.8e18 form. Other drivers publish a FLOAT64 `timestamp` already in seconds
+// (epoch ~1.8e9, or a small relative value close to scan_period). A single large-magnitude threshold
+// (formerly 1e12) only catches the absolute-ns case and misses the smaller relative-ns one, silently
+// disabling continuous-time deskew on live data (scan_time_status = scan_time_range_too_large).
+//
+// Fix: treat anything OUTSIDE the plausible "already seconds" bands as nanoseconds instead of using one
+// large cutoff. A genuinely-seconds value is either small (<= a generous relative-offset bound, well
+// above any real scan_period) or a real calendar-epoch value (~1e9-1e10, i.e. roughly year 2001-2286).
+// Nanosecond values -- relative (~1e5-1e8) or absolute-epoch (~1e18) -- both fall outside both bands.
+constexpr double kPlausibleRelativeSecondsBound = 1.0e3;
+constexpr double kEpochSecondsLowerBound = 1.0e9;
+constexpr double kEpochSecondsUpperBound = 1.0e10;
+
+inline bool looksLikeAlreadySeconds(double sample_raw_value)
+{
+  const double magnitude = std::abs(sample_raw_value);
+  return magnitude <= kPlausibleRelativeSecondsBound ||
+    (magnitude >= kEpochSecondsLowerBound && magnitude <= kEpochSecondsUpperBound);
+}
+
+inline double pointTimeFieldScaleToSeconds(
+  const sensor_msgs::msg::PointField & field,
+  double sample_raw_value = std::numeric_limits<double>::quiet_NaN())
 {
   if (field.name == "offset_time" || field.name == "t") {
     return 1.0e-9;
   }
-  if (field.name == "timestamp" &&
-    field.datatype != sensor_msgs::msg::PointField::FLOAT32 &&
-    field.datatype != sensor_msgs::msg::PointField::FLOAT64)
-  {
-    return 1.0e-9;
+  if (field.name == "timestamp") {
+    if (field.datatype != sensor_msgs::msg::PointField::FLOAT32 &&
+      field.datatype != sensor_msgs::msg::PointField::FLOAT64)
+    {
+      return 1.0e-9;
+    }
+    if (field.datatype == sensor_msgs::msg::PointField::FLOAT64 &&
+      std::isfinite(sample_raw_value) &&
+      !looksLikeAlreadySeconds(sample_raw_value))
+    {
+      return 1.0e-9;
+    }
   }
   return 1.0;
 }
@@ -219,7 +253,7 @@ inline bool readPointTimeSeconds(
   if (!readPointFieldAsDouble(point_data, field, &raw_value)) {
     return false;
   }
-  *time_seconds = raw_value * pointTimeFieldScaleToSeconds(field);
+  *time_seconds = raw_value * pointTimeFieldScaleToSeconds(field, raw_value);
   return true;
 }
 

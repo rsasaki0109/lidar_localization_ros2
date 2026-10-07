@@ -480,6 +480,43 @@ lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurement
   return gate;
 }
 
+void PCLLocalization::applySoftOdomCorrectionGate(
+  lidar_localization::AlignmentPipelineResult & pipeline_result)
+{
+  if (!enable_soft_odom_correction_gate_) {
+    return;
+  }
+  // Chỉ chạm đúng lý do reject này — mọi gate khác (score_threshold,
+  // borderline_seed, post_reject_strict,...) giữ nguyên hành vi hard-reject cũ.
+  if (pipeline_result.gate_result.status_message != "odom_tf_prediction_correction_guard_rejected") {
+    return;
+  }
+  const lidar_localization::AlignmentAttempt & attempt = pipeline_result.selected_attempt;
+  lidar_localization::SoftOdomCorrectionGateParams soft_params;
+  soft_params.enable = true;
+  soft_params.translation_threshold_m =
+    measurement_gate_config_.odom_tf_prediction_correction_guard_translation_m;
+  soft_params.yaw_threshold_deg =
+    measurement_gate_config_.odom_tf_prediction_correction_guard_yaw_deg;
+  const auto soft_decision = lidar_localization::evaluateSoftOdomCorrectionGate(
+    soft_params,
+    {attempt.correction_translation_m, attempt.correction_yaw_deg, true});
+  if (soft_decision.floored) {
+    // Lệch quá xa (vd alias) — giữ đúng hard-reject cũ, không trộn gì cả.
+    return;
+  }
+
+  const Eigen::Isometry3d odom_pose(attempt.init_guess.cast<double>());
+  const Eigen::Isometry3d ndt_pose(attempt.final_transformation.cast<double>());
+  const Eigen::Isometry3d blended = lidar_localization::blendOdomAndNdtPose(
+    odom_pose, ndt_pose, soft_decision.ndt_weight);
+
+  pipeline_result.selected_attempt.final_transformation = blended.matrix().cast<float>();
+  pipeline_result.gate_result.reject_measurement = false;
+  pipeline_result.gate_result.status_message = "odom_tf_prediction_correction_guard_soft_accepted";
+  lidar_localization::syncPipelineStatusFromGate(pipeline_result);
+}
+
 void PCLLocalization::logAlignmentPipelineRecovery(
   const lidar_localization::AlignmentPipelineResult & pipeline_result)
 {
