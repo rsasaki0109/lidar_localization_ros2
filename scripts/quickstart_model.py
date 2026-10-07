@@ -535,9 +535,7 @@ def startup_is_active(status: dict) -> bool:
 def bringup_wait_message(status: dict, waited_sec: float) -> str:
     """What the bringup check prints when localization has not started in time."""
     if not status:
-        return (
-            f"Bringup check: no startup status after {waited_sec:.0f} s; checking anyway."
-        )
+        return f"Bringup check: no startup status after {waited_sec:.0f} s; checking anyway."
     line = describe_startup(
         str(status.get("state", "")),
         str(status.get("reason", "")),

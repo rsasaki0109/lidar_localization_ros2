@@ -172,7 +172,9 @@ def wait_for_active_startup(node, topic: str, timeout_sec: float) -> str | None:
     subscription = node.create_subscription(
         String,
         topic,
-        lambda msg: latest.update(status=quickstart_model.parse_startup_status(msg.data)),
+        lambda msg: latest.update(
+            status=quickstart_model.parse_startup_status(msg.data)
+        ),
         qos,
     )
     started = time.monotonic()

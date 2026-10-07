@@ -375,7 +375,9 @@ class TestMid360BringupModel(unittest.TestCase):
         self.assertEqual(args.duration_sec, 5.0)
 
     def test_generic_cli_waits_for_localization_only_when_asked(self):
-        self.assertEqual(generic_bringup_cli.parse_args([]).wait_for_localization_sec, 0.0)
+        self.assertEqual(
+            generic_bringup_cli.parse_args([]).wait_for_localization_sec, 0.0
+        )
         args = generic_bringup_cli.parse_args(["--wait-for-localization-sec", "120"])
         self.assertEqual(args.wait_for_localization_sec, 120.0)
         self.assertEqual(args.startup_status_topic, "/startup_initialization/status")
