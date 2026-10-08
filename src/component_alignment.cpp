@@ -550,6 +550,23 @@ lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurement
   return gate;
 }
 
+void PCLLocalization::applySoftOdomCorrectionGate(
+  lidar_localization::AlignmentPipelineResult & result)
+{
+  if (!enable_soft_odom_correction_gate_) {return;}
+  const auto & attempt = result.selected_attempt;
+  const auto input = lidar_localization::makeMeasurementGateInput(
+    attempt.fitness_score, attempt.accepted_gap_sec, attempt.seed_translation_since_accept_m,
+    attempt.correction_translation_m, attempt.correction_yaw_deg, consecutive_rejected_updates_,
+    use_odom_tf_prediction_ && has_last_good_map_to_odom_, settled_accepts_since_reset_);
+  lidar_localization::applySoftOdomCorrectionGate(
+    result, measurementGateParams(), input, enable_soft_odom_correction_gate_);
+  if (result.gate_result.status_message == "odom_tf_prediction_correction_guard_soft_accepted") {
+    last_gated_correction_translation_m_ = result.selected_attempt.correction_translation_m;
+    last_gated_correction_yaw_deg_ = result.selected_attempt.correction_yaw_deg;
+  }
+}
+
 void PCLLocalization::logAlignmentPipelineRecovery(
   const lidar_localization::AlignmentPipelineResult & pipeline_result)
 {

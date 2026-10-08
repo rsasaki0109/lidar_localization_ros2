@@ -246,6 +246,7 @@ PCLLocalization::prepareAlignmentDiagnosticValuesInput(
   diagnostic_input.path_max_poses = path_max_poses_;
   diagnostic_input.path_pose_count = path_ptr_ ? path_ptr_->poses.size() : 0;
   diagnostic_input.point_timestamp_unit = point_timestamp_unit_name_;
+  diagnostic_input.soft_odom_correction_gate_enabled = enable_soft_odom_correction_gate_;
   return diagnostic_input;
 }
 

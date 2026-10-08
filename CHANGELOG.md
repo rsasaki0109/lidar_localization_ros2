@@ -6,6 +6,8 @@
   including lifecycle initialization, and report its size in diagnostics (#134).
 - Infer FLOAT64 timestamp units once per cloud; support explicit seconds/ns
   overrides while preserving floating-point `t` seconds (#208).
+- Add an opt-in soft odom correction gate that preserves independent measurement
+  rejections, with regression tests for poor fitness and timestamp boundaries (#208).
 
 ### Added
 
