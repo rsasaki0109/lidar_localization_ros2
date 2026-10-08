@@ -103,7 +103,7 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
       "Input cloud does not contain intensity. Falling back to xyz with zero intensity.");
   }
   const lidar_localization::PointRelativeTimes point_relative_times =
-    lidar_localization::extractPointRelativeTimesSeconds(*msg, use_continuous_time_deskew_);
+    lidar_localization::extractPointRelativeTimesSeconds(*msg, use_continuous_time_deskew_, point_timestamp_unit_);
   prepared_scan.point_time_reference_sec = point_relative_times.reference_time_sec;
   const lidar_localization::ScanTimeRangeStatus point_time_status =
     lidar_localization::classifyScanTimeRange(

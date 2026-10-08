@@ -142,9 +142,10 @@ void test_build_alignment_diagnostic_values_order_and_strings()
   input.imu_seed_consistency_sample_passed = true;
   input.path_max_poses = 1234;
   input.path_pose_count = 456;
+  input.point_timestamp_unit = "nanoseconds";
 
   const auto values = ll::buildAlignmentDiagnosticValues(input);
-  assert(values.size() == 97);
+  assert(values.size() == 98);
   assert(values[0].first == "registration_method");
   assert(values[0].second == "NDT");
   assert(values[1].first == "has_converged");
@@ -265,6 +266,7 @@ void test_build_alignment_diagnostic_values_order_and_strings()
   assert(values[94].second == "true");
   assert(values[95].first == "path_max_poses" && values[95].second == "1234");
   assert(values[96].first == "path_pose_count" && values[96].second == "456");
+  assert(values[97].first == "point_timestamp_unit" && values[97].second == "nanoseconds");
 }
 
 int main()

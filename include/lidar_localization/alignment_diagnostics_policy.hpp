@@ -110,6 +110,7 @@ struct AlignmentDiagnosticValuesInput
   bool imu_seed_consistency_sample_passed{false};
   std::size_t path_max_poses{2000};
   std::size_t path_pose_count{0};
+  std::string point_timestamp_unit{"auto"};
 };
 
 inline const char * boolString(bool value)
@@ -147,7 +148,7 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
   const AlignmentDiagnosticValuesInput & input)
 {
   std::vector<DiagnosticKeyValue> values;
-  values.reserve(97);
+  values.reserve(98);
   auto append = [&values](const std::string & key, const std::string & value) {
       values.emplace_back(key, value);
     };
@@ -305,6 +306,7 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
     boolString(input.imu_seed_consistency_sample_passed));
   append("path_max_poses", std::to_string(input.path_max_poses));
   append("path_pose_count", std::to_string(input.path_pose_count));
+  append("point_timestamp_unit", input.point_timestamp_unit);
   return values;
 }
 

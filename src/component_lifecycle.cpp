@@ -99,6 +99,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter(
     "registration_target_cloud_keep_alive_count",
     static_cast<int>(lidar_localization::kDefaultRegistrationTargetCloudKeepAliveCount));
+  declare_parameter("point_timestamp_unit", "auto");
   declare_parameter("reject_above_score_threshold", true);
   declare_parameter("enable_consistency_recovery_gate", false);
   declare_parameter("consistency_recovery_min_rejections", 10);

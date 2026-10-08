@@ -156,6 +156,114 @@ void test_point_time_field_t_float_is_seconds()
     ll::pointTimeFieldScaleToSeconds(ns_cloud.fields.back()) - 1.0e-9) < 1.0e-15);
 }
 
+sensor_msgs::msg::PointCloud2 make_float64_timestamp_cloud(const std::vector<double> & stamps)
+{
+  // livox_ros_driver2 layout: x y z intensity (f32), tag line (u8), timestamp (f64)
+  sensor_msgs::msg::PointCloud2 cloud;
+  cloud.header.frame_id = "livox_frame";
+  cloud.height = 1;
+  cloud.width = static_cast<uint32_t>(stamps.size());
+  cloud.is_dense = false;
+  cloud.point_step = 26;
+  cloud.row_step = cloud.point_step * cloud.width;
+  cloud.fields = {
+    make_field("x", 0, sensor_msgs::msg::PointField::FLOAT32),
+    make_field("y", 4, sensor_msgs::msg::PointField::FLOAT32),
+    make_field("z", 8, sensor_msgs::msg::PointField::FLOAT32),
+    make_field("intensity", 12, sensor_msgs::msg::PointField::FLOAT32),
+    make_field("tag", 16, sensor_msgs::msg::PointField::UINT8),
+    make_field("line", 17, sensor_msgs::msg::PointField::UINT8),
+    make_field("timestamp", 18, sensor_msgs::msg::PointField::FLOAT64)};
+  cloud.data.assign(cloud.row_step, 0);
+  for (std::size_t i = 0; i < stamps.size(); ++i) {
+    write_value<double>(cloud.data, i * cloud.point_step + 18, stamps[i]);
+  }
+  return cloud;
+}
+
+void test_float64_timestamp_is_nanoseconds_for_livox_and_seconds_otherwise()
+{
+  // Real Mid-360 scan: absolute nanoseconds, span 99.697408 ms (header.stamp == first point).
+  const double t_first = 1790817932991754752.0;
+  const double t_last = 1790817933091452160.0;
+  const auto livox = make_float64_timestamp_cloud({t_first, t_last, 1790817933040000000.0});
+
+  const auto * field = ll::findPointTimeField(livox.fields);
+  assert(field != nullptr);
+  assert(field->name == "timestamp");
+  assert(field->datatype == sensor_msgs::msg::PointField::FLOAT64);
+  // Without a sample the legacy answer (seconds) is kept; a nanosecond-sized sample flips it.
+  assert(std::abs(ll::pointTimeFieldScaleToSeconds(*field) - 1.0) < 1.0e-15);
+  assert(std::abs(ll::float64TimestampScaleToSeconds(t_first) - 1.0e-9) < 1.0e-15);
+
+  const ll::PointTimeRange range = ll::computePointTimeRangeSeconds(livox);
+  assert(range.valid);
+  assert(std::abs(range.durationSec() - 0.099697408) < 1.0e-6);
+
+  const ll::PointRelativeTimes times = ll::extractPointRelativeTimesSeconds(livox);
+  assert(times.valid);
+  assert(times.hasCompleteTimes());
+  assert(std::abs(times.duration_sec - 0.099697408) < 1.0e-6);
+  assert(std::abs(times.relative_times_sec[0]) < 1.0e-6);
+  assert(std::abs(times.relative_times_sec[1] - 0.099697408) < 1.0e-6);
+  assert(std::abs(times.relative_times_sec[2] - 0.048245248) < 1.0e-6);
+
+  // Drivers that publish float64 epoch SECONDS keep their meaning.
+  const auto epoch_seconds = make_float64_timestamp_cloud({1790817932.50, 1790817932.60});
+  const ll::PointRelativeTimes seconds_times = ll::extractPointRelativeTimesSeconds(epoch_seconds);
+  assert(seconds_times.valid);
+  assert(std::abs(seconds_times.duration_sec - 0.10) < 1.0e-6);
+
+  // So do small relative float64 seconds.
+  const auto relative_seconds = make_float64_timestamp_cloud({0.0, 0.05, 0.1});
+  const ll::PointRelativeTimes relative_times = ll::extractPointRelativeTimesSeconds(relative_seconds);
+  assert(relative_times.valid);
+  assert(std::abs(relative_times.duration_sec - 0.1) < 1.0e-12);
+}
+
+void test_float64_timestamp_handles_live_relative_nanoseconds()
+{
+  // Real live Mid-360 driver (not a recorded/converted bag) observed 2026-10-05: FLOAT64 `timestamp`
+  // holding RELATIVE within-scan nanoseconds (~1e8), not the absolute epoch-nanoseconds form
+  // (~1.8e18) the field once assumed. Magnitude alone (the old 1e12 cutoff) missed this smaller case
+  // and silently left continuous-time deskew disabled on live data while bag replay stayed fine.
+  const auto live_relative_ns = make_float64_timestamp_cloud(
+    {0.0, 50172416.0, 100344832.0});
+  const auto * field = ll::findPointTimeField(live_relative_ns.fields);
+  assert(field != nullptr);
+  assert(std::abs(ll::float64TimestampScaleToSeconds(100344832.0) - 1.0e-9) < 1.0e-15);
+
+  const ll::PointRelativeTimes times = ll::extractPointRelativeTimesSeconds(live_relative_ns);
+  assert(times.valid);
+  assert(times.hasCompleteTimes());
+  assert(std::abs(times.duration_sec - 0.100344832) < 1.0e-9);
+}
+
+void test_timestamp_unit_is_consistent_for_the_whole_scan()
+{
+  const auto cloud = make_float64_timestamp_cloud({0.0, 500.0, 1000.0, 50000000.0});
+  const auto times = ll::extractPointRelativeTimesSeconds(cloud);
+  assert(times.hasCompleteTimes());
+  assert(std::abs(times.duration_sec - .05) < 1e-12);
+  assert(std::abs(times.relative_times_sec[1] - 5e-7) < 1e-12);
+  assert(std::abs(times.relative_times_sec[2] - 1e-6) < 1e-12);
+  assert(std::abs(ll::computePointTimeRangeSeconds(cloud).durationSec() - .05) < 1e-12);
+  const auto ambiguous = make_float64_timestamp_cloud({0.0, 500.0, 1000.0});
+  assert(ll::extractPointRelativeTimesSeconds(ambiguous).duration_sec == 1000.0);
+  const auto explicit_ns = ll::extractPointRelativeTimesSeconds(
+    ambiguous, true, ll::PointTimestampUnit::kNanoseconds);
+  assert(std::abs(explicit_ns.duration_sec - 1e-6) < 1e-12);
+  const auto explicit_seconds = ll::extractPointRelativeTimesSeconds(
+    cloud, true, ll::PointTimestampUnit::kSeconds);
+  assert(explicit_seconds.duration_sec == 50000000.0);
+  // Invalid points and point order must not change the chosen unit.
+  const auto unordered = make_float64_timestamp_cloud({50000000.0, NAN, 500.0, 0.0});
+  const auto incomplete = ll::extractPointRelativeTimesSeconds(unordered);
+  assert(incomplete.invalid_point_count == 1);
+  assert(std::abs(incomplete.duration_sec - .05) < 1e-12);
+  assert(std::abs(incomplete.relative_times_sec[2] - 5e-7) < 1e-12);
+}
+
 void test_point_time_range_uses_min_max_even_when_points_are_unsorted()
 {
   auto cloud = make_sensor_cloud();
@@ -440,6 +548,9 @@ int main()
   test_field_lookup_and_numeric_conversion();
   test_point_time_field_detection_and_unit_conversion();
   test_point_time_field_accepts_float_seconds_and_integer_timestamp_nanoseconds();
+  test_float64_timestamp_is_nanoseconds_for_livox_and_seconds_otherwise();
+  test_float64_timestamp_handles_live_relative_nanoseconds();
+  test_timestamp_unit_is_consistent_for_the_whole_scan();
   test_point_time_range_uses_min_max_even_when_points_are_unsorted();
   test_point_time_range_reports_missing_or_invalid_fields_without_crashing();
   test_extract_point_relative_times_normalizes_to_scan_start();
