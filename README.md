@@ -138,6 +138,12 @@ The visualization `/path` keeps the latest 2000 poses by default. Set
 increase with runtime); negative values fall back to 2000. Diagnostics expose
 `path_max_poses` and `path_pose_count` for monitoring long runs.
 
+Livox FLOAT64 `timestamp` fields can contain nanoseconds. `point_timestamp_unit`
+uses `auto` by default and selects one unit for the whole cloud, including points
+near scan start. Use `seconds` or `nanoseconds` explicitly for ambiguous data;
+see [IMU and deskew](docs/imu_estimation.md). Floating `t`/`offset_time` fields
+remain seconds, and integer time fields remain nanoseconds.
+
 ## Runtime Contract
 
 The default frames are `map`, `odom`, and `base_link`.

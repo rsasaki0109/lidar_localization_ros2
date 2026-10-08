@@ -425,3 +425,16 @@ on Koide; until then the limits above stand.
 - [interfaces.md](interfaces.md) — topics, including the optional `/imu` input
 - [mid360_legged_jetson.md](mid360_legged_jetson.md) — a real IMU bringup
 - [competitive_roadmap.md](competitive_roadmap.md) — dataset/validation strategy
+
+## FLOAT64 timestamp units
+
+`point_timestamp_unit` (`auto`, `seconds`, or `nanoseconds`) applies only to
+FLOAT64 fields named `timestamp`. Other floating time fields remain seconds,
+and integer `t`, `offset_time`, and `timestamp` remain nanoseconds. In auto mode,
+one scale is chosen from the maximum finite absolute timestamp in the entire
+cloud and applied to every point. Magnitudes up to 1000 and epoch-seconds values
+between 1e9 and 1e10 retain seconds; other magnitudes infer nanoseconds. Values
+in these bands can be ambiguous, for example a cloud containing only relative
+0–1000 ns timestamps. Specify `nanoseconds` for that sensor, or `seconds` for a
+seconds-based driver outside the automatic bands. Invalid unit names warn and
+fall back to auto. Diagnostics report the configured `point_timestamp_unit`.

@@ -78,6 +78,7 @@
 #include "lidar_localization/pose_covariance_policy.hpp"
 #include "lidar_localization/pose_backend_selection_policy.hpp"
 #include "lidar_localization/pose_publish_policy.hpp"
+#include "lidar_localization/point_field_read.hpp"
 #include "lidar_localization/registration_cloud_keep_alive_policy.hpp"
 #include "lidar_localization/registration_observation_policy.hpp"
 #include "lidar_localization/registration_seed_policy.hpp"
@@ -258,6 +259,8 @@ public:
   geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr corrent_pose_with_cov_stamped_ptr_;
   nav_msgs::msg::Path::SharedPtr path_ptr_;
   std::size_t path_max_poses_{lidar_localization::kDefaultPathMaxPoses};
+  lidar_localization::PointTimestampUnit point_timestamp_unit_{lidar_localization::PointTimestampUnit::kAuto};
+  std::string point_timestamp_unit_name_{"auto"};
 
   bool map_recieved_{false};
   bool initialpose_recieved_{false};

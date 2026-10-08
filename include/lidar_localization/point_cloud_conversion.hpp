@@ -97,7 +97,33 @@ inline std::size_t pointCloudPointOffset(
 }
 
 
-inline PointTimeRange computePointTimeRangeSeconds(const sensor_msgs::msg::PointCloud2 & input)
+// Called only after validating the field and full cloud layout.
+inline double cloudPointTimeScaleToSeconds(
+  const sensor_msgs::msg::PointCloud2 & input,
+  const sensor_msgs::msg::PointField & field,
+  PointTimestampUnit timestamp_unit)
+{
+  if (field.name != "timestamp" || field.datatype != sensor_msgs::msg::PointField::FLOAT64) {
+    return pointTimeFieldScaleToSeconds(field);
+  }
+  if (timestamp_unit == PointTimestampUnit::kSeconds) {return 1.0;}
+  if (timestamp_unit == PointTimestampUnit::kNanoseconds) {return 1e-9;}
+  double max_magnitude = 0.0;
+  const auto count = static_cast<std::size_t>(input.width) * input.height;
+  for (std::size_t i = 0; i < count; ++i) {
+    double raw = 0.0;
+    if (readPointFieldAsDouble(input.data.data() + pointCloudPointOffset(input, i), field, &raw) &&
+      std::isfinite(raw))
+    {
+      max_magnitude = std::max(max_magnitude, std::abs(raw));
+    }
+  }
+  return float64TimestampScaleToSeconds(max_magnitude);
+}
+
+inline PointTimeRange computePointTimeRangeSeconds(
+  const sensor_msgs::msg::PointCloud2 & input,
+  PointTimestampUnit timestamp_unit = PointTimestampUnit::kAuto)
 {
   PointTimeRange range;
   const auto * time_field = findPointTimeField(input.fields);
@@ -124,16 +150,18 @@ inline PointTimeRange computePointTimeRangeSeconds(const sensor_msgs::msg::Point
     return range;
   }
 
+  const double time_scale = cloudPointTimeScaleToSeconds(input, *time_field, timestamp_unit);
   for (std::size_t point_idx = 0; point_idx < point_count; ++point_idx) {
     const uint8_t * point_data =
       input.data.data() + pointCloudPointOffset(input, point_idx);
     double time_seconds = 0.0;
-    if (!readPointTimeSeconds(point_data, *time_field, &time_seconds) ||
+    if (!readPointFieldAsDouble(point_data, *time_field, &time_seconds) ||
       !std::isfinite(time_seconds))
     {
       ++range.invalid_point_count;
       continue;
     }
+    time_seconds *= time_scale;
     if (!range.valid) {
       range.min_time_sec = time_seconds;
       range.max_time_sec = time_seconds;
@@ -149,7 +177,8 @@ inline PointTimeRange computePointTimeRangeSeconds(const sensor_msgs::msg::Point
 
 inline PointRelativeTimes extractPointRelativeTimesSeconds(
   const sensor_msgs::msg::PointCloud2 & input,
-  bool collect_relative_times = true)
+  bool collect_relative_times = true,
+  PointTimestampUnit timestamp_unit = PointTimestampUnit::kAuto)
 {
   PointRelativeTimes times;
   const auto * time_field = findPointTimeField(input.fields);
@@ -182,16 +211,18 @@ inline PointRelativeTimes extractPointRelativeTimesSeconds(
 
   double min_time_sec = std::numeric_limits<double>::quiet_NaN();
   double max_time_sec = std::numeric_limits<double>::quiet_NaN();
+  const double time_scale = cloudPointTimeScaleToSeconds(input, *time_field, timestamp_unit);
   for (std::size_t point_idx = 0; point_idx < point_count; ++point_idx) {
     const uint8_t * point_data =
       input.data.data() + pointCloudPointOffset(input, point_idx);
     double time_seconds = 0.0;
-    if (!readPointTimeSeconds(point_data, *time_field, &time_seconds) ||
+    if (!readPointFieldAsDouble(point_data, *time_field, &time_seconds) ||
       !std::isfinite(time_seconds))
     {
       ++times.invalid_point_count;
       continue;
     }
+    time_seconds *= time_scale;
     if (collect_relative_times) {
       times.relative_times_sec[point_idx] = time_seconds;
     }

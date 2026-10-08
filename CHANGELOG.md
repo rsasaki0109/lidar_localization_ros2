@@ -4,6 +4,8 @@
 
 - Bound visualization path history to 2000 poses by default (`path_max_poses`),
   including lifecycle initialization, and report its size in diagnostics (#134).
+- Infer FLOAT64 timestamp units once per cloud; support explicit seconds/ns
+  overrides while preserving floating-point `t` seconds (#208).
 
 ### Added
 

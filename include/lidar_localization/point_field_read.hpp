@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -194,6 +195,16 @@ inline bool pointFieldFitsPointStep(
   }
   return static_cast<std::size_t>(field.offset) + field_size <=
          static_cast<std::size_t>(point_step);
+}
+
+enum class PointTimestampUnit {kAuto, kSeconds, kNanoseconds};
+
+// Auto inference is cloud-wide. Small values are ambiguous and retain the
+// existing seconds convention; an explicit unit handles short ns-only scans.
+inline double float64TimestampScaleToSeconds(double max_magnitude)
+{
+  return max_magnitude <= 1e3 ||
+    (max_magnitude >= 1e9 && max_magnitude <= 1e10) ? 1.0 : 1e-9;
 }
 
 inline bool isFloatingPointField(const sensor_msgs::msg::PointField & field)

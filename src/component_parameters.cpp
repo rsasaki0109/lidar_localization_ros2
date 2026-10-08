@@ -311,6 +311,20 @@ void PCLLocalization::initializeParameters()
       "registration_target_cloud_keep_alive_count must be >= 0; using %zu",
       registration_target_cloud_keep_alive_count_);
   }
+  get_parameter("point_timestamp_unit", point_timestamp_unit_name_);
+  if (point_timestamp_unit_name_ == "nanoseconds") {
+    point_timestamp_unit_ = lidar_localization::PointTimestampUnit::kNanoseconds;
+  } else if (point_timestamp_unit_name_ == "seconds") {
+    point_timestamp_unit_ = lidar_localization::PointTimestampUnit::kSeconds;
+  } else {
+    if (point_timestamp_unit_name_ != "auto") {
+      RCLCPP_WARN(get_logger(), "Unknown point_timestamp_unit '%s'; using auto",
+        point_timestamp_unit_name_.c_str());
+      point_timestamp_unit_name_ = "auto";
+    }
+    point_timestamp_unit_ = lidar_localization::PointTimestampUnit::kAuto;
+  }
+  RCLCPP_INFO(get_logger(), "point_timestamp_unit: %s", point_timestamp_unit_name_.c_str());
   get_parameter("reject_above_score_threshold", measurement_gate_config_.reject_above_score_threshold);
   get_parameter("enable_consistency_recovery_gate", measurement_gate_config_.enable_consistency_recovery_gate);
   get_parameter("consistency_recovery_min_rejections", measurement_gate_config_.consistency_recovery_min_rejections);
