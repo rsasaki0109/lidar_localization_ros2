@@ -168,6 +168,8 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("covariance_roll_pitch_floor_std_deg", 1.5);
   declare_parameter("enable_timer_publishing", false);
   declare_parameter("pose_publish_frequency", 10.0);
+  declare_parameter(
+    "path_max_poses", static_cast<int>(lidar_localization::kDefaultPathMaxPoses));
   declare_parameter("viz_downsample", false);
   declare_parameter("viz_voxel_leaf_size", 0.5);
 }
@@ -227,7 +229,7 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     pose_stamped->header.stamp = msg->header.stamp;
     pose_stamped->header.frame_id = global_frame_id_;
     pose_stamped->pose = msg->pose.pose;
-    path_ptr_->poses.push_back(*pose_stamped);
+    lidar_localization::appendPoseToPath(*path_ptr_, *pose_stamped, path_max_poses_);
 
     initialPoseReceived(msg);
   }

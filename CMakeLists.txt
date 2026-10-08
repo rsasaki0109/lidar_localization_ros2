@@ -596,6 +596,12 @@ if(BUILD_TESTING)
   add_test(NAME initial_pose_bridge_reset COMMAND test_initial_pose_bridge_reset)
   set_tests_properties(initial_pose_bridge_reset PROPERTIES TIMEOUT 30)
 
+  add_executable(test_localization_followup_integration test/test_localization_followup_integration.cpp)
+  target_link_libraries(test_localization_followup_integration
+    lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+  add_test(NAME localization_followup_integration COMMAND test_localization_followup_integration)
+  set_tests_properties(localization_followup_integration PROPERTIES TIMEOUT 30)
+
   add_executable(test_twist_subscription_lifecycle test/test_twist_subscription_lifecycle.cpp)
   target_link_libraries(test_twist_subscription_lifecycle
     lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})

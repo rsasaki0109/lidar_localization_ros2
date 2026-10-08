@@ -243,6 +243,8 @@ PCLLocalization::prepareAlignmentDiagnosticValuesInput(
   diagnostic_input.horizontal_localizability_eigenvalue_ratio =
     latest_horizontal_localizability_.eigenvalue_ratio;
   diagnostic_input.localizability_guard_active = latest_localizability_guard_active_;
+  diagnostic_input.path_max_poses = path_max_poses_;
+  diagnostic_input.path_pose_count = path_ptr_ ? path_ptr_->poses.size() : 0;
   return diagnostic_input;
 }
 
