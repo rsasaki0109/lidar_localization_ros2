@@ -133,6 +133,11 @@ ros2 run lidar_localization_ros2 check_lidar_localization_bringup.py \
   --profile standalone
 ```
 
+The visualization `/path` keeps the latest 2000 poses by default. Set
+`path_max_poses: 0` to keep the entire history (memory and publish cost then
+increase with runtime); negative values fall back to 2000. Diagnostics expose
+`path_max_poses` and `path_pose_count` for monitoring long runs.
+
 ## Runtime Contract
 
 The default frames are `map`, `odom`, and `base_link`.

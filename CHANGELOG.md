@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Bound visualization path history to 2000 poses by default (`path_max_poses`),
+  including lifecycle initialization, and report its size in diagnostics (#134).
+
 ### Added
 
 - `min_registration_points` (default 0, off): a scan with fewer points than this after
