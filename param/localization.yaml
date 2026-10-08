@@ -69,3 +69,5 @@
       path_max_poses: 2000
       # FLOAT64 timestamp only: auto infers one unit per cloud; override ambiguous values.
       point_timestamp_unit: auto
+      # Experimental; preserves every independent measurement rejection gate.
+      enable_soft_odom_correction_gate: false

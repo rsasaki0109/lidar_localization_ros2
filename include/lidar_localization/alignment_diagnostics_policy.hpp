@@ -111,6 +111,7 @@ struct AlignmentDiagnosticValuesInput
   std::size_t path_max_poses{2000};
   std::size_t path_pose_count{0};
   std::string point_timestamp_unit{"auto"};
+  bool soft_odom_correction_gate_enabled{false};
 };
 
 inline const char * boolString(bool value)
@@ -148,7 +149,7 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
   const AlignmentDiagnosticValuesInput & input)
 {
   std::vector<DiagnosticKeyValue> values;
-  values.reserve(98);
+  values.reserve(99);
   auto append = [&values](const std::string & key, const std::string & value) {
       values.emplace_back(key, value);
     };
@@ -307,6 +308,7 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
   append("path_max_poses", std::to_string(input.path_max_poses));
   append("path_pose_count", std::to_string(input.path_pose_count));
   append("point_timestamp_unit", input.point_timestamp_unit);
+  append("soft_odom_correction_gate_enabled", boolString(input.soft_odom_correction_gate_enabled));
   return values;
 }
 

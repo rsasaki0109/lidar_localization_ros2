@@ -426,7 +426,7 @@ on Koide; until then the limits above stand.
 - [mid360_legged_jetson.md](mid360_legged_jetson.md) — a real IMU bringup
 - [competitive_roadmap.md](competitive_roadmap.md) — dataset/validation strategy
 
-## FLOAT64 timestamp units
+## FLOAT64 timestamp units and optional odometry correction
 
 `point_timestamp_unit` (`auto`, `seconds`, or `nanoseconds`) applies only to
 FLOAT64 fields named `timestamp`. Other floating time fields remain seconds,
@@ -438,3 +438,16 @@ in these bands can be ambiguous, for example a cloud containing only relative
 0–1000 ns timestamps. Specify `nanoseconds` for that sensor, or `seconds` for a
 seconds-based driver outside the automatic bands. Invalid unit names warn and
 fall back to auto. Diagnostics report the configured `point_timestamp_unit`.
+
+`enable_soft_odom_correction_gate` defaults to `false`. When enabled alongside
+`enable_odom_tf_prediction_correction_guard`, it can blend an odometry-predicted
+pose and an NDT result rejected by the odom correction guard. Translation/yaw
+use the existing guard thresholds and the smaller Huber weight; weights below
+0.05 keep the hard rejection. Every independent score, strict, borderline, and
+seed correction gate must still accept the original measurement. Invalid or
+non-positive thresholds keep the rejection. Diagnostics report whether the
+option is enabled and the status uses
+`odom_tf_prediction_correction_guard_soft_accepted` for a blended acceptance.
+Fitness still describes the original registration result, not a new registration
+at the blended pose. This option has focused synthetic regression coverage;
+real-bag and real-robot validation is required before enabling it in production.

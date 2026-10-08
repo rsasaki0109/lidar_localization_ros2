@@ -261,6 +261,7 @@ public:
   std::size_t path_max_poses_{lidar_localization::kDefaultPathMaxPoses};
   lidar_localization::PointTimestampUnit point_timestamp_unit_{lidar_localization::PointTimestampUnit::kAuto};
   std::string point_timestamp_unit_name_{"auto"};
+  bool enable_soft_odom_correction_gate_{false};
 
   bool map_recieved_{false};
   bool initialpose_recieved_{false};
@@ -579,6 +580,7 @@ public:
   lidar_localization::MeasurementGateDecision evaluateMeasurementGateForAttempt(
     const lidar_localization::AlignmentAttempt & attempt,
     lidar_localization::RegistrationSeedSource seed_source);
+  void applySoftOdomCorrectionGate(lidar_localization::AlignmentPipelineResult & result);
   void logAlignmentPipelineRecovery(
     const lidar_localization::AlignmentPipelineResult & pipeline_result);
   bool handleTerminalAlignmentPipelineResult(

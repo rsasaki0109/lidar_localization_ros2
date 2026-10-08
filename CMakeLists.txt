@@ -649,6 +649,11 @@ if(BUILD_TESTING)
     COMMAND test_callback_state_coordinator
   )
 
+  add_executable(test_soft_odom_correction_gate test/test_soft_odom_correction_gate.cpp)
+  target_include_directories(test_soft_odom_correction_gate PRIVATE include)
+  target_link_libraries(test_soft_odom_correction_gate Eigen3::Eigen)
+  add_test(NAME soft_odom_correction_gate COMMAND test_soft_odom_correction_gate)
+
   add_executable(test_pose_publish_policy
     test/test_pose_publish_policy.cpp)
   target_include_directories(test_pose_publish_policy PRIVATE

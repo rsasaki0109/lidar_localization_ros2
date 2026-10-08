@@ -324,7 +324,9 @@ void PCLLocalization::initializeParameters()
     }
     point_timestamp_unit_ = lidar_localization::PointTimestampUnit::kAuto;
   }
-  RCLCPP_INFO(get_logger(), "point_timestamp_unit: %s", point_timestamp_unit_name_.c_str());
+  get_parameter("enable_soft_odom_correction_gate", enable_soft_odom_correction_gate_);
+  RCLCPP_INFO(get_logger(), "point_timestamp_unit: %s; soft odom correction gate: %d",
+    point_timestamp_unit_name_.c_str(), enable_soft_odom_correction_gate_);
   get_parameter("reject_above_score_threshold", measurement_gate_config_.reject_above_score_threshold);
   get_parameter("enable_consistency_recovery_gate", measurement_gate_config_.enable_consistency_recovery_gate);
   get_parameter("consistency_recovery_min_rejections", measurement_gate_config_.consistency_recovery_min_rejections);
