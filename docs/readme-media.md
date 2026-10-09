@@ -109,3 +109,9 @@ The earlier GIF, with odometry from the previous outdoor RKO-LIO settings (0.63 
 - The long section outside the map (about 160–260 s) is carried by odometry alone. Every run with `10` re-acquired afterwards (error 0.14–0.15 m over the last 15 s). With `0`, one of the three runs ended about 1 m off.
 - Before rko_lio#16, the online node lost the motion of the 1.1–1.5 s scan gaps it produces under load. With `10`, 5 of 6 such runs then failed (#153).
 - This is not a guarantee for long map-free stretches.
+
+### Reduced-radius online replay profile
+
+See [Online Koide replay profile](koide-online-replay.md) for the measured 75 m
+local-map radius, RELIABLE point QoS, queue-depth 10 configuration and 1x replay
+commands. The comparison includes two runs per radius with live RKO odometry.
