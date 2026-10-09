@@ -210,6 +210,43 @@ class TestQuickstartCli(unittest.TestCase):
         finally:
             QUICKSTART.discover_ros_graph = original
 
+    def test_explicit_cloud_topic_hint_preserves_selection(self):
+        original = QUICKSTART.discover_ros_graph
+        try:
+            for advertised, expected in (
+                ([], "not detected"),
+                ([("/chosen", "sensor_msgs/msg/LaserScan")], "LaserScan"),
+            ):
+                with self.subTest(advertised=advertised):
+                    topics = [*advertised, ("/available", QUICKSTART.CLOUD_TYPE)]
+                    QUICKSTART.discover_ros_graph = lambda *_, topics=topics: (
+                        topics,
+                        set(),
+                        None,
+                    )
+                    with tempfile.TemporaryDirectory() as directory:
+                        _, text = self._dry_run(
+                            Path(directory),
+                            ["--discover-topics", "--cloud-topic", "/chosen"],
+                        )
+                    self.assertIn(expected, text)
+                    self.assertIn("ros2 topic info -v /chosen", text)
+                    self.assertIn("--cloud-topic /available", text)
+                    self.assertIn("cloud_topic:=/chosen", text)
+        finally:
+            QUICKSTART.discover_ros_graph = original
+
+    def test_explicit_relative_topic_has_no_false_warning(self):
+        self.assertIsNone(
+            QUICKSTART.topic_discovery_hint(
+                [("/chosen", QUICKSTART.CLOUD_TYPE)],
+                QUICKSTART.CLOUD_TYPE,
+                "chosen",
+                "explicit",
+                "--cloud-topic",
+            )
+        )
+
     def test_unwritable_configuration_reports_error_without_traceback(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -607,6 +644,16 @@ class TestQuickstartCli(unittest.TestCase):
             )
         self.assertEqual(result, 2)
         self.assertIn("Map file does not exist", stderr.getvalue())
+        self.assertIn("--map /absolute/path/to/map.pcd", stderr.getvalue())
+
+    def test_map_directory_explains_expected_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                result = QUICKSTART.main(["--map", directory, "--dry-run"])
+            self.assertEqual(result, 2)
+            self.assertIn("directory", stderr.getvalue())
+            self.assertIn(".pcd or .ply", stderr.getvalue())
 
 
 if __name__ == "__main__":

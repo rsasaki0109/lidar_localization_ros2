@@ -70,8 +70,14 @@ Input hint:    Several PointCloud2 topics found: /front/points, /rear/points; ke
 Restart with, for example, `--cloud-topic /front/points`. When no input is detected,
 the hint asks you to start the sensor driver or bag; IMU input is optional when IMU
 integration is disabled. Explicit topic options take precedence over discovery.
+If a selected topic is missing or advertises a different message type, discovery
+prints `ros2 topic info -v TOPIC` and any available inputs of the required type.
+It keeps your selection so a driver started later can still provide it.
+With `--no-discover-topics`, these live-graph hints are skipped.
 If the generated configuration cannot be written, quickstart reports the path and
 asks for a writable `--output PATH`, then exits with status 2.
+An invalid map path exits before discovery and configuration writing; pass the
+actual `.pcd` or `.ply` file, rather than its containing directory.
 
 The LiDAR frame is the `frame_id` of one received cloud (the profile default
 when none arrives). quickstart publishes an identity `base -> LiDAR` TF only when the two

@@ -460,6 +460,29 @@ def next_step_line(args) -> str:
 def topic_discovery_hint(typed, message_type, selected, reason, flag) -> str | None:
     """Explain unresolved input selection without changing the selected topic."""
     label = message_type.rsplit("/", 1)[-1]
+    if reason == "explicit":
+        kinds = sorted(
+            {kind for name, kind in typed if name == "/" + selected.lstrip("/")}
+        )
+        if message_type in kinds:
+            return None
+        problem = (
+            f"has type {', '.join(kinds)}; expected {message_type}"
+            if kinds
+            else "was not detected; start the sensor driver or bag"
+        )
+        candidates = sorted({name for name, kind in typed if kind == message_type})
+        alternative = (
+            f" Available {label} topics: {', '.join(candidates)}. "
+            f"Select one with {shlex.join([flag, candidates[0]])}."
+            if candidates
+            else f" Select a {label} input with {flag} TOPIC."
+        )
+        return (
+            f"Selected topic {selected} {problem}. "
+            f"Check with {shlex.join(['ros2', 'topic', 'info', '-v', selected])}."
+            + alternative
+        )
     if reason == "ambiguous":
         candidates = sorted({name for name, kind in typed if kind == message_type})
         return (
@@ -633,8 +656,15 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
 
 def _validate(args) -> str | None:
     map_path = Path(args.map_path).expanduser()
+    if map_path.is_dir():
+        return (
+            f"Map path is a directory: {map_path}. Pass a .pcd or .ply file with --map."
+        )
     if not map_path.is_file():
-        return f"Map file does not exist: {map_path}"
+        return (
+            f"Map file does not exist: {map_path}. "
+            "Use --map /absolute/path/to/map.pcd (or .ply)."
+        )
     if map_path.suffix.lower() not in config_tool.SUPPORTED_MAP_SUFFIXES:
         return "Map must be a .pcd or .ply file."
     if args.occupancy_yaml:
@@ -762,6 +792,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             if hint:
                 input_hints.append(hint)
+        for explicit, kind, flag in (
+            (args.cloud_topic, CLOUD_TYPE, "--cloud-topic"),
+            (args.imu_topic, IMU_TYPE, "--imu-topic"),
+        ):
+            if explicit is not None:
+                hint = topic_discovery_hint(typed, kind, explicit, "explicit", flag)
+                if hint:
+                    input_hints.append(hint)
         if args.use_sim_time is None:
             args.use_sim_time = model.detect_sim_time(typed)
             discovery_notes.append(
