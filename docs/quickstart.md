@@ -86,6 +86,16 @@ robot already provides makes it flip. Every choice can be overridden with
 `--lidar-frame`, `--imu-frame`, `--base-frame`, `--odom-frame`, `--global-frame`, and
 `--[no-]publish-lidar-tf`.
 
+Quickstart prints a `TF hint:` when it will publish an identity `base -> LiDAR`
+transform. This is appropriate only when those frames coincide physically; otherwise
+provide the calibrated transform through the robot's TF setup and pass
+`--no-publish-lidar-tf`. The hint includes a `ros2 run tf2_ros tf2_echo BASE LIDAR`
+command to inspect the connection. Discovery also warns when TF is missing with
+automatic publication disabled, or when `--publish-lidar-tf` would duplicate an
+observed connection. A connection may include intermediate frames. These hints
+do not change your settings, and missing-link detection is skipped when discovery
+is disabled.
+
 ### Other LiDAR drivers
 
 For Ouster, Hesai or another driver publishing `sensor_msgs/msg/PointCloud2` with

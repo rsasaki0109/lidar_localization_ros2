@@ -336,6 +336,47 @@ class TestQuickstartCli(unittest.TestCase):
         finally:
             QUICKSTART.discover_ros_graph = original
 
+    def test_tf_hints_match_discovery_and_publication(self):
+        original = QUICKSTART.discover_ros_graph
+        chain = {("base_link", "mount"), ("mount", "sensor")}
+        try:
+            for edges, extra, expected in (
+                (set(), [], "identity transform"),
+                (set(), ["--no-publish-lidar-tf"], "Publish the calibrated transform"),
+                (chain, [], None),
+                (chain, ["--publish-lidar-tf"], "already connects"),
+                (set(), ["--no-discover-topics", "--no-publish-lidar-tf"], None),
+                (set(), ["--lidar-frame", "base_link"], None),
+            ):
+                with self.subTest(extra=extra, edges=edges):
+                    QUICKSTART.discover_ros_graph = lambda *_, edges=edges: (
+                        [],
+                        edges,
+                        None,
+                    )
+                    with tempfile.TemporaryDirectory() as directory:
+                        _, text = self._dry_run(
+                            Path(directory),
+                            [
+                                "--discover-topics",
+                                "--base-frame",
+                                "base_link",
+                                "--lidar-frame",
+                                "sensor",
+                                *extra,
+                            ],
+                        )
+                    if expected is None:
+                        self.assertNotIn("TF hint:", text)
+                    else:
+                        self.assertIn(expected, text)
+                        self.assertIn(
+                            "ros2 run tf2_ros tf2_echo base_link sensor", text
+                        )
+                        self.assertIn("publish_lidar_tf:=", text)
+        finally:
+            QUICKSTART.discover_ros_graph = original
+
     def test_generate_occupancy_map_reports_failures(self):
         with tempfile.TemporaryDirectory() as directory:
             yaml_path = Path(directory) / "grids" / "abc.yaml"
