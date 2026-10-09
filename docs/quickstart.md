@@ -80,6 +80,25 @@ robot already provides makes it flip. Every choice can be overridden with
 `--lidar-frame`, `--imu-frame`, `--base-frame`, `--odom-frame`, `--global-frame`, and
 `--[no-]publish-lidar-tf`.
 
+### Other LiDAR drivers
+
+For Ouster, Hesai or another driver publishing `sensor_msgs/msg/PointCloud2` with
+numeric `x`, `y`, `z` fields, select its actual topic directly. A relay node is not
+needed just to rename the topic:
+
+```bash
+ros2 run lidar_localization_ros2 quickstart.py \
+  --map /absolute/path/to/map.pcd --cloud-topic /ouster/points
+```
+
+For Hesai, replace `/ouster/points` with the driver's PointCloud2 topic. Use the
+cloud's `header.frame_id` as the LiDAR frame and provide the measured transform
+between that frame and the robot base. Use `--no-publish-lidar-tf` when the robot
+supplies that transform; an identity transform is not a substitute for calibration.
+Deskew additionally depends on the driver's per-point timing fields; see
+[IMU and deskew](imu_estimation.md). This configuration guidance is not a claim
+that every sensor model has been validated.
+
 If the robot already runs odometry that publishes `odom -> base_frame` (a LIO front end
 such as RKO-LIO, or wheel or leg odometry), quickstart sees that TF and turns on odometry
 prediction (`--odom-tf-prediction`); the choice is printed as `odometry=odom->...`.
