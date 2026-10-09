@@ -1,0 +1,47 @@
+# Online RKO-LIO for the SI-scaled Koide outdoor_hard_02b bag.
+/**:
+  ros__parameters:
+    async.output_publish_delay_ms: 0
+    use_sim_time: true
+    odom_topic: /rko_lio/odometry
+    qos_overrides./livox/points.subscription.reliability: reliable
+    base_frame: livox_frame
+    deskew: true
+    double_downsample: true
+    dump_results: false
+    extrinsic_imu2base_quat_xyzw_xyz:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+    extrinsic_lidar2base_quat_xyzw_xyz:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+    gravity_alignment_relevel_map: true
+    gravity_window_alignment: true
+    gravity_window_sec: 40.0
+    imu_acceleration_unit: mps2
+    imu_frame: livox_frame
+    imu_topic: /livox/imu
+    initialization_phase: true
+    lidar_frame: livox_frame
+    lidar_topic: /livox/points
+    max_correspondence_distance: 0.5
+    max_num_threads: 2
+    max_points_per_voxel: 20
+    max_range: 100.0
+    max_scan_delta_sec: 3.0
+    min_icp_keypoints: 100
+    min_range: 1.0
+    odom_frame: odom
+    publish_deskewed_scan: false
+    publish_local_map: false
+    voxel_size: 0.5

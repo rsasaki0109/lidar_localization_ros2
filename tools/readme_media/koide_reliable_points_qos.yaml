@@ -1,0 +1,5 @@
+/livox/points:
+  reliability: reliable
+  durability: volatile
+  history: keep_last
+  depth: 10

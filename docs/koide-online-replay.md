@@ -1,0 +1,58 @@
+# Online Koide replay profile
+
+Use this opt-in profile for the public [Hard Point Cloud Localization Dataset](https://zenodo.org/records/10122133) (Koide et al., CC BY 4.0), sequence `outdoor_hard_02b`, with its binary little-endian float32 `map_outdoor_hard.ply`. It runs online RKO-LIO and localization together at 1x.
+
+The localizer uses a 75 m local-map radius, reuses the target until movement reaches 10 m, and receives `/livox/points` with RELIABLE QoS and depth 10. IMU integration and twist prediction in the localizer are disabled; RKO supplies `odom -> livox_frame`, and the localizer estimates `map -> odom`. Pose output includes odometry bridge predictions through rejected map matches. Timer publication is disabled and Path history is capped at 2,000 poses.
+
+The radius is a dataset-specific choice: it changes which map points are available for registration. The conservative Nav2 preset and the offline GIF profile keep their existing radii. The localizer's relative-motion deskew is not applied with its IMU preintegration disabled; RKO performs its own deskew.
+
+## Reproduce
+
+Build and source both this workspace and [lidar_slam_ros2](https://github.com/rsasaki0109/lidar_slam_ros2), including the `rko_lio` online executable. Download the sequence, map, and `gt.zip` from the dataset record. Convert its IMU acceleration from g to SI using `lidar_slam_ros2/tools/readme_media/scale_imu_bag.py`, as described in [README media](readme-media.md). Use the scaled standard PointCloud2/IMU bag without adding an odometry TF trajectory.
+
+From the localizer checkout, replace the map placeholder:
+
+```bash
+sed "s|MAP_OUTDOOR_HARD_PLY|$PWD/map_outdoor_hard.ply|" \
+  tools/readme_media/koide_outdoor_hard_02b_online.yaml > koide_online.yaml
+```
+
+In separate terminals with the same ROS domain, start RKO, localization, and then playback:
+
+```bash
+ros2 run rko_lio online_node --ros-args \
+  --params-file "$PWD/tools/readme_media/koide_outdoor_hard_02b_online_rko.yaml"
+
+ros2 launch lidar_localization_ros2 lidar_localization.launch.py \
+  localization_param_dir:="$PWD/koide_online.yaml" \
+  base_frame_id:=livox_frame lidar_frame_id:=livox_frame publish_lidar_tf:=false \
+  cloud_topic:=/livox/points imu_topic:=/livox/imu
+
+ros2 bag play outdoor_hard_02b_scaled --clock --rate 1 \
+  --qos-profile-overrides-path tools/readme_media/koide_reliable_points_qos.yaml \
+  --topics /livox/points /livox/imu
+```
+
+Publish one ground-truth initial pose at 4 s of playback using the command printed by:
+
+```bash
+python3 tools/readme_media/initial_pose_from_tum.py \
+  traj_lidar_outdoor_hard_02.txt outdoor_hard_02b_scaled --offset 4
+```
+
+Ground truth supplies only that initial pose and evaluation; it is not an odometry input. Record `/pcl_pose` and `/alignment_status` before playing the bag. For the 150 m comparison, change only `local_map_radius` in the generated localizer YAML.
+
+## Measured comparison
+
+The localizer binary was built from `9f6be5d`. Online RKO-LIO 0.3.2 binaries came from `ghcr.io/rsasaki0109/lidar_slam_ros2@sha256:ebb77154154d569a11d68d143f79112c03367b3c68da59b9f2a1d9afce63aeed` (image source revision `78df89bfda4edec68dd329777de584ff78796974`); both processes ran in the same ROS 2 Humble container. The crop radii were tested in the order 150, 75, 150, 75 m. Each replay lasted about 299 s at 1x. Only the radius changed: NDT used four threads and RKO two, with identical bag, initial pose, reliability, queue depths and observer scripts.
+
+| Local-map radius | Runs | Position RMSE | Diagnostic observations after initialization | Receipt-to-diagnostic p95 lag | Localizer peak RSS |
+| --- | --- | --- | --- | --- | --- |
+| 150 m | 2 | 0.258–0.260 m | 98.1–98.8% | 1.10–1.20 s | 1,052–1,057 MiB |
+| 75 m | 2 | 0.263–0.265 m | 2,209/2,209 (100%) in each run | 0.53–0.61 s | 593–596 MiB |
+
+Paired p95 lag decreased by 44–56% and localizer peak RSS by about 44%. Across the same 2,137 cloud stamps in all four runs, map-frame RMSE was 0.254–0.257 m at 150 m and 0.255–0.258 m at 75 m. Online RKO TF p95 lag also fell from 0.65–0.90 s to 0.48–0.54 s; all runs emitted 2,226 RKO poses. Localizer process CPU medians were 0.70–0.71 cores at 150 m and 0.61–0.64 at 75 m (one core means one CPU-second per wall-second).
+
+Position errors use `/pcl_pose`, including bridge predictions, in the map frame without spatial alignment; nearest GT time tolerance is 0.15 s. Ground truth was supplied only once at 4 s for initialization. Diagnostic coverage counts exact original cloud stamps after that point; it is not the fraction of accepted NDT measurements or direct callback-loss telemetry. Diagnostics were observed with RELIABLE depth 1,000 and Path via its raw serialized header/count; native process PIDs supplied CPU and RSS. Lag is the approximate replay-clock elapsed time from the original bag receive timestamp to diagnostic reception, extrapolated by wall time at rate 1 through the final drain; it includes transport and observer delay. No future-delivered TF was used.
+
+These results cover one public sequence and do not establish real-robot or multi-hour moving stability. The individual costs of crop construction and search-tree rebuilding were not instrumented separately.
