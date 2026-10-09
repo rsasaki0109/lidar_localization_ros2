@@ -99,6 +99,56 @@ python3 tools/readme_media/initial_pose_from_tum.py \
 
 Ground truth supplies only that initial pose and evaluation; it is not an odometry input. Record `/pcl_pose` and `/alignment_status` before playing the bag. For the 150 m comparison, change only `local_map_radius` in the generated localizer YAML.
 
+## v1.3.0 tag verification (2026-10-09)
+
+One full `outdoor_hard_02b` replay at 1x using the unchanged 75 m profile passed
+on release commit `3878a7ad64a5ef4119942b559f05bf8868270477`. The localizer was
+rebuilt from the tag in a separate ROS 2 Humble workspace; online RKO-LIO used
+the same pinned 0.3.2 image described below. This is one cloud-container public-bag
+run, with no physical-robot validation or multi-hour stability claim.
+
+```bash
+ros2 run lidar_localization_ros2 run_koide_public_bag.py \
+  --data-dir /workspace/v130-data --output /workspace/v130-results/replay
+```
+
+Official bag, map and GT MD5 checksums were verified before SI IMU conversion.
+PointCloud2 bytes were preserved, no TF was inserted, and GT supplied only one
+initial pose at +4 s and the evaluation reference. Errors use map-frame poses,
+including odometry bridge predictions, without spatial alignment and with the
+same 0.15 s nearest-GT tolerance as the comparison below.
+
+| Metric | Observed | Demo acceptance |
+| --- | --- | --- |
+| Position RMSE | 0.279573 m | <= 0.35 m |
+| Diagnostic cloud stamps | 2,209 / 2,209 (100%) | >= 97% |
+| Distinct GT-matched pose stamps / expected clouds | 2,203 / 2,209 (99.73%) | >= 95% |
+| GT-matched pose rows | 2,204 | — |
+| Position error p95 | 0.799069 m | — |
+| Maximum output timestamp gap | 0.901278 s | — |
+| Command / RKO / localizer / player exit codes | all 0 | successful exit |
+
+The related public-bag Python tests also passed (10 tests). RKO logged 20 frame
+drops for insufficient ICP keypoints; these are retained in the evidence and
+are not hidden by the PASS result. Diagnostic coverage does not measure NDT
+acceptance or absence of upstream drops. The localizer also warned that a
+per-point `t` span was about 0.20 s versus a configured 0.10 s scan period;
+this profile disables localizer IMU integration and relative-motion deskew,
+while RKO performs its own deskew. The run passes only the sequence-specific
+demo gates, not a full release-regression suite. It does not repeat the paired
+150 m / 75 m experiment or add new latency/RSS measurements.
+
+Machine-readable [summary](validation/v1.3.0-koide-20261009/summary.json),
+[receipt](validation/v1.3.0-koide-20261009/receipt.json), and
+[provenance](validation/v1.3.0-koide-20261009/provenance.json) record the result,
+configuration/input/executable hashes and source/image revisions. The localizer
+SHA-256 was `fa964caebcb6a533065f8bda71ee92d5593be63d11f279d3f5a5cf2032576832`.
+
+[Download the logs, trajectory, configurations and receipts](validation/v1.3.0-koide-20261009/evidence.tar.gz).
+Archive SHA-256: `6e743c521245c5d6ae1f93f786e56ab6e0c8b3a58a13ac94b4a6ce673b9e3d71`. The archive includes build and replay logs;
+it contains no bag or map files. Local `/workspace` paths in receipts describe
+this run and are not prerequisites on another machine.
+
 ## Measured comparison
 
 The localizer binary was built from `9f6be5d`. Online RKO-LIO 0.3.2 binaries came from `ghcr.io/rsasaki0109/lidar_slam_ros2@sha256:ebb77154154d569a11d68d143f79112c03367b3c68da59b9f2a1d9afce63aeed` (image source revision `78df89bfda4edec68dd329777de584ff78796974`); both processes ran in the same ROS 2 Humble container. The crop radii were tested in the order 150, 75, 150, 75 m. Each replay lasted about 299 s at 1x. Only the radius changed: NDT used four threads and RKO two, with identical bag, initial pose, reliability, queue depths and observer scripts.

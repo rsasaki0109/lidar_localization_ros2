@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-09",
+  "localizer_source_commit": "3878a7ad64a5ef4119942b559f05bf8868270477",
+  "ndt_omp_source_commit": "63bf15b965b71d3a53db1757abe8e31b6114372a",
+  "rko_image": "ghcr.io/rsasaki0109/lidar_slam_ros2@sha256:ebb77154154d569a11d68d143f79112c03367b3c68da59b9f2a1d9afce63aeed",
+  "rko_image_source_commit": "78df89bfda4edec68dd329777de584ff78796974",
+  "ros_distro": "humble",
+  "architecture": "x86_64",
+  "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+  "command": "ros2 run lidar_localization_ros2 run_koide_public_bag.py --data-dir /workspace/v130-data --output /workspace/v130-results/replay",
+  "command_exit_code": 0,
+  "rko_insufficient_icp_keypoint_drops": 20,
+  "public_bag_tests": "10 passed",
+  "hardware_validation": false,
+  "repeat_count": 1,
+  "notes": "Full public sequence at 1x using unchanged v1.3.0 presets. No new latency/RSS comparison was performed."
+}

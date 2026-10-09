@@ -1,0 +1,38 @@
+{
+  "source": "https://zenodo.org/records/10122133",
+  "sequence": "outdoor_hard_02b",
+  "full_sequence": true,
+  "rate": 1.0,
+  "initial_pose_offset_sec": 4.0,
+  "bag": "/workspace/v130-data/outdoor_hard_02b_si",
+  "map": "/workspace/v130-data/map_outdoor_hard.ply",
+  "ros_domain_id": 83,
+  "localizer_sha256": "fa964caebcb6a533065f8bda71ee92d5593be63d11f279d3f5a5cf2032576832",
+  "rko_sha256": "4b3b4b3bbf59fdf938227d61a140f2393b06477b1feeafe4c1941298b5a48be5",
+  "configuration_sha256": {
+    "localizer.yaml": "11ac13bc1e4b7410b4047218ab1195bb4719f41068d1dc3c394ef530e5fb8b7c",
+    "rko.yaml": "4cd8fbfcd27b9a287962ced4255581dc48bd9a24d86005e67ca5bbaebffcfaed",
+    "points-qos.yaml": "346346491fe2b8eb931aee8c50d0ee045e95a4d3635c264a73483a64bbae94ec"
+  },
+  "input_preparation": {
+    "source_db_sha256": "31399bf1a92ee9a57e61b6c72614c0fc10b23e429b4da101dd2d8a35582395c6",
+    "imu_scale": 9.80665,
+    "topics": [
+      "/livox/points",
+      "/livox/imu"
+    ],
+    "tf_messages": 0,
+    "prepared_files": {
+      "metadata.yaml": "911bec745efabb3ea2863039add7c7f8a2757c3b4481ccdc6f6df9c1167dfa9e",
+      "outdoor_hard_02b_si.partial_0.db3": "dfbed00445a9087c3d372e70c708d225e88c3e7c5c662c7b948c43f21f4ca0a9"
+    }
+  },
+  "map_sha256": "ee655a70b0d9c040ce6cf4968223d2361e00a2bb31d2789f936c5c056f382280",
+  "reference_sha256": "42d1385903ccc89b5bca076a596d2371a505e3cec3de845809663099efcee80a",
+  "status": "passed",
+  "process_exit_codes": [
+    0,
+    0,
+    0
+  ]
+}
