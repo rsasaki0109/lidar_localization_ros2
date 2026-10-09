@@ -498,6 +498,33 @@ def topic_discovery_hint(typed, message_type, selected, reason, flag) -> str | N
     return None
 
 
+def lidar_transform_hint(tf_edges, base, lidar, publish, graph_checked) -> str | None:
+    """Explain missing or duplicate TF without changing startup configuration."""
+    if base == lidar:
+        return None
+    linked = graph_checked and not model.lidar_tf_needed(tf_edges, base, lidar)
+    if linked and publish:
+        action = (
+            f"TF already connects {base} and {lidar}. "
+            "Use --no-publish-lidar-tf to avoid a second transform publisher."
+        )
+    elif publish:
+        action = (
+            f"Quickstart will publish an identity transform from {base} to {lidar}. "
+            "If the sensor is offset or rotated, publish the calibrated transform "
+            "and use --no-publish-lidar-tf."
+        )
+    elif graph_checked and not linked:
+        action = (
+            f"No TF link observed between {base} and {lidar}. "
+            "Publish the calibrated transform using the robot's TF setup."
+        )
+    else:
+        return None
+    check = shlex.join(["ros2", "run", "tf2_ros", "tf2_echo", base, lidar])
+    return f"{action} Check with {check}."
+
+
 def _config_args(args, cloud_topic: str, imu_topic: str):
     argv = [
         "--map-path",
@@ -762,6 +789,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.publish_lidar_tf,
     )
     tf_edges = set()
+    graph_checked = False
     if args.discover_topics and None in undecided:
 
         def cloud_topic_for(typed):
@@ -772,6 +800,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         typed, tf_edges, cloud_frame = discover_ros_graph(
             args.odom_frame, cloud_topic_for if args.lidar_frame is None else None
         )
+        graph_checked = True
         if args.cloud_topic is None:
             cloud_topic, reason = model.select_discovered_topic(
                 typed, CLOUD_TYPE, cloud_topic
@@ -832,6 +861,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.publish_lidar_tf = model.lidar_tf_needed(
             tf_edges, args.base_frame, lidar_frame
         )
+    tf_hint = lidar_transform_hint(
+        tf_edges,
+        args.base_frame,
+        args.lidar_frame or str(defaults["lidar_frame"]),
+        args.publish_lidar_tf,
+        graph_checked,
+    )
+    if tf_hint:
+        print(f"TF hint:       {tf_hint}", flush=True)
 
     occupancy_note = None
     if (
