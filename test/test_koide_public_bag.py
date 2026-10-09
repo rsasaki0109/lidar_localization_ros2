@@ -1,11 +1,13 @@
 """Check dataset preparation and failure-sensitive scoring, without ROS nodes."""
 
 import importlib.util
+import io
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 
@@ -55,6 +57,21 @@ class TestKoidePublicBag(unittest.TestCase):
             (root / "outdoor_hard_02b.zip").write_bytes(b"corrupt")
             with self.assertRaisesRegex(ValueError, "checksum mismatch"):
                 MODULE.prepare_assets(root, False)
+
+    def test_corrupt_download_is_not_promoted_to_the_cache(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                patch.object(
+                    MODULE.urllib.request,
+                    "urlopen",
+                    return_value=io.BytesIO(b"corrupt"),
+                ),
+                self.assertRaisesRegex(ValueError, "checksum mismatch"),
+            ):
+                MODULE.prepare_assets(root, True)
+            self.assertFalse((root / "outdoor_hard_02b.zip").exists())
+            self.assertFalse((root / "outdoor_hard_02b.zip.partial").exists())
 
     def test_missing_data_points_to_download_option(self):
         with (

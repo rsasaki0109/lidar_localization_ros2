@@ -34,7 +34,7 @@ def parser():
     result.add_argument(
         "--download",
         action="store_true",
-        help="download missing official assets (~350 MB); verify published checksums",
+        help="download missing official assets (~1.3 GB); verify published checksums",
     )
     result.add_argument(
         "--ros-domain-id",
@@ -402,13 +402,16 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
             finally:
                 for process in reversed(processes):
                     stop_process(process)
+    except KeyboardInterrupt:
+        receipt["status"] = "interrupted"
+        raise
     finally:
         if receipt["status"] == "running":
             receipt["status"] = "failed"
         receipt["process_exit_codes"] = [p.returncode for p in processes]
         (output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()
 
 
 def main(argv=None):

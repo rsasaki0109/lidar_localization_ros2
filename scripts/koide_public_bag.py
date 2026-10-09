@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import shutil
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -61,7 +61,16 @@ def prepare_assets(data: Path, download: bool) -> tuple[Path, Path, Path]:
                 ) as response,
                 partial.open("wb") as stream,
             ):
-                shutil.copyfileobj(response, stream)
+                received, next_report = 0, time.monotonic() + 10
+                for chunk in iter(lambda: response.read(1024 * 1024), b""):
+                    stream.write(chunk)
+                    received += len(chunk)
+                    if time.monotonic() >= next_report:
+                        print(
+                            f"Downloading {name}: {received / 1024**2:.0f} MiB received",
+                            flush=True,
+                        )
+                        next_report = time.monotonic() + 10
             if checksum(partial) != expected:
                 partial.unlink()
                 raise ValueError(

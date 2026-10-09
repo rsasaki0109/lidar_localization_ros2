@@ -18,12 +18,12 @@ RKO is an optional dependency needed for this particular demo.
 ros2 run lidar_localization_ros2 run_koide_public_bag.py --download
 ```
 
-This downloads the official bag, map and GT archives (~350 MB), verifies their
+This downloads the official bag, map and GT archives (~1.3 GB), verifies their
 published MD5 checksums, extracts them, and converts acceleration from g to SI.
 Known acceleration covariances scale by g squared; unknown covariance stays unknown.
 PointCloud2 bytes are preserved, and the prepared bag contains only points and IMU.
 Verified input and conversion files are cached in `./koide-data` for subsequent runs.
-Allow at least 2 GB of free disk space and about five minutes for the 1x replay after
+Allow at least 6 GB of free disk space and about five minutes for the 1x replay after
 data preparation. It uses the 75 m preset and actual online RKO odometry.
 
 The command activates localization, waits for both RELIABLE point subscriptions,
