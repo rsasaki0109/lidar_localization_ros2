@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.3.0 - 2026-10-09
+
+- Add an opt-in 75 m local-map preset for online Koide replay with RELIABLE points
+  and depth 10. Two paired repeats reduce diagnostic p95 lag by 44-56% and localizer
+  peak RSS by about 44%, at comparable map-frame position RMSE (~0.26 m); see
+  [online replay measurements](docs/koide-online-replay.md) (#212).
+
 - Add `run_koide_public_bag.py`: one command verifies/downloads official Koide data,
   prepares SI IMU input, runs online RKO and localization at 1x, supplies one GT seed,
   and saves a map-frame accuracy/diagnostic coverage report with logs and provenance.
@@ -21,6 +28,73 @@
   filtering is skipped like an empty one (`filtered_scan_too_sparse`) instead of being
   registered on almost no geometry. On Koide `outdoor_kidnap_b`, scans with 6-56 points,
   taken while the sensor was covered, had been accepted with 2 m / 21 deg corrections.
+
+- Opt-in `level_map_to_odom`: `map -> odom` keeps only its yaw, so a tilted registration
+  does not tilt the poses bridged on a gravity-aligned odometry. On Koide
+  `outdoor_hard_01a` (165 s outside the map) RMSE 3.72 -> 0.67 m; on `outdoor_hard_02b`
+  0.26 -> 0.35 m. See troubleshooting before enabling it.
+- The point cloud subscription accepts the standard ROS reliability override
+  (`qos_overrides.<topic>.subscription.reliability`).
+- Opt-in local re-acquisition after an odometry-bridged outage
+  (`enable_local_reacquisition`, `local_reacquisition_occupancy_yaml`, ...). While scans
+  are rejected and the pose is carried by external odometry, a branch-and-bound search
+  restricted to the bridged heading window proposes candidates around the bridged pose,
+  refines them with the normal registration against the target already cropped there,
+  and seeds the next scan from an unambiguous fit; the normal measurement gate on that
+  scan decides whether it becomes the new `map -> odom`.
+- `local_map_update_distance` reuses the cropped local-map registration target until
+  the crop center has moved that far (default `0` re-crops whenever the center moves).
+- Opt-in seed-agnostic jump guard: `enable_seed_correction_guard`,
+  `seed_correction_guard_translation_m`, `seed_correction_guard_yaw_deg`,
+  `seed_correction_guard_release_rejections`, `seed_correction_guard_warmup_accepts`.
+  Rejections report `seed_correction_guard_rejected` and count as rejected measurements
+  for recovery/reinitialization.
+
+- Added `quickstart.py` and `quickstart.launch.py` for one-command configuration,
+  sensor-topic discovery, localization, RViz, and actionable bringup output.
+- Added map-content-bound pose persistence and guarded startup initialization. A saved
+  pose must pass pre-publication NDT scoring, while a BBS_2D candidate requires active
+  3D NDT scoring and distinct-scan consensus. Stale, weak, ambiguous, inconsistent, or
+  exhausted candidates fall back to RViz without publishing an identity pose.
+- Added `rviz/localization_mid360.rviz` for MID-360 profiles (`/livox/points`) and a
+  `Global Candidates` PoseArray display (`/global_localization_node/candidates`) in both
+  RViz configs; `quickstart.launch.py` now selects the RViz config by profile.
+- Added `watch_alignment.py` for colored one-line `/alignment_status` monitoring with
+  next-action hints and optional CSV recording (diagnostics only).
+- Added `watch_startup.py` for one-line `/startup_initialization/status` progress
+  (saved pose → global search → verify → RViz fallback).
+- `quickstart.py` now prints an actionable `Next:` line (verify pose output, keep the
+  robot stationary for guarded search, or set 2D Pose Estimate in RViz), including in
+  `--dry-run`.
+- Bringup doctor failures now point at the right docs (`troubleshooting.md`,
+  `map_alignment.md`, `frame_contract.md`, `site_setup.md`, `global_localization.md`).
+- G2 `global_localization_node.py` publishes JSON query progress on `~/status`
+  (`started`/`search`/`scoring`/`done`) so 10–20 s queries are observable while they run.
+- The public validation dashboard now includes an engineering-evidence table (WP1/WP2/
+  Koide rows, labeled not-a-claim) with artifact links and the GIF gallery pointer.
+
+### Changed
+
+- `param/nav2_ndt_urban.yaml` sets `local_map_update_distance: 10.0` again (it was
+  reverted in #153). With RKO-LIO keeping its motion across scan gaps (rko_lio#16), live
+  1.0x replays of the Koide `outdoor_hard_02b` README setup publish ~6.5 instead of
+  ~1.1 poses/s, at RMSE 0.33-0.36 m in 4 of 4 runs (0.31-0.98 m without it).
+- `param/mid360_legged.yaml` registers against the full map (`enable_local_map_crop:
+  false`). The 80 m crop was rebuilt on every scan, which on JEPLO (Go2, MID-360)
+  processed 20% of the Long_Stairs scans and lost Outdoor1 (20.8 m ATE). Reusing it for
+  20 m restores the accuracy, but in live replays with the online RKO-LIO front end each
+  re-crop of the dense outdoor map still stalled the output for 1.8-2.0 s; without the
+  crop the accuracy is the same and the longest gap is 0.1 s. The crop settings
+  (`local_map_radius: 80.0`, `local_map_update_distance: 20.0`) stay for maps too large
+  to register against whole.
+- Continuous-time deskew now defaults on in the component, launch files, and shipped
+  presets. Readiness guards preserve the original scan when point timing or motion data
+  is unavailable; `use_continuous_time_deskew:=false` remains the rollback switch.
+- Quickstart global initialization now defaults on when a matching occupancy map is
+  supplied. It remains inactive without that required asset and can be disabled with
+  `--no-auto-initialize`.
+- Public rosbag regression launches now use simulated time and explicitly preserve the
+  HDL no-IMU/IMU comparison conditions instead of inheriting launch defaults.
 
 ### Fixed
 
@@ -98,77 +172,6 @@
 - Floating-point per-point time fields named `t` / `offset_time` / `timestamp` are now
   read as seconds; only integer ones are nanoseconds. An absolute float64 `t` (e.g.
   converted Livox clouds) was scaled by 1e-9, collapsing the scan duration to ~0.
-
-### Added
-
-- Opt-in `level_map_to_odom`: `map -> odom` keeps only its yaw, so a tilted registration
-  does not tilt the poses bridged on a gravity-aligned odometry. On Koide
-  `outdoor_hard_01a` (165 s outside the map) RMSE 3.72 -> 0.67 m; on `outdoor_hard_02b`
-  0.26 -> 0.35 m. See troubleshooting before enabling it.
-- The point cloud subscription accepts the standard ROS reliability override
-  (`qos_overrides.<topic>.subscription.reliability`).
-- Opt-in local re-acquisition after an odometry-bridged outage
-  (`enable_local_reacquisition`, `local_reacquisition_occupancy_yaml`, ...). While scans
-  are rejected and the pose is carried by external odometry, a branch-and-bound search
-  restricted to the bridged heading window proposes candidates around the bridged pose,
-  refines them with the normal registration against the target already cropped there,
-  and seeds the next scan from an unambiguous fit; the normal measurement gate on that
-  scan decides whether it becomes the new `map -> odom`.
-- `local_map_update_distance` reuses the cropped local-map registration target until
-  the crop center has moved that far (default `0` re-crops whenever the center moves).
-- Opt-in seed-agnostic jump guard: `enable_seed_correction_guard`,
-  `seed_correction_guard_translation_m`, `seed_correction_guard_yaw_deg`,
-  `seed_correction_guard_release_rejections`, `seed_correction_guard_warmup_accepts`.
-  Rejections report `seed_correction_guard_rejected` and count as rejected measurements
-  for recovery/reinitialization.
-
-### Changed
-
-- `param/nav2_ndt_urban.yaml` sets `local_map_update_distance: 10.0` again (it was
-  reverted in #153). With RKO-LIO keeping its motion across scan gaps (rko_lio#16), live
-  1.0x replays of the Koide `outdoor_hard_02b` README setup publish ~6.5 instead of
-  ~1.1 poses/s, at RMSE 0.33-0.36 m in 4 of 4 runs (0.31-0.98 m without it).
-- `param/mid360_legged.yaml` registers against the full map (`enable_local_map_crop:
-  false`). The 80 m crop was rebuilt on every scan, which on JEPLO (Go2, MID-360)
-  processed 20% of the Long_Stairs scans and lost Outdoor1 (20.8 m ATE). Reusing it for
-  20 m restores the accuracy, but in live replays with the online RKO-LIO front end each
-  re-crop of the dense outdoor map still stalled the output for 1.8-2.0 s; without the
-  crop the accuracy is the same and the longest gap is 0.1 s. The crop settings
-  (`local_map_radius: 80.0`, `local_map_update_distance: 20.0`) stay for maps too large
-  to register against whole.
-- Continuous-time deskew now defaults on in the component, launch files, and shipped
-  presets. Readiness guards preserve the original scan when point timing or motion data
-  is unavailable; `use_continuous_time_deskew:=false` remains the rollback switch.
-- Quickstart global initialization now defaults on when a matching occupancy map is
-  supplied. It remains inactive without that required asset and can be disabled with
-  `--no-auto-initialize`.
-- Public rosbag regression launches now use simulated time and explicitly preserve the
-  HDL no-IMU/IMU comparison conditions instead of inheriting launch defaults.
-
-### Added
-
-- Added `quickstart.py` and `quickstart.launch.py` for one-command configuration,
-  sensor-topic discovery, localization, RViz, and actionable bringup output.
-- Added map-content-bound pose persistence and guarded startup initialization. A saved
-  pose must pass pre-publication NDT scoring, while a BBS_2D candidate requires active
-  3D NDT scoring and distinct-scan consensus. Stale, weak, ambiguous, inconsistent, or
-  exhausted candidates fall back to RViz without publishing an identity pose.
-- Added `rviz/localization_mid360.rviz` for MID-360 profiles (`/livox/points`) and a
-  `Global Candidates` PoseArray display (`/global_localization_node/candidates`) in both
-  RViz configs; `quickstart.launch.py` now selects the RViz config by profile.
-- Added `watch_alignment.py` for colored one-line `/alignment_status` monitoring with
-  next-action hints and optional CSV recording (diagnostics only).
-- Added `watch_startup.py` for one-line `/startup_initialization/status` progress
-  (saved pose → global search → verify → RViz fallback).
-- `quickstart.py` now prints an actionable `Next:` line (verify pose output, keep the
-  robot stationary for guarded search, or set 2D Pose Estimate in RViz), including in
-  `--dry-run`.
-- Bringup doctor failures now point at the right docs (`troubleshooting.md`,
-  `map_alignment.md`, `frame_contract.md`, `site_setup.md`, `global_localization.md`).
-- G2 `global_localization_node.py` publishes JSON query progress on `~/status`
-  (`started`/`search`/`scoring`/`done`) so 10–20 s queries are observable while they run.
-- The public validation dashboard now includes an engineering-evidence table (WP1/WP2/
-  Koide rows, labeled not-a-claim) with artifact links and the GIF gallery pointer.
 
 ## 1.2.0 - 2026-07-22
 
