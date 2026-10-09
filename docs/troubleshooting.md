@@ -46,6 +46,18 @@ ros2 run tf2_ros tf2_echo map base_link
 
 If `/pcl_pose` never updates, inspect `/alignment_status` next.
 
+For a combined input, TF and output check:
+
+```bash
+ros2 run lidar_localization_ros2 check_lidar_localization_bringup.py \
+  --profile standalone --cloud-topic /your/points --require-localization-output
+```
+
+Missing inputs, TF and pose output include `check:` commands using your configured
+topics and frames. Run the command under the relevant failure first. Diagnostic
+`echo --once` waits for a message; use Ctrl-C if none arrives. The MID-360 checker
+uses the same report format. Commands are suggestions and are not run automatically.
+
 ## Reading `/alignment_status`
 
 Topic: `/alignment_status` (`diagnostic_msgs/msg/DiagnosticArray`)

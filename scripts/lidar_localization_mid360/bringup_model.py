@@ -1,3 +1,4 @@
+import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -217,11 +218,47 @@ def report_lines(
         topic_summary(config.alignment_status_topic, snapshot.status),
         "",
     ]
+    shown_commands: set[str] = set()
     for result in results:
         lines.append(f"[{result.level}] {result.message}")
         if result.hint:
             lines.append(f"  hint: {result.hint}")
+        for command in inspection_commands(config, result):
+            if command not in shown_commands:
+                lines.append(f"  check: {command}")
+                shown_commands.add(command)
     return lines
+
+
+def inspection_commands(config: BringupCheckConfig, result: CheckResult) -> list[str]:
+    """Read-only commands for missing inputs, TF, and localization output."""
+    if result.level == OK:
+        return []
+    commands = []
+    missing_topics = {
+        f"no pointcloud received on {config.cloud_topic}": config.cloud_topic,
+        f"no IMU received on {config.imu_topic}": config.imu_topic,
+        f"no localization pose received on {config.pose_topic}": config.pose_topic,
+        f"no alignment status received on {config.alignment_status_topic}": config.alignment_status_topic,
+    }
+    if result.message in missing_topics:
+        commands.append(["ros2", "topic", "info", "-v", missing_topics[result.message]])
+    if result.message == f"no localization pose received on {config.pose_topic}" or (
+        result.message.startswith("alignment status error:")
+    ):
+        commands.append(
+            ["ros2", "topic", "echo", config.alignment_status_topic, "--once"]
+        )
+    for target, source in (
+        (config.base_frame, config.lidar_frame),
+        (config.base_frame, config.imu_frame),
+        (config.odom_frame, config.base_frame),
+        (config.global_frame, config.odom_frame),
+    ):
+        if result.message == f"TF missing: {target} <- {source}":
+            commands.append(["ros2", "run", "tf2_ros", "tf2_echo", target, source])
+            break
+    return [shlex.join(command) for command in commands]
 
 
 def _evaluate_cloud(
@@ -472,7 +509,7 @@ def _evaluate_pose(
                 f"no localization pose received on {config.pose_topic}",
                 (
                     "Check that the map is loaded, /initialpose was provided or set_initial_pose is true, "
-                    "and /alignment_status is not reporting an error. "
+                    f"and {config.alignment_status_topic} is not reporting an error. "
                     "docs: frame_contract.md + troubleshooting.md (bringup checklist)."
                 ),
             )

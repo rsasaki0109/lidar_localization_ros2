@@ -391,6 +391,70 @@ class TestMid360BringupModel(unittest.TestCase):
         self.assertIn("[FAIL] no pointcloud received on /livox/points", lines)
         self.assertTrue(any(line.startswith("  hint: ") for line in lines))
 
+    def test_report_commands_use_configured_topics_and_frames(self):
+        config = BringupCheckConfig(
+            cloud_topic="/front/points",
+            pose_topic="/front/pose",
+            alignment_status_topic="/front/status",
+            base_frame="robot_base",
+            lidar_frame="front_lidar",
+            require_imu_base_tf=True,
+        )
+        state = snapshot(config, TopicStats())
+        results = evaluate_snapshot(config, state)
+        lines = report_lines(config, state, results)
+        self.assertIn("  check: ros2 topic info -v /front/points", lines)
+        self.assertIn("  check: ros2 topic info -v /front/pose", lines)
+        self.assertIn("  check: ros2 topic echo /front/status --once", lines)
+        self.assertIn(
+            "  check: ros2 run tf2_ros tf2_echo robot_base front_lidar", lines
+        )
+        self.assertIn("  check: ros2 run tf2_ros tf2_echo odom robot_base", lines)
+        self.assertIn("  check: ros2 run tf2_ros tf2_echo map odom", lines)
+        self.assertIn(
+            "  check: ros2 run tf2_ros tf2_echo robot_base livox_imu_frame", lines
+        )
+        self.assertEqual(exit_code(results), 1)
+
+    def test_healthy_report_has_no_inspection_commands(self):
+        config = BringupCheckConfig()
+        availability = {
+            f"{config.base_frame} <- {config.lidar_frame}": True,
+            f"{config.odom_frame} <- {config.base_frame}": True,
+            f"{config.global_frame} <- {config.odom_frame}": True,
+        }
+        state = snapshot(
+            config,
+            marked_cloud(),
+            imu=marked_topic(config.imu_frame),
+            pose=marked_topic(config.global_frame),
+            status=marked_status(),
+            tf_available=availability,
+        )
+        results = evaluate_snapshot(config, state)
+        self.assertFalse(
+            any(
+                line.startswith("  check:")
+                for line in report_lines(config, state, results)
+            )
+        )
+
+    def test_diagnostic_command_is_not_repeated_for_pose_and_status_errors(self):
+        config = BringupCheckConfig(alignment_status_topic="/front/status")
+        state = snapshot(
+            config,
+            marked_cloud(),
+            status=marked_status("registration_not_converged", 2),
+        )
+        results = evaluate_snapshot(config, state)
+        lines = report_lines(config, state, results)
+        self.assertEqual(
+            lines.count("  check: ros2 topic echo /front/status --once"), 1
+        )
+        pose_result = next(r for r in results if "no localization pose" in r.message)
+        self.assertIn("/front/status", pose_result.hint)
+        self.assertNotIn("/alignment_status", pose_result.hint)
+
     def test_alignment_status_error_is_failure(self):
         config = BringupCheckConfig()
         cloud = marked_topic("livox_frame")
