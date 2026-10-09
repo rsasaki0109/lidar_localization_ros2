@@ -60,9 +60,20 @@ or in a simulator, and the wall clock otherwise; the choice is printed as
 (`--no-use-sim-time` forces the wall clock).
 
 When exactly one live `sensor_msgs/msg/PointCloud2` or `sensor_msgs/msg/Imu` topic is
-visible, quickstart selects it. If several exist, it keeps the selected profile's safe
-default and prints `ambiguous`; specify `--cloud-topic` or `--imu-topic` rather than
-guessing. The LiDAR frame is the `frame_id` of one received cloud (the profile default
+visible, quickstart selects it. If several exist and the profile default is not among
+them, it keeps that default and lists the candidates with the option to select one:
+
+```text
+Input hint:    Several PointCloud2 topics found: /front/points, /rear/points; keeping /velodyne_points. Select one with --cloud-topic TOPIC.
+```
+
+Restart with, for example, `--cloud-topic /front/points`. When no input is detected,
+the hint asks you to start the sensor driver or bag; IMU input is optional when IMU
+integration is disabled. Explicit topic options take precedence over discovery.
+If the generated configuration cannot be written, quickstart reports the path and
+asks for a writable `--output PATH`, then exits with status 2.
+
+The LiDAR frame is the `frame_id` of one received cloud (the profile default
 when none arrives). quickstart publishes an identity `base -> LiDAR` TF only when the two
 frames differ and nothing in TF links them yet, since a second publisher of a TF the
 robot already provides makes it flip. Every choice can be overridden with

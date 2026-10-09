@@ -157,6 +157,81 @@ class TestQuickstartCli(unittest.TestCase):
         finally:
             QUICKSTART.discover_ros_graph = original
 
+    def test_topic_hints_show_candidates_without_guessing(self):
+        topics = [
+            ("/cloud_b", "sensor_msgs/msg/PointCloud2"),
+            ("/cloud_a", "sensor_msgs/msg/PointCloud2"),
+            ("/imu_b", "sensor_msgs/msg/Imu"),
+            ("/imu_a", "sensor_msgs/msg/Imu"),
+        ]
+        original = QUICKSTART.discover_ros_graph
+        QUICKSTART.discover_ros_graph = lambda *_: (topics, set(), None)
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                _, text = self._dry_run(
+                    root, ["--discover-topics", "--no-auto-occupancy-map"]
+                )
+                self.assertIn("/cloud_a, /cloud_b", text)
+                self.assertIn("--cloud-topic TOPIC", text)
+                self.assertIn("/imu_a, /imu_b", text)
+                self.assertIn("--imu-topic TOPIC", text)
+                self.assertIn("cloud_topic:=/velodyne_points", text)
+                self.assertNotIn("cloud_topic:=/cloud_a", text)
+
+                _, text = self._dry_run(
+                    root,
+                    [
+                        "--discover-topics",
+                        "--no-auto-occupancy-map",
+                        "--cloud-topic",
+                        "/cloud_b",
+                        "--imu-topic",
+                        "/imu_b",
+                    ],
+                )
+                self.assertNotIn("Input hint:", text)
+        finally:
+            QUICKSTART.discover_ros_graph = original
+
+    def test_missing_topic_hint_explains_how_to_supply_input(self):
+        original = QUICKSTART.discover_ros_graph
+        QUICKSTART.discover_ros_graph = lambda *_: ([], set(), None)
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                _, text = self._dry_run(
+                    Path(directory),
+                    ["--discover-topics", "--no-auto-occupancy-map"],
+                )
+            self.assertIn("No PointCloud2 topic detected", text)
+            self.assertIn("sensor driver or bag", text)
+            self.assertIn("--cloud-topic TOPIC", text)
+            self.assertIn("If using IMU", text)
+        finally:
+            QUICKSTART.discover_ros_graph = original
+
+    def test_unwritable_configuration_reports_error_without_traceback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            map_path = root / "site.pcd"
+            map_path.write_bytes(b"pcd")
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                result = QUICKSTART.main(
+                    [
+                        "--map",
+                        str(map_path),
+                        "--output",
+                        str(root),
+                        "--no-discover-topics",
+                        "--no-auto-occupancy-map",
+                        "--dry-run",
+                    ]
+                )
+            self.assertEqual(result, 2)
+            self.assertIn("could not write configuration", stderr.getvalue())
+            self.assertIn("--output", stderr.getvalue())
+
     def test_odometry_tf_turns_on_prediction_and_sets_the_base_frame(self):
         topics = [("/tf", "tf2_msgs/msg/TFMessage")]
         original = QUICKSTART.discover_ros_graph

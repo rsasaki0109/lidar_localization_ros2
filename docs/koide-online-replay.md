@@ -6,7 +6,64 @@ The localizer uses a 75 m local-map radius, reuses the target until movement rea
 
 The radius is a dataset-specific choice: it changes which map points are available for registration. The conservative Nav2 preset and the offline GIF profile keep their existing radii. The localizer's relative-motion deskew is not applied with its IMU preintegration disabled; RKO performs its own deskew.
 
-## Reproduce
+## One-command check
+
+No robot or RViz is needed. Build and source this package and the `rko_lio` online
+node from [lidar_slam_ros2](https://github.com/rsasaki0109/lidar_slam_ros2) in the
+same ROS 2 environment. ROS 2 Humble is the environment used for the recorded
+measurements below. The localizer package declares the Python/rosbag dependencies;
+RKO is an optional dependency needed for this particular demo.
+
+```bash
+ros2 run lidar_localization_ros2 run_koide_public_bag.py --download
+```
+
+This downloads the official bag, map and GT archives (~350 MB), verifies their
+published MD5 checksums, extracts them, and converts acceleration from g to SI.
+Known acceleration covariances scale by g squared; unknown covariance stays unknown.
+PointCloud2 bytes are preserved, and the prepared bag contains only points and IMU.
+Verified input and conversion files are cached in `./koide-data` for subsequent runs.
+Allow at least 2 GB of free disk space and about five minutes for the 1x replay after
+data preparation. It uses the 75 m preset and actual online RKO odometry.
+
+The command activates localization, waits for both RELIABLE point subscriptions,
+starts playback, supplies the nearest GT pose once at +4 s, drains pending results,
+stops its processes, and writes:
+
+- `summary.json`: map-frame position RMSE, matched pose count, diagnostic coverage,
+  and `passed`.
+- `estimate.tum`: the observed pose trajectory, including odometry bridge poses.
+- `receipt.json`: dataset, replay settings, executable hashes and exit codes.
+- `localizer.yaml`, `localizer.log`, `rko.log`, `player.log`, `alignment.jsonl`:
+  configuration and diagnostic logs for investigation.
+
+A successful check exits 0 and prints `PASS`. It requires RMSE <= 0.35 m, diagnostic
+observations at >= 97% of expected cloud stamps after initialization, and distinct
+GT-matched pose timestamps at >= 95% of that cloud count. GT matching uses the same
+0.15 s tolerance as the comparison below, without spatial alignment. These are demo
+acceptance criteria for this sequence, not a complete release-regression suite.
+
+Useful options:
+
+```bash
+# Check prerequisites and the plan without downloads, files or nodes.
+ros2 run lidar_localization_ros2 run_koide_public_bag.py --dry-run
+
+# Reuse cached data and choose a new results directory.
+ros2 run lidar_localization_ros2 run_koide_public_bag.py \
+  --data-dir /absolute/path/to/koide-data --output /absolute/path/to/new-run
+```
+
+The default ROS domain is 83; an occupied domain is refused to avoid mixing other
+publishers into the evaluation. Use `--ros-domain-id 84` if it is in use. An unsourced
+RKO workspace produces a dependency hint; an independently installed executable can
+be selected with `--rko-executable /absolute/path/to/online_node`. A nonempty output
+directory is refused. Ctrl+C stops the replay processes and keeps logs; use a new
+output directory when retrying. Corrupt cache files are reported instead of reused.
+The measurements below are the separately controlled four-run comparison; results
+from this command describe the machine and binaries on which it is run.
+
+## Manual reproduction
 
 Build and source both this workspace and [lidar_slam_ros2](https://github.com/rsasaki0109/lidar_slam_ros2), including the `rko_lio` online executable. Download the sequence, map, and `gt.zip` from the dataset record. Convert its IMU acceleration from g to SI using `lidar_slam_ros2/tools/readme_media/scale_imu_bag.py`, as described in [README media](readme-media.md). Use the scaled standard PointCloud2/IMU bag without adding an odometry TF trajectory.
 

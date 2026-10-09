@@ -52,6 +52,10 @@ For manual builds and no-sudo setup, see [local build](docs/local_build.md).
 
 ## Quick Start
 
+Have a map ready and source the built workspace from the installation step. To check
+the choices before starting nodes, add `--dry-run`; missing or ambiguous inputs print
+the next action and the topic-selection option.
+
 Start localization and RViz with one command, once the sensors (and odometry, if any)
 are running:
 
@@ -162,6 +166,20 @@ topic names are configurable. See [frame contract](docs/frame_contract.md) and
 Nav2 additionally requires a 2D occupancy map and an `odom -> base_link` source.
 
 ## Reproduce the README Run
+
+No robot is needed for the online public-bag check. After building and sourcing this
+package and `rko_lio` from [lidar_slam_ros2](https://github.com/rsasaki0109/lidar_slam_ros2):
+
+```bash
+ros2 run lidar_localization_ros2 run_koide_public_bag.py --download
+```
+
+The command verifies official Koide downloads, prepares SI IMU input, runs online
+odometry and localization, supplies one initial pose, and reports map-frame error.
+Allow about five minutes for playback after preparation. Data is cached in
+`./koide-data`; logs, `estimate.tum`, and `summary.json` go to a new `./koide-run-*`
+directory. See [the public-bag guide](docs/koide-online-replay.md) for prerequisites,
+pass criteria, and troubleshooting.
 
 The run at the top of this page uses only public data (Koide Hard Point Cloud
 Localization Dataset, `outdoor_hard_02b`) and the launch files above.
