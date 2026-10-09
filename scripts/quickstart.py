@@ -457,6 +457,24 @@ def next_step_line(args) -> str:
     return f"{manual} or pass --initial-pose"
 
 
+def topic_discovery_hint(typed, message_type, selected, reason, flag) -> str | None:
+    """Explain unresolved input selection without changing the selected topic."""
+    label = message_type.rsplit("/", 1)[-1]
+    if reason == "ambiguous":
+        candidates = sorted({name for name, kind in typed if kind == message_type})
+        return (
+            f"Several {label} topics found: {', '.join(candidates)}; "
+            f"keeping {selected}. Select one with {flag} TOPIC."
+        )
+    if reason == "not_detected":
+        action = "If using IMU, start" if message_type == IMU_TYPE else "Start"
+        return (
+            f"No {label} topic detected; keeping {selected}. "
+            f"{action} the sensor driver or bag, or set {flag} TOPIC."
+        )
+    return None
+
+
 def _config_args(args, cloud_topic: str, imu_topic: str):
     argv = [
         "--map-path",
@@ -703,6 +721,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     cloud_topic = args.cloud_topic or str(defaults["cloud_topic"])
     imu_topic = args.imu_topic or str(defaults["imu_topic"])
     discovery_notes = []
+    input_hints = []
     undecided = (
         args.cloud_topic,
         args.imu_topic,
@@ -728,11 +747,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 typed, CLOUD_TYPE, cloud_topic
             )
             discovery_notes.append(f"cloud={cloud_topic} ({reason})")
+            hint = topic_discovery_hint(
+                typed, CLOUD_TYPE, cloud_topic, reason, "--cloud-topic"
+            )
+            if hint:
+                input_hints.append(hint)
         if args.imu_topic is None:
             imu_topic, reason = model.select_discovered_topic(
                 typed, IMU_TYPE, imu_topic
             )
             discovery_notes.append(f"imu={imu_topic} ({reason})")
+            hint = topic_discovery_hint(
+                typed, IMU_TYPE, imu_topic, reason, "--imu-topic"
+            )
+            if hint:
+                input_hints.append(hint)
         if args.use_sim_time is None:
             args.use_sim_time = model.detect_sim_time(typed)
             discovery_notes.append(
@@ -755,6 +784,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.lidar_frame is None and cloud_frame:
             args.lidar_frame = cloud_frame
             discovery_notes.append(f"lidar_frame={cloud_frame} (cloud header)")
+    for hint in input_hints:
+        print(f"Input hint:    {hint}", flush=True)
     args.use_sim_time = bool(args.use_sim_time)
     args.odom_tf_prediction = bool(args.odom_tf_prediction)
     args.base_frame = args.base_frame or "base_link"
@@ -792,11 +823,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"quickstart: {validation_error}", file=sys.stderr)
         return 2
     output = args.output.expanduser().resolve()
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        config_tool.render_ros_params(config_tool.make_params(config_args)),
-        encoding="utf-8",
-    )
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            config_tool.render_ros_params(config_tool.make_params(config_args)),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        print(
+            f"quickstart: could not write configuration {output}: {exc}. "
+            "Choose a writable file with --output PATH.",
+            file=sys.stderr,
+        )
+        return 2
     state_path = (
         args.state_file.expanduser().resolve()
         if args.state_file

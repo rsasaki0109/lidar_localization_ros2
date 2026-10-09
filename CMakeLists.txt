@@ -158,6 +158,7 @@ set(LIDAR_LOCALIZATION_CONFIG_SCRIPTS
 
 set(LIDAR_LOCALIZATION_DATA_SCRIPTS
   scripts/augment_pointcloud_intensity.py
+  scripts/run_koide_public_bag.py
   scripts/tum_trajectory_to_pose_reference_csv.py
   scripts/tum_trajectory_to_pose_reference_csv_for_rosbag2.py)
 
@@ -194,7 +195,14 @@ install(PROGRAMS
 # runtime global-localization nodes from the same directory.
 install(FILES
   scripts/relocalization_attempt_common.py
+  scripts/koide_public_bag.py
   DESTINATION lib/${PROJECT_NAME})
+
+install(FILES
+  tools/readme_media/koide_outdoor_hard_02b_online.yaml
+  tools/readme_media/koide_outdoor_hard_02b_online_rko.yaml
+  tools/readme_media/koide_reliable_points_qos.yaml
+  DESTINATION share/${PROJECT_NAME}/public_bag)
 
 install(DIRECTORY
   scripts/lidar_localization_mid360
@@ -808,6 +816,10 @@ if(BUILD_TESTING)
   add_test(
     NAME quickstart_cli
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_quickstart_cli.py
+  )
+  add_test(
+    NAME koide_public_bag
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_koide_public_bag.py
   )
   add_test(
     NAME benchmark_eval

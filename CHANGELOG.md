@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add `run_koide_public_bag.py`: one command verifies/downloads official Koide data,
+  prepares SI IMU input, runs online RKO and localization at 1x, supplies one GT seed,
+  and saves a map-frame accuracy/diagnostic coverage report with logs and provenance.
+- Quickstart lists ambiguous sensor-topic candidates and the option to select one,
+  explains missing inputs, and reports configuration-write errors with a suggested
+  `--output` option instead of a Python traceback.
 - Bound visualization path history to 2000 poses by default (`path_max_poses`),
   including lifecycle initialization, and report its size in diagnostics (#134).
 - Infer FLOAT64 timestamp units once per cloud; support explicit seconds/ns
