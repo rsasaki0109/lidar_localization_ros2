@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
@@ -20,6 +21,17 @@ SPEC.loader.exec_module(QUICKSTART)
 
 
 class TestQuickstartCli(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        config = patch.object(
+            QUICKSTART,
+            "default_config_path",
+            return_value=Path(directory.name) / "config.yaml",
+        )
+        config.start()
+        self.addCleanup(config.stop)
+
     def test_topic_discovery_stops_once_cloud_and_imu_appear(self):
         graph = [
             [("/rosout", ["rcl_interfaces/msg/Log"])],
