@@ -1,0 +1,760 @@
+{
+  "schema_version": 1,
+  "problem": "odometry_dropout_confirmation",
+  "evidence": "synthetic fixtures only; no public replay",
+  "fixtures": {
+    "hard02b_wrong_answer_after_short_dropout": {
+      "description": "RKO drops frames for 3.5 s; the next answer is distinctive but 128 m off, later answers are correct (one reading of the outdoor_hard_02b failure)",
+      "recovery_required": true
+    },
+    "hard02b_wrong_answer_inside_dropout": {
+      "description": "the wrong answer comes from a scan inside the odometry gap, so no bridged pose covers it; later answers are correct (the other reading)",
+      "recovery_required": true
+    },
+    "kidnap_covered_carry": {
+      "description": "sensor covered and carried 68 m for 30 s (odom stops, then restarts at identity); every answer after the cover is correct",
+      "recovery_required": true
+    },
+    "kidnap_stationary_alias_across_gap": {
+      "description": "an answer before the cover, then a wrong answer where the robot would be had it not been carried; correct answers follow",
+      "recovery_required": false
+    },
+    "kidnap_answers_during_cover": {
+      "description": "G2 answers on two sparse covered scans (weak, not gated) before the odometry resumes; correct answers follow",
+      "recovery_required": true
+    },
+    "kidnap_intermittent_odometry": {
+      "description": "after the carry the odometry drops out (and restarts) between every two answers; all answers are correct",
+      "recovery_required": true
+    },
+    "continuous_alias_then_correct": {
+      "description": "no dropout: an aliased answer 65 m off, then correct answers (#178)",
+      "recovery_required": true
+    },
+    "no_external_odometry": {
+      "description": "no odom TF and no bridge at all: one gated answer resets, as before #178",
+      "recovery_required": true
+    },
+    "repeated_alias_across_short_dropout": {
+      "description": "walking at 0.3 m/s; the same wrong place is answered before and after a 3.5 s odometry gap, then a correct answer",
+      "recovery_required": false
+    },
+    "odometry_lost_permanently": {
+      "description": "the LIO stops at 60 s and never returns; correct answers every 6 s",
+      "recovery_required": true
+    }
+  },
+  "variants": {
+    "window_waiver": {
+      "design": "runtime baseline",
+      "passed": 6,
+      "benchmark_score": 60.0,
+      "wrong_resets": 4,
+      "fixtures": {
+        "hard02b_wrong_answer_after_short_dropout": {
+          "pass": false,
+          "outcome": "wrong_reset",
+          "time_to_recover_sec": null,
+          "attempts": 1,
+          "trace": [
+            "106:reset:dropout_waiver"
+          ]
+        },
+        "hard02b_wrong_answer_inside_dropout": {
+          "pass": false,
+          "outcome": "wrong_reset",
+          "time_to_recover_sec": null,
+          "attempts": 1,
+          "trace": [
+            "102:reset:no_bridged_pose"
+          ]
+        },
+        "kidnap_covered_carry": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 5.0,
+          "attempts": 1,
+          "trace": [
+            "95:reset:dropout_waiver"
+          ]
+        },
+        "kidnap_stationary_alias_across_gap": {
+          "pass": false,
+          "outcome": "wrong_reset",
+          "time_to_recover_sec": null,
+          "attempts": 2,
+          "trace": [
+            "57:unconfirmed",
+            "95:reset:dropout_waiver"
+          ]
+        },
+        "kidnap_answers_during_cover": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 5.0,
+          "attempts": 3,
+          "trace": [
+            "70:weak",
+            "80:weak",
+            "95:reset:dropout_waiver"
+          ]
+        },
+        "kidnap_intermittent_odometry": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 6.0,
+          "attempts": 1,
+          "trace": [
+            "96:reset:dropout_waiver"
+          ]
+        },
+        "continuous_alias_then_correct": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 22.0,
+          "attempts": 3,
+          "trace": [
+            "50:unconfirmed",
+            "56:unconfirmed",
+            "62:reset:confirmed"
+          ]
+        },
+        "no_external_odometry": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 5.0,
+          "attempts": 1,
+          "trace": [
+            "30:reset:no_bridged_pose"
+          ]
+        },
+        "repeated_alias_across_short_dropout": {
+          "pass": false,
+          "outcome": "wrong_reset",
+          "time_to_recover_sec": null,
+          "attempts": 2,
+          "trace": [
+            "98:unconfirmed",
+            "104.5:reset:dropout_waiver"
+          ]
+        },
+        "odometry_lost_permanently": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 6.0,
+          "attempts": 1,
+          "trace": [
+            "66:reset:no_bridged_pose"
+          ]
+        }
+      }
+    },
+    "no_waiver": {
+      "design": "waiver removed",
+      "passed": 5,
+      "benchmark_score": 50.0,
+      "wrong_resets": 3,
+      "fixtures": {
+        "hard02b_wrong_answer_after_short_dropout": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 18.0,
+          "attempts": 3,
+          "trace": [
+            "106:unconfirmed",
+            "112:unconfirmed",
+            "118:reset:confirmed"
+          ]
+        },
+        "hard02b_wrong_answer_inside_dropout": {
+          "pass": false,
+          "outcome": "wrong_reset",
+          "time_to_recover_sec": null,
+          "attempts": 1,
+          "trace": [
+            "102:reset:no_bridged_pose"
+          ]
+        },
+        "kidnap_covered_carry": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 11.0,
+          "attempts": 2,
+          "trace": [
+            "95:unconfirmed",
+            "101:reset:confirmed"
+          ]
+        },
+        "kidnap_stationary_alias_across_gap": {
+          "pass": false,
+          "outcome": "wrong_reset",
+          "time_to_recover_sec": null,
+          "attempts": 2,
+          "trace": [
+            "57:unconfirmed",
+            "95:reset:confirmed"
+          ]
+        },
+        "kidnap_answers_during_cover": {
+          "pass": false,
+          "outcome": "no_reset",
+          "time_to_recover_sec": null,
+          "attempts": 3,
+          "trace": [
+            "70:weak",
+            "80:weak",
+            "95:unconfirmed",
+            "101:exhausted"
+          ]
+        },
+        "kidnap_intermittent_odometry": {
+          "pass": false,
+          "outcome": "no_reset",
+          "time_to_recover_sec": null,
+          "attempts": 3,
+          "trace": [
+            "96:unconfirmed",
+            "102:unconfirmed",
+            "108:unconfirmed"
+          ]
+        },
+        "continuous_alias_then_correct": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 22.0,
+          "attempts": 3,
+          "trace": [
+            "50:unconfirmed",
+            "56:unconfirmed",
+            "62:reset:confirmed"
+          ]
+        },
+        "no_external_odometry": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 5.0,
+          "attempts": 1,
+          "trace": [
+            "30:reset:no_bridged_pose"
+          ]
+        },
+        "repeated_alias_across_short_dropout": {
+          "pass": false,
+          "outcome": "wrong_reset",
+          "time_to_recover_sec": null,
+          "attempts": 2,
+          "trace": [
+            "98:unconfirmed",
+            "104.5:reset:confirmed"
+          ]
+        },
+        "odometry_lost_permanently": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 6.0,
+          "attempts": 1,
+          "trace": [
+            "66:reset:no_bridged_pose"
+          ]
+        }
+      }
+    },
+    "segment": {
+      "design": "gapless pair",
+      "passed": 7,
+      "benchmark_score": 70.0,
+      "wrong_resets": 1,
+      "fixtures": {
+        "hard02b_wrong_answer_after_short_dropout": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 18.0,
+          "attempts": 3,
+          "trace": [
+            "106:unconfirmed",
+            "112:unconfirmed",
+            "118:reset:confirmed"
+          ]
+        },
+        "hard02b_wrong_answer_inside_dropout": {
+          "pass": false,
+          "outcome": "wrong_reset",
+          "time_to_recover_sec": null,
+          "attempts": 1,
+          "trace": [
+            "102:reset:no_bridged_pose"
+          ]
+        },
+        "kidnap_covered_carry": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 11.0,
+          "attempts": 2,
+          "trace": [
+            "95:unconfirmed",
+            "101:reset:confirmed"
+          ]
+        },
+        "kidnap_stationary_alias_across_gap": {
+          "pass": true,
+          "outcome": "no_reset",
+          "time_to_recover_sec": null,
+          "attempts": 3,
+          "trace": [
+            "57:unconfirmed",
+            "95:unconfirmed",
+            "101:unconfirmed",
+            "107:exhausted"
+          ]
+        },
+        "kidnap_answers_during_cover": {
+          "pass": false,
+          "outcome": "no_reset",
+          "time_to_recover_sec": null,
+          "attempts": 3,
+          "trace": [
+            "70:weak",
+            "80:weak",
+            "95:unconfirmed",
+            "101:exhausted"
+          ]
+        },
+        "kidnap_intermittent_odometry": {
+          "pass": false,
+          "outcome": "no_reset",
+          "time_to_recover_sec": null,
+          "attempts": 3,
+          "trace": [
+            "96:unconfirmed",
+            "102:unconfirmed",
+            "108:unconfirmed"
+          ]
+        },
+        "continuous_alias_then_correct": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 22.0,
+          "attempts": 3,
+          "trace": [
+            "50:unconfirmed",
+            "56:unconfirmed",
+            "62:reset:confirmed"
+          ]
+        },
+        "no_external_odometry": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 5.0,
+          "attempts": 1,
+          "trace": [
+            "30:reset:no_bridged_pose"
+          ]
+        },
+        "repeated_alias_across_short_dropout": {
+          "pass": true,
+          "outcome": "no_reset",
+          "time_to_recover_sec": null,
+          "attempts": 3,
+          "trace": [
+            "98:unconfirmed",
+            "104.5:unconfirmed",
+            "110:unconfirmed"
+          ]
+        },
+        "odometry_lost_permanently": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 6.0,
+          "attempts": 1,
+          "trace": [
+            "66:reset:no_bridged_pose"
+          ]
+        }
+      }
+    },
+    "segment_bridge_guard": {
+      "design": "gapless pair + withhold inside dropout",
+      "passed": 7,
+      "benchmark_score": 70.0,
+      "wrong_resets": 0,
+      "fixtures": {
+        "hard02b_wrong_answer_after_short_dropout": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 18.0,
+          "attempts": 3,
+          "trace": [
+            "106:unconfirmed",
+            "112:unconfirmed",
+            "118:reset:confirmed"
+          ]
+        },
+        "hard02b_wrong_answer_inside_dropout": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 14.0,
+          "attempts": 3,
+          "trace": [
+            "102:inside_dropout",
+            "108:unconfirmed",
+            "114:reset:confirmed"
+          ]
+        },
+        "kidnap_covered_carry": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 11.0,
+          "attempts": 2,
+          "trace": [
+            "95:unconfirmed",
+            "101:reset:confirmed"
+          ]
+        },
+        "kidnap_stationary_alias_across_gap": {
+          "pass": true,
+          "outcome": "no_reset",
+          "time_to_recover_sec": null,
+          "attempts": 3,
+          "trace": [
+            "57:unconfirmed",
+            "95:unconfirmed",
+            "101:unconfirmed",
+            "107:exhausted"
+          ]
+        },
+        "kidnap_answers_during_cover": {
+          "pass": false,
+          "outcome": "no_reset",
+          "time_to_recover_sec": null,
+          "attempts": 3,
+          "trace": [
+            "70:inside_dropout",
+            "80:inside_dropout",
+            "95:unconfirmed",
+            "101:exhausted"
+          ]
+        },
+        "kidnap_intermittent_odometry": {
+          "pass": false,
+          "outcome": "no_reset",
+          "time_to_recover_sec": null,
+          "attempts": 3,
+          "trace": [
+            "96:unconfirmed",
+            "102:unconfirmed",
+            "108:unconfirmed"
+          ]
+        },
+        "continuous_alias_then_correct": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 22.0,
+          "attempts": 3,
+          "trace": [
+            "50:unconfirmed",
+            "56:unconfirmed",
+            "62:reset:confirmed"
+          ]
+        },
+        "no_external_odometry": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 5.0,
+          "attempts": 1,
+          "trace": [
+            "30:reset:no_bridged_pose"
+          ]
+        },
+        "repeated_alias_across_short_dropout": {
+          "pass": true,
+          "outcome": "no_reset",
+          "time_to_recover_sec": null,
+          "attempts": 3,
+          "trace": [
+            "98:unconfirmed",
+            "104.5:unconfirmed",
+            "110:unconfirmed"
+          ]
+        },
+        "odometry_lost_permanently": {
+          "pass": false,
+          "outcome": "no_reset",
+          "time_to_recover_sec": null,
+          "attempts": 3,
+          "trace": [
+            "66:inside_dropout",
+            "72:inside_dropout",
+            "78:inside_dropout",
+            "84:exhausted"
+          ]
+        }
+      }
+    },
+    "segment_defer": {
+      "design": "gapless pair + defer query inside dropout",
+      "passed": 9,
+      "benchmark_score": 90.0,
+      "wrong_resets": 0,
+      "fixtures": {
+        "hard02b_wrong_answer_after_short_dropout": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 18.0,
+          "attempts": 3,
+          "trace": [
+            "106:unconfirmed",
+            "112:unconfirmed",
+            "118:reset:confirmed"
+          ]
+        },
+        "hard02b_wrong_answer_inside_dropout": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 14.0,
+          "attempts": 2,
+          "trace": [
+            "102:deferred_inside_dropout",
+            "108:unconfirmed",
+            "114:reset:confirmed"
+          ]
+        },
+        "kidnap_covered_carry": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 11.0,
+          "attempts": 2,
+          "trace": [
+            "95:unconfirmed",
+            "101:reset:confirmed"
+          ]
+        },
+        "kidnap_stationary_alias_across_gap": {
+          "pass": true,
+          "outcome": "no_reset",
+          "time_to_recover_sec": null,
+          "attempts": 3,
+          "trace": [
+            "57:unconfirmed",
+            "95:unconfirmed",
+            "101:unconfirmed",
+            "107:exhausted"
+          ]
+        },
+        "kidnap_answers_during_cover": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 11.0,
+          "attempts": 2,
+          "trace": [
+            "70:deferred_inside_dropout",
+            "80:deferred_inside_dropout",
+            "95:unconfirmed",
+            "101:reset:confirmed"
+          ]
+        },
+        "kidnap_intermittent_odometry": {
+          "pass": false,
+          "outcome": "no_reset",
+          "time_to_recover_sec": null,
+          "attempts": 3,
+          "trace": [
+            "96:unconfirmed",
+            "102:unconfirmed",
+            "108:unconfirmed"
+          ]
+        },
+        "continuous_alias_then_correct": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 22.0,
+          "attempts": 3,
+          "trace": [
+            "50:unconfirmed",
+            "56:unconfirmed",
+            "62:reset:confirmed"
+          ]
+        },
+        "no_external_odometry": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 5.0,
+          "attempts": 1,
+          "trace": [
+            "30:reset:no_bridged_pose"
+          ]
+        },
+        "repeated_alias_across_short_dropout": {
+          "pass": true,
+          "outcome": "no_reset",
+          "time_to_recover_sec": null,
+          "attempts": 3,
+          "trace": [
+            "98:unconfirmed",
+            "104.5:unconfirmed",
+            "110:unconfirmed"
+          ]
+        },
+        "odometry_lost_permanently": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 126.0,
+          "attempts": 1,
+          "trace": [
+            "66:deferred_inside_dropout",
+            "72:deferred_inside_dropout",
+            "78:deferred_inside_dropout",
+            "84:deferred_inside_dropout",
+            "90:deferred_inside_dropout",
+            "96:deferred_inside_dropout",
+            "102:deferred_inside_dropout",
+            "108:deferred_inside_dropout",
+            "114:deferred_inside_dropout",
+            "120:deferred_inside_dropout",
+            "126:deferred_inside_dropout",
+            "132:deferred_inside_dropout",
+            "138:deferred_inside_dropout",
+            "144:deferred_inside_dropout",
+            "150:deferred_inside_dropout",
+            "156:deferred_inside_dropout",
+            "162:deferred_inside_dropout",
+            "168:deferred_inside_dropout",
+            "174:deferred_inside_dropout",
+            "180:deferred_inside_dropout",
+            "186:reset:no_bridged_pose"
+          ]
+        }
+      }
+    },
+    "segment_defer_speed_bound": {
+      "design": "segment_defer + speed-bound pair across gaps",
+      "passed": 8,
+      "benchmark_score": 80.0,
+      "wrong_resets": 2,
+      "fixtures": {
+        "hard02b_wrong_answer_after_short_dropout": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 18.0,
+          "attempts": 3,
+          "trace": [
+            "106:unconfirmed",
+            "112:unconfirmed",
+            "118:reset:confirmed"
+          ]
+        },
+        "hard02b_wrong_answer_inside_dropout": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 14.0,
+          "attempts": 2,
+          "trace": [
+            "102:deferred_inside_dropout",
+            "108:unconfirmed",
+            "114:reset:confirmed"
+          ]
+        },
+        "kidnap_covered_carry": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 11.0,
+          "attempts": 2,
+          "trace": [
+            "95:unconfirmed",
+            "101:reset:confirmed"
+          ]
+        },
+        "kidnap_stationary_alias_across_gap": {
+          "pass": false,
+          "outcome": "wrong_reset",
+          "time_to_recover_sec": null,
+          "attempts": 2,
+          "trace": [
+            "57:unconfirmed",
+            "95:reset:confirmed"
+          ]
+        },
+        "kidnap_answers_during_cover": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 11.0,
+          "attempts": 2,
+          "trace": [
+            "70:deferred_inside_dropout",
+            "80:deferred_inside_dropout",
+            "95:unconfirmed",
+            "101:reset:confirmed"
+          ]
+        },
+        "kidnap_intermittent_odometry": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 12.0,
+          "attempts": 2,
+          "trace": [
+            "96:unconfirmed",
+            "102:reset:confirmed"
+          ]
+        },
+        "continuous_alias_then_correct": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 22.0,
+          "attempts": 3,
+          "trace": [
+            "50:unconfirmed",
+            "56:unconfirmed",
+            "62:reset:confirmed"
+          ]
+        },
+        "no_external_odometry": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 5.0,
+          "attempts": 1,
+          "trace": [
+            "30:reset:no_bridged_pose"
+          ]
+        },
+        "repeated_alias_across_short_dropout": {
+          "pass": false,
+          "outcome": "wrong_reset",
+          "time_to_recover_sec": null,
+          "attempts": 2,
+          "trace": [
+            "98:unconfirmed",
+            "104.5:reset:confirmed"
+          ]
+        },
+        "odometry_lost_permanently": {
+          "pass": true,
+          "outcome": "correct_reset",
+          "time_to_recover_sec": 126.0,
+          "attempts": 1,
+          "trace": [
+            "66:deferred_inside_dropout",
+            "72:deferred_inside_dropout",
+            "78:deferred_inside_dropout",
+            "84:deferred_inside_dropout",
+            "90:deferred_inside_dropout",
+            "96:deferred_inside_dropout",
+            "102:deferred_inside_dropout",
+            "108:deferred_inside_dropout",
+            "114:deferred_inside_dropout",
+            "120:deferred_inside_dropout",
+            "126:deferred_inside_dropout",
+            "132:deferred_inside_dropout",
+            "138:deferred_inside_dropout",
+            "144:deferred_inside_dropout",
+            "150:deferred_inside_dropout",
+            "156:deferred_inside_dropout",
+            "162:deferred_inside_dropout",
+            "168:deferred_inside_dropout",
+            "174:deferred_inside_dropout",
+            "180:deferred_inside_dropout",
+            "186:reset:no_bridged_pose"
+          ]
+        }
+      }
+    }
+  }
+}

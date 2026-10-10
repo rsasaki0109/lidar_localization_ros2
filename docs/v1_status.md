@@ -166,6 +166,18 @@ Before changing runtime defaults:
    recovery, then run supervisor tests and release regression. Synthetic fixture
    results alone are not public-replay validation.
 
+Steps 1 and 2 are done in
+[experiments/odometry_dropout_confirmation](../experiments/odometry_dropout_confirmation/README.md),
+using synthetic fixtures only. The runtime waiver resets wrongly on 4 of 10 timelines.
+The leading candidate, `segment_defer`, has these rules:
+
+- pair answers only across gapless odometry
+- skip queries while the odometry is out
+
+It passes 9 of 10 timelines with no wrong reset. It costs one query cycle after a covered
+carry. It fails when odometry drops out between every two answers. Step 3, the replay,
+is still open.
+
 Other work remains:
 
 - keeping release regression green
