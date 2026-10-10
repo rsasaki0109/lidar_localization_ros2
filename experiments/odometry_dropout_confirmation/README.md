@@ -91,6 +91,20 @@ runtime change, follow steps 3 and 4 of `v1_status.md`:
 2. In `outdoor_kidnap_b`, check whether the odometry resumes continuously after each cover
    (`kidnap_covered_carry`) or keeps dropping out (`kidnap_intermittent_odometry`), and whether G2
    answers on covered scans (`kidnap_answers_during_cover`).
-3. Replay `outdoor_hard_02b` and `outdoor_kidnap_b` with `window_waiver` and `segment_defer`
-   (behind an opt-in parameter). Use the same map, odometry, parameters and repeat count. Report
-   wrong resets, time to recover, time within 3 m, reset count and upstream frame drops.
+3. Replay `outdoor_hard_02b` and `outdoor_kidnap_b` with `window_waiver` and `segment_defer`.
+   Use the same map, odometry, parameters and repeat count. Report wrong resets, time to
+   recover, time within 3 m, reset count and upstream frame drops.
+
+`segment_defer` is available as an opt-in on the supervisor
+(`odometry_confirmation_mode:=segment_defer`). The runtime decides "odometry is out" from the
+odom TF stamps (no stamp for more than `odometry_max_gap_sec`), where the simulator uses the
+bridged pose. Both runs below use the same suite:
+
+```bash
+python3 tools/benchmark/run_benchmark.py tools/benchmark/suites/koide_outdoor.yaml \
+  --case outdoor_hard_02b --case outdoor_kidnap_b --out /tmp/dropout_window_waiver
+python3 tools/benchmark/run_benchmark.py tools/benchmark/suites/koide_outdoor.yaml \
+  --case outdoor_hard_02b --case outdoor_kidnap_b --out /tmp/dropout_segment_defer \
+  --quickstart "ros2 run lidar_localization_ros2 quickstart.py \
+    --supervisor-odometry-confirmation-mode segment_defer"
+```

@@ -175,7 +175,8 @@ The leading candidate, `segment_defer`, has these rules:
 - skip queries while the odometry is out
 
 It passes 9 of 10 timelines with no wrong reset. It costs one query cycle after a covered
-carry. It fails when odometry drops out between every two answers. Step 3, the replay,
+carry. It fails when odometry drops out between every two answers. It is now an opt-in
+(`--supervisor-odometry-confirmation-mode segment_defer`) for that replay. Step 3, the replay,
 is still open.
 
 Other work remains:
