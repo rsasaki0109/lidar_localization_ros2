@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add an experimental opt-in G3 confirmation mode for odometry dropouts
+  (`odometry_confirmation_mode:=segment_defer`, quickstart
+  `--supervisor-odometry-confirmation-mode`). Answers confirm each other only across
+  gapless odometry, and queries wait while odometry is out. The default
+  (`window_waiver`) is unchanged; see
+  [the synthetic comparison](experiments/odometry_dropout_confirmation/README.md).
+
 ## 1.3.0 - 2026-10-09
 
 - Add an opt-in 75 m local-map preset for online Koide replay with RELIABLE points

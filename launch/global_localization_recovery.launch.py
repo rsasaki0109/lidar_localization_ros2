@@ -289,6 +289,11 @@ def generate_launch_description():
             'supervisor_event_log_csv', default_value='',
             description='Optional CSV path for supervisor recovery events.'),
         DeclareLaunchArgument(
+            'supervisor_odometry_confirmation_mode', default_value='window_waiver',
+            description='window_waiver (default) or segment_defer (experimental): '
+                        'confirm G2 answers only across gapless odometry and hold '
+                        'queries while odometry is out.'),
+        DeclareLaunchArgument(
             'supervisor_reset_default_z_m', default_value='0.0',
             description='Fallback map-frame z for /initialpose seeds.'),
         DeclareLaunchArgument(
@@ -547,6 +552,8 @@ def generate_launch_description():
             'odom_bridge_yaw_std_rad': ParameterValue(
                 supervisor_odom_bridge_yaw_std_rad, value_type=float),
             'event_log_csv': supervisor_event_log_csv,
+            'odometry_confirmation_mode': LaunchConfiguration(
+                'supervisor_odometry_confirmation_mode'),
             'use_sim_time': use_sim_time,
         }])
 

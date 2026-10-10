@@ -444,6 +444,101 @@ def _status(stamp_sec, ok):
     return array
 
 
+SEGMENT_DEFER_ARGS = ["--ros-args", "-p", "odometry_confirmation_mode:=segment_defer"]
+
+
+def _dropout_supervisor(gap_start, gap_end):
+    """Bridge and odom TF at 10 Hz over 0-60 s, both missing inside the gap."""
+    sup = rsn.ReinitializationSupervisorNode()
+    for step in range(0, 600):
+        stamp = 0.1 * step
+        if gap_start < stamp < gap_end:
+            continue
+        sup._odom_bridge_history.append((stamp, 1.0 * stamp, 0.0, 0.0))
+        sup._odometry_stamps.append(stamp)
+    return sup
+
+
+def _answer(sup, stamp, x, y):
+    summary = {"scan_stamp_sec": float(stamp)}
+    candidates = [{"x": x, "y": y, "yaw_deg": 0.0, "score": 0.9}]
+    return sup._withhold_unconfirmed_answer(summary, candidates, (0.9,))
+
+
+def test_segment_defer_confirms_only_across_gapless_odometry():
+    # Koide outdoor_hard_02b: RKO dropped frames for a few seconds, and the first
+    # answer after the gap reset the pose 128 m away (window_waiver accepts it).
+    rclpy.init(args=SEGMENT_DEFER_ARGS)
+    sup = _dropout_supervisor(20.0, 23.5)
+    try:
+        assert sup.segment_confirmation
+        assert _answer(sup, 18, 18.0, 30.0) == (0.0,)
+        # Agrees with the answer before the gap, but no odometry vouches for it.
+        assert _answer(sup, 26, 26.0, 30.0) == (0.0,), "paired across the gap"
+        assert _answer(sup, 30, 30.0, 30.0) == (0.9,), "gapless pair withheld"
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
+def test_segment_defer_withholds_an_answer_inside_a_dropout():
+    rclpy.init(args=SEGMENT_DEFER_ARGS)
+    sup = _dropout_supervisor(20.0, 24.0)
+    try:
+        assert _answer(sup, 22, -70.0, 90.0) == (0.0,), "unguarded answer in the gap"
+        # Without any external odometry a single gated answer still resets.
+        sup._odom_bridge_history.clear()
+        sup._odometry_stamps.clear()
+        assert _answer(sup, 22, -70.0, 90.0) == (0.9,)
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+    rclpy.init()
+    sup = _dropout_supervisor(20.0, 24.0)
+    try:
+        assert not sup.segment_confirmation
+        assert _answer(sup, 22, -70.0, 90.0) == (0.9,), "default mode changed"
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
+def test_segment_defer_holds_the_query_while_odometry_is_out(monkeypatch):
+    rclpy.init(args=SEGMENT_DEFER_ARGS)
+    sup = _dropout_supervisor(20.0, 100.0)
+    queries = []
+    monkeypatch.setattr(sup, "_issue_query", lambda: queries.append(True))
+    try:
+        sup._requested = True
+        sup.state = replace(sup.state, name=rsn.rsp.STATE_AWAIT_QUERY)
+        sup._last_sim_stamp_sec = 23.0
+        sup._tick()
+        assert sup.state.name == rsn.rsp.STATE_AWAIT_QUERY
+        assert sup.state.attempts == 0 and not queries, "queried while odometry out"
+
+        # Odometry gone for the whole window: one gated answer is enough again.
+        sup._last_sim_stamp_sec = 20.0 + sup.odometry_confirmation_window_sec + 1.0
+        assert not sup._odometry_out()
+        sup._last_sim_stamp_sec = 23.0
+        sup._odometry_stamps.extend(23.0 + 0.1 * step for step in range(0, 10))
+        sup._tick()
+        assert queries == [True], "query not issued once odometry was back"
+        assert sup.state.name == rsn.rsp.STATE_AWAIT_CANDIDATES
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
+def test_unknown_odometry_confirmation_mode_is_rejected():
+    rclpy.init(args=["--ros-args", "-p", "odometry_confirmation_mode:=segment"])
+    try:
+        with pytest.raises(ValueError, match="odometry_confirmation_mode"):
+            rsn.ReinitializationSupervisorNode()
+    finally:
+        rclpy.shutdown()
+
+
 def test_failing_scans_after_odometry_dropout_request_a_query():
     # Koide outdoor_kidnap_b: after the sensor was covered and the robot carried
     # 12 m, one accepted scan restarted the localizer's 30 s request timer, so the

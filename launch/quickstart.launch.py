@@ -196,6 +196,8 @@ def generate_launch_description():
         DeclareLaunchArgument("supervisor_enable_seed_motion_compensation", default_value="false"),
         DeclareLaunchArgument("supervisor_confirm_cross_check", default_value="true"),
         DeclareLaunchArgument("supervisor_prefer_reset_default_z_m", default_value="false"),
+        DeclareLaunchArgument(
+            "supervisor_odometry_confirmation_mode", default_value="window_waiver"),
     ]
 
     global_localization = Node(
@@ -287,6 +289,8 @@ def generate_launch_description():
                 LaunchConfiguration("g2_registration_seed_z_m"), value_type=float),
             "prefer_reset_default_z_m": ParameterValue(
                 LaunchConfiguration("supervisor_prefer_reset_default_z_m"), value_type=bool),
+            "odometry_confirmation_mode": LaunchConfiguration(
+                "supervisor_odometry_confirmation_mode"),
             "confirm_cross_check": ParameterValue(
                 LaunchConfiguration("supervisor_confirm_cross_check"), value_type=bool),
             "use_sim_time": ParameterValue(

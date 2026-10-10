@@ -534,6 +534,33 @@ class TestQuickstartCli(unittest.TestCase):
             self.assertIn("pose_topic:=/localization/pose_with_covariance", command)
             self.assertNotIn("occupancy_yaml:=", command)
 
+    def test_odometry_confirmation_mode_reaches_the_supervisor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            map_path = root / "site.pcd"
+            map_path.write_bytes(b"pcd")
+            for extra, expected in (
+                ([], "window_waiver"),
+                (
+                    ["--supervisor-odometry-confirmation-mode", "segment_defer"],
+                    "segment_defer",
+                ),
+            ):
+                args = QUICKSTART.build_arg_parser().parse_args(
+                    ["--map", str(map_path), "--no-discover-topics", *extra]
+                )
+                command = shlex.join(
+                    QUICKSTART.launch_parts(
+                        args,
+                        QUICKSTART._config_args(args, "/cloud", "/imu"),
+                        root / "config.yaml",
+                        root / "pose.json",
+                    )
+                )
+                self.assertIn(
+                    f"supervisor_odometry_confirmation_mode:={expected}", command
+                )
+
     def test_route_crop_reference_csv_dry_run(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

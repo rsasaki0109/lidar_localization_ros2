@@ -251,6 +251,7 @@ class TestLaunchArgumentContract(unittest.TestCase):
             "supervisor_cross_check_mismatch_m",
             "supervisor_max_seed_speed_mps",
             "supervisor_max_seed_latency_sec",
+            "supervisor_odometry_confirmation_mode",
             "g2_nms_radius_m",
         ):
             with self.subTest(key=key):

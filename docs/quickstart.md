@@ -237,6 +237,21 @@ On the Koide `outdoor_kidnap_b` replay (sensor covered and carried several times
 raised the share of time within 3 m after the first carry from 0.11-0.34 to 0.57-0.62,
 with every reset within 2 m.
 
+The same waiver let one answer reset the pose 128 m away on an `outdoor_hard_02b`
+benchmark run, after RKO-LIO dropped frames for a few seconds. An experimental opt-in,
+`--supervisor-odometry-confirmation-mode segment_defer`
+(`odometry_confirmation_mode` on the node), replaces the waiver:
+
+- two answers confirm each other only when odom TF has no gap between them;
+- an answer whose scan falls inside a dropout is withheld;
+- G2 queries wait while odometry is out, so they do not spend attempts;
+- after `odometry_confirmation_window_sec` without odometry, one gated answer is
+  enough again.
+
+It has only been compared on synthetic timelines
+([experiments/odometry_dropout_confirmation](../experiments/odometry_dropout_confirmation/README.md)),
+not on a public replay. The default stays `window_waiver`.
+
 A candidate is published only when:
 
 - G2 confirms that 3D NDT registration scoring is active (required by default);

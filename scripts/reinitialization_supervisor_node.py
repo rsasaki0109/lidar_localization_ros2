@@ -60,6 +60,7 @@ _ACCEPT_TRACKING_STATES = frozenset(
         "recovering",
     }
 )
+_ODOMETRY_CONFIRMATION_MODES = ("window_waiver", "segment_defer")
 
 
 def _roll_pitch_from_quat(x: float, y: float, z: float, w: float):
@@ -143,6 +144,13 @@ class ReinitializationSupervisorNode(Node):
         # keeps rejecting scans; its own request needs 30 s without an accepted scan,
         # and one lucky accept restarts that. Query once scans have failed this long.
         self.declare_parameter("query_after_odometry_dropout_sec", 5.0)
+        # How answers are confirmed around a dropout. "window_waiver" accepts one
+        # gated answer as above. "segment_defer" (experimental, opt-in) pairs answers
+        # only across odometry without a gap, withholds an answer whose scan falls
+        # inside a dropout, and holds G2 queries while odometry is out; after
+        # odometry_confirmation_window_sec without odometry, one gated answer is
+        # enough again. See experiments/odometry_dropout_confirmation.
+        self.declare_parameter("odometry_confirmation_mode", "window_waiver")
         self.declare_parameter("bbs_shadow_required_samples", 2)
         self.declare_parameter("bbs_shadow_max_translation_mismatch_m", 5.0)
         self.declare_parameter("bbs_shadow_max_yaw_mismatch_deg", 20.0)
@@ -246,6 +254,19 @@ class ReinitializationSupervisorNode(Node):
         self._odometry_stamps = deque()
         self.query_after_odometry_dropout_sec = float(
             self.get_parameter("query_after_odometry_dropout_sec").value
+        )
+        self.odometry_confirmation_mode = str(
+            self.get_parameter("odometry_confirmation_mode").value
+        )
+        if self.odometry_confirmation_mode not in _ODOMETRY_CONFIRMATION_MODES:
+            raise ValueError(
+                "odometry_confirmation_mode must be one of "
+                f"{', '.join(_ODOMETRY_CONFIRMATION_MODES)}, "
+                f"not {self.odometry_confirmation_mode!r}"
+            )
+        self.segment_confirmation = (
+            self.require_odometry_confirmation
+            and self.odometry_confirmation_mode == "segment_defer"
         )
         self._unstable_since_sec = None
         self._stable_samples = 0
@@ -427,6 +448,16 @@ class ReinitializationSupervisorNode(Node):
             f"velocity_max_age_sec={self.seed_velocity_max_age:.2f} wall_fallback={self.seed_motion_wall_fallback} skip_registration_fitness<={self.seed_motion_skip_registration_fitness:.2f} "
             "(sim fix-to-fix on bag clock preferred when available)"
         )
+        if self.segment_confirmation:
+            self.get_logger().info(
+                "odometry confirmation: segment_defer (experimental); answers pair "
+                "only across gapless odometry, and G2 queries wait while it is out"
+            )
+        elif self.odometry_confirmation_mode != "window_waiver":
+            self.get_logger().warn(
+                f"odometry_confirmation_mode={self.odometry_confirmation_mode} has no "
+                "effect without require_odometry_confirmation"
+            )
         if self.prefer_reset_default_z:
             self.get_logger().info(
                 f"seed z: using reset_default_z_m={self.reset_default_z:.3f} (prefer_reset_default_z_m=true)"
@@ -686,6 +717,14 @@ class ReinitializationSupervisorNode(Node):
             odom_bridge_available=odom_bridge_pose is not None,
         )
         decision = rsp.decide(self.params, self.state, obs)
+        if decision.reason == "query_issued" and self._odometry_out():
+            # segment_defer: an answer from now could not be confirmed, so keep the
+            # attempt for when odometry is back (the decision is not applied).
+            self.get_logger().info(
+                "odometry is out; holding the G2 query until it is back",
+                throttle_duration_sec=10.0,
+            )
+            return
         if (
             decision.state.name == rsp.STATE_EXHAUSTED
             and self.state.name != rsp.STATE_EXHAUSTED
@@ -981,6 +1020,38 @@ class ReinitializationSupervisorNode(Node):
             for earlier, later in itertools.pairwise(stamps)
         )
 
+    def _odometry_continuous_between(self, start_sec: float, end_sec: float) -> bool:
+        """True when odom TF arrived without dropouts from one answer to another."""
+        stamps = sorted(
+            s
+            for s in self._odometry_stamps
+            if start_sec - self.odometry_max_gap_sec <= s <= end_sec
+        )
+        if (
+            not stamps
+            or stamps[0] > start_sec
+            or end_sec - stamps[-1] > self.odometry_max_gap_sec
+        ):
+            return False
+        return all(
+            later - earlier <= self.odometry_max_gap_sec
+            for earlier, later in itertools.pairwise(stamps)
+        )
+
+    def _odometry_out(self, stamp_sec=None) -> bool:
+        """segment_defer: odom TF seen within the window has stopped for a while."""
+        if stamp_sec is None:
+            stamp_sec = self._last_sim_stamp_sec
+        if not self.segment_confirmation or stamp_sec is None:
+            return False
+        last = max((s for s in self._odometry_stamps if s <= stamp_sec), default=None)
+        return (
+            last is not None
+            and self.odometry_max_gap_sec
+            < stamp_sec - last
+            <= self.odometry_confirmation_window_sec
+        )
+
     def _withhold_unconfirmed_answer(self, summary, candidates, scores):
         """Withhold an answer until another answer agrees after bridged motion."""
         if not self.require_odometry_confirmation or not candidates:
@@ -992,8 +1063,20 @@ class ReinitializationSupervisorNode(Node):
             else self._nearest_history_entry(self._odom_bridge_history, stamp, 0.5)
         )
         if bridge is None:
+            if (
+                self.segment_confirmation
+                and stamp is not None
+                and any(
+                    0.0 <= stamp - entry[0] <= self.odometry_confirmation_window_sec
+                    for entry in self._odom_bridge_history
+                )
+            ):
+                self.get_logger().info(
+                    "G2 answer withheld: its scan is inside an odometry dropout"
+                )
+                return tuple(0.0 for _ in scores)
             return scores
-        if not self._odometry_continuous(stamp):
+        if not self.segment_confirmation and not self._odometry_continuous(stamp):
             self.get_logger().info(
                 "odometry dropped out within "
                 f"{self.odometry_confirmation_window_sec:.0f} s; not waiting for a "
@@ -1018,6 +1101,11 @@ class ReinitializationSupervisorNode(Node):
                 prev_stamp < stamp - 1.0e-9
                 and stamp - prev_stamp <= self.odometry_confirmation_window_sec
             ):
+                continue
+            if self.segment_confirmation and not self._odometry_continuous_between(
+                prev_stamp, stamp
+            ):
+                # Bridged motion across a dropout says nothing about the motion.
                 continue
             predicted = quickstart_model.apply_planar_motion(prev_offset, bridged)
             travelled = math.hypot(

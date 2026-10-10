@@ -379,6 +379,15 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     ):
         tuning.add_argument(flag, help=advanced(), **kwargs)
     tuning.add_argument(
+        "--supervisor-odometry-confirmation-mode",
+        choices=("window_waiver", "segment_defer"),
+        default="window_waiver",
+        help=advanced(
+            "How G3 confirms answers around odometry dropouts; segment_defer is "
+            "experimental."
+        ),
+    )
+    tuning.add_argument(
         "--global-cpp-backend",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -671,6 +680,9 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         "supervisor_enable_seed_motion_compensation": str(not route_crop).lower(),
         "supervisor_confirm_cross_check": str(not route_crop).lower(),
         "supervisor_prefer_reset_default_z_m": str(abs(seed_z) > 1.0e-9).lower(),
+        "supervisor_odometry_confirmation_mode": (
+            args.supervisor_odometry_confirmation_mode
+        ),
     }
     parts = ["ros2", "launch", "lidar_localization_ros2", "quickstart.launch.py"]
     parts.extend(
