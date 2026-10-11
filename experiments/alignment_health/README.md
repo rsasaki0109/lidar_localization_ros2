@@ -81,14 +81,47 @@ localizer stopped publishing `/pcl_pose` for the remaining ~146 s. The summary t
 shows a 0.05 m median, because only the 40 published poses are scored; `tracked_fraction`
 is the column that shows the loss.
 
+## Benchmark changes (2026-10-11)
+
+Items 2 and 3 of the original next steps are now in `tools/benchmark`.
+
+- **tracked**: the summary table reports `tracked`. Its coverage now runs to the end of the
+  replay, so a localizer that stops publishing loses it. Before, coverage ended at the last
+  published pose.
+- **lost**: the health table adds "lost" shares, which count only scans where the localizer
+  requests reinitialization (or stopped reporting).
+
+Re-scored on the same runs:
+
+| case | tracked | flagged when off / good | lost when off / good |
+|---|---:|---|---|
+| `outdoor_hard_01a` | 0.75 | 1.00 / 0.27 | 1.00 / 0.03 |
+| `outdoor_hard_01b` | 0.65 | - / 0.34 | - / 0.20 |
+| `outdoor_hard_02a` | 0.80 | 0.98 / 0.38 | 0.98 / 0.25 |
+| `outdoor_hard_02b` | 0.66 | 0.10 / 0.26 | 0.00 / 0.12 |
+| `outdoor_kidnap_a` | 0.03 | 1.00 / 0.03 | 0.00 / 0.00 |
+| `outdoor_kidnap_b` | 0.06 | 0.17 / 0.02 | 0.02 / 0.00 |
+
+Reading the new columns:
+
+- **Lost cuts alarms on good poses by a third to nine tenths** on the `outdoor_hard_*`
+  sequences, and keeps the off poses of `01a` and `02a`.
+- **But lost misses the kidnap failures**, so neither column alone is a health signal.
+  `outdoor_kidnap_a` lost tracking after 36 s and its status went stale. Its few off poses
+  carried WARN rather than a reinitialization request.
+- **tracked now shows the `outdoor_kidnap_a` loss** (0.03). On this 4-core machine it stays
+  at 0.65-0.80 even for good runs, because the localizer does not keep up with every
+  scan. Compare it within one machine.
+
 ## Next steps
 
 Nothing here is ready for runtime. Candidates:
 
 1. **Validate `poor_accept_a` on more kidnap runs.** Only one sequence had off-but-OK
    scans. Use more repeats of `outdoor_kidnap_a`/`_b` and the indoor kidnap sequences.
-2. **Score WARN and ERROR separately in the benchmark health table.** "Measurement
-   rejected, pose carried by odometry" is not the same alarm as "lost". This changes the
-   metric only.
-3. **Show loss of tracking in the benchmark summary.** Report `tracked_fraction` next to
-   the error percentiles, so a run that stops publishing does not look accurate.
+2. **Done above**: lost shares in the health table, instead of WARN and ERROR. ERROR is
+   only `filtered_scan_empty` here, so it does not mean lost.
+3. **Done above**: `tracked` in the summary table, with coverage to the end of the replay.
+4. **Publish an explicit pose source in `/alignment_status`**: registration, odometry bridge,
+   or none. A consumer then does not have to infer it. This would need a runtime change and
+   its own validation.

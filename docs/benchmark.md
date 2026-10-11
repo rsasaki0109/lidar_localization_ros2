@@ -20,12 +20,20 @@ tracked consistently. On a Unitree Go2, such runs were 1.8 m off but looked like
 | time to first pose | seconds from the start of the replay |
 | median / p95 / max xy | horizontal error of the matched poses |
 | >1 m | share of poses more than 1 m off (median over runs) |
+| tracked | share of the ground-truth time from the first pose to the end of the replay that has a matched pose (median over runs); a localizer that stops publishing loses it |
 
 Runs also record the localizer's per-scan `/alignment_status`. A second table scores it
 as a health signal: the share of poses more than 1 m off that it did not report OK
 (the higher the better), and of poses within 0.3 m that it did not report OK (false
 alarms, the lower the better). A pose with no status in the last second counts as
 flagged.
+
+The "lost" columns count only the scans where the localizer requests
+reinitialization (or stopped reporting). A scan that NDT rejects while the odometry
+bridge carries the pose is WARN, but not lost. The results below were measured
+before the "tracked" and "lost" columns existed. See
+[experiments/alignment_health](../experiments/alignment_health/README.md) for why
+neither column alone separates lost poses from good ones.
 
 ## Running it
 

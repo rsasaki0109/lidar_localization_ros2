@@ -162,13 +162,14 @@ def run_once(
 
 
 def score(case: dict, run_dir: Path) -> benchmark_eval.RunScore:
-    start_sec, _ = bag_start_and_duration(Path(case["bag"]))
-    start_sec += float(case.get("start_offset_sec", 0.0))
+    bag_start, duration = bag_start_and_duration(Path(case["bag"]))
+    start_sec = bag_start + float(case.get("start_offset_sec", 0.0))
     result = benchmark_eval.score_run(
         benchmark_eval.load_tum(run_dir / "est.tum"),
         benchmark_eval.load_tum(case["gt"]),
         start_sec,
         benchmark_eval.load_alignment_levels(run_dir / "alignment.jsonl"),
+        end_sec=bag_start + duration,
     )
     (run_dir / "score.json").write_text(json.dumps(result.as_dict(), indent=2) + "\n")
     return result
