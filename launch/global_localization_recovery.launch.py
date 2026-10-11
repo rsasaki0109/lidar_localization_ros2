@@ -355,6 +355,12 @@ def generate_launch_description():
                         'keep more near-by/yaw-alternative hypotheses for candidate '
                         'walking; higher values improve spatial diversity.'),
         DeclareLaunchArgument(
+            'g2_z_min_m', default_value='0.5',
+            description='G2 scan height band, lower edge in the levelled base frame.'),
+        DeclareLaunchArgument(
+            'g2_z_max_m', default_value='5.0',
+            description='G2 scan height band, upper edge in the levelled base frame.'),
+        DeclareLaunchArgument(
             'g2_use_cpp_backend', default_value='true',
             description='Use the compiled C++ BBS backend (bbs_cpp) when built; '
                         'falls back to the Python search if unavailable.'),
@@ -467,6 +473,10 @@ def generate_launch_description():
                 LaunchConfiguration('g2_max_candidates'), value_type=int),
             'nms_radius_m': ParameterValue(
                 LaunchConfiguration('g2_nms_radius_m'), value_type=float),
+            'z_min_m': ParameterValue(
+                LaunchConfiguration('g2_z_min_m'), value_type=float),
+            'z_max_m': ParameterValue(
+                LaunchConfiguration('g2_z_max_m'), value_type=float),
             'use_cpp_backend': ParameterValue(
                 LaunchConfiguration('g2_use_cpp_backend'), value_type=bool),
             'candidate_source': LaunchConfiguration('g2_candidate_source'),

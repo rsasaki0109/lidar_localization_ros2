@@ -69,6 +69,29 @@ Could not localize automatically: no unambiguous match was found. Set 2D Pose Es
 - Click **2D Pose Estimate** in RViz near the robot, pointing the way it faces.
 - If the robot starts where the mapping run started, restart with
   `--initial-pose 0 0 0 0 0 0 1` (x y z qx qy qz qw).
+- On a map larger than a room, use the settings under [Large maps](#large-maps).
+
+## Large maps
+
+The global search matches the scan against a 2D grid of the map. A MID-360 upside
+down on a Go2 sits about 0.45 m above the ground and sees at most 7 degrees above
+its horizontal plane. Only about 4% of its points reach the default height band
+(0.5 m and more above the sensor). With about 100 points, a building-sized or
+outdoor map fits the scan perfectly at many places, and the search returns the
+wrong ones. These options search from the sensor plane up on a thinner grid,
+keep more candidates for the 3D check, and publish its refined pose:
+
+```bash
+ros2 run lidar_localization_ros2 quickstart.py --map output/my_area/map.pcd \
+  --occupancy-inflate-radius-m 0.2 --global-z-min 0.0 --global-max-scan-points 1024 \
+  --global-max-candidates 16 --refine-global-candidates
+```
+
+quickstart generates (and caches) the thinner grid itself. If you pass your own
+`--occupancy-map`, generate it with `--inflate-radius-m 0.2
+--max-obstacle-height-m 2.0`. Each search takes about 1-2 s instead of 0.2-1.5 s.
+The settings fit a sensor mounted near obstacle height. A handheld or
+car-mounted sensor keeps the defaults; these were measured only on the Go2.
 
 ## How well it works
 
@@ -77,9 +100,13 @@ lidar_slam_ros2 map of a separate run ([benchmark](benchmark.md)):
 - **Indoor capture room** (EIL_Box, Stairs, Mask1, Mask2, three runs each): all
   12 runs localized by themselves and none at a wrong place. The first pose came
   after 10-17 s, and tracking stayed within 3 cm (median).
-- **Large maps** (Long_Stairs, Outdoor): the global search does not find the Go2.
-  Its sensor is 0.4 m above the ground and leaves too few points for the 2D search.
-  Start with `--initial-pose` or 2D Pose Estimate.
+- **Large maps** (Long_Stairs, Outdoor): with the defaults the global search
+  does not find the Go2. With the [Large maps](#large-maps) settings it
+  localized all six runs (two per map) by itself and none at a wrong place, after
+  11-15 s, and tracking stayed within 2 cm (median). In the capture room the same
+  settings localized all 12 runs correctly.
+  These were measured on maps rebuilt from the raw bags, as the dataset no longer
+  ships its own ([comparison](../experiments/go2_wide_map_global_init/README.md)).
 
 More: [quickstart and automatic initialization](quickstart.md),
 [troubleshooting](troubleshooting.md), [frames](frame_contract.md).

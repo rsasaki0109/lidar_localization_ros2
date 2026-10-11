@@ -187,6 +187,9 @@ def generate_launch_description():
         DeclareLaunchArgument("g2_angular_resolution_deg", default_value="5.0"),
         DeclareLaunchArgument("g2_max_candidates", default_value="8"),
         DeclareLaunchArgument("g2_nms_radius_m", default_value="3.0"),
+        # Scan height band of the 2D global search, in the levelled base frame.
+        DeclareLaunchArgument("g2_z_min_m", default_value="0.5"),
+        DeclareLaunchArgument("g2_z_max_m", default_value="5.0"),
         DeclareLaunchArgument("supervisor_min_candidate_score", default_value="0.15"),
         DeclareLaunchArgument("supervisor_query_timeout_sec", default_value="45.0"),
         DeclareLaunchArgument("supervisor_max_walk_candidates", default_value="4"),
@@ -235,6 +238,10 @@ def generate_launch_description():
                 LaunchConfiguration("g2_max_candidates"), value_type=int),
             "nms_radius_m": ParameterValue(
                 LaunchConfiguration("g2_nms_radius_m"), value_type=float),
+            "z_min_m": ParameterValue(
+                LaunchConfiguration("g2_z_min_m"), value_type=float),
+            "z_max_m": ParameterValue(
+                LaunchConfiguration("g2_z_max_m"), value_type=float),
             "candidate_source": LaunchConfiguration("g2_candidate_source"),
             "reference_csv": LaunchConfiguration("reference_csv"),
             "route_time_radius_sec": ParameterValue(

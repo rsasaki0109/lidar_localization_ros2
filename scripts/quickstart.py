@@ -56,20 +56,37 @@ def default_occupancy_dir() -> Path:
 # aisle), outdoors (Koide campus) and on a driving loop.
 AUTO_OCCUPANCY_MAX_OBSTACLE_HEIGHT_M = 2.0
 
+# Occupied cells of a generated grid are inflated by this much (the generator's
+# default). A thinner grid separates places better in the 2D global search when
+# few scan points are left in its height band (a low sensor, as on a Unitree Go2).
+AUTO_OCCUPANCY_INFLATE_RADIUS_M = 0.6
+
 # Global candidates are scored at the map's ground under them plus this height
 # unless --global-seed-z fixes one map-frame z. Measured sensor heights were
 # 0.51 m (Go2), 1.33 m (handheld) and 1.66 m (car); 1.0 m initialized all three.
 DEFAULT_SENSOR_HEIGHT_M = 1.0
 
 
-def cached_occupancy_map(map_path: Path, cache_dir: Path) -> Path:
+def cached_occupancy_map(
+    map_path: Path,
+    cache_dir: Path,
+    inflate_radius_m: float = AUTO_OCCUPANCY_INFLATE_RADIUS_M,
+) -> Path:
     """Occupancy YAML for these map contents (renaming the map keeps it)."""
     identity = model.compute_map_identity(map_path)
-    return cache_dir / f"{identity.sha256[:16]}.yaml"
+    suffix = (
+        ""
+        if inflate_radius_m == AUTO_OCCUPANCY_INFLATE_RADIUS_M
+        else f"_inflate{inflate_radius_m:g}"
+    )
+    return cache_dir / f"{identity.sha256[:16]}{suffix}.yaml"
 
 
 def generate_occupancy_map(
-    map_path: Path, yaml_path: Path, run=subprocess.run
+    map_path: Path,
+    yaml_path: Path,
+    run=subprocess.run,
+    inflate_radius_m: float = AUTO_OCCUPANCY_INFLATE_RADIUS_M,
 ) -> str | None:
     """Write yaml_path from the point cloud map; return an error, or None."""
     yaml_path.parent.mkdir(parents=True, exist_ok=True)
@@ -86,6 +103,8 @@ def generate_occupancy_map(
         yaml_path.stem,
         "--max-obstacle-height-m",
         str(AUTO_OCCUPANCY_MAX_OBSTACLE_HEIGHT_M),
+        "--inflate-radius-m",
+        str(inflate_radius_m),
     ]
     try:
         result = run(command, check=False, capture_output=True, text=True, timeout=600)
@@ -351,6 +370,15 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
             "map for global search"
         ),
     )
+    session.add_argument(
+        "--occupancy-inflate-radius-m",
+        type=float,
+        default=AUTO_OCCUPANCY_INFLATE_RADIUS_M,
+        help=advanced(
+            "inflation of occupied cells in the generated grid; 0.2 suits a sensor "
+            "low above the ground (docs/go2_mid360_quickstart.md)"
+        ),
+    )
 
     tuning = parser.add_argument_group("global search and recovery tuning")
     for flag, kwargs in (
@@ -374,6 +402,8 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
         ("--global-max-scan-points", {"type": int, "default": 256}),
         ("--global-max-candidates", {"type": int, "default": 8}),
         ("--global-nms-radius-m", {"type": float, "default": 3.0}),
+        ("--global-z-min", {"type": float, "default": 0.5}),
+        ("--global-z-max", {"type": float, "default": 5.0}),
         ("--supervisor-query-timeout-sec", {"type": float, "default": 45.0}),
         ("--supervisor-max-walk-candidates", {"type": int, "default": 4}),
     ):
@@ -665,6 +695,8 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         "g2_angular_resolution_deg": args.global_angular_resolution_deg,
         "g2_max_candidates": g2_max_candidates,
         "g2_nms_radius_m": args.global_nms_radius_m,
+        "g2_z_min_m": args.global_z_min,
+        "g2_z_max_m": args.global_z_max,
         "g2_route_time_radius_sec": args.route_time_radius_sec,
         "g2_route_min_spacing_m": args.route_min_spacing_m,
         "g2_route_max_poses": args.route_max_poses,
@@ -749,6 +781,17 @@ def _validate(args) -> str | None:
         return (
             "Global search resolution, NMS radius, and seed z must be finite and valid."
         )
+    if (
+        not math.isfinite(args.global_z_min)
+        or not math.isfinite(args.global_z_max)
+        or args.global_z_min >= args.global_z_max
+    ):
+        return "--global-z-min must be below --global-z-max."
+    if (
+        not math.isfinite(args.occupancy_inflate_radius_m)
+        or args.occupancy_inflate_radius_m < 0.0
+    ):
+        return "--occupancy-inflate-radius-m must be a finite radius."
     if args.sensor_height is not None:
         if not math.isfinite(args.sensor_height) or args.sensor_height < 0.0:
             return "--sensor-height must be a finite height above the ground."
@@ -890,7 +933,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         and not (args.initial_pose or args.occupancy_yaml)
     ):
         map_path = Path(args.map_path).expanduser().resolve()
-        cached = cached_occupancy_map(map_path, default_occupancy_dir())
+        cached = cached_occupancy_map(
+            map_path, default_occupancy_dir(), args.occupancy_inflate_radius_m
+        )
         if cached.is_file():
             args.occupancy_yaml = str(cached)
             occupancy_note = f"{cached} (cached for this map)"
@@ -898,7 +943,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             occupancy_note = f"would generate {cached} from the map"
         else:
             print(f"Generating an occupancy grid for global search: {cached}")
-            error = generate_occupancy_map(map_path, cached)
+            error = generate_occupancy_map(
+                map_path,
+                cached,
+                inflate_radius_m=args.occupancy_inflate_radius_m,
+            )
             if error:
                 occupancy_note = f"not generated ({error}); set the pose manually"
             else:

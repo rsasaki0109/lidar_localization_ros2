@@ -262,7 +262,8 @@ class GlobalLocalizationNode(Node):
         self._query_seq = 0
         self.query_srv = self.create_service(Trigger, "~/query", self.handle_query)
         self.get_logger().info(
-            f"global localization service ready: source={self.engine.candidate_source} map={occupancy_yaml or reference_csv} scan={cloud_topic} backend={self.engine.backend}"
+            f"global localization service ready: source={self.engine.candidate_source} map={occupancy_yaml or reference_csv} scan={cloud_topic} backend={self.engine.backend} "
+            f"z_band=[{config.z_min_m:g}, {config.z_max_m:g}] m"
         )
 
     def cloud_received(self, msg: PointCloud2) -> None:

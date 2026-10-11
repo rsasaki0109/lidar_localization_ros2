@@ -1,0 +1,49 @@
+# go2_jeplo.yaml with the global search settings for a sensor low above the
+# ground (docs/go2_mid360_quickstart.md#large-maps): a thinner generated grid,
+# the scan band from the sensor plane up, more scan points and candidates, and
+# NDT-refined candidate poses.
+defaults:
+  repeats: 3
+  odometry_launch: lidarslam rko_lio_odometry.launch.py
+  odometry_args:
+    - lidar_topic:=/livox/lidar
+    - imu_topic:=/livox/imu
+    - rko_param_file:=${SUITE_DIR}/rko_lio_jeplo.yaml
+  topics: [/livox/lidar, /livox/imu]
+  quickstart_args:
+    - --occupancy-inflate-radius-m=0.2
+    - --global-z-min=0.0
+    - --global-max-scan-points=1024
+    - --global-max-candidates=16
+    - --refine-global-candidates
+cases:
+  - name: EIL_Box
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
+  - name: EIL_Stairs
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Stairs
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Stairs.txt
+  - name: EIL_Mask1
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Mask1
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Mask1.txt
+  - name: EIL_Mask2
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Mask2
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Mask2.txt
+  - name: Long_Stairs_self_map
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/Long_Stairs
+    map: ${JEPLO_ROOT}/maps_loc/Long_Stairs/map.pcd
+    gt: ${JEPLO_ROOT}/gt/Long_Stairs.txt
+  - name: Outdoor1_self_map
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/Outdoor1
+    map: ${JEPLO_ROOT}/maps_loc/Outdoor1/map.pcd
+    gt: ${JEPLO_ROOT}/gt/Outdoor1.txt
+    repeats: 1
+  - name: Outdoor2_self_map
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/Outdoor2
+    map: ${JEPLO_ROOT}/maps_loc/Outdoor2/map.pcd
+    gt: ${JEPLO_ROOT}/gt/Outdoor2.txt
+    repeats: 1
