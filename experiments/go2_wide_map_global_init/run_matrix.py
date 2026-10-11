@@ -52,6 +52,8 @@ def run_one(
             str(variant.get("accumulate_sec", 0.0)),
             "--window-sec",
             str(case.get("window_sec", 45.0)),
+            "--topic",
+            case.get("topic", "/livox/lidar"),
         ]
         result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode != 0:
@@ -66,6 +68,9 @@ def table(results: dict) -> str:
         "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for (case, variant), summary in sorted(results.items()):
+        if not summary.get("queries"):
+            lines.append(f"| {case} | {variant} | no queries |" + " |" * 8)
+            continue
         startup = summary["startup"]
         if startup.get("initialized"):
             verdict = (

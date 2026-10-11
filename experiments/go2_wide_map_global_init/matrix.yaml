@@ -41,3 +41,6 @@ variants:
   # return 32 non-suppressed candidates.
   - {name: y_infl02_zmin0_pts1024_cand16_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {z_min_m: 0.0, max_scan_points: 1024, max_candidates: 16, registration_refine_candidates: true}}
   - {name: z_infl02_zmin0_pts512_cand16_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {z_min_m: 0.0, max_scan_points: 512, max_candidates: 16, registration_refine_candidates: true}}
+  # Candidates for a sensor-independent default (see koide_matrix.yaml).
+  - {name: yc_infl02_cand16_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {max_candidates: 16, registration_refine_candidates: true}}
+  - {name: yd_infl02_zmin0_cand16_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {z_min_m: 0.0, max_candidates: 16, registration_refine_candidates: true}}

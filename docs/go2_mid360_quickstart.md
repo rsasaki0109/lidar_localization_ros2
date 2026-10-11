@@ -91,7 +91,9 @@ quickstart generates (and caches) the thinner grid itself. If you pass your own
 `--occupancy-map`, generate it with `--inflate-radius-m 0.2
 --max-obstacle-height-m 2.0`. Each search takes about 1-2 s instead of 0.2-1.5 s.
 The settings fit a sensor mounted near obstacle height. A handheld or
-car-mounted sensor keeps the defaults; these were measured only on the Go2.
+car-mounted sensor keeps the defaults: on handheld Koide replays, a 256-point version of
+these settings found the sensor later in all 12 runs and at a wrong place in 2, where
+the defaults were right in all 12.
 
 ## How well it works
 

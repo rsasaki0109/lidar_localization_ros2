@@ -121,6 +121,8 @@ verification still follow at runtime.
 | `x_infl02_pts1024_cand32_refine` | 0.76 | 0.58 | 0.24 | 0.51 | 0.64 | 0.72 | 0.68 | 6 / 26 | 1.4 |
 | `y_infl02_zmin0_pts1024_cand16_refine` | 1.00 | 0.87 | 0.40 | 0.78 | 0.84 | 0.88 | 0.86 | 0 / 12 | 1.5 |
 | `z_infl02_zmin0_pts512_cand16_refine` | 1.00 | 0.87 | 0.40 | 0.76 | 0.84 | 0.88 | 0.86 | 0 / 12 | 1.5 |
+| `yc_infl02_cand16_refine` | 0.71 | 0.20 | 0.11 | 0.49 | 0.67 | 0.68 | 0.73 | 12 / 27 | 0.9 |
+| `yd_infl02_zmin0_cand16_refine` | 1.00 | 0.73 | 0.29 | 0.76 | 0.84 | 0.84 | 0.86 | 0 / 12 | 1.0 |
 
 `infl02` is a grid generated with `--inflate-radius-m 0.2`, `res01` one with
 `--resolution 0.1 --inflate-radius-m 0.3`. With 1024 points on the 0.1 m grid
@@ -166,15 +168,57 @@ place 4.5 m along the corridor. The baseline started at 8.3 s, while the Go2 was
 answer. `y` keeps `q`'s settings with 16 candidates. That halves the BBS time
 (0.46 s against 1.23 s on the EIL map), and EIL_Box started at 9.1 s and held in all three runs.
 
+## Should these settings be the defaults? (Koide, handheld)
+
+The defaults also drive handheld and car-mounted sensors. On the Go2 data they fail in a way
+that also misleads the startup check: when the 2D score saturates, branch-and-bound breaks
+ties in a fixed order, so the same wrong place comes back query after query. Over the 265
+pairs of consecutive probe queries, the defaults' top answers agreed after the odometry
+motion at the **same wrong place 19 times and at the right place 6 times**. 151 of 272 top
+answers had yaw exactly 0 deg, the first yaw sample. With `y` it was 2 against 181. The
+two-view consensus, which assumes independent errors, therefore confirms wrong answers on
+the Go2 more often than right ones.
+
+The Koide sequences (Zenodo 10122133, md5-checked) tested whether part of `y` can become the
+default. A handheld sensor about 1.3 m up fills the scan cap (256 points by default), and
+with 1024 points a query took 19-23 s. So the candidates keep 256 points (`koide_matrix.yaml`,
+startup windows of 22-60 s):
+
+| variant | 01a | 01b | 02a | 02b | kidnap_a | kidnap_b | gated wrong | query s |
+|---|---|---|---|---|---|---|---|---|
+| `a_baseline` | 0.80 | 0.62 | 0.67 | 0.28 | 0.96 | 0.60 | 6 | 2.7-4.5 |
+| `yc_infl02_cand16_refine` | 0.62 | 0.67 | 0.63 | 0.38 | 0.76 | 0.72 | 2 | 6.5-8.9 |
+| `yd_infl02_zmin0_cand16_refine` | 0.70 | 0.67 | 0.60 | 0.37 | 0.72 | 0.68 | 0 | 6.8-8.8 |
+
+On JEPLO, `yd` keeps most of `y`'s gain (top-1 1.00 / 0.73 / 0.29 on the wide maps, no gated
+wrong answer there), so it was replayed on Koide against the defaults, alternating, two rounds
+(`koide_replay.yaml`; `yd` through `--occupancy-inflate-radius-m 0.2 --global-z-min 0.0
+--global-max-candidates 16 --refine-global-candidates`):
+
+| case | defaults: first pose (s), median xy (m) | `yd` |
+|---|---|---|
+| outdoor_hard_01a | 13.0, 0.12 / 17.8, 0.12 | 39.3, 0.95 / 34.7, 0.12 |
+| outdoor_hard_01b | 22.7, 0.10 / 22.5, 0.09 | 53.0, 0.09 / 53.5, 0.09 |
+| outdoor_hard_02a | 17.6, 0.12 / 16.1, 0.09 | 27.8, 0.11 / 40.8, 0.10 |
+| outdoor_hard_02b | 14.0, 0.09 / 13.3, 0.09 | 22.3, 0.09 / 24.0, 0.08 |
+| outdoor_kidnap_a | 17.0, 0.05 / 16.0, 0.04 | 23.7, 0.07 / not initialized |
+| outdoor_kidnap_b | 21.1, 0.06 / 20.4, 0.04 | **wrong init** 36.1, 20.75 / **wrong init** 35.4, 14.12 |
+
+The defaults initialized all 12 runs correctly. `yd` initialized later in every case and
+wrongly twice. In kidnap_b its two answers were right (0.0-0.1 m) but took 5.6-8.6 s each, so
+tracking began about 35 s in, as the sensor is covered and carried (at about 31 s), and was
+lost there. The 0.95 m median of its first 01a run is a mid-run height jump (z 8-10 m off for
+about 150 s) with no reset involved. It did not recur in the second round. **The defaults stay**,
+and the low-sensor settings remain a Go2 option.
+
 ## Decision
 
 - **Recommended for a sensor low above the ground (Go2):** `y`, through quickstart:
   `--occupancy-inflate-radius-m 0.2 --global-z-min 0.0 --global-max-scan-points 1024
   --global-max-candidates 16 --refine-global-candidates`
   ([`go2_jeplo_low_sensor.yaml`](../../tools/benchmark/suites/go2_jeplo_low_sensor.yaml)).
-- **Defaults unchanged.** Only Go2 data was compared. The band and grid defaults also
-  drive the handheld and car setups (Koide), which were not replayed here. The lower band edge is
-  specific to a sensor mounted near obstacle height.
+- **Defaults unchanged.** On Koide (handheld), the 256-point version `yd` initialized
+  later in all 12 runs and wrongly in 2, where the defaults were right in all 12.
 - The tracking jump after an initial pose during fast motion (EIL_Box) is a localizer
   issue, measured here but not addressed.
 
@@ -182,7 +226,7 @@ answer. `y` keeps `q`'s settings with 16 candidates. That halves the BBS time
 
 - The original `bags_pc2_merged` and `maps_loc` could not be obtained. Results on them,
   and on the lidar_slam_ros2 EIL_Mix map of docs/benchmark.md, were not measured.
-- No Koide (or other non-Go2) replay was run with these settings.
+- `y` itself (1024 points) was not replayed on Koide (19-23 s per query offline). No car data.
 - Repeats are few: on the wide maps one baseline run, one `q` run and two `y` runs per
   map; in the room four baseline and `q` runs and three `y` runs per sequence.
 - One machine (4 cores), ROS 2 Jazzy only. Humble was not built.
@@ -206,6 +250,18 @@ python3 experiments/go2_wide_map_global_init/pivot.py experiments/go2_wide_map_g
 # replays
 python3 tools/benchmark/run_benchmark.py tools/benchmark/suites/go2_jeplo.yaml --out /tmp/go2
 python3 tools/benchmark/run_benchmark.py tools/benchmark/suites/go2_jeplo_low_sensor.yaml --out /tmp/go2_low
+```
+
+Koide (Zenodo 10122133: the six outdoor sequences, `map_outdoor_*.ply`, `gt.zip`):
+
+```bash
+# RKO-LIO offline with lidarslam's param/rko_lio_mid360.yaml, lidar_topic /livox/points
+export KOIDE_ROOT=<dir> KOIDE_ODOM=<dir of *.tum>   # KOIDE_ROOT/maps/<map>/{map.ply,occ,occ_infl02}
+python3 experiments/go2_wide_map_global_init/run_matrix.py experiments/go2_wide_map_global_init/koide_matrix.yaml --out /tmp/kmatrix
+export RKO_ODOMETRY_LAUNCH="lidarslam rko_lio_odometry.launch.py" RKO_MID360_PARAM=<lidarslam>/param/rko_lio_mid360.yaml
+python3 tools/benchmark/run_benchmark.py experiments/go2_wide_map_global_init/koide_replay.yaml --out /tmp/koide_defaults
+python3 tools/benchmark/run_benchmark.py experiments/go2_wide_map_global_init/koide_replay.yaml --out /tmp/koide_yd \
+  --quickstart "ros2 run lidar_localization_ros2 quickstart.py --occupancy-inflate-radius-m 0.2 --global-z-min 0.0 --global-max-candidates 16 --refine-global-candidates"
 ```
 
 `JEPLO_MAPS` holds `<sequence>/map.pcd` and the grids `occ/` (quickstart's generator

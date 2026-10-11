@@ -99,9 +99,8 @@ def read_scans(bag: Path, stamps_wanted: list[float], topic: str = "/livox/lidar
         stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1.0e-9
         if stamp + 1.0e-6 < wanted[index]:
             continue
-        cloud = np.frombuffer(bytes(msg.data), dtype=map_builder.POINT)
-        xyz = np.stack([cloud["x"], cloud["y"], cloud["z"]], axis=1).astype(np.float64)
-        scans.append((stamp, xyz))
+        xyz = bbs_engine.pointcloud2_xyz_array(msg).astype(np.float64)
+        scans.append((stamp, xyz[np.isfinite(xyz).all(axis=1)]))
         while index < len(wanted) and wanted[index] <= stamp + 1.0e-6:
             index += 1
     return scans
@@ -143,7 +142,9 @@ def probe(args, config: glq.GlobalLocalizationConfig, accumulate_sec: float):
     # Query stamps: every --interval seconds where ground truth exists.
     start = max(truth[0, 0], odometry[0, 0]) + args.skip_sec
     end = min(truth[-1, 0], start + args.window_sec)
-    gaps = np.where(np.diff(truth[:, 0]) > 0.5)[0]
+    # Stop at the first ground-truth gap after the start (motion capture leaves the
+    # capture area; Koide's trajectory has sub-second holes, which interpolate).
+    gaps = np.where((np.diff(truth[:, 0]) > 2.0) & (truth[:-1, 0] >= start))[0]
     if gaps.size:
         end = min(end, truth[gaps[0], 0])
     stamps = list(np.arange(start, end, args.interval))
@@ -152,7 +153,7 @@ def probe(args, config: glq.GlobalLocalizationConfig, accumulate_sec: float):
         needed.append(stamp)
         if accumulate_sec > 0.0:
             needed.extend(np.arange(stamp - accumulate_sec, stamp, 0.1).tolist())
-    scans = read_scans(args.bag, sorted(set(needed)))
+    scans = read_scans(args.bag, sorted(set(needed)), args.topic)
     scan_by_stamp = {round(s, 3): xyz for s, xyz in scans}
     scan_stamps = np.array(sorted(scan_by_stamp))
 
@@ -378,6 +379,7 @@ def main(argv=None) -> int:
     parser.add_argument("--interval", type=float, default=1.0)
     parser.add_argument("--skip-sec", type=float, default=3.0)
     parser.add_argument("--window-sec", type=float, default=40.0)
+    parser.add_argument("--topic", default="/livox/lidar")
     args = parser.parse_args(argv)
 
     overrides = json.loads(args.config)

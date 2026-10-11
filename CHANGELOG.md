@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Record why the Go2 global search settings stay opt-in
+  ([experiments/go2_wide_map_global_init](experiments/go2_wide_map_global_init/README.md#should-these-settings-be-the-defaults-koide-handheld)).
+  On handheld Koide replays, a 256-point version initialized later in all 12 runs and
+  wrongly in 2; the defaults were right in all 12. On the Go2 data the defaults'
+  saturated 2D search returns the same wrong place query after query, which the
+  two-view startup consensus confirmed 19 times against 6 right confirmations.
+  The EIL_Box jump after a correct initial pose is not the seed correction guard's
+  warmup ([experiments/post_init_jump](experiments/post_init_jump/README.md)).
 - Add opt-in quickstart options for global search with a sensor low above the
   ground: `--global-z-min` / `--global-z-max` (the G2 scan height band, launch
   args `g2_z_min_m` / `g2_z_max_m`, defaults 0.5 / 5.0 m as before) and
