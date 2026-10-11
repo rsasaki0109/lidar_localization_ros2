@@ -108,3 +108,54 @@ python3 tools/benchmark/run_benchmark.py tools/benchmark/suites/koide_outdoor.ya
   --quickstart "ros2 run lidar_localization_ros2 quickstart.py \
     --supervisor-odometry-confirmation-mode segment_defer"
 ```
+
+## Replay result (2026-10-11): not promoted
+
+Three runs per mode per case, with modes alternating run by run. Official Koide data
+(Zenodo 10122133, md5 verified), unchanged suite parameters, RKO-LIO `rko_lio_mid360.yaml`,
+ROS 2 Jazzy, replay at 1x.
+
+The machine was a 4-core cloud container (15 GB), with load 0.7-4.6 at run start. That is
+weaker than the machine behind the [benchmark table](../../docs/benchmark.md#results), so
+compare the two modes with each other, not with that table.
+
+| case | mode | poses within 3 m | median / max xy (m) | wrong jumps | resets | gave up | held queries |
+|---|---|---|---|---:|---:|---:|---:|
+| `outdoor_hard_02b` | `window_waiver` | 1.00 / 1.00 / 1.00 | 0.08-0.09 / 1.44-1.46 | 0 | 0 | 0 | - |
+| `outdoor_hard_02b` | `segment_defer` | 1.00 / 1.00 / 1.00 | 0.07-0.09 / 1.42-1.45 | 0 | 0 | 0 | 0 |
+| `outdoor_kidnap_b` | `window_waiver` | 0.68 / 0.52 / 0.99 | 0.07, 1.44, 0.04 / 44.9, 261.2, 79.1 | 3 | 16 | 2 | - |
+| `outdoor_kidnap_b` | `segment_defer` | 0.46 / 0.56 / 0.70 | 6.93, 0.49, 0.05 / 122.1, 56.4, 42.9 | 3 | 8 | 1 | 50 |
+
+Notes on the columns:
+
+- **Poses within 3 m**: share of the published poses within 3 m of GT, one value per run.
+- **Wrong jumps**: the pose moves more than 5 m within 2 s and lands more than 5 m from GT
+  (median over the next 2 s). This is a heuristic detector, not a supervisor event. Wrong
+  jumps, resets, gave up and held queries are totals over the three runs.
+- **Resets**: count `reset_published`, `next_candidate` and `cross_check_reseed`.
+
+Findings:
+
+- **outdoor_hard_02b**: the 128 m wrong reset did not reproduce in six runs, and neither mode
+  published a reset.
+  - RKO-LIO dropped 17-19 frames per run with too few keypoints, as in the tag verification.
+  - In two `window_waiver` runs the waiver fired (5 log lines). Every answer it let through
+    was still withheld by the aliasing gate.
+  - So on this sample, `segment_defer` has nothing to improve on 02b.
+- **outdoor_kidnap_b**: `segment_defer` recovered worse.
+  - The share of poses within 3 m was lower in two of three pairs.
+  - Its first run held a 6.9 m median error.
+  - Its wrong jumps were not fewer (3 against 3).
+- **Why**: on this sequence, RKO-LIO dropped about 1,960 frames per run, 4-8 per second for
+  the whole 319 s (1,329 too-few-correspondence errors and 634 too-few-keypoint errors in
+  one run). The odometry is not out once per cover. It drops out throughout, which is the
+  `kidnap_intermittent_odometry` timeline, the one fixture `segment_defer` fails. G2 queries
+  were held 11-28 times per run.
+
+Decision: `segment_defer` is not promoted, and `window_waiver` stays the default. It does not
+reduce wrong resets on 02b (none occurred), and it regresses kidnap_b recovery. The opt-in
+stays available for platforms whose odometry drops out only rarely.
+
+A fix for the rare 02b failure needs a way to confirm answers while odometry is intermittent.
+It must not lean on that odometry, and must not assume a stationary platform. It also needs a
+replay that reproduces the 128 m reset; the replays here never did.

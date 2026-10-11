@@ -176,8 +176,15 @@ The leading candidate, `segment_defer`, has these rules:
 
 It passes 9 of 10 timelines with no wrong reset. It costs one query cycle after a covered
 carry. It fails when odometry drops out between every two answers. It is now an opt-in
-(`--supervisor-odometry-confirmation-mode segment_defer`) for that replay. Step 3, the replay,
-is still open.
+(`--supervisor-odometry-confirmation-mode segment_defer`).
+
+Step 3, the replay (2026-10-11, three runs per mode, a 4-core machine), did not support
+promotion, so `window_waiver` stays the default:
+
+- `outdoor_hard_02b`: the 128 m reset did not reproduce in six runs, and neither mode reset.
+- `outdoor_kidnap_b`: RKO-LIO dropped 4-8 frames per second throughout, so odometry was
+  intermittent. `segment_defer` recovered worse there, with no fewer wrong jumps. See
+  [the replay result](../experiments/odometry_dropout_confirmation/README.md#replay-result-2026-10-11-not-promoted).
 
 Other work remains:
 

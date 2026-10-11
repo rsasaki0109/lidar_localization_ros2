@@ -8,6 +8,9 @@
   gapless odometry, and queries wait while odometry is out. The default
   (`window_waiver`) is unchanged; see
   [the synthetic comparison](experiments/odometry_dropout_confirmation/README.md).
+  A Koide replay (three runs per mode) did not support promotion: the mode
+  regresses `outdoor_kidnap_b` recovery, where RKO-LIO odometry drops out
+  throughout.
 
 ## 1.3.0 - 2026-10-09
 
