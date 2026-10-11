@@ -49,7 +49,8 @@ candidate to `/initialpose`. On moving bags, `candidate_age_sec` is the first
 thing to check when a plausible candidate still fails to lock.
 
 Key parameters (see the node for the full list): `z_min_m` / `z_max_m` (scan
-height band), `max_scan_points`, `angular_resolution_deg`, `pyramid_depth`,
+height band in the levelled base frame, launch args `g2_z_min_m` / `g2_z_max_m`,
+default 0.5 / 5.0 m; the startup log line reports it), `max_scan_points`, `angular_resolution_deg`, `pyramid_depth`,
 `max_candidates`, `nms_radius_m`, `registration_refine_candidates` (node param;
 launch arg `g2_registration_refine_candidates`, default `false`). When enabled,
 `g2_ndt_score` publishes each candidate's NDT-refined pose instead of the raw BBS

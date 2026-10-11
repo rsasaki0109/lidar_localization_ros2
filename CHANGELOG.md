@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Add opt-in quickstart options for global search with a sensor low above the
+  ground: `--global-z-min` / `--global-z-max` (the G2 scan height band, launch
+  args `g2_z_min_m` / `g2_z_max_m`, defaults 0.5 / 5.0 m as before) and
+  `--occupancy-inflate-radius-m` (inflation of the generated grid, default 0.6 m as
+  before, cached separately). On the JEPLO Go2 self maps (Long_Stairs, Outdoor1,
+  Outdoor2), which never initialized, the recipe in
+  [go2_mid360_quickstart.md](docs/go2_mid360_quickstart.md#large-maps) initialized
+  all six runs without a wrong start, and in the capture room all 12 EIL runs, where
+  the defaults started wrongly in 5 of 16 on the same (rebuilt) map. The 2D search saturated: about 100 scan points
+  above an upside-down MID-360 matched a 0.6 m inflated grid perfectly at many
+  places, so the truth rarely reached NDT
+  ([comparison](experiments/go2_wide_map_global_init/README.md)). Defaults are
+  unchanged: only Go2 data was compared. The G2 node logs its height band at startup.
+- Add `tools/benchmark/jeplo_to_pc2_bag.py` and `build_map_from_odometry.py`: the
+  public JEPLO dataset now ships only raw Livox bags, so the Go2 suite's PointCloud2
+  bags and self maps are rebuilt from them (docs/benchmark.md).
 - Add an experimental opt-in G3 confirmation mode for odometry dropouts
   (`odometry_confirmation_mode:=segment_defer`, quickstart
   `--supervisor-odometry-confirmation-mode`). Answers confirm each other only across

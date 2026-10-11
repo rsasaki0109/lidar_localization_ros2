@@ -54,12 +54,37 @@ instead of the installed package.
 
 Datasets:
 
-- JEPLO (Unitree Go2): <https://huggingface.co/datasets/ASIG-X/JEPLO>. The suite uses
-  `bags_pc2_merged` and `gt`. Ground truth covers the 10 m x 4 m capture area.
-  Long_Stairs and Outdoor* only have maps built from the same sequence (`maps_loc`).
+- JEPLO (Unitree Go2): <https://huggingface.co/datasets/ASIG-Lab/JEPLO-Dataset>
+  (formerly `ASIG-X/JEPLO`, which returned 404 on 2026-10-11). The suite uses
+  `bags_pc2_merged`, `gt` and, for Long_Stairs and Outdoor*, maps built from the same
+  sequence (`maps_loc`). Ground truth covers the 10 m x 4 m capture area. The
+  dataset now ships only the raw bags (`bags/`, Livox `CustomMsg` at 20 Hz) and `gt/`;
+  rebuild the other two as below.
 - Koide et al., hard localization: the outdoor MID-360 sequences with
   `map_outdoor_hard.ply` / `map_outdoor_kidnap.ply`. The kidnap sequences cover the
   sensor and carry it elsewhere.
+
+### Rebuilding the JEPLO bags and self maps
+
+`jeplo_to_pc2_bag.py` writes `PointCloud2` bags at 10 Hz, two sweeps per cloud,
+stamped mid-sweep, with absolute per-point times (which `rko_lio_jeplo.yaml`
+expects). The self maps accumulate the bag along RKO-LIO's own trajectory and move
+it into the ground-truth frame. RKO-LIO's error on returning to the capture room
+after 250-700 s is 2-4 cm on these sequences.
+
+```bash
+python3 tools/benchmark/jeplo_to_pc2_bag.py $RAW/bags/Long_Stairs $JEPLO_ROOT/bags_pc2_merged/Long_Stairs
+# rko_lio_jeplo.yaml plus lidar_topic, imu_topic, base_frame: livox_frame,
+# bag_path, dump_results: true, results_dir, under /**: ros__parameters
+ros2 run rko_lio offline_node --ros-args --params-file long_stairs_rko.yaml
+python3 tools/benchmark/build_map_from_odometry.py --bag $JEPLO_ROOT/bags_pc2_merged/Long_Stairs \
+  --trajectory <results_dir>/Long_Stairs_0/Long_Stairs_tum_0.txt --out /tmp/Long_Stairs_odom.pcd
+python3 tools/benchmark/align_map_to_ground_truth.py --map /tmp/Long_Stairs_odom.pcd \
+  --trajectory <results_dir>/Long_Stairs_0/Long_Stairs_tum_0.txt \
+  --ground-truth $JEPLO_ROOT/gt/Long_Stairs.txt --out $JEPLO_ROOT/maps_loc/Long_Stairs/map.pcd
+```
+
+These maps are not the ones the 2026-10-06 results below used.
 
 ### The Go2 map
 
@@ -134,6 +159,34 @@ attempts on ambiguous answers in the symmetric capture room.
 | Outdoor1_self_map | 1 | 0 | 0 | - | - | - | - | - |
 | Outdoor2_self_map | 1 | 0 | 0 | - | - | - | - | - |
 
-On the large Long_Stairs and Outdoor maps, global search does not find the Go2:
-its candidates are 1.7-2.3 m off on the 2D grid (with only 60-100 scan points left
-in the height band of a sensor 0.4 m above the ground), so they never agree.
+On the large Long_Stairs and Outdoor maps, global search does not find the Go2.
+The cause, measured below: the 2D search saturates. An upside-down MID-360 0.45 m
+above the ground leaves about 100 points in the default height band. On a grid
+inflated by 0.6 m they fit perfectly at many places, and branch-and-bound returns
+eight of those places in search order. The 1.7-2.3 m offsets seen then are corners
+of that perfect-fit area around the robot.
+
+**Unitree Go2 wide maps, rebuilt inputs (2026-10-11).** The bags and maps were
+rebuilt from the raw bags as above. The EIL cases use an EIL_Mix map accumulated the
+same way, not the lidar_slam_ros2 map, so they differ from the table above. Runs:
+baseline (defaults) and the [Large maps](go2_mid360_quickstart.md#large-maps)
+settings (`go2_jeplo_low_sensor.yaml`), one 4-core machine, Jazzy:
+
+| case | defaults: runs / initialized / wrong / lost | low-sensor settings: runs / initialized / wrong / lost | first pose (s) | median xy (m) |
+|---|---|---|---|---|
+| Long_Stairs_self_map | 1 / 0 / 0 / - | 2 / 2 / 0 / 0 | 12.3-12.6 | 0.02 |
+| Outdoor1_self_map | 1 / 0 / 0 / - | 2 / 2 / 0 / 0 | 11.1-12.6 | 0.02 |
+| Outdoor2_self_map | 1 / 0 / 0 / - | 2 / 2 / 0 / 0 | 11.1-14.6 | 0.02 |
+| EIL_Box | 4 / 4 / 1 / 1 | 3 / 3 / 0 / 0 | 9.1-10.1 | 0.03 |
+| EIL_Stairs | 4 / 4 / 0 / 0 | 3 / 3 / 0 / 0 | 9.4 | 0.02 |
+| EIL_Mask1 | 4 / 4 / 3 / 2 | 3 / 3 / 0 / 0 | 8.8-10.1 | 0.02 |
+| EIL_Mask2 | 4 / 4 / 1 / 1 | 3 / 3 / 0 / 0 | 9.3-9.5 | 0.02 |
+
+"Lost" counts runs whose median error is above 1 m. The first-pose times and medians are
+for the low-sensor runs. On this EIL map the defaults started wrongly in 5 of 16 runs,
+EIL_Mask1 three times 1.1-2.0 m off, EIL_Mask2 once turned 180 degrees, and EIL_Box once
+2 m off, after which tracking settled 4.5 m along the aisle.
+
+See [experiments/go2_wide_map_global_init](../experiments/go2_wide_map_global_init/README.md)
+for the diagnosis, the compared settings, and the EIL_Box start that falls on the
+Go2 stepping off a box.

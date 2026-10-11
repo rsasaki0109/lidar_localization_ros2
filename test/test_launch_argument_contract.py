@@ -253,6 +253,8 @@ class TestLaunchArgumentContract(unittest.TestCase):
             "supervisor_max_seed_latency_sec",
             "supervisor_odometry_confirmation_mode",
             "g2_nms_radius_m",
+            "g2_z_min_m",
+            "g2_z_max_m",
         ):
             with self.subTest(key=key):
                 self.assertIn(key, declared)

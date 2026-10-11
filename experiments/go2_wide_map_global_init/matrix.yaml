@@ -1,0 +1,43 @@
+# Cases: the ground-truth-covered start of each sequence (the capture room).
+# *_self search the sequence's own map (Long_Stairs, Outdoor*); EIL_* search the
+# EIL_Mix map, as in tools/benchmark/suites/go2_jeplo.yaml. Long_Stairs and
+# Outdoor* starts do not match the EIL_Mix map in the ground-truth frame (NDT
+# fitness 4-14 at the true pose; recorded on other days), so they are not used
+# on it.
+cases:
+  - {name: Long_Stairs_self, bag: $JEPLO_PC2/Long_Stairs, odometry: $JEPLO_ODOM/Long_Stairs.tum, gt: $JEPLO_GT/Long_Stairs.txt, map: $JEPLO_MAPS/Long_Stairs/map.pcd, occupancy: $JEPLO_MAPS/Long_Stairs/occ/occupancy.yaml}
+  - {name: Outdoor1_self, bag: $JEPLO_PC2/Outdoor1, odometry: $JEPLO_ODOM/Outdoor1.tum, gt: $JEPLO_GT/Outdoor1.txt, map: $JEPLO_MAPS/Outdoor1/map.pcd, occupancy: $JEPLO_MAPS/Outdoor1/occ/occupancy.yaml}
+  - {name: Outdoor2_self, bag: $JEPLO_PC2/Outdoor2, odometry: $JEPLO_ODOM/Outdoor2.tum, gt: $JEPLO_GT/Outdoor2.txt, map: $JEPLO_MAPS/Outdoor2/map.pcd, occupancy: $JEPLO_MAPS/Outdoor2/occ/occupancy.yaml}
+  - {name: EIL_Box, bag: $JEPLO_PC2/EIL_Box, odometry: $JEPLO_ODOM/EIL_Box.tum, gt: $JEPLO_GT/EIL_Box.txt, map: $JEPLO_MAPS/EIL_Mix/map.pcd, occupancy: $JEPLO_MAPS/EIL_Mix/occ/occupancy.yaml, window_sec: 45}
+  - {name: EIL_Stairs, bag: $JEPLO_PC2/EIL_Stairs, odometry: $JEPLO_ODOM/EIL_Stairs.tum, gt: $JEPLO_GT/EIL_Stairs.txt, map: $JEPLO_MAPS/EIL_Mix/map.pcd, occupancy: $JEPLO_MAPS/EIL_Mix/occ/occupancy.yaml, window_sec: 45}
+  - {name: EIL_Mask1, bag: $JEPLO_PC2/EIL_Mask1, odometry: $JEPLO_ODOM/EIL_Mask1.tum, gt: $JEPLO_GT/EIL_Mask1.txt, map: $JEPLO_MAPS/EIL_Mix/map.pcd, occupancy: $JEPLO_MAPS/EIL_Mix/occ/occupancy.yaml, window_sec: 25}
+  - {name: EIL_Mask2, bag: $JEPLO_PC2/EIL_Mask2, odometry: $JEPLO_ODOM/EIL_Mask2.tum, gt: $JEPLO_GT/EIL_Mask2.txt, map: $JEPLO_MAPS/EIL_Mix/map.pcd, occupancy: $JEPLO_MAPS/EIL_Mix/occ/occupancy.yaml, window_sec: 25}
+# Variants: overrides of the quickstart G2 config (g2_offline_probe.QUICKSTART_CONFIG).
+variants:
+  - {name: a_baseline}
+  - {name: b_cand32, config: {max_candidates: 32}}
+  - {name: c_refine, config: {registration_refine_candidates: true}}
+  - {name: d_cand32_refine, config: {max_candidates: 32, registration_refine_candidates: true}}
+  - {name: e_zmin0, config: {z_min_m: 0.0}}
+  - {name: f_zmin0_cand32_refine, config: {z_min_m: 0.0, max_candidates: 32, registration_refine_candidates: true}}
+  - {name: g_nodilate, config: {dilate_cells: 0}}
+  - {name: h_infl02, occupancy: "{map_dir}/occ_infl02/occupancy.yaml"}
+  - {name: i_res01, occupancy: "{map_dir}/occ_res01/occupancy.yaml"}
+  - {name: j_acc1s, accumulate_sec: 1.0}
+  - {name: k_sensor045, config: {registration_sensor_height_m: 0.45}}
+  # Round 2: combinations of the round 1 winners.
+  - {name: l_res01_zmin0_cand32_refine, occupancy: "{map_dir}/occ_res01/occupancy.yaml", config: {z_min_m: 0.0, max_candidates: 32, registration_refine_candidates: true}}
+  - {name: q_infl02_zmin0_pts1024_cand32_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {z_min_m: 0.0, max_scan_points: 1024, max_candidates: 32, registration_refine_candidates: true}}
+  # pts1024 on the 0.1 m grid (m, n, o, p, r) took 14-35 s per query on
+  # Long_Stairs/Outdoor1 and was dropped as too slow for a startup query.
+  # Ablations around q (0.2 m grid, 0.2 m inflation):
+  - {name: s_res01_zmin0_cand32_refine_depth6, occupancy: "{map_dir}/occ_res01/occupancy.yaml", config: {z_min_m: 0.0, max_candidates: 32, registration_refine_candidates: true, pyramid_depth: 6}}
+  - {name: t_infl02_zmin0_cand32_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {z_min_m: 0.0, max_candidates: 32, registration_refine_candidates: true}}
+  - {name: u_infl02_zmin0_pts1024_cand32, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {z_min_m: 0.0, max_scan_points: 1024, max_candidates: 32}}
+  - {name: v_infl02_zmin0_pts1024_cand8_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {z_min_m: 0.0, max_scan_points: 1024, registration_refine_candidates: true}}
+  - {name: w_zmin0_pts1024_cand32_refine, config: {z_min_m: 0.0, max_scan_points: 1024, max_candidates: 32, registration_refine_candidates: true}}
+  - {name: x_infl02_pts1024_cand32_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {max_scan_points: 1024, max_candidates: 32, registration_refine_candidates: true}}
+  # Shorter queries: q's BBS takes 1.2 s of its 1.5 s on the EIL map, mostly to
+  # return 32 non-suppressed candidates.
+  - {name: y_infl02_zmin0_pts1024_cand16_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {z_min_m: 0.0, max_scan_points: 1024, max_candidates: 16, registration_refine_candidates: true}}
+  - {name: z_infl02_zmin0_pts512_cand16_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {z_min_m: 0.0, max_scan_points: 512, max_candidates: 16, registration_refine_candidates: true}}

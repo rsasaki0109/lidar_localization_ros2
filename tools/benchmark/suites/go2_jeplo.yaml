@@ -1,12 +1,17 @@
 # Unitree Go2 with an upside-down Livox MID-360 (JEPLO dataset,
-# https://huggingface.co/datasets/ASIG-X/JEPLO). Set JEPLO_ROOT to the dataset
-# directory with bags_pc2_merged/, gt/ and maps_loc/.
+# https://huggingface.co/datasets/ASIG-Lab/JEPLO-Dataset). Set JEPLO_ROOT to a
+# directory with gt/, bags_pc2_merged/ and maps_loc/. The dataset publishes only
+# the raw bags (Livox CustomMsg) and gt/; docs/benchmark.md shows how to convert
+# the bags (jeplo_to_pc2_bag.py) and build the self maps
+# (build_map_from_odometry.py).
 #
 # The EIL_* sequences localize on a lidar_slam_ros2 map of the separate EIL_Mix
 # run, moved into the motion-capture (ground-truth) frame; set JEPLO_LIDARSLAM_MAP
 # to it (see docs/benchmark.md). Long_Stairs and Outdoor* only have maps built
 # from the same sequence, so they test initialization and tracking, not map
 # change. Ground truth covers the 10 m x 4 m motion-capture area only.
+# go2_jeplo_low_sensor.yaml runs the same cases with the low-sensor global
+# search settings.
 defaults:
   repeats: 3
   odometry_launch: lidarslam rko_lio_odometry.launch.py

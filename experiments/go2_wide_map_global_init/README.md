@@ -1,0 +1,214 @@
+# Go2 global initialization on wide maps (JEPLO)
+
+[docs/benchmark.md](../../docs/benchmark.md) records no global initialization on the
+Unitree Go2 self maps of JEPLO `Long_Stairs`, `Outdoor1` and `Outdoor2`, while the four
+`EIL_*` sequences in the 10 m x 4 m capture room initialize. This experiment finds the cause
+and compares global search (G2) settings. It does **not** change any default. The setting that won is
+exposed as opt-in quickstart options (`--global-z-min`, `--global-z-max`,
+`--occupancy-inflate-radius-m`) plus existing ones, and documented as a recipe for low
+sensors in [go2_mid360_quickstart.md](../../docs/go2_mid360_quickstart.md#large-maps).
+
+## Data, and what differs from the earlier benchmark
+
+`ASIG-X/JEPLO` on Hugging Face returned 404 on 2026-10-11 (also with a token). The public copy,
+<https://huggingface.co/datasets/ASIG-Lab/JEPLO-Dataset>, has only the raw bags
+(`/livox/lidar` as `livox_ros_driver2/msg/CustomMsg` at 20 Hz, `/livox/imu`) and `gt/`. It
+has neither `bags_pc2_merged` nor `maps_loc`. All files used were checked against the
+dataset's LFS sha256 (bags) and git blob ids (gt, metadata). Everything below therefore runs on
+rebuilt inputs:
+
+- **Bags**: [`tools/benchmark/jeplo_to_pc2_bag.py`](../../tools/benchmark/jeplo_to_pc2_bag.py)
+  merges two sweeps into a 10 Hz `PointCloud2` stamped mid-sweep, with an absolute
+  per-point `timestamp`.
+- **Odometry**: RKO-LIO `offline_node` with
+  [`rko_lio_jeplo.yaml`](../../tools/benchmark/suites/rko_lio_jeplo.yaml). Fitted to the
+  ground truth on the first 40 s, its error after returning to the capture room is 2-4 cm
+  (Long_Stairs 249 s, Outdoor1 693 s, Outdoor2 639 s).
+- **Maps**: [`tools/benchmark/build_map_from_odometry.py`](../../tools/benchmark/build_map_from_odometry.py)
+  (every second cloud, deskewed, 0.8-40 m, 0.05 m voxels), moved into the ground-truth frame
+  with `align_map_to_ground_truth.py` (trajectory residual 0.035-0.040 m for the self maps).
+  The `EIL_*` cases use an **EIL_Mix map built the same way** (residual 0.067 m), not the
+  lidar_slam_ros2 map of docs/benchmark.md.
+
+Because of the EIL map, the EIL numbers here are not comparable with docs/benchmark.md. On
+this map the baseline itself initializes wrongly in 5 of 16 EIL runs (docs: 0 of 12 on the
+lidar_slam_ros2 map).
+
+The Long_Stairs and Outdoor starts do not match the EIL_Mix map in the ground-truth frame:
+NDT fitness at the true pose is 3.7-13.5 there, against 0.01 for EIL_Mask2. They were
+recorded on other days, so the room or the motion-capture frame differs. They are
+therefore only searched on their own maps.
+
+## What fails
+
+`g2_offline_probe.py` runs the runtime `GlobalLocalizationEngine` on a scan every second of
+the ground-truth-covered start (the capture room). Scans are levelled with the RKO-LIO
+attitude, as `global_localization_node.py` does, and the probe records each candidate's
+error, the 2D (BBS) score and NDT fitness of the true pose, and the points left in the
+height band.
+
+| | Long_Stairs | Outdoor1 | Outdoor2 | EIL_Box | EIL_Stairs | EIL_Mask1 | EIL_Mask2 |
+|---|---|---|---|---|---|---|---|
+| scan points in the band (z 0.5-5 m above the sensor) | 102 | 117 | 115 | 97 | 140 | 146 | 132 |
+| top candidate within 1 m / 15 deg (share of queries) | 0.04 | 0.00 | 0.00 | 0.07 | 0.16 | 0.40 | 0.23 |
+| BBS score of the true pose (median) | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| BBS score of the top candidate (median) | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| NDT fitness of the true pose (median) | 0.010 | 0.011 | 0.010 | 0.041 | 0.017 | 0.011 | 0.010 |
+| NDT fitness of the top candidate (median) | 0.346 | 0.115 | 0.081 | 0.113 | 0.082 | 0.018 | 0.057 |
+
+The 2D search saturates. With about 100 points and a grid whose occupied cells are
+inflated by 0.6 m (generator default) plus one cell of dilation in G2, every scan point
+lands on an occupied cell at many places. All 8 returned candidates score 1.00, and so does the
+truth. Branch-and-bound stops as soon as it holds 8 leaves at score 1.0, so which places it
+returns depends on the search order (yaw index first), not on the scan. The truth was among
+them in 4% (Long_Stairs) and 0% (Outdoor) of the queries. NDT tells the truth apart
+clearly (fitness 0.01 against 0.08-0.35), but it never sees it.
+
+The replay shows the same (`run_benchmark.py`, quickstart defaults). On Long_Stairs, six
+queries returned 110-117 band points, top candidates 17-25 m off at yaw 0-15 deg with BBS
+score 1.0. Four retries were `ambiguous_registration_retry`, then `manual_pose_required`.
+
+Causes, one by one:
+
+- **Height band and the upside-down sensor.** The MID-360 sees up to 52 deg below and 7 deg
+  above its horizontal plane. Mounted upside down on the Go2, almost all returns lie below
+  the sensor: in the levelled scans the 99th percentile of elevation is 7-8 deg. Only 4.1-4.5% of
+  the points are 0.5 m or more above the sensor, which is the band's default lower edge. Another
+  30% lie between the sensor plane and 0.5 m. The generated grid marks
+  obstacles 0.4-2.0 m above the ground, while the band starts 0.9 m above the ground for a
+  sensor 0.42-0.48 m high (ground truth). Lowering the band edge to the sensor plane
+  (`z_min_m: 0.0`) gives 276-434 points.
+- **Grid inflation.** The 0.6 m inflation is what makes many places score 1.0. A 0.2 m
+  inflation (or a 0.1 m grid) breaks the ties.
+- **Too few candidates.** Even a good grid returns tied places. 32 (or 16) candidates let
+  NDT see the truth.
+- **The 1.7-2.3 m offsets noted in docs/benchmark.md** are the plateau around the truth:
+  inside one non-maximum-suppression neighbourhood the first tied cell is kept, a corner of
+  the 0.8 m halo. With `registration_refine_candidates` the published pose is the NDT
+  result instead (simulated start error 0.01-0.05 m against 1.1-1.4 m).
+- **Not causes:** `g2_registration_sensor_height_m` only sets the NDT seed height (0.45
+  instead of 1.0 changed nothing, variant `k`). Map size matters only through saturation:
+  the larger the map, the more places score 1.0 (Outdoor 0.00 against EIL 0.07-0.40 top-1).
+
+## Variants (offline)
+
+`matrix.yaml` lists the variants (overrides of quickstart's G2 settings) and cases.
+Each cell is the share of queries whose top candidate is within 1 m and 15 deg of the truth.
+"Gated wrong" counts queries whose top candidate passes the single-query startup gates
+(score, fitness ratio) while more than 1 m off. A two-query odometry consensus and
+verification still follow at runtime.
+
+| variant | Long_Stairs | Outdoor1 | Outdoor2 | EIL_Box | EIL_Stairs | EIL_Mask1 | EIL_Mask2 | gated wrong (wide / EIL) | query s (wide, median) |
+|---|---|---|---|---|---|---|---|---|---|
+| `a_baseline` | 0.04 | 0.00 | 0.00 | 0.07 | 0.16 | 0.40 | 0.23 | 14 / 70 | 1.4 |
+| `b_cand32` | 0.24 | 0.02 | 0.04 | 0.09 | 0.16 | 0.40 | 0.27 | 18 / 78 | 1.6 |
+| `c_refine` | 0.09 | 0.00 | 0.00 | 0.27 | 0.40 | 0.72 | 0.64 | 14 / 40 | 1.4 |
+| `d_cand32_refine` | 0.40 | 0.02 | 0.09 | 0.47 | 0.44 | 0.72 | 0.68 | 11 / 41 | 1.6 |
+| `e_zmin0` | 0.51 | 0.00 | 0.00 | 0.33 | 0.49 | 0.52 | 0.64 | 18 / 53 | 1.6 |
+| `f_zmin0_cand32_refine` | 0.91 | 0.09 | 0.13 | 0.69 | 0.67 | 0.88 | 0.91 | 2 / 21 | 1.7 |
+| `g_nodilate` | 0.47 | 0.00 | 0.00 | 0.18 | 0.36 | 0.56 | 0.50 | 28 / 63 | 1.3 |
+| `h_infl02` | 0.60 | 0.11 | 0.00 | 0.36 | 0.47 | 0.44 | 0.50 | 20 / 46 | 1.2 |
+| `i_res01` | 0.82 | 0.58 | 0.16 | 0.53 | 0.51 | 0.48 | 0.64 | 16 / 39 | 1.2 |
+| `j_acc1s` | 0.78 | 0.00 | 0.02 | 0.31 | 0.51 | 0.60 | 0.59 | 11 / 50 | 1.2 |
+| `k_sensor045` | 0.04 | 0.00 | 0.00 | 0.07 | 0.16 | 0.40 | 0.23 | 19 / 73 | 1.4 |
+| `l_res01_zmin0_cand32_refine` | 1.00 | 0.96 | 0.96 | 0.87 | 0.82 | 0.84 | 0.86 | 0 / 10 | 6.5 |
+| `q_infl02_zmin0_pts1024_cand32_refine` | 1.00 | 0.96 | 0.93 | 0.78 | 0.84 | 0.88 | 0.86 | 0 / 12 | 2.7 |
+| `s_res01_zmin0_cand32_refine_depth6` | 1.00 | 0.96 | 0.96 | 0.87 | 0.82 | 0.84 | 0.86 | 0 / 10 | 7.2 |
+| `t_infl02_zmin0_cand32_refine` | 1.00 | 0.98 | 0.87 | 0.76 | 0.84 | 0.84 | 0.86 | 0 / 12 | 3.4 |
+| `u_infl02_zmin0_pts1024_cand32` | 1.00 | 0.96 | 0.93 | 0.73 | 0.87 | 0.76 | 0.82 | 0 / 15 | 3.1 |
+| `v_infl02_zmin0_pts1024_cand8_refine` | 1.00 | 0.47 | 0.18 | 0.78 | 0.84 | 0.84 | 0.86 | 4 / 13 | 1.3 |
+| `w_zmin0_pts1024_cand32_refine` | 0.96 | 0.13 | 0.24 | 0.76 | 0.76 | 0.80 | 0.91 | 0 / 18 | 2.0 |
+| `x_infl02_pts1024_cand32_refine` | 0.76 | 0.58 | 0.24 | 0.51 | 0.64 | 0.72 | 0.68 | 6 / 26 | 1.4 |
+| `y_infl02_zmin0_pts1024_cand16_refine` | 1.00 | 0.87 | 0.40 | 0.78 | 0.84 | 0.88 | 0.86 | 0 / 12 | 1.5 |
+| `z_infl02_zmin0_pts512_cand16_refine` | 1.00 | 0.87 | 0.40 | 0.76 | 0.84 | 0.88 | 0.86 | 0 / 12 | 1.5 |
+
+`infl02` is a grid generated with `--inflate-radius-m 0.2`, `res01` one with
+`--resolution 0.1 --inflate-radius-m 0.3`. With 1024 points on the 0.1 m grid
+(`m`, `n`, `o`, `p`, `r`) a query took 14-35 s on Long_Stairs and Outdoor1, too slow for a
+startup query, so those were dropped. Their top-1 shares were 0.98-1.00.
+
+Reading:
+
+- No single change is enough. Around `q`, removing the lower band (`x`), the thin grid
+  (`w`) or the extra candidates (`v`) each costs most of the Outdoor gain. Removing NDT
+  refinement (`u`) keeps the top-1 share but publishes the coarse cell (0.2-0.4 m off).
+- Accumulating 1 s of scans (`j`) helps Long_Stairs only.
+- `q` and `l` find the truth in 93-100% of the wide-map queries with no gated wrong answer.
+  `q` is 2-3 times faster because it keeps the 0.2 m grid.
+- Every combined variant also improves the EIL room, from 70 gated wrong answers to 10-12.
+  The rest are 1-2.6 m near misses and three 180 deg turns in the symmetric room.
+  The two-query consensus has to stop those.
+
+## Replays
+
+`run_benchmark.py` on the rebuilt bags and maps, one 4-core machine, Jazzy, replay at 1x.
+The localizer does not keep up with every scan there. Wrong init: the first 2 s of poses
+are more than 1 m off. Lost: the run's median error is above 1 m.
+
+| case | baseline: init / wrong / lost | `q`: init / wrong / lost | `y`: init / wrong / lost |
+|---|---|---|---|
+| Long_Stairs | 0/1 | 1/1, 0, 0 (first pose 22.8 s, median 0.02 m) | 2/2, 0, 0 (12.3-12.6 s, 0.02 m) |
+| Outdoor1 | 0/1 | 1/1, 0, 0 (13.4 s, 0.02 m) | 2/2, 0, 0 (11.1-12.6 s, 0.02 m) |
+| Outdoor2 | 0/1 | 1/1, 0, 0 (14.1 s, 0.02 m) | 2/2, 0, 0 (11.1-14.6 s, 0.02 m) |
+| EIL_Box | 4/4, 1, 1 | 4/4, 1, **4** | 3/3, 0, 0 |
+| EIL_Stairs | 4/4, 0, 0 | 4/4, 0, 0 | 3/3, 0, 0 |
+| EIL_Mask1 | 4/4, 3, 2 | 4/4, 0, 0 | 3/3, 0, 0 |
+| EIL_Mask2 | 4/4, 1, 1 | 4/4, 0, 0 | 3/3, 0, 0 |
+
+`q` lost every EIL_Box run although its answer was right (0.01-0.05 m in three of four).
+Its queries take about 1.9 s on the EIL map instead of 0.2 s, so it started tracking 11-12 s
+into the bag, just as the Go2 walks off the box (0.5-0.7 m/s, down 0.6 m). The first
+scans after an initial pose arrive 0.8-0.9 s apart on this machine (`failure_category:
+overload`), and the localizer accepted a 2.68 m correction (fitness 0.006) to an aliased
+place 4.5 m along the corridor. The baseline started at 8.3 s, while the Go2 was still on the box. Started 3 s later
+(`start_offset_sec: 3.0`, two runs), the baseline lost EIL_Box the same way once (median
+4.99 m) and did not initialize the other time. So it is the localizer's tracking at that moment, not the
+answer. `y` keeps `q`'s settings with 16 candidates. That halves the BBS time
+(0.46 s against 1.23 s on the EIL map), and EIL_Box started at 9.1 s and held in all three runs.
+
+## Decision
+
+- **Recommended for a sensor low above the ground (Go2):** `y`, through quickstart:
+  `--occupancy-inflate-radius-m 0.2 --global-z-min 0.0 --global-max-scan-points 1024
+  --global-max-candidates 16 --refine-global-candidates`
+  ([`go2_jeplo_low_sensor.yaml`](../../tools/benchmark/suites/go2_jeplo_low_sensor.yaml)).
+- **Defaults unchanged.** Only Go2 data was compared. The band and grid defaults also
+  drive the handheld and car setups (Koide), which were not replayed here. The lower band edge is
+  specific to a sensor mounted near obstacle height.
+- The tracking jump after an initial pose during fast motion (EIL_Box) is a localizer
+  issue, measured here but not addressed.
+
+## Not verified
+
+- The original `bags_pc2_merged` and `maps_loc` could not be obtained. Results on them,
+  and on the lidar_slam_ros2 EIL_Mix map of docs/benchmark.md, were not measured.
+- No Koide (or other non-Go2) replay was run with these settings.
+- Repeats are few: on the wide maps one baseline run, one `q` run and two `y` runs per
+  map; in the room four baseline and `q` runs and three `y` runs per sequence.
+- One machine (4 cores), ROS 2 Jazzy only. Humble was not built.
+
+## Reproduce
+
+```bash
+# data: raw bags and gt/ from ASIG-Lab/JEPLO-Dataset, then for each sequence
+python3 tools/benchmark/jeplo_to_pc2_bag.py $RAW/bags/Outdoor1 $JEPLO_ROOT/bags_pc2_merged/Outdoor1
+ros2 run rko_lio offline_node --ros-args --params-file outdoor1_rko.yaml  # rko_lio_jeplo.yaml + bag_path, dump_results
+python3 tools/benchmark/build_map_from_odometry.py --bag $JEPLO_ROOT/bags_pc2_merged/Outdoor1 \
+  --trajectory Outdoor1.tum --out map_odom.pcd
+python3 tools/benchmark/align_map_to_ground_truth.py --map map_odom.pcd --trajectory Outdoor1.tum \
+  --ground-truth $JEPLO_ROOT/gt/Outdoor1.txt --out $JEPLO_ROOT/maps_loc/Outdoor1/map.pcd
+
+# offline comparison (needs the built workspace for g2_ndt_score/bbs_cpp)
+export JEPLO_PC2=$JEPLO_ROOT/bags_pc2_merged JEPLO_ODOM=<dir of *.tum> JEPLO_GT=$JEPLO_ROOT/gt JEPLO_MAPS=<maps>
+python3 experiments/go2_wide_map_global_init/run_matrix.py experiments/go2_wide_map_global_init/matrix.yaml --out /tmp/g2matrix
+python3 experiments/go2_wide_map_global_init/pivot.py experiments/go2_wide_map_global_init/results.json
+
+# replays
+python3 tools/benchmark/run_benchmark.py tools/benchmark/suites/go2_jeplo.yaml --out /tmp/go2
+python3 tools/benchmark/run_benchmark.py tools/benchmark/suites/go2_jeplo_low_sensor.yaml --out /tmp/go2_low
+```
+
+`JEPLO_MAPS` holds `<sequence>/map.pcd` and the grids `occ/` (quickstart's generator
+settings), `occ_infl02/` (`--inflate-radius-m 0.2`) and `occ_res01/`
+(`--resolution 0.1 --inflate-radius-m 0.3`), all with `--max-obstacle-height-m 2.0`.
+`results.json` holds the probe summaries of every case and variant.

@@ -389,6 +389,57 @@ class TestQuickstartCli(unittest.TestCase):
         finally:
             QUICKSTART.discover_ros_graph = original
 
+    def test_thinner_generated_grid_is_cached_apart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "cache"
+            original = QUICKSTART.default_occupancy_dir
+            QUICKSTART.default_occupancy_dir = lambda: cache
+            try:
+                map_path, text = self._dry_run(
+                    root, ["--occupancy-inflate-radius-m", "0.2"]
+                )
+                default = QUICKSTART.cached_occupancy_map(map_path, cache)
+                thin = QUICKSTART.cached_occupancy_map(map_path, cache, 0.2)
+                self.assertNotEqual(default, thin)
+                self.assertIn(f"would generate {thin}", text)
+                self.assertEqual(
+                    QUICKSTART.cached_occupancy_map(map_path, cache, 0.6), default
+                )
+            finally:
+                QUICKSTART.default_occupancy_dir = original
+
+    def test_global_search_height_band_is_passed_to_the_launch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, text = self._dry_run(root, ["--no-auto-occupancy-map"])
+            self.assertIn("g2_z_min_m:=0.5", text)
+            self.assertIn("g2_z_max_m:=5.0", text)
+            _, text = self._dry_run(
+                root,
+                [
+                    "--no-auto-occupancy-map",
+                    "--global-z-min",
+                    "0",
+                    "--global-z-max",
+                    "4",
+                ],
+            )
+            self.assertIn("g2_z_min_m:=0.0", text)
+            self.assertIn("g2_z_max_m:=4.0", text)
+            for extra in (
+                ["--global-z-min", "2", "--global-z-max", "1"],
+                ["--global-z-min", "nan"],
+                ["--occupancy-inflate-radius-m", "-0.1"],
+            ):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(
+                        QUICKSTART.main(
+                            ["--map", str(root / "site.pcd"), "--dry-run", *extra]
+                        ),
+                        2,
+                    )
+
     def test_generate_occupancy_map_reports_failures(self):
         with tempfile.TemporaryDirectory() as directory:
             yaml_path = Path(directory) / "grids" / "abc.yaml"
@@ -404,6 +455,12 @@ class TestQuickstartCli(unittest.TestCase):
             )
             self.assertIn("--max-obstacle-height-m", calls[0])
             self.assertEqual(calls[0][calls[0].index("--map-name") + 1], "abc")
+            self.assertEqual(calls[0][calls[0].index("--inflate-radius-m") + 1], "0.6")
+            yaml_path.unlink()
+            QUICKSTART.generate_occupancy_map(
+                Path("m.pcd"), yaml_path, ok, inflate_radius_m=0.2
+            )
+            self.assertEqual(calls[1][calls[1].index("--inflate-radius-m") + 1], "0.2")
 
             def fails(command, **kwargs):
                 return QUICKSTART.subprocess.CompletedProcess(
