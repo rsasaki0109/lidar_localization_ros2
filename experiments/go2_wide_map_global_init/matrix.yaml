@@ -44,3 +44,6 @@ variants:
   # Candidates for a sensor-independent default (see koide_matrix.yaml).
   - {name: yc_infl02_cand16_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {max_candidates: 16, registration_refine_candidates: true}}
   - {name: yd_infl02_zmin0_cand16_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {z_min_m: 0.0, max_candidates: 16, registration_refine_candidates: true}}
+  # Quickstart defaults with each query's yaw sweep started at a sample fixed by
+  # the scan stamp, so tied wrong places do not repeat across queries.
+  - {name: as_baseline_yaw_sweep, yaw_sweep_offset: true}

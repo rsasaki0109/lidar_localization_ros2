@@ -51,9 +51,11 @@ Fixtures ([`fixtures.yaml`](fixtures.yaml)):
 - `EIL_Box_late` is a wrong *global* answer, not a tracking jump. With the default G2
   settings during the step-off, queries returned places 4-5 m off at yaw 0 deg. Two
   consecutive wrong answers agreed after the odometry motion, and the startup accepted them.
-  With a saturated 2D score, branch-and-bound breaks ties in a fixed order, so the same wrong
-  place comes back query after query. The two-view consensus assumes independent errors and
-  does not catch it. The low-sensor settings avoid the saturation on the Go2.
+  With a saturated 2D score, similar wrong places come back query after query, and the
+  two-view consensus, which assumes independent errors, does not catch it. Starting the yaw
+  sweep elsewhere per query did not change that
+  ([go2_wide_map_global_init](../go2_wide_map_global_init/README.md#starting-the-yaw-sweep-elsewhere-per-query-not-promoted)).
+  The low-sensor settings avoid the saturation on the Go2.
 
 ## Not verified
 

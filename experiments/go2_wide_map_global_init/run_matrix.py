@@ -54,6 +54,7 @@ def run_one(
             str(case.get("window_sec", 45.0)),
             "--topic",
             case.get("topic", "/livox/lidar"),
+            *(["--yaw-sweep-offset"] if variant.get("yaw_sweep_offset") else []),
         ]
         result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode != 0:

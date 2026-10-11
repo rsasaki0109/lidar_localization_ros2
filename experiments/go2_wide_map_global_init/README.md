@@ -170,14 +170,22 @@ answer. `y` keeps `q`'s settings with 16 candidates. That halves the BBS time
 
 ## Should these settings be the defaults? (Koide, handheld)
 
-The defaults also drive handheld and car-mounted sensors. On the Go2 data they fail in a way
-that also misleads the startup check: when the 2D score saturates, branch-and-bound breaks
-ties in a fixed order, so the same wrong place comes back query after query. Over the 265
-pairs of consecutive probe queries, the defaults' top answers agreed after the odometry
-motion at the **same wrong place 19 times and at the right place 6 times**. 151 of 272 top
-answers had yaw exactly 0 deg, the first yaw sample. With `y` it was 2 against 181. The
-two-view consensus, which assumes independent errors, therefore confirms wrong answers on
-the Go2 more often than right ones.
+The defaults also drive handheld and car-mounted sensors. On the Go2 data they also mislead
+the startup check, which confirms an answer when the next one agrees with it after the
+odometry motion. `consensus_report.py` counts such agreeing pairs of consecutive probe answers
+by their distance from the truth, right (within 1 m), near (within 3 m) and far:
+
+| data, variant | all pairs: right / near / far | gated pairs: right / near / far |
+|---|---|---|
+| JEPLO (7 cases, 272 queries), defaults | 6 / 27 / 5 | 5 / 25 / 1 |
+| JEPLO, `y` | 181 / 8 / 2 | 163 / 8 / 0 |
+| JEPLO, `yd` | 163 / 11 / 4 | 150 / 10 / 0 |
+| Koide (6 cases, 251 queries), defaults | 138 / 3 / 17 | 106 / 0 / 0 |
+
+With the defaults on the Go2, agreeing answers are mostly 1-3 m off: the corner of the tied
+area around the robot, which the localizer then has to pull in (or does not: EIL_Mask1). 151
+of the 272 top answers had yaw exactly 0 deg, the first yaw sample. On Koide the startup gates
+stop every far agreement.
 
 The Koide sequences (Zenodo 10122133, md5-checked) tested whether part of `y` can become the
 default. A handheld sensor about 1.3 m up fills the scan cap (256 points by default), and
@@ -210,6 +218,24 @@ tracking began about 35 s in, as the sensor is covered and carried (at about 31 
 lost there. The 0.95 m median of its first 01a run is a mid-run height jump (z 8-10 m off for
 about 150 s) with no reset involved. It did not recur in the second round. **The defaults stay**,
 and the low-sensor settings remain a Go2 option.
+
+### Starting the yaw sweep elsewhere per query (not promoted)
+
+Branch-and-bound keeps tied candidates in yaw-sample order. `--yaw-sweep-offset` in the probe
+starts each query's sweep at a sample fixed by the scan stamp (the scan is rotated by a whole
+number of samples and the answers rotated back, so the C++/Python kernels are untouched).
+Variant `as_baseline_yaw_sweep`, defaults otherwise:
+
+| data | all pairs: right / near / far | gated: right / near / far | simulated startups ok / near / far / none |
+|---|---|---|---|
+| JEPLO, defaults | 6 / 27 / 5 | 5 / 25 / 1 | 1 / 4 / 0 / 2 |
+| JEPLO, yaw sweep | 8 / 26 / 5 | 8 / 21 / 0 | 0 / 5 / 1 / 1 |
+| Koide, defaults | 138 / 3 / 17 | 106 / 0 / 0 | 6 / 0 / 0 / 0 |
+| Koide, yaw sweep | 141 / 3 / 21 | 106 / 2 / 0 | 6 / 0 / 0 / 0 |
+
+Far agreements do not drop, and one simulated JEPLO startup lands 46 m off (Outdoor1), which the
+defaults never did. The repeats are not the yaw order: NDT re-ranks the tied places and settles
+on similar ones anyway. Removing the saturation (the low-sensor settings) is what works.
 
 ## Decision
 
