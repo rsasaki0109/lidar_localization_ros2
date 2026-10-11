@@ -40,6 +40,10 @@ class RunScore:
     # and of poses within 0.3 m that it did not report OK (None without data).
     flagged_when_off: float | None = None
     flagged_when_right: float | None = None
+    # The same shares counting only "lost": the localizer requested reinitialization
+    # (or stopped reporting). A rejected scan bridged by odometry is not lost.
+    lost_when_off: float | None = None
+    lost_when_right: float | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -75,34 +79,41 @@ def match_to_ground_truth(estimate: np.ndarray, truth: np.ndarray):
 
 
 def load_alignment_levels(path) -> np.ndarray:
-    """(N, 2) rows of /alignment_status stamp and level (0 = OK), sorted."""
+    """(N, 3) /alignment_status rows, sorted: stamp, level (0 = OK), lost (1 or 0).
+
+    Lost is 1 while the localizer requests reinitialization.
+    """
     rows = []
     try:
         with open(path, encoding="utf-8") as stream:
             for line in stream:
                 record = json.loads(line)
-                rows.append((float(record["stamp"]), float(record["level"])))
+                lost = record.get("recovery_state") == "reinitialization_requested"
+                rows.append(
+                    (float(record["stamp"]), float(record["level"]), float(lost))
+                )
     except (OSError, ValueError, KeyError):
-        return np.empty((0, 2))
+        return np.empty((0, 3))
     rows.sort()
-    return np.array(rows) if rows else np.empty((0, 2))
+    return np.array(rows) if rows else np.empty((0, 3))
 
 
 def health_flags(
-    stamps: np.ndarray, levels: np.ndarray, max_age_sec: float = 1.0
+    stamps: np.ndarray, levels: np.ndarray, max_age_sec: float = 1.0, column: int = 1
 ) -> np.ndarray:
-    """Whether the latest status at or before each stamp was not OK.
+    """Whether the latest status at or before each stamp was flagged.
 
-    A pose with no status in the last max_age_sec counts as flagged: the
-    localizer has stopped reporting.
+    Column 1 flags a level that is not OK, column 2 a lost localizer. A pose with
+    no status in the last max_age_sec counts as flagged: the localizer has
+    stopped reporting.
     """
     if len(levels) == 0:
         return np.ones(len(stamps), dtype=bool)
     index = np.searchsorted(levels[:, 0], stamps, side="right") - 1
     valid = index >= 0
     age = np.where(valid, stamps - levels[index.clip(0), 0], np.inf)
-    level = np.where(valid, levels[index.clip(0), 1], 2.0)
-    return (age > max_age_sec) | (level != 0.0)
+    value = np.where(valid, levels[index.clip(0), column], 2.0)
+    return (age > max_age_sec) | (value != 0.0)
 
 
 def _coverage(matched_stamps: np.ndarray, truth_stamps: np.ndarray) -> float:
@@ -119,8 +130,14 @@ def score_run(
     truth: np.ndarray,
     start_sec: float,
     alignment_levels: np.ndarray | None = None,
+    end_sec: float | None = None,
 ) -> RunScore:
-    """Score poses published after start_sec (the replay start) against truth."""
+    """Score poses published after start_sec (the replay start) against truth.
+
+    Tracking coverage runs from the first pose to end_sec (the replay end), so a
+    localizer that stops publishing loses coverage; without end_sec it ends at
+    the last pose.
+    """
     estimate = estimate[estimate[:, 0] >= start_sec] if len(estimate) else estimate
     if len(estimate) == 0:
         return RunScore(False, None, None, False, 0, 0.0, *([None] * 6))
@@ -134,19 +151,25 @@ def score_run(
     z = np.abs(est[:, 3] - gt[:, 3])
     first_window = est[:, 0] <= est[0, 0] + FIRST_FIX_WINDOW_SEC
     first_fix_error = float(np.median(xy[first_window]))
-    after_init = truth[
-        (truth[:, 0] >= first_stamp) & (truth[:, 0] <= estimate[-1, 0]), 0
-    ]
-    flagged_when_off = flagged_when_right = None
+    coverage_end = estimate[-1, 0] if end_sec is None else end_sec
+    after_init = truth[(truth[:, 0] >= first_stamp) & (truth[:, 0] <= coverage_end), 0]
+    shares = {}
     if alignment_levels is not None and len(alignment_levels):
-        flagged = health_flags(est[:, 0], alignment_levels)
         off = xy > 1.0
         right = xy < 0.3
-        flagged_when_off = float(np.mean(flagged[off])) if off.any() else None
-        flagged_when_right = float(np.mean(flagged[right])) if right.any() else None
+        columns = {"flagged": 1}
+        if alignment_levels.shape[1] > 2:
+            columns["lost"] = 2
+        for name, column in columns.items():
+            flagged = health_flags(est[:, 0], alignment_levels, column=column)
+            shares[f"{name}_when_off"] = (
+                float(np.mean(flagged[off])) if off.any() else None
+            )
+            shares[f"{name}_when_right"] = (
+                float(np.mean(flagged[right])) if right.any() else None
+            )
     return RunScore(
-        flagged_when_off=flagged_when_off,
-        flagged_when_right=flagged_when_right,
+        **shares,
         initialized=True,
         time_to_first_pose_sec=first_stamp - start_sec,
         first_fix_error_m=first_fix_error,
@@ -171,17 +194,23 @@ def _fmt(value, digits=2) -> str:
 def health_table(results: dict[str, list[RunScore]]) -> str:
     """Markdown table of how well /alignment_status flags wrong poses."""
     lines = [
-        "| case | runs with >1 m poses | flagged when >1 m off | flagged when <0.3 m |",
-        "|---|---|---|---|",
+        "| case | runs with >1 m poses | flagged when >1 m off | flagged when <0.3 m "
+        "| lost when >1 m off | lost when <0.3 m |",
+        "|---|---|---|---|---|---|",
     ]
     for case, scores in results.items():
-        off = [s.flagged_when_off for s in scores if s.flagged_when_off is not None]
-        right = [
-            s.flagged_when_right for s in scores if s.flagged_when_right is not None
-        ]
+
+        def mean_of(field, scores=scores):
+            values = [
+                getattr(s, field) for s in scores if getattr(s, field) is not None
+            ]
+            return float(np.mean(values)) if values else None
+
+        runs_off = sum(s.flagged_when_off is not None for s in scores)
         lines.append(
-            f"| {case} | {len(off)} | {_fmt(float(np.mean(off)) if off else None)} | "
-            f"{_fmt(float(np.mean(right)) if right else None)} |"
+            f"| {case} | {runs_off} | {_fmt(mean_of('flagged_when_off'))} | "
+            f"{_fmt(mean_of('flagged_when_right'))} | "
+            f"{_fmt(mean_of('lost_when_off'))} | {_fmt(mean_of('lost_when_right'))} |"
         )
     return "\n".join(lines)
 
@@ -190,11 +219,12 @@ def summary_table(results: dict[str, list[RunScore]]) -> str:
     """Markdown table: one row per case, medians over its repeats."""
     lines = [
         "| case | runs | initialized | wrong init | time to first pose (s) | "
-        "median xy (m) | p95 xy (m) | max xy (m) | >1 m |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "median xy (m) | p95 xy (m) | max xy (m) | >1 m | tracked |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for case, scores in results.items():
         good = [s for s in scores if s.initialized and s.median_xy_m is not None]
+        initialized = [s for s in scores if s.initialized]
 
         def median_of(field, runs=good):
             values = [getattr(s, field) for s in runs if getattr(s, field) is not None]
@@ -206,6 +236,7 @@ def summary_table(results: dict[str, list[RunScore]]) -> str:
             f"{_fmt(median_of('time_to_first_pose_sec', scores), 1)} | "
             f"{_fmt(median_of('median_xy_m'))} | {_fmt(median_of('p95_xy_m'))} | "
             f"{_fmt(max((s.max_xy_m for s in good), default=None))} | "
-            f"{_fmt(median_of('frac_over_1_m'), 3)} |"
+            f"{_fmt(median_of('frac_over_1_m'), 3)} | "
+            f"{_fmt(median_of('tracked_fraction', initialized))} |"
         )
     return "\n".join(lines)

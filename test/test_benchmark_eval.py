@@ -79,9 +79,55 @@ def test_health_flags_score_how_well_the_status_tracks_the_error():
     assert bench.score_run(estimate, truth, 0.0).flagged_when_off is None
 
 
+def test_coverage_runs_to_the_replay_end():
+    # Koide outdoor_kidnap_a: the localizer stopped publishing after 36 s of a
+    # 180 s replay, yet its few poses were accurate.
+    truth = _trajectory(np.arange(0.0, 180.0, 0.01), 0.0)
+    estimate = _trajectory(np.arange(1.0, 36.0, 0.1), 0.05)
+    without_end = bench.score_run(estimate, truth, 0.0)
+    with_end = bench.score_run(estimate, truth, 0.0, end_sec=180.0)
+    assert without_end.tracked_fraction > 0.95
+    assert abs(with_end.tracked_fraction - 35.0 / 179.0) < 0.01
+    assert with_end.median_xy_m == without_end.median_xy_m
+    row = bench.summary_table({"case": [with_end]}).splitlines()[-1]
+    assert row.endswith("| 0.20 |"), row
+
+
+def test_lost_counts_only_requested_reinitialization():
+    truth = _trajectory(np.arange(0.0, 20.0, 0.01), 0.0)
+    stamps = np.arange(1.0, 20.0, 0.1)
+    x = np.where(stamps < 10.0, 0.1, 3.0)  # right, then 3 m off
+    estimate = _trajectory(stamps, x)
+    # Rejected scans (WARN) while the odometry carries the right pose from 5 s;
+    # reinitialization requested once the pose is off.
+    levels = np.array(
+        [[t, 0.0 if t < 5.0 else 1.0, 1.0 if t >= 10.0 else 0.0] for t in stamps]
+    )
+    score = bench.score_run(estimate, truth, 0.0, levels)
+    assert score.flagged_when_off == 1.0
+    assert abs(score.flagged_when_right - 50.0 / 90.0) < 0.02  # 5-10 s of 1-10 s
+    assert score.lost_when_off == 1.0
+    assert score.lost_when_right == 0.0
+    row = bench.health_table({"case": [score]}).splitlines()[-1]
+    assert row == "| case | 1 | 1.00 | 0.56 | 1.00 | 0.00 |", row
+
+
+def test_alignment_rows_mark_requested_reinitialization_as_lost(tmp_path):
+    path = tmp_path / "alignment.jsonl"
+    path.write_text(
+        '{"stamp": 2.0, "level": 1, "recovery_state": "reinitialization_requested"}\n'
+        '{"stamp": 1.0, "level": 1, "recovery_state": "recovering"}\n',
+        encoding="utf-8",
+    )
+    levels = bench.load_alignment_levels(path)
+    assert levels.tolist() == [[1.0, 1.0, 0.0], [2.0, 1.0, 1.0]]
+
+
 if __name__ == "__main__":
     test_tracking_is_scored_in_the_map_frame_without_alignment()
     test_a_consistently_offset_track_is_a_wrong_initialization()
     test_runs_without_poses_or_overlap_are_reported()
     test_summary_counts_initializations_and_wrong_ones()
     test_health_flags_score_how_well_the_status_tracks_the_error()
+    test_coverage_runs_to_the_replay_end()
+    test_lost_counts_only_requested_reinitialization()
