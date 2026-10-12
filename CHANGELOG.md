@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add `seed_correction_guard_exact_start_translation_m` (default `0`, off;
+  experimental): when the first accepted update after an initial pose corrects it by
+  at most this much, the seed correction guard's warmup ends at once. It targets the
+  EIL_Box jump, where NDT accepted 1.9-2.0 m aliased corrections right after a
+  correct initial pose ([experiments/post_init_jump](experiments/post_init_jump/README.md));
+  quickstart configs write it as 0 until replays decide.
 - Record why the Go2 global search settings stay opt-in
   ([experiments/go2_wide_map_global_init](experiments/go2_wide_map_global_init/README.md#should-these-settings-be-the-defaults-koide-handheld)).
   On handheld Koide replays, a 256-point version initialized later in all 12 runs and

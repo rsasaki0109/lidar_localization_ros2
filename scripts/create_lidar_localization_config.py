@@ -264,6 +264,7 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         "seed_correction_guard_translation_m": 0.3,
         "seed_correction_guard_yaw_deg": 15.0,
         "seed_correction_guard_warmup_accepts": 5,
+        "seed_correction_guard_exact_start_translation_m": 0.0,
         "seed_correction_guard_release_rejections": 30,
         "global_frame_id": args.global_frame,
         "odom_frame_id": args.odom_frame,

@@ -368,6 +368,27 @@ void test_seed_guard_warmup_counts_only_settled_accepts()
   assert(ll::nextSettledAccepts(settled, params, 1.2, 0.0) == 0);
 }
 
+void test_seed_guard_exact_start_completes_warmup()
+{
+  ll::MeasurementGateParams params;
+  params.seed_correction_guard_translation_m = 0.3;
+  params.seed_correction_guard_yaw_deg = 15.0;
+  params.seed_correction_guard_warmup_accepts = 5;
+
+  // Off by default: the first accept counts once.
+  assert(ll::nextSettledAccepts(0, params, 0.05, 0.5, true) == 1);
+
+  params.seed_correction_guard_exact_start_translation_m = 0.1;
+  // An initial pose that needed no pulling in completes the warmup.
+  assert(ll::nextSettledAccepts(0, params, 0.05, 0.5, true) == 5);
+  // Only for the first accept after the initial pose.
+  assert(ll::nextSettledAccepts(0, params, 0.05, 0.5, false) == 1);
+  // A coarse pose being pulled in keeps the normal warmup.
+  assert(ll::nextSettledAccepts(0, params, 0.25, 0.5, true) == 1);
+  assert(ll::nextSettledAccepts(0, params, 1.2, 0.5, true) == 0);
+  assert(ll::nextSettledAccepts(0, params, 0.05, 20.0, true) == 0);
+}
+
 void test_odom_seed_gap_detection()
 {
   const double nan = std::numeric_limits<double>::quiet_NaN();
@@ -380,6 +401,7 @@ void test_odom_seed_gap_detection()
 int main()
 {
   test_seed_guard_warmup_counts_only_settled_accepts();
+  test_seed_guard_exact_start_completes_warmup();
   test_odom_seed_gap_detection();
   test_seed_correction_guard_rejects_jumps_until_release();
   test_param_and_input_builders_map_fields();
