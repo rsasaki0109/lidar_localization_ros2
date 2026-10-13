@@ -76,10 +76,11 @@ With 0.1 m, regression replays (`regression.yaml`, `koide_replay.yaml`):
 | EIL Box/Stairs/Mask1/Mask2, quickstart defaults | 12 | 0 | 5 of 12 wrong starts (warmup 5: 3 of 12) |
 | Long_Stairs, Outdoor1, Outdoor2, low-sensor settings | 3 | 1 (Outdoor1) | 2 ok (max 0.09-0.10 m); Outdoor2 not initialized |
 | Koide, repeat 1 | 6 sequences, 15 initial poses | 0 | as warmup 5 within run-to-run spread |
-| Koide, repeat 2 | 6 sequences | (running) | |
+| Koide, repeat 2 | 6 sequences, 15 initial poses | 0 | one wrong start (01b, 14.9 m) and one wrong reset (01a), on the old code path |
 
 Where the rule did not fire, the code path is the same as before, so those differences are
-run-to-run spread of the global search. Wrong EIL starts had first corrections of 0.46-2.1 m;
+run-to-run spread of the global search and recovery (two Koide warmup-5 repeats had no wrong
+start or reset). Wrong EIL starts had first corrections of 0.46-2.1 m;
 the Outdoor2 global search returned ambiguous answers in all six tries before any scan was
 tracked.
 
