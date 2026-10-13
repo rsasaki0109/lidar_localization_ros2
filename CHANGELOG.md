@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add an opt-in sparse-band global search: `sparse_band_min_points` (G2 node; launch
+  arg `g2_sparse_band_min_points`, quickstart `--global-sparse-band-min-points`,
+  default 0 = off). A scan with fewer 2D points than this in the height band is
+  searched again from the sensor plane up, with 1024 points, 32 candidates and
+  NDT-refined poses, and the answer reports `sparse_band_search`
+  ([experiments/go2_wide_map_global_init](experiments/go2_wide_map_global_init/README.md)).
 - `run_benchmark.py` lists runs whose RKO-LIO odometry stalled (registration loop
   over 10 s), and `score.json` keeps the longest loop. Such runs looked like
   localizer failures in the post_init_jump replays.

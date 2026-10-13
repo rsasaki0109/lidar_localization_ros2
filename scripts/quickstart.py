@@ -404,6 +404,7 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
         ("--global-nms-radius-m", {"type": float, "default": 3.0}),
         ("--global-z-min", {"type": float, "default": 0.5}),
         ("--global-z-max", {"type": float, "default": 5.0}),
+        ("--global-sparse-band-min-points", {"type": int, "default": 0}),
         ("--supervisor-query-timeout-sec", {"type": float, "default": 45.0}),
         ("--supervisor-max-walk-candidates", {"type": int, "default": 4}),
     ):
@@ -697,6 +698,7 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         "g2_nms_radius_m": args.global_nms_radius_m,
         "g2_z_min_m": args.global_z_min,
         "g2_z_max_m": args.global_z_max,
+        "g2_sparse_band_min_points": args.global_sparse_band_min_points,
         "g2_route_time_radius_sec": args.route_time_radius_sec,
         "g2_route_min_spacing_m": args.route_min_spacing_m,
         "g2_route_max_poses": args.route_max_poses,
@@ -787,6 +789,8 @@ def _validate(args) -> str | None:
         or args.global_z_min >= args.global_z_max
     ):
         return "--global-z-min must be below --global-z-max."
+    if args.global_sparse_band_min_points < 0:
+        return "--global-sparse-band-min-points must be 0 (off) or positive."
     if (
         not math.isfinite(args.occupancy_inflate_radius_m)
         or args.occupancy_inflate_radius_m < 0.0

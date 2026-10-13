@@ -274,6 +274,7 @@ def probe(
                 "runtime_sec": runtime,
                 "near_rank": near_rank,
                 "truth_bbs_score": truth_bbs,
+                "sparse_band_search": result.sparse_band_search,
                 "truth_fitness": truth_fitness,
                 "candidates": candidates,
             }

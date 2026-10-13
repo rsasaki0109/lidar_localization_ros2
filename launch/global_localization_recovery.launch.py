@@ -361,6 +361,10 @@ def generate_launch_description():
             'g2_z_max_m', default_value='5.0',
             description='G2 scan height band, upper edge in the levelled base frame.'),
         DeclareLaunchArgument(
+            'g2_sparse_band_min_points', default_value='0',
+            description='Search again from the sensor plane up when the G2 height band '
+                        'holds fewer 2D points than this (0 = off).'),
+        DeclareLaunchArgument(
             'g2_use_cpp_backend', default_value='true',
             description='Use the compiled C++ BBS backend (bbs_cpp) when built; '
                         'falls back to the Python search if unavailable.'),
@@ -477,6 +481,8 @@ def generate_launch_description():
                 LaunchConfiguration('g2_z_min_m'), value_type=float),
             'z_max_m': ParameterValue(
                 LaunchConfiguration('g2_z_max_m'), value_type=float),
+            'sparse_band_min_points': ParameterValue(
+                LaunchConfiguration('g2_sparse_band_min_points'), value_type=int),
             'use_cpp_backend': ParameterValue(
                 LaunchConfiguration('g2_use_cpp_backend'), value_type=bool),
             'candidate_source': LaunchConfiguration('g2_candidate_source'),

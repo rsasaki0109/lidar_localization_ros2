@@ -83,8 +83,9 @@ class GlobalLocalizationConfig:
     # also snaps *wrong* hypotheses to locally-perfect alignments and collapses nearby
     # walk candidates onto one pose — keep it off unless the scenario shows it helps.
     registration_refine_candidates: bool = False
-    # Opt-in (0 = off): a scan with fewer points than this in the height band is
-    # searched again from the sensor plane up (SPARSE_BAND_*). A sensor mounted low
+    # Opt-in (0 = off): a scan with fewer points than this in the height band (2D
+    # cells at the grid resolution, before the max_scan_points cap) is searched
+    # again from the sensor plane up (SPARSE_BAND_*). A sensor mounted low
     # or upside down sees little above it; its few band points match the inflated
     # grid perfectly at many places, and the answers come back metres off.
     sparse_band_min_points: int = 0
@@ -555,7 +556,20 @@ class GlobalLocalizationEngine:
             config.max_scan_points,
             min_range_m=config.min_range_m,
         )
-        sparse_band = scan_xy.shape[0] < config.sparse_band_min_points
+        # Counted before the max_scan_points cap: on the Go2 a capped band can
+        # still be saturated, while a handheld sensor holds over 1000 points.
+        sparse_band = (
+            config.sparse_band_min_points > 0
+            and bbs_engine.prepare_scan_xy(
+                points_xyz,
+                config.z_min_m,
+                config.z_max_m,
+                resolution_m,
+                0,
+                min_range_m=config.min_range_m,
+            ).shape[0]
+            < config.sparse_band_min_points
+        )
         max_candidates = config.max_candidates
         if sparse_band:
             scan_xy = bbs_engine.prepare_scan_xy(

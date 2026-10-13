@@ -50,7 +50,11 @@ thing to check when a plausible candidate still fails to lock.
 
 Key parameters (see the node for the full list): `z_min_m` / `z_max_m` (scan
 height band in the levelled base frame, launch args `g2_z_min_m` / `g2_z_max_m`,
-default 0.5 / 5.0 m; the startup log line reports it), `max_scan_points`, `angular_resolution_deg`, `pyramid_depth`,
+default 0.5 / 5.0 m; the startup log line reports it), `sparse_band_min_points`
+(launch arg `g2_sparse_band_min_points`, default 0 = off: when the band holds fewer
+2D points than this, counted before the `max_scan_points` cap, the query searches
+again from the sensor plane up with 1024 points, 32 candidates and NDT-refined poses;
+each answer reports `sparse_band_search`), `max_scan_points`, `angular_resolution_deg`, `pyramid_depth`,
 `max_candidates`, `nms_radius_m`, `registration_refine_candidates` (node param;
 launch arg `g2_registration_refine_candidates`, default `false`). When enabled,
 `g2_ndt_score` publishes each candidate's NDT-refined pose instead of the raw BBS

@@ -255,6 +255,7 @@ class TestLaunchArgumentContract(unittest.TestCase):
             "g2_nms_radius_m",
             "g2_z_min_m",
             "g2_z_max_m",
+            "g2_sparse_band_min_points",
         ):
             with self.subTest(key=key):
                 self.assertIn(key, declared)
