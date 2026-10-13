@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import asdict, dataclass
 
 import numpy as np
@@ -20,6 +21,11 @@ WRONG_INIT_M = 1.0
 MATCH_TOLERANCE_SEC = 0.05
 # The first fix is judged on the estimates of this window after it.
 FIRST_FIX_WINDOW_SEC = 2.0
+# An odometry registration loop longer than this stalled the odometry (seen
+# after a container restart, on a cold disk): the startup then lacks odometry,
+# and the run says little about the localizer. Healthy RKO-LIO replays peak at
+# about 6 s, on the first scan.
+ODOMETRY_STALL_SEC = 10.0
 
 
 @dataclass(frozen=True)
@@ -44,9 +50,24 @@ class RunScore:
     # (or stopped reporting). A rejected scan bridged by odometry is not lost.
     lost_when_off: float | None = None
     lost_when_right: float | None = None
+    # Longest odometry registration loop (RKO-LIO's exit profile), if logged.
+    odometry_worst_loop_sec: float | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
+
+
+def odometry_worst_loop_sec(log_text: str) -> float | None:
+    """Longest registration loop in RKO-LIO's exit profile, or None if absent."""
+    match = re.search(
+        r"ROS Registration Loop:.*?Max \(worst-case\) frequency: ([0-9.]+)\s*Hz",
+        log_text,
+        re.DOTALL,
+    )
+    if match is None:
+        return None
+    # The profile prints two decimals: 0.00 Hz is a stall of 200 s or more.
+    return 1.0 / max(float(match.group(1)), 0.005)
 
 
 def load_tum(path) -> np.ndarray:
@@ -213,6 +234,23 @@ def health_table(results: dict[str, list[RunScore]]) -> str:
             f"{_fmt(mean_of('lost_when_off'))} | {_fmt(mean_of('lost_when_right'))} |"
         )
     return "\n".join(lines)
+
+
+def stalled_odometry_note(results: dict[str, list[RunScore]]) -> str:
+    """Lines naming the runs whose odometry stalled, or an empty string."""
+    stalled = [
+        f"{case} run{index + 1} ({s.odometry_worst_loop_sec:.0f} s)"
+        for case, scores in results.items()
+        for index, s in enumerate(scores)
+        if s.odometry_worst_loop_sec is not None
+        and s.odometry_worst_loop_sec > ODOMETRY_STALL_SEC
+    ]
+    if not stalled:
+        return ""
+    return (
+        f"Odometry stalled (registration loop over {ODOMETRY_STALL_SEC:g} s); "
+        "re-run before comparing: " + ", ".join(stalled)
+    )
 
 
 def summary_table(results: dict[str, list[RunScore]]) -> str:

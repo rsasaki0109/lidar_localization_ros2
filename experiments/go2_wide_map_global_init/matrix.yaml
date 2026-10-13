@@ -47,3 +47,8 @@ variants:
   # Quickstart defaults with each query's yaw sweep started at a sample fixed by
   # the scan stamp, so tied wrong places do not repeat across queries.
   - {name: as_baseline_yaw_sweep, yaw_sweep_offset: true}
+  # Round 4: search again with w's settings only when the default height band has
+  # few points (global_localization_query sparse_band_min_points, counted before
+  # the 256-point cap; sb_sparse_band256 ran with the count after it).
+  - {name: sb_sparse_band256, config: {sparse_band_min_points: 256}}
+  - {name: sc_sparse_band512, config: {sparse_band_min_points: 512}}

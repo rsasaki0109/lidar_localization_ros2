@@ -427,6 +427,12 @@ class TestQuickstartCli(unittest.TestCase):
             )
             self.assertIn("g2_z_min_m:=0.0", text)
             self.assertIn("g2_z_max_m:=4.0", text)
+            self.assertIn("g2_sparse_band_min_points:=512", text)
+            _, text = self._dry_run(
+                root,
+                ["--no-auto-occupancy-map", "--global-sparse-band-min-points", "0"],
+            )
+            self.assertIn("g2_sparse_band_min_points:=0", text)
             for extra in (
                 ["--global-z-min", "2", "--global-z-max", "1"],
                 ["--global-z-min", "nan"],

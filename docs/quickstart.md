@@ -311,7 +311,11 @@ height band of the 2D search is 0.5-5.0 m above the base frame (`--global-z-min`
 `--global-z-max`), and the generated grid inflates occupied cells by 0.6 m
 (`--occupancy-inflate-radius-m`, cached per value). A sensor low above the ground,
 such as an upside-down MID-360 on a Unitree Go2, leaves too few points in that band
-for large maps; see [Large maps](go2_mid360_quickstart.md#large-maps). The
+for large maps; see [Large maps](go2_mid360_quickstart.md#large-maps).
+Quickstart searches such a scan again from the sensor plane up, with more points and
+candidates and NDT-refined poses, when its band holds fewer than 512 2D points
+(`--global-sparse-band-min-points`, 0 turns it off; a handheld MID-360 holds over 1000).
+On the Go2 capture-room replays this took wrong starts from 3-5 of 12 runs to none. The
 `--no-require-global-registration-scoring` escape hatch is intended only for replay
 experiments, not unattended startup.
 

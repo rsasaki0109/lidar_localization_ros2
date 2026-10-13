@@ -88,6 +88,9 @@ class GlobalLocalizationNode(Node):
         self.declare_parameter("odom_frame_id", "")
         self.declare_parameter("z_min_m", 0.5)
         self.declare_parameter("z_max_m", 5.0)
+        # Opt-in (0 = off): search again from the sensor plane up when the height
+        # band holds fewer 2D points than this (a sensor mounted low).
+        self.declare_parameter("sparse_band_min_points", 0)
         self.declare_parameter("min_range_m", 1.0)
         self.declare_parameter("max_scan_points", 512)
         self.declare_parameter("angular_resolution_deg", 5.0)
@@ -147,6 +150,9 @@ class GlobalLocalizationNode(Node):
         config = GlobalLocalizationConfig(
             z_min_m=self.get_parameter("z_min_m").value,
             z_max_m=self.get_parameter("z_max_m").value,
+            sparse_band_min_points=int(
+                self.get_parameter("sparse_band_min_points").value
+            ),
             min_range_m=self.get_parameter("min_range_m").value,
             max_scan_points=int(self.get_parameter("max_scan_points").value),
             angular_resolution_rad=math.radians(
@@ -263,7 +269,8 @@ class GlobalLocalizationNode(Node):
         self.query_srv = self.create_service(Trigger, "~/query", self.handle_query)
         self.get_logger().info(
             f"global localization service ready: source={self.engine.candidate_source} map={occupancy_yaml or reference_csv} scan={cloud_topic} backend={self.engine.backend} "
-            f"z_band=[{config.z_min_m:g}, {config.z_max_m:g}] m"
+            f"z_band=[{config.z_min_m:g}, {config.z_max_m:g}] m "
+            f"sparse_band_min_points={config.sparse_band_min_points}"
         )
 
     def cloud_received(self, msg: PointCloud2) -> None:
@@ -411,6 +418,7 @@ class GlobalLocalizationNode(Node):
         summary = {
             "candidate_count": len(result.candidates),
             "scan_point_count": result.scan_point_count,
+            "sparse_band_search": result.sparse_band_search,
             "runtime_sec": round(runtime_sec, 3),
             "scan_stamp_sec": round(scan_stamp_sec, 9),
             "scan_frame_id": cloud.header.frame_id,

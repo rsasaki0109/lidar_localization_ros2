@@ -12,6 +12,7 @@ usage: run_benchmark.py SUITE.yaml --out DIR [--repeats N] [--case NAME ...]
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import shlex
@@ -171,6 +172,14 @@ def score(case: dict, run_dir: Path) -> benchmark_eval.RunScore:
         benchmark_eval.load_alignment_levels(run_dir / "alignment.jsonl"),
         end_sec=bag_start + duration,
     )
+    odometry_log = run_dir / "odometry.log"
+    if odometry_log.exists():
+        result = dataclasses.replace(
+            result,
+            odometry_worst_loop_sec=benchmark_eval.odometry_worst_loop_sec(
+                odometry_log.read_text(errors="replace")
+            ),
+        )
     (run_dir / "score.json").write_text(json.dumps(result.as_dict(), indent=2) + "\n")
     return result
 
@@ -219,6 +228,9 @@ def main(argv=None) -> int:
         + "\n\n"
         + benchmark_eval.health_table(results)
     )
+    note = benchmark_eval.stalled_odometry_note(results)
+    if note:
+        table += "\n\n" + note
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "summary.md").write_text(table + "\n", encoding="utf-8")
     (args.out / "results.json").write_text(

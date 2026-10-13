@@ -23,3 +23,6 @@ variants:
   # Quickstart defaults with each query's yaw sweep started at a sample fixed by
   # the scan stamp, so tied wrong places do not repeat across queries.
   - {name: as_baseline_yaw_sweep, yaw_sweep_offset: true}
+  # The sparse-band search (sb in matrix.yaml): should never trigger here.
+  - {name: sb_sparse_band256, config: {sparse_band_min_points: 256}}
+  - {name: sc_sparse_band512, config: {sparse_band_min_points: 512}}

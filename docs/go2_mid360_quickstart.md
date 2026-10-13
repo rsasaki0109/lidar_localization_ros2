@@ -102,8 +102,10 @@ lidar_slam_ros2 map of a separate run ([benchmark](benchmark.md)):
 - **Indoor capture room** (EIL_Box, Stairs, Mask1, Mask2, three runs each): all
   12 runs localized by themselves and none at a wrong place. The first pose came
   after 10-17 s, and tracking stayed within 3 cm (median).
-- **Large maps** (Long_Stairs, Outdoor): with the defaults the global search
-  does not find the Go2. With the [Large maps](#large-maps) settings it
+- **Large maps** (Long_Stairs, Outdoor): the defaults search a sparse height band
+  again from the sensor plane up (`--global-sparse-band-min-points 512`). That
+  localized Long_Stairs (3 runs) and Outdoor2 (2 runs) correctly; Outdoor1 stayed
+  ambiguous and asked for a manual pose. With the [Large maps](#large-maps) settings it
   localized all six runs (two per map) by itself and none at a wrong place, after
   11-15 s, and tracking stayed within 2 cm (median). In six later replays with the
   same search settings, five localized; in one Outdoor2 run all six tries stayed
