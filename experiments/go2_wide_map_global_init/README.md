@@ -241,6 +241,48 @@ Far agreements do not drop, and one simulated JEPLO startup lands 46 m off (Outd
 defaults never did. The repeats are not the yaw order: NDT re-ranks the tied places and settles
 on similar ones anyway. Removing the saturation (the low-sensor settings) is what works.
 
+## Searching again only when the band is sparse (round 4)
+
+The low-sensor settings cannot be the default because they slow a handheld sensor down
+(Koide above). But the two sensors differ plainly in one number: the 2D points in the
+default height band (0.5-5 m above the sensor, cells at the grid resolution, before the
+scan-point cap). The Go2 has a median of 115 (90th percentile 326); every Koide query
+fills even a 1024-point cap. `sparse_band_min_points` (G2 node; quickstart
+`--global-sparse-band-min-points`, default 0 = off) searches a scan again with `w`'s
+settings (band from the sensor plane, 1024 points, 32 candidates, NDT-refined poses) only
+when its band holds fewer points than this. The occupancy grid stays the default one
+(0.6 m inflation).
+
+Offline (`sb` counted after the 256-point cap, `sc` before it):
+
+| variant | top1 near: Long_Stairs, Outdoor1, Outdoor2, Box, Stairs, Mask1, Mask2 | gated wrong (wide / EIL) | simulated startups right | fired (JEPLO / Koide queries) |
+|---|---|---|---|---|
+| `a_baseline` | 0.04 0.00 0.00 0.07 0.16 0.40 0.23 | 14 / 70 | 1 of 7 | - |
+| `w_zmin0_pts1024_cand32_refine` (always) | 0.96 0.13 0.24 0.76 0.76 0.80 0.91 | 0 / 18 | 7 of 7 | all |
+| `sb_sparse_band256` | 0.96 0.13 0.24 0.67 0.64 0.76 0.68 | 0 / 26 | 6 of 7 | 87% / 0 of 251 |
+| `sc_sparse_band512` | 0.96 0.13 0.24 0.69 0.76 0.80 0.91 | 0 / 18 | 7 of 7 | 93% / 0 of 251 |
+
+On Koide `sc` returned the defaults' answers for every query. Counting the band costs about
+18 ms per query.
+
+Replays with quickstart defaults plus `--global-sparse-band-min-points 512` (`go2_jeplo.yaml`,
+default grid):
+
+| case | runs | initialized | wrong init | first pose (s) | median xy (m) |
+|---|---|---|---|---|---|
+| EIL_Box, Stairs, Mask1, Mask2 | 3 each | 12 | **0** | 10.5-11.6 | 0.02-0.03 |
+| Long_Stairs | 3 | 3 | 0 | 10.3 | 0.02 |
+| Outdoor1 | 2 | 0 | 0 | - | - |
+| Outdoor2 | 2 | 2 | 0 | 11.8 | 0.02 |
+| Koide (`koide_replay.yaml`) | 1 each, 6 sequences | 6 | 0 | 14.8-25.0 | 0.05-0.13 |
+
+- The EIL defaults started wrongly in 3-5 of 12 runs in the earlier replays (baseline above,
+  post_init_jump regression); with the sparse-band search none did.
+- Outdoor1 stayed ambiguous in all six tries of both runs and asked for a manual pose. It
+  needs the finer grid of `y` (0.2 m inflation).
+- The search fired on 1-6 queries per Go2 run and on none of 184 Koide queries, so Koide ran
+  the defaults' code path (results within the run-to-run spread of earlier default replays).
+
 ## Decision
 
 - **Recommended for a sensor low above the ground (Go2):** `y`, through quickstart:
