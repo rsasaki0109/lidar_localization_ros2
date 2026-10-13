@@ -1,0 +1,25 @@
+# Koide et al. handheld MID-360 outdoors (Zenodo 10122133): does the Go2
+# low-sensor recipe, or its sensor-height-independent part, hold on a handheld
+# sensor about 1.3 m above the ground? Startup window at the start of each
+# sequence (the kidnap sequences cover the sensor at about 29 s). Set
+# KOIDE_ROOT (sequences/, gt/, maps/<map>/{map.ply,occ,occ_infl02}) and
+# KOIDE_ODOM (RKO-LIO trajectories <sequence>.tum).
+cases:
+  - {name: outdoor_hard_01a, topic: /livox/points, bag: $KOIDE_ROOT/sequences/outdoor_hard_01a, odometry: $KOIDE_ODOM/outdoor_hard_01a.tum, gt: $KOIDE_ROOT/gt/traj_lidar_outdoor_hard_01.txt, map: $KOIDE_ROOT/maps/outdoor_hard/map.ply, occupancy: $KOIDE_ROOT/maps/outdoor_hard/occ/occupancy.yaml, window_sec: 60}
+  - {name: outdoor_hard_01b, topic: /livox/points, bag: $KOIDE_ROOT/sequences/outdoor_hard_01b, odometry: $KOIDE_ODOM/outdoor_hard_01b.tum, gt: $KOIDE_ROOT/gt/traj_lidar_outdoor_hard_01.txt, map: $KOIDE_ROOT/maps/outdoor_hard/map.ply, occupancy: $KOIDE_ROOT/maps/outdoor_hard/occ/occupancy.yaml, window_sec: 22}
+  - {name: outdoor_hard_02a, topic: /livox/points, bag: $KOIDE_ROOT/sequences/outdoor_hard_02a, odometry: $KOIDE_ODOM/outdoor_hard_02a.tum, gt: $KOIDE_ROOT/gt/traj_lidar_outdoor_hard_02.txt, map: $KOIDE_ROOT/maps/outdoor_hard/map.ply, occupancy: $KOIDE_ROOT/maps/outdoor_hard/occ/occupancy.yaml, window_sec: 60}
+  - {name: outdoor_hard_02b, topic: /livox/points, bag: $KOIDE_ROOT/sequences/outdoor_hard_02b, odometry: $KOIDE_ODOM/outdoor_hard_02b.tum, gt: $KOIDE_ROOT/gt/traj_lidar_outdoor_hard_02.txt, map: $KOIDE_ROOT/maps/outdoor_hard/map.ply, occupancy: $KOIDE_ROOT/maps/outdoor_hard/occ/occupancy.yaml, window_sec: 60}
+  - {name: outdoor_kidnap_a, topic: /livox/points, bag: $KOIDE_ROOT/sequences/outdoor_kidnap_a, odometry: $KOIDE_ODOM/outdoor_kidnap_a.tum, gt: $KOIDE_ROOT/gt/traj_lidar_outdoor_kidnap.txt, map: $KOIDE_ROOT/maps/outdoor_kidnap/map.ply, occupancy: $KOIDE_ROOT/maps/outdoor_kidnap/occ/occupancy.yaml, window_sec: 25}
+  - {name: outdoor_kidnap_b, topic: /livox/points, bag: $KOIDE_ROOT/sequences/outdoor_kidnap_b, odometry: $KOIDE_ODOM/outdoor_kidnap_b.tum, gt: $KOIDE_ROOT/gt/traj_lidar_outdoor_kidnap.txt, map: $KOIDE_ROOT/maps/outdoor_kidnap/map.ply, occupancy: $KOIDE_ROOT/maps/outdoor_kidnap/occ/occupancy.yaml, window_sec: 25}
+variants:
+  - {name: a_baseline}
+  - {name: y_infl02_zmin0_pts1024_cand16_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {z_min_m: 0.0, max_scan_points: 1024, max_candidates: 16, registration_refine_candidates: true}}
+  - {name: ya_infl02_pts1024_cand16_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {max_scan_points: 1024, max_candidates: 16, registration_refine_candidates: true}}
+  - {name: yb_infl02_pts1024_cand16, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {max_scan_points: 1024, max_candidates: 16}}
+  # The recipe with quickstart's 256 scan points: a handheld sensor fills the
+  # 1024-point cap, and BBS then takes 19-23 s per query.
+  - {name: yc_infl02_cand16_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {max_candidates: 16, registration_refine_candidates: true}}
+  - {name: yd_infl02_zmin0_cand16_refine, occupancy: "{map_dir}/occ_infl02/occupancy.yaml", config: {z_min_m: 0.0, max_candidates: 16, registration_refine_candidates: true}}
+  # Quickstart defaults with each query's yaw sweep started at a sample fixed by
+  # the scan stamp, so tied wrong places do not repeat across queries.
+  - {name: as_baseline_yaw_sweep, yaw_sweep_offset: true}

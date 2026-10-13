@@ -240,6 +240,10 @@ looks good; previous-delta prediction then extrapolates the jump.
   `seed_correction_guard_warmup_accepts` (default `5`) accepts after an initial pose and
   releases after `seed_correction_guard_release_rejections` (default `10`) consecutive
   rejects so a drifted seed can re-lock. Only use it with a seed you trust per scan.
+  `seed_correction_guard_exact_start_translation_m` (default `0`, off; quickstart
+  configs `0.1`) ends that warmup at once when the first accept after an initial pose
+  corrected it by at most this much, so a known-good initial pose is held from the next scan
+  ([experiments/post_init_jump](../experiments/post_init_jump/README.md)).
 
 ## Symptom: Tracking Does Not Recover After Leaving the Map With External Odometry
 

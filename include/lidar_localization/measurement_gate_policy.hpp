@@ -71,6 +71,12 @@ struct MeasurementGateParams
   // (see nextSettledAccepts). A pose from global search can be metres off,
   // and NDT must be free to pull it in before the guard holds it.
   int seed_correction_guard_warmup_accepts{5};
+  // When the first accepted update after an initial pose corrects it by at
+  // most this much (and within the guard's yaw limit), the pose needed no
+  // pulling in, so the warmup counts as done and the guard holds from the
+  // next scan. 0 disables this. Aliased corrections right after an exact
+  // start, e.g. while the scene differs from the map, are then rejected.
+  double seed_correction_guard_exact_start_translation_m{0.0};
 
   bool enable_rejected_seed_update{false};
   int rejected_seed_update_min_rejections{0};
@@ -195,17 +201,29 @@ inline bool isBorderlineSeedGateActive(
 // Count of consecutive accepted updates that needed only a small correction:
 // an accept that moved the pose further than the seed correction guard allows
 // means the track is still converging, so the count starts over.
+// first_accept_since_initial_pose marks the first accepted update after an
+// initial pose; see seed_correction_guard_exact_start_translation_m.
 inline std::size_t nextSettledAccepts(
   std::size_t settled_accepts,
   const MeasurementGateParams & params,
   double correction_translation_m,
-  double correction_yaw_deg)
+  double correction_yaw_deg,
+  bool first_accept_since_initial_pose = false)
 {
   const bool settled =
     correction_translation_m <= params.seed_correction_guard_translation_m &&
     correction_yaw_deg <= params.seed_correction_guard_yaw_deg;
   if (!settled) {
     return 0;
+  }
+  if (
+    first_accept_since_initial_pose &&
+    params.seed_correction_guard_exact_start_translation_m > 0.0 &&
+    correction_translation_m <= params.seed_correction_guard_exact_start_translation_m)
+  {
+    return std::max(
+      settled_accepts + 1,
+      static_cast<std::size_t>(std::max(0, params.seed_correction_guard_warmup_accepts)));
   }
   return settled_accepts < std::numeric_limits<std::size_t>::max() ?
          settled_accepts + 1 : settled_accepts;

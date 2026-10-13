@@ -1,0 +1,53 @@
+# Controlled starts for the post-initialization jump: tracking begins from the
+# ground-truth pose at a chosen bag time (quickstart_gt_start.py), on the box
+# (8.5 s) and while the Go2 walks off it (11.5-13.0 s). Same environment as
+# fixtures.yaml; run with
+#   --quickstart "python3 experiments/post_init_jump/quickstart_gt_start.py"
+defaults:
+  odometry_launch: ${RKO_ODOMETRY_LAUNCH}
+  odometry_args:
+    - lidar_topic:=/livox/lidar
+    - imu_topic:=/livox/imu
+    - rko_param_file:=${SUITE_DIR}/../../tools/benchmark/suites/rko_lio_jeplo.yaml
+  topics: [/livox/lidar, /livox/imu]
+  repeats: 2
+cases:
+  - name: EIL_Box_gt_8_5
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
+    quickstart_args: [--no-auto-initialize, --base-frame=livox_frame, "--gt-start-file=${JEPLO_ROOT}/gt/EIL_Box.txt", "--gt-start-bag=${JEPLO_ROOT}/bags_pc2_merged/EIL_Box", --gt-start-sec=8.5]
+  - name: EIL_Box_gt_11_5
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
+    quickstart_args: [--no-auto-initialize, --base-frame=livox_frame, "--gt-start-file=${JEPLO_ROOT}/gt/EIL_Box.txt", "--gt-start-bag=${JEPLO_ROOT}/bags_pc2_merged/EIL_Box", --gt-start-sec=11.5]
+  - name: EIL_Box_gt_12_0
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
+    quickstart_args: [--no-auto-initialize, --base-frame=livox_frame, "--gt-start-file=${JEPLO_ROOT}/gt/EIL_Box.txt", "--gt-start-bag=${JEPLO_ROOT}/bags_pc2_merged/EIL_Box", --gt-start-sec=12.0]
+  - name: EIL_Box_gt_12_5
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
+    quickstart_args: [--no-auto-initialize, --base-frame=livox_frame, "--gt-start-file=${JEPLO_ROOT}/gt/EIL_Box.txt", "--gt-start-bag=${JEPLO_ROOT}/bags_pc2_merged/EIL_Box", --gt-start-sec=12.5]
+  - name: EIL_Box_gt_13_0
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
+    quickstart_args: [--no-auto-initialize, --base-frame=livox_frame, "--gt-start-file=${JEPLO_ROOT}/gt/EIL_Box.txt", "--gt-start-bag=${JEPLO_ROOT}/bags_pc2_merged/EIL_Box", --gt-start-sec=13.0]
+  # A coarse pose (the true one shifted 1.0 m along x) while the Go2 stands on the box:
+  # NDT must still pull it in.
+  - name: EIL_Box_gt_8_5_off1_0
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
+    quickstart_args: [--no-auto-initialize, --base-frame=livox_frame, "--gt-start-file=${JEPLO_ROOT}/gt/EIL_Box.txt", "--gt-start-bag=${JEPLO_ROOT}/bags_pc2_merged/EIL_Box", --gt-start-sec=8.5, --gt-start-offset-m=1.0]
+  # A coarse pose (the true one shifted 1.5 m along x) while the Go2 stands on the box:
+  # NDT must still pull it in.
+  - name: EIL_Box_gt_8_5_off1_5
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
+    quickstart_args: [--no-auto-initialize, --base-frame=livox_frame, "--gt-start-file=${JEPLO_ROOT}/gt/EIL_Box.txt", "--gt-start-bag=${JEPLO_ROOT}/bags_pc2_merged/EIL_Box", --gt-start-sec=8.5, --gt-start-offset-m=1.5]

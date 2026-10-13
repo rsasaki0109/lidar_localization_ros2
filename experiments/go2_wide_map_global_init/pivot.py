@@ -18,6 +18,8 @@ from pathlib import Path
 
 
 def cell(summary: dict) -> str:
+    if not summary.get("queries"):
+        return "no queries"
     startup = summary["startup"]
     verdict = (
         f"{startup['error_m']:.1f}m@{startup['elapsed_sec']:.0f}s"

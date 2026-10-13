@@ -259,11 +259,14 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         # With odometry seeding each scan, a well-fitting result far from the seed
         # is usually a local minimum (an unmapped or moved object, a repeating
         # corridor), not motion. The guard waits for a settled track after any
-        # reset or odometry gap, and gives way after 30 rejections in a row.
+        # reset or odometry gap, and gives way after 30 rejections in a row. An
+        # initial pose that the first scan moves by 0.1 m at most needs no pulling
+        # in, so the guard holds it from the next scan (experiments/post_init_jump).
         "enable_seed_correction_guard": getattr(args, "odom_tf_prediction", False),
         "seed_correction_guard_translation_m": 0.3,
         "seed_correction_guard_yaw_deg": 15.0,
         "seed_correction_guard_warmup_accepts": 5,
+        "seed_correction_guard_exact_start_translation_m": 0.1,
         "seed_correction_guard_release_rejections": 30,
         "global_frame_id": args.global_frame,
         "odom_frame_id": args.odom_frame,

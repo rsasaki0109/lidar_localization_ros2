@@ -111,7 +111,8 @@ void PCLLocalization::updatePredictionState(
   }
   settled_accepts_since_reset_ = lidar_localization::nextSettledAccepts(
     settled_accepts_since_reset_, measurementGateParams(),
-    last_gated_correction_translation_m_, last_gated_correction_yaw_deg_);
+    last_gated_correction_translation_m_, last_gated_correction_yaw_deg_,
+    accepted_updates_since_reset_ == 1);
 }
 
 void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)

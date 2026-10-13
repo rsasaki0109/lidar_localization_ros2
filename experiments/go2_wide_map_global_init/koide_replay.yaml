@@ -1,0 +1,16 @@
+# tools/benchmark/suites/koide_outdoor.yaml with an explicit RKO-LIO launch and
+# parameter file (set RKO_ODOMETRY_LAUNCH and RKO_MID360_PARAM, e.g. lidarslam's
+# param/rko_lio_mid360.yaml). Variants are passed with run_benchmark.py
+# --quickstart "ros2 run lidar_localization_ros2 quickstart.py <flags>".
+defaults:
+  repeats: 1
+  odometry_launch: ${RKO_ODOMETRY_LAUNCH}
+  odometry_args: [lidar_topic:=/livox/points, imu_topic:=/livox/imu, "rko_param_file:=${RKO_MID360_PARAM}"]
+  topics: [/livox/points, /livox/imu]
+cases:
+  - {name: outdoor_hard_01a, bag: "${KOIDE_ROOT}/sequences/outdoor_hard_01a", map: "${KOIDE_ROOT}/map_outdoor_hard.ply", gt: "${KOIDE_ROOT}/gt/traj_lidar_outdoor_hard_01.txt"}
+  - {name: outdoor_hard_01b, bag: "${KOIDE_ROOT}/sequences/outdoor_hard_01b", map: "${KOIDE_ROOT}/map_outdoor_hard.ply", gt: "${KOIDE_ROOT}/gt/traj_lidar_outdoor_hard_01.txt"}
+  - {name: outdoor_hard_02a, bag: "${KOIDE_ROOT}/sequences/outdoor_hard_02a", map: "${KOIDE_ROOT}/map_outdoor_hard.ply", gt: "${KOIDE_ROOT}/gt/traj_lidar_outdoor_hard_02.txt"}
+  - {name: outdoor_hard_02b, bag: "${KOIDE_ROOT}/sequences/outdoor_hard_02b", map: "${KOIDE_ROOT}/map_outdoor_hard.ply", gt: "${KOIDE_ROOT}/gt/traj_lidar_outdoor_hard_02.txt"}
+  - {name: outdoor_kidnap_a, bag: "${KOIDE_ROOT}/sequences/outdoor_kidnap_a", map: "${KOIDE_ROOT}/map_outdoor_kidnap.ply", gt: "${KOIDE_ROOT}/gt/traj_lidar_outdoor_kidnap.txt"}
+  - {name: outdoor_kidnap_b, bag: "${KOIDE_ROOT}/sequences/outdoor_kidnap_b", map: "${KOIDE_ROOT}/map_outdoor_kidnap.ply", gt: "${KOIDE_ROOT}/gt/traj_lidar_outdoor_kidnap.txt"}

@@ -1,0 +1,33 @@
+# Two EIL_Box starts where tracking jumped 4.5 m along the aisle right after a
+# correct initial pose (experiments/go2_wide_map_global_init). Set JEPLO_ROOT and
+# JEPLO_LIDARSLAM_MAP as for tools/benchmark/suites/go2_jeplo.yaml, and
+# RKO_ODOMETRY_LAUNCH to "lidarslam rko_lio_odometry.launch.py" (or the launch
+# file's path).
+defaults:
+  odometry_launch: ${RKO_ODOMETRY_LAUNCH}
+  odometry_args:
+    - lidar_topic:=/livox/lidar
+    - imu_topic:=/livox/imu
+    - rko_param_file:=${SUITE_DIR}/../../tools/benchmark/suites/rko_lio_jeplo.yaml
+  topics: [/livox/lidar, /livox/imu]
+cases:
+  # 32 global candidates: slower queries start tracking at 11-12 s, as the Go2
+  # walks off the box (4 of 4 runs lost).
+  - name: EIL_Box_cand32
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
+    repeats: 3
+    quickstart_args:
+      - --occupancy-inflate-radius-m=0.2
+      - --global-z-min=0.0
+      - --global-max-scan-points=1024
+      - --global-max-candidates=32
+      - --refine-global-candidates
+  # Quickstart defaults, replay started 3 s into the bag (2 of 2 runs failed).
+  - name: EIL_Box_late
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_LIDARSLAM_MAP}
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
+    start_offset_sec: 3.0
+    repeats: 2

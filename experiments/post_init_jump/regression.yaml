@@ -1,0 +1,35 @@
+# Regression set for the post-initialization guard: the four EIL sequences with
+# quickstart defaults (unrefined global poses, often 1-2 m off, which NDT must
+# still pull in) and the three wide maps with the low-sensor settings. Same
+# environment as fixtures.yaml.
+defaults:
+  odometry_launch: ${RKO_ODOMETRY_LAUNCH}
+  odometry_args:
+    - lidar_topic:=/livox/lidar
+    - imu_topic:=/livox/imu
+    - rko_param_file:=${SUITE_DIR}/../../tools/benchmark/suites/rko_lio_jeplo.yaml
+  topics: [/livox/lidar, /livox/imu]
+  repeats: 3
+cases:
+  - {name: EIL_Box, bag: "${JEPLO_ROOT}/bags_pc2_merged/EIL_Box", map: "${JEPLO_LIDARSLAM_MAP}", gt: "${JEPLO_ROOT}/gt/EIL_Box.txt"}
+  - {name: EIL_Stairs, bag: "${JEPLO_ROOT}/bags_pc2_merged/EIL_Stairs", map: "${JEPLO_LIDARSLAM_MAP}", gt: "${JEPLO_ROOT}/gt/EIL_Stairs.txt"}
+  - {name: EIL_Mask1, bag: "${JEPLO_ROOT}/bags_pc2_merged/EIL_Mask1", map: "${JEPLO_LIDARSLAM_MAP}", gt: "${JEPLO_ROOT}/gt/EIL_Mask1.txt"}
+  - {name: EIL_Mask2, bag: "${JEPLO_ROOT}/bags_pc2_merged/EIL_Mask2", map: "${JEPLO_LIDARSLAM_MAP}", gt: "${JEPLO_ROOT}/gt/EIL_Mask2.txt"}
+  - name: Long_Stairs_low_sensor
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/Long_Stairs
+    map: ${JEPLO_ROOT}/maps_loc/Long_Stairs/map.pcd
+    gt: ${JEPLO_ROOT}/gt/Long_Stairs.txt
+    repeats: 1
+    quickstart_args: [--occupancy-inflate-radius-m=0.2, --global-z-min=0.0, --global-max-scan-points=1024, --global-max-candidates=16, --refine-global-candidates]
+  - name: Outdoor1_low_sensor
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/Outdoor1
+    map: ${JEPLO_ROOT}/maps_loc/Outdoor1/map.pcd
+    gt: ${JEPLO_ROOT}/gt/Outdoor1.txt
+    repeats: 1
+    quickstart_args: [--occupancy-inflate-radius-m=0.2, --global-z-min=0.0, --global-max-scan-points=1024, --global-max-candidates=16, --refine-global-candidates]
+  - name: Outdoor2_low_sensor
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/Outdoor2
+    map: ${JEPLO_ROOT}/maps_loc/Outdoor2/map.pcd
+    gt: ${JEPLO_ROOT}/gt/Outdoor2.txt
+    repeats: 1
+    quickstart_args: [--occupancy-inflate-radius-m=0.2, --global-z-min=0.0, --global-max-scan-points=1024, --global-max-candidates=16, --refine-global-candidates]

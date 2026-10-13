@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import itertools
 import json
 import math
 import sys
@@ -99,9 +100,8 @@ def read_scans(bag: Path, stamps_wanted: list[float], topic: str = "/livox/lidar
         stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1.0e-9
         if stamp + 1.0e-6 < wanted[index]:
             continue
-        cloud = np.frombuffer(bytes(msg.data), dtype=map_builder.POINT)
-        xyz = np.stack([cloud["x"], cloud["y"], cloud["z"]], axis=1).astype(np.float64)
-        scans.append((stamp, xyz))
+        xyz = bbs_engine.pointcloud2_xyz_array(msg).astype(np.float64)
+        scans.append((stamp, xyz[np.isfinite(xyz).all(axis=1)]))
         while index < len(wanted) and wanted[index] <= stamp + 1.0e-6:
             index += 1
     return scans
@@ -133,7 +133,25 @@ def grid_score(engine, scan_xy: np.ndarray, x: float, y: float, yaw: float) -> f
     return float(hits) / max(1, len(world))
 
 
-def probe(args, config: glq.GlobalLocalizationConfig, accumulate_sec: float):
+def yaw_sweep_offset(stamp_sec: float, angular_resolution_rad: float) -> float:
+    """A yaw sample, fixed by the scan stamp, to start the search's yaw sweep at.
+
+    Branch-and-bound keeps tied candidates in yaw-sample order, so a saturated
+    search returns the same wrong place at yaw 0 query after query. Rotating the
+    scan by a whole number of samples and rotating the answers back is the same
+    search started at another sample.
+    """
+    samples = max(1, round(2.0 * math.pi / angular_resolution_rad))
+    key = (round(stamp_sec * 1000.0) * 2654435761) % (1 << 32)
+    return (key % samples) * angular_resolution_rad
+
+
+def probe(
+    args,
+    config: glq.GlobalLocalizationConfig,
+    accumulate_sec: float,
+    yaw_sweep: bool = False,
+):
     odometry = map_builder.load_tum(args.odometry)
     truth = map_builder.load_tum(args.ground_truth)
     engine = glq.GlobalLocalizationEngine(config, occupancy_yaml=args.occupancy)
@@ -143,7 +161,9 @@ def probe(args, config: glq.GlobalLocalizationConfig, accumulate_sec: float):
     # Query stamps: every --interval seconds where ground truth exists.
     start = max(truth[0, 0], odometry[0, 0]) + args.skip_sec
     end = min(truth[-1, 0], start + args.window_sec)
-    gaps = np.where(np.diff(truth[:, 0]) > 0.5)[0]
+    # Stop at the first ground-truth gap after the start (motion capture leaves the
+    # capture area; Koide's trajectory has sub-second holes, which interpolate).
+    gaps = np.where((np.diff(truth[:, 0]) > 2.0) & (truth[:-1, 0] >= start))[0]
     if gaps.size:
         end = min(end, truth[gaps[0], 0])
     stamps = list(np.arange(start, end, args.interval))
@@ -152,7 +172,7 @@ def probe(args, config: glq.GlobalLocalizationConfig, accumulate_sec: float):
         needed.append(stamp)
         if accumulate_sec > 0.0:
             needed.extend(np.arange(stamp - accumulate_sec, stamp, 0.1).tolist())
-    scans = read_scans(args.bag, sorted(set(needed)))
+    scans = read_scans(args.bag, sorted(set(needed)), args.topic)
     scan_by_stamp = {round(s, 3): xyz for s, xyz in scans}
     scan_stamps = np.array(sorted(scan_by_stamp))
 
@@ -182,12 +202,22 @@ def probe(args, config: glq.GlobalLocalizationConfig, accumulate_sec: float):
         gt_r, gt_t = pose_at(truth, scan_stamp)
         gt_yaw = yaw_of(gt_r)
 
+        offset = (
+            yaw_sweep_offset(scan_stamp, config.angular_resolution_rad)
+            if yaw_sweep
+            else 0.0
+        )
+        c, s = math.cos(offset), math.sin(offset)
+        searched = levelled @ np.array([[c, s, 0.0], [-s, c, 0.0], [0.0, 0.0, 1.0]])
         started = time.monotonic()
-        result = engine.query(levelled)
+        result = engine.query(searched)
         runtime = time.monotonic() - started
         candidates = []
         near_rank = None
         for rank, candidate in enumerate(result.candidates):
+            candidate = dataclasses.replace(
+                candidate, yaw_rad=wrap(candidate.yaw_rad + offset)
+            )
             error = math.hypot(candidate.x_m - gt_t[0], candidate.y_m - gt_t[1])
             yaw_error = math.degrees(abs(wrap(candidate.yaw_rad - gt_yaw)))
             if (
@@ -324,6 +354,52 @@ def simulate_startup(queries: list[dict]) -> dict:
     return {"initialized": False}
 
 
+# Agreeing answers this far from the truth are counted as far, not near.
+FAR_ERROR_M = 3.0
+
+
+def consensus_pairs(queries: list[dict], gated_only: bool) -> dict:
+    """Consecutive top answers that agree after the odometry motion.
+
+    Counted as right (both within 1 m), near (both within 3 m) or far (both
+    further): a far pair is what the two-view startup consensus must not confirm.
+    """
+    counts = {"right": 0, "near": 0, "far": 0}
+    for first, second in itertools.pairwise(queries):
+        if not first["candidates"] or not second["candidates"]:
+            continue
+        if gated_only and not (startup_gates(first)[0] and startup_gates(second)[0]):
+            continue
+        a, b = first["candidates"][0], second["candidates"][0]
+        odom_a, odom_b = first["odom"], second["odom"]
+        dx, dy = odom_b[0] - odom_a[0], odom_b[1] - odom_a[1]
+        c, s = math.cos(-odom_a[2]), math.sin(-odom_a[2])
+        local = (c * dx - s * dy, s * dx + c * dy)
+        yaw_a = math.radians(a["yaw_deg"])
+        c, s = math.cos(yaw_a), math.sin(yaw_a)
+        predicted = (
+            a["x"] + c * local[0] - s * local[1],
+            a["y"] + s * local[0] + c * local[1],
+            yaw_a + wrap(odom_b[2] - odom_a[2]),
+        )
+        agree = (
+            math.hypot(b["x"] - predicted[0], b["y"] - predicted[1])
+            <= CONSENSUS_TRANSLATION_M
+            and math.degrees(abs(wrap(math.radians(b["yaw_deg"]) - predicted[2])))
+            <= CONSENSUS_YAW_DEG
+        )
+        if not agree:
+            continue
+        worst = max(a["error_m"], b["error_m"])
+        if worst <= NEAR_TRANSLATION_M:
+            counts["right"] += 1
+        elif worst <= FAR_ERROR_M:
+            counts["near"] += 1
+        elif min(a["error_m"], b["error_m"]) > FAR_ERROR_M:
+            counts["far"] += 1
+    return counts
+
+
 def summarize(queries: list[dict]) -> dict:
     n = len(queries)
     if not n:
@@ -360,6 +436,8 @@ def summarize(queries: list[dict]) -> dict:
         ),
         "runtime_median_sec": float(np.median([q["runtime_sec"] for q in queries])),
         "startup": simulate_startup(queries),
+        "consensus_pairs": consensus_pairs(queries, gated_only=False),
+        "gated_consensus_pairs": consensus_pairs(queries, gated_only=True),
     }
 
 
@@ -378,6 +456,12 @@ def main(argv=None) -> int:
     parser.add_argument("--interval", type=float, default=1.0)
     parser.add_argument("--skip-sec", type=float, default=3.0)
     parser.add_argument("--window-sec", type=float, default=40.0)
+    parser.add_argument("--topic", default="/livox/lidar")
+    parser.add_argument(
+        "--yaw-sweep-offset",
+        action="store_true",
+        help="start each query's yaw sweep at a sample fixed by the scan stamp",
+    )
     args = parser.parse_args(argv)
 
     overrides = json.loads(args.config)
@@ -388,7 +472,7 @@ def main(argv=None) -> int:
     config = glq.GlobalLocalizationConfig(
         **{**QUICKSTART_CONFIG, **overrides, "map_path": str(args.map)}
     )
-    queries = probe(args, config, args.accumulate_sec)
+    queries = probe(args, config, args.accumulate_sec, args.yaw_sweep_offset)
     summary = summarize(queries)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(
@@ -396,6 +480,7 @@ def main(argv=None) -> int:
             {
                 "config": dataclasses.asdict(config),
                 "accumulate_sec": args.accumulate_sec,
+                "yaw_sweep_offset": args.yaw_sweep_offset,
                 "summary": summary,
                 "queries": queries,
             },
