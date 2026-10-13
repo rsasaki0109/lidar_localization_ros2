@@ -105,7 +105,9 @@ lidar_slam_ros2 map of a separate run ([benchmark](benchmark.md)):
 - **Large maps** (Long_Stairs, Outdoor): with the defaults the global search
   does not find the Go2. With the [Large maps](#large-maps) settings it
   localized all six runs (two per map) by itself and none at a wrong place, after
-  11-15 s, and tracking stayed within 2 cm (median). In the capture room the same
+  11-15 s, and tracking stayed within 2 cm (median). In six later replays with the
+  same search settings, five localized; in one Outdoor2 run all six tries stayed
+  ambiguous and the startup asked for a manual pose. In the capture room the same
   settings localized all 12 runs correctly.
   These were measured on maps rebuilt from the raw bags, as the dataset no longer
   ships its own ([comparison](../experiments/go2_wide_map_global_init/README.md)).

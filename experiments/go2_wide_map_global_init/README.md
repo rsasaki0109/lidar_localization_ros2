@@ -157,6 +157,10 @@ are more than 1 m off. Lost: the run's median error is above 1 m.
 | EIL_Mask1 | 4/4, 3, 2 | 4/4, 0, 0 | 3/3, 0, 0 |
 | EIL_Mask2 | 4/4, 1, 1 | 4/4, 0, 0 | 3/3, 0, 0 |
 
+Six later replays of `y` on the wide maps, run for [post_init_jump](../post_init_jump/README.md)
+(only tracking parameters varied), localized five; in one Outdoor2 run every try stayed
+ambiguous and the startup asked for a manual pose. None started at a wrong place.
+
 `q` lost every EIL_Box run although its answer was right (0.01-0.05 m in three of four).
 Its queries take about 1.9 s on the EIL map instead of 0.2 s, so it started tracking 11-12 s
 into the bag, just as the Go2 walks off the box (0.5-0.7 m/s, down 0.6 m). The first
@@ -246,7 +250,9 @@ on similar ones anyway. Removing the saturation (the low-sensor settings) is wha
 - **Defaults unchanged.** On Koide (handheld), the 256-point version `yd` initialized
   later in all 12 runs and wrongly in 2, where the defaults were right in all 12.
 - The tracking jump after an initial pose during fast motion (EIL_Box) is a localizer
-  issue, measured here but not addressed.
+  issue: the seed correction guard's warmup lets the aliased corrections through. An
+  opt-in rule stops it on a controlled start
+  ([post_init_jump](../post_init_jump/README.md)).
 
 ## Not verified
 

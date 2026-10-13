@@ -15,8 +15,6 @@
   answers of the defaults' saturated 2D search mostly agree 1-3 m off the robot,
   which the two-view startup consensus then confirms; starting each query's yaw
   sweep at another sample did not change that (not promoted).
-  The EIL_Box jump after a correct initial pose is not the seed correction guard's
-  warmup ([experiments/post_init_jump](experiments/post_init_jump/README.md)).
 - Add opt-in quickstart options for global search with a sensor low above the
   ground: `--global-z-min` / `--global-z-max` (the G2 scan height band, launch
   args `g2_z_min_m` / `g2_z_max_m`, defaults 0.5 / 5.0 m as before) and
@@ -24,7 +22,8 @@
   before, cached separately). On the JEPLO Go2 self maps (Long_Stairs, Outdoor1,
   Outdoor2), which never initialized, the recipe in
   [go2_mid360_quickstart.md](docs/go2_mid360_quickstart.md#large-maps) initialized
-  all six runs without a wrong start, and in the capture room all 12 EIL runs, where
+  all six runs without a wrong start (later: 5 of 6, one Outdoor2 run stayed ambiguous
+  and asked for a manual pose), and in the capture room all 12 EIL runs, where
   the defaults started wrongly in 5 of 16 on the same (rebuilt) map. The 2D search saturated: about 100 scan points
   above an upside-down MID-360 matched a 0.6 m inflated grid perfectly at many
   places, so the truth rarely reached NDT
