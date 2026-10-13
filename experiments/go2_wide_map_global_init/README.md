@@ -285,6 +285,8 @@ default grid):
 
 ## Decision
 
+- **Quickstart default:** `--global-sparse-band-min-points 512` (round 4). It fires only
+  when the default band is sparse, which no Koide query was; the G2 node default stays 0.
 - **Recommended for a sensor low above the ground (Go2):** `y`, through quickstart:
   `--occupancy-inflate-radius-m 0.2 --global-z-min 0.0 --global-max-scan-points 1024
   --global-max-candidates 16 --refine-global-candidates`

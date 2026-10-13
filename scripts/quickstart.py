@@ -404,7 +404,7 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
         ("--global-nms-radius-m", {"type": float, "default": 3.0}),
         ("--global-z-min", {"type": float, "default": 0.5}),
         ("--global-z-max", {"type": float, "default": 5.0}),
-        ("--global-sparse-band-min-points", {"type": int, "default": 0}),
+        ("--global-sparse-band-min-points", {"type": int, "default": 512}),
         ("--supervisor-query-timeout-sec", {"type": float, "default": 45.0}),
         ("--supervisor-max-walk-candidates", {"type": int, "default": 4}),
     ):

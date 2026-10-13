@@ -2,12 +2,16 @@
 
 ## Unreleased
 
-- Add an opt-in sparse-band global search: `sparse_band_min_points` (G2 node; launch
-  arg `g2_sparse_band_min_points`, quickstart `--global-sparse-band-min-points`,
-  default 0 = off). A scan with fewer 2D points than this in the height band is
-  searched again from the sensor plane up, with 1024 points, 32 candidates and
-  NDT-refined poses, and the answer reports `sparse_band_search`
-  ([experiments/go2_wide_map_global_init](experiments/go2_wide_map_global_init/README.md)).
+- Add a sparse-band global search: `sparse_band_min_points` (G2 node, default 0 =
+  off; launch arg `g2_sparse_band_min_points`; quickstart
+  `--global-sparse-band-min-points`, **default 512**). A scan with fewer 2D points than
+  this in the height band (counted before the scan-point cap) is searched again from
+  the sensor plane up, with 1024 points, 32 candidates and NDT-refined poses, and the
+  answer reports `sparse_band_search`. With quickstart defaults the JEPLO Go2 started
+  correctly in all 12 capture-room runs (before: 3-5 wrong) and now also on the
+  Long_Stairs and Outdoor2 self maps; Outdoor1 stays ambiguous and asks for a manual
+  pose. On handheld Koide replays it fired on no query
+  ([experiments/go2_wide_map_global_init](experiments/go2_wide_map_global_init/README.md#searching-again-only-when-the-band-is-sparse-round-4)).
 - `run_benchmark.py` lists runs whose RKO-LIO odometry stalled (registration loop
   over 10 s), and `score.json` keeps the longest loop. Such runs looked like
   localizer failures in the post_init_jump replays.
