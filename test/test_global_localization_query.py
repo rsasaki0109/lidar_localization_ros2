@@ -94,6 +94,34 @@ def test_query_handles_empty_scan():
         assert result.scan_point_count == 0
 
 
+def test_sparse_height_band_is_searched_again_from_the_sensor_plane():
+    # A sensor low above the ground: the walls show up below the default band
+    # (0.5-5 m above the sensor), so the band holds almost nothing.
+    with tempfile.TemporaryDirectory() as tmp:
+        yaml_path = write_occupancy_map(Path(tmp))
+        true_x, true_y, true_yaw = -1.0, 7.0, math.radians(30.0)
+        scan = make_scan(yaml_path, true_x, true_y, true_yaw)
+        low = scan.copy()
+        low[:-3, 2] = 0.2
+
+        def query(points, min_points):
+            config = glq.GlobalLocalizationConfig(
+                angular_resolution_rad=math.radians(15.0),
+                max_candidates=8,
+                sparse_band_min_points=min_points,
+            )
+            engine = glq.GlobalLocalizationEngine(config, occupancy_yaml=yaml_path)
+            return engine.query(points)
+
+        assert query(low, 0).candidates == []
+        result = query(low, 20)
+        assert result.sparse_band_search
+        top = result.candidates[0]
+        assert math.hypot(top.x_m - true_x, top.y_m - true_y) <= 1.0, (top.x_m, top.y_m)
+        # A band with enough points is searched as configured.
+        assert not query(scan, 20).sparse_band_search
+
+
 def test_bbs_cpp_search_path_includes_installed_lib_dir():
     with tempfile.TemporaryDirectory() as tmp:
         prefix = Path(tmp) / "install"

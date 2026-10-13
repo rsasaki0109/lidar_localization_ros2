@@ -83,6 +83,11 @@ class GlobalLocalizationConfig:
     # also snaps *wrong* hypotheses to locally-perfect alignments and collapses nearby
     # walk candidates onto one pose — keep it off unless the scenario shows it helps.
     registration_refine_candidates: bool = False
+    # Opt-in (0 = off): a scan with fewer points than this in the height band is
+    # searched again from the sensor plane up (SPARSE_BAND_*). A sensor mounted low
+    # or upside down sees little above it; its few band points match the inflated
+    # grid perfectly at many places, and the answers come back metres off.
+    sparse_band_min_points: int = 0
     map_path: str | None = None
     registration_score_gate: float = 6.0
     ndt_resolution: float = 1.0
@@ -109,6 +114,13 @@ class GlobalLocalizationConfig:
     route_yaw_offsets_deg: str = "-15,0,15"
     route_lateral_offsets_m: str = "-2,0,2"
     route_longitudinal_offsets_m: str = "-1,0,1"
+
+
+# The sparse-band search: the band starts at the sensor plane, with more scan
+# points and candidates, and NDT-refined poses (experiments/go2_wide_map_global_init).
+SPARSE_BAND_Z_MIN_M = 0.0
+SPARSE_BAND_MAX_SCAN_POINTS = 1024
+SPARSE_BAND_MAX_CANDIDATES = 32
 
 
 # pclomp::NeighborSearchMethod values used by g2_ndt_score.MapNdtScorer.
@@ -201,6 +213,8 @@ class GlobalLocalizationResult:
     registration_scoring_error: str | None = None
     candidate_source: str = CANDIDATE_SOURCE_BBS
     route_crop_error: str | None = None
+    # True when the height band was sparse and the sparse-band search answered.
+    sparse_band_search: bool = False
 
 
 def _candidate_from_ranked(
@@ -350,9 +364,12 @@ class GlobalLocalizationEngine:
         self,
         points_xyz,
         candidates: list[GlobalLocalizationCandidate],
+        refine: bool | None = None,
     ) -> list[GlobalLocalizationCandidate]:
         if self.registration_scorer is None:
             return candidates
+        if refine is None:
+            refine = self.config.registration_refine_candidates
 
         score_zs = [self._registration_seed_z(candidate) for candidate in candidates]
         # One call, so the scorer can share a map crop among nearby candidates.
@@ -372,7 +389,7 @@ class GlobalLocalizationEngine:
                 if result.converged and math.isfinite(result.fitness)
                 else float("inf")
             )
-            if self.config.registration_refine_candidates:
+            if refine:
                 pose_x, pose_y, pose_z, pose_yaw = (
                     g2_rank.candidate_pose_from_registration(
                         g2_rank.RankedG2Candidate(
@@ -538,6 +555,18 @@ class GlobalLocalizationEngine:
             config.max_scan_points,
             min_range_m=config.min_range_m,
         )
+        sparse_band = scan_xy.shape[0] < config.sparse_band_min_points
+        max_candidates = config.max_candidates
+        if sparse_band:
+            scan_xy = bbs_engine.prepare_scan_xy(
+                points_xyz,
+                SPARSE_BAND_Z_MIN_M,
+                config.z_max_m,
+                resolution_m,
+                max(config.max_scan_points, SPARSE_BAND_MAX_SCAN_POINTS),
+                min_range_m=config.min_range_m,
+            )
+            max_candidates = max(max_candidates, SPARSE_BAND_MAX_CANDIDATES)
         if scan_xy.shape[0] == 0:
             return GlobalLocalizationResult(
                 candidates=[],
@@ -558,7 +587,7 @@ class GlobalLocalizationEngine:
             resolution_m,
             config.angular_resolution_rad,
             config.pyramid_depth,
-            config.max_candidates,
+            max_candidates,
             nms_radius_cells=round(max(0.0, config.nms_radius_m) / resolution_m),
         )
 
@@ -586,13 +615,16 @@ class GlobalLocalizationEngine:
         if self.registration_scorer is not None:
             if progress_callback is not None:
                 progress_callback("scoring", 0, len(candidates))
-            candidates = self._score_with_registration(points_xyz, candidates)
+            candidates = self._score_with_registration(
+                points_xyz, candidates, refine=True if sparse_band else None
+            )
 
         if progress_callback is not None:
             progress_callback("done", 1, 1)
         return GlobalLocalizationResult(
             candidates=candidates,
             scan_point_count=int(scan_xy.shape[0]),
+            sparse_band_search=sparse_band,
             registration_scoring_enabled=self.registration_scorer is not None,
             registration_scoring_backend=(
                 "g2_ndt_score" if self.registration_scorer is not None else None
