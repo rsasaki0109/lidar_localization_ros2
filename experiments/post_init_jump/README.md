@@ -4,10 +4,11 @@ In [go2_wide_map_global_init](../go2_wide_map_global_init/README.md), the Go2 lo
 all four runs with 32 global candidates. The global answer itself was right (0.01-0.05 m), but
 within 1-3 s the track slid about 4.5 m along the aisle and stayed there.
 
-**Result:** a controlled ground-truth start reproduces the jump. An opt-in rule,
+**Result:** a controlled ground-truth start reproduces the jump. A new rule,
 `seed_correction_guard_exact_start_translation_m`, stops it: 0.1 m held both runs that jumped
-4.5 m with the quickstart settings. On every other replay it never fired, or it fired with no
-effect on the result. It stays off (0) in quickstart configs until you decide otherwise.
+4.5 m with the previous quickstart settings. On every other replay it never fired, or it fired
+with no effect on the result. Quickstart configs now write 0.1; the node default stays 0
+(off).
 
 ## Mechanism
 
