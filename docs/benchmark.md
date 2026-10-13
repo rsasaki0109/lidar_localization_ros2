@@ -50,7 +50,9 @@ Each case runs three times by default (`--repeats`, `--case` to select). The run
 directories keep every log, the recorded trajectory (`est.tum`), the startup status
 stream, and `score.json`. `summary.md` and `results.json` collect the cases.
 `--evaluate-only` re-scores existing runs, and `--quickstart` runs a source checkout
-instead of the installed package.
+instead of the installed package. Runs whose RKO-LIO odometry stalled (a registration
+loop over 10 s in its exit profile, e.g. on a cold disk after a restart) are listed
+under the tables: the startup then lacks odometry, so re-run them before comparing.
 
 Datasets:
 

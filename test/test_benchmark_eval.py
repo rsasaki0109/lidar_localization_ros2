@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -131,3 +132,24 @@ if __name__ == "__main__":
     test_health_flags_score_how_well_the_status_tracks_the_error()
     test_coverage_runs_to_the_replay_end()
     test_lost_counts_only_requested_reinitialization()
+
+
+def test_stalled_odometry_is_read_from_the_rko_lio_profile():
+    profile = (
+        "[online_node-1] \tICP:\n"
+        "[online_node-1] \t\tMax (worst-case) frequency: 31.68Hz\n"
+        "[online_node-1] \tROS Registration Loop:\n"
+        "[online_node-1] \t\tAverage frequency: 8.20Hz\n"
+        "[online_node-1] \t\tMax (worst-case) frequency: {}Hz\n"
+    )
+    assert abs(bench.odometry_worst_loop_sec(profile.format("0.18")) - 5.56) < 0.01
+    assert bench.odometry_worst_loop_sec(profile.format("0.00")) == 200.0
+    assert bench.odometry_worst_loop_sec("no profile") is None
+
+    truth = _trajectory(np.arange(0.0, 30.0, 0.01), 0.0)
+    run = bench.score_run(_trajectory(np.arange(1.0, 30.0, 0.1), 0.1), truth, 0.0)
+    healthy = replace(run, odometry_worst_loop_sec=5.6)
+    stalled = replace(run, odometry_worst_loop_sec=50.0)
+    assert bench.stalled_odometry_note({"case": [healthy, run]}) == ""
+    note = bench.stalled_odometry_note({"case": [healthy, stalled]})
+    assert "case run2 (50 s)" in note

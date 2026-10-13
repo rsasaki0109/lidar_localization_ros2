@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `run_benchmark.py` lists runs whose RKO-LIO odometry stalled (registration loop
+  over 10 s), and `score.json` keeps the longest loop. Such runs looked like
+  localizer failures in the post_init_jump replays.
 - Add `seed_correction_guard_exact_start_translation_m` (node default `0`, off;
   quickstart configs `0.1`): when the first accepted update after an initial pose
   corrects it by at most this much, the seed correction guard's warmup ends at once.
