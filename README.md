@@ -183,6 +183,7 @@ Using it:
 - [Repeat-route site setup](docs/site_setup.md)
 - [Runtime details](docs/runtime.md): parameter precedence, deskew, lifecycle
 - [Frames](docs/frame_contract.md) and [troubleshooting](docs/troubleshooting.md)
+- [Map alignment](docs/map_alignment.md): map frame and pose offsets
 
 How it works:
 
@@ -194,6 +195,7 @@ Results:
 - [Benchmark](docs/benchmark.md) and [validated scope](docs/v1_status.md)
 - [Koide demo gallery](docs/koide_gif_gallery.md)
 - [Release notes](CHANGELOG.md)
+- [Development notes](docs/dev/README.md): plans, roadmaps, experiment records
 
 ## License
 
