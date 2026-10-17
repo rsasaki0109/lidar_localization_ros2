@@ -15,26 +15,28 @@
 
 <img src="./images/readme/localization_koide_outdoor_hard_02b.gif" alt="Handheld outdoor run tracked on a prior point-cloud map; the estimate follows the ground truth for the whole run" width="720">
 
-<p><em>Handheld Livox MID-360, ~390 m outdoors on a prior map, including stretches where the scans no longer match the map and a section outside it. Localization fused with RKO-LIO odometry stays within 0.26 m RMSE of the ground truth for the whole run (<a href="https://zenodo.org/records/10122133">Koide Hard Point Cloud Localization Dataset</a> <code>outdoor_hard_02b</code>, CC BY 4.0). <a href="./docs/readme-media.md">How this was made</a>.</em></p>
-
-<p><a href="./docs/koide_gif_gallery.md">Explore the complete Koide indoor/outdoor GIF gallery →</a></p>
+<p><em>Handheld Livox MID-360, ~390 m outdoors on a prior map, including stretches where the scans do not match the map and a section outside it. With RKO-LIO odometry, the error stays at 0.26 m RMSE for the whole run (<a href="https://zenodo.org/records/10122133">Koide Hard Point Cloud Localization Dataset</a> <code>outdoor_hard_02b</code>, CC BY 4.0). <a href="./docs/readme-media.md">How this was made</a> · <a href="./docs/koide_gif_gallery.md">more runs</a></em></p>
 
 </div>
 
-## Features
+Give it a point cloud map (`.pcd` or `.ply`) and a LiDAR stream; it publishes the
+robot pose in the map. It finds the starting pose by itself, uses odometry and IMU when
+you have them, and works standalone or as the localization source for Nav2.
 
-- NDT/GICP localization against `.pcd` and `.ply` maps
-- standalone, Nav2, and Livox MID-360 launch configurations
-- odometry/IMU prediction, scan deskew, diagnostics, and guarded recovery
-- occupancy-map generation and a reproducible public-data run ([README run](docs/readme-media.md))
+## Where to start
 
-ROS 2 Jazzy with NDT_OMP is the recommended starting point. Continuous-time deskew is
-enabled by default and safely leaves scans unchanged until point timing and motion data
-are ready. Guarded global initialization is enabled automatically when quickstart is
-given a matching occupancy map. See [v1 status](docs/v1_status.md) for validated scope
-and limitations.
+| You want to | Go to |
+| --- | --- |
+| Localize your robot on a map you already have | [Install](#install), then [Quick start](#quick-start) |
+| Run it on a Unitree Go2 or another MID-360 robot | [Go2 / MID-360 in five minutes](docs/go2_mid360_quickstart.md) |
+| Navigate with Nav2 | [Nav2](#nav2) |
+| Try it without a robot | [Run the public dataset](#try-it-without-a-robot) |
+| See how accurate it is | [Benchmark](#benchmark) |
+| Fix a bringup that does not work | [Troubleshooting](docs/troubleshooting.md) |
 
 ## Install
+
+ROS 2 Jazzy is the main target; Humble is supported.
 
 ```bash
 mkdir -p ~/lidarloc_ws/src
@@ -45,174 +47,154 @@ scripts/bootstrap_colcon_workspace.sh --build
 source ~/lidarloc_ws/install/setup.bash
 ```
 
-The first build compiles `ndt_omp_ros2` and this package (about 30 minutes on an 8-core
-machine).
+This builds [ndt_omp_ros2](https://github.com/rsasaki0109/ndt_omp_ros2) and this
+package, about 30 minutes on an 8-core machine.
+[small_gicp](https://github.com/koide3/small_gicp) is optional. For a manual or
+no-sudo build, see [local build](docs/local_build.md).
 
-For manual builds and no-sudo setup, see [local build](docs/local_build.md).
+## Quick start
 
-## Quick Start
+1. Start the LiDAR driver, and odometry if you have it.
+2. Run quickstart with your map:
 
-Have a map ready and source the built workspace from the installation step. To check
-the choices before starting nodes, add `--dry-run`; missing or ambiguous inputs print
-the next action and the topic-selection option.
+   ```bash
+   ros2 run lidar_localization_ros2 quickstart.py --map /absolute/path/to/map.pcd
+   ```
 
-Start localization and RViz with one command, once the sensors (and odometry, if any)
-are running:
+3. Check that it is tracking:
 
-```bash
-ros2 run lidar_localization_ros2 quickstart.py --map /absolute/path/to/map.pcd
-```
+   ```bash
+   ros2 run lidar_localization_ros2 check_lidar_localization_bringup.py --profile standalone
+   ```
 
-Quickstart detects the sensor topics, `/clock`, an `odom -> base` odometry TF, and the
-LiDAR frame, and prints them on its `Discovery:` line. It generates a reusable
-configuration, restores only a pose saved against the same map, and verifies tracking.
-Without a pose it runs guarded global initialization with 3D NDT scoring over an
-occupancy grid generated from the map (or pass your own with `--occupancy-map`).
-`--help` lists the options a bringup may need; `--help-all` adds the tuning ones.
+Quickstart finds the cloud and IMU topics, `/clock`, an `odom -> base` TF and the
+LiDAR frame, and prints what it picked on its `Discovery:` line. Then it starts the
+localizer and RViz. On the first run it searches the whole map for the robot; next time
+it restores the pose saved for the same map. If the search finds no safe match, it asks
+you for **2D Pose Estimate** in RViz instead of guessing.
 
-On a [lidar_slam_ros2](https://github.com/rsasaki0109/lidar_slam_ros2) map with a Livox
-MID-360, start its RKO-LIO odometry first
-([details](docs/quickstart.md#localizing-on-a-lidar_slam_ros2-map)):
+Useful options:
+
+- `--dry-run` shows what it would start, without starting it.
+- `--profile mid360` uses the Livox MID-360 preset.
+- `--initial-pose X Y Z QX QY QZ QW` skips the search when you know the pose.
+- `--help` lists the bringup options; `--help-all` adds the tuning ones.
+
+**Map from [lidar_slam_ros2](https://github.com/rsasaki0109/lidar_slam_ros2) with a
+MID-360?** Start its odometry first:
 
 ```bash
 ros2 launch lidarslam rko_lio_odometry.launch.py
 ros2 run lidar_localization_ros2 quickstart.py --map /path/to/output/my_map/map.pcd
 ```
 
-For a Nav2 robot with the MID-360 preset:
+More: [quickstart and automatic initialization](docs/quickstart.md),
+[repeat-route site setup](docs/site_setup.md), [runtime details](docs/runtime.md).
+
+## Nav2
 
 ```bash
-ros2 run lidar_localization_ros2 quickstart.py \
-  --profile mid360 \
-  --map /absolute/path/to/map.pcd
-```
-
-Replays of the recorded mapping run (route-crop selects poses by time; outside the
-recorded session, G2 falls back to the occupancy grid):
-
-```bash
-ros2 run lidar_localization_ros2 quickstart.py \
-  --profile mid360 \
-  --map /absolute/path/to/map.pcd \
-  --reference-csv /absolute/path/to/mapping_run/reference.csv
-```
-
-To build a grid yourself, use
-`ros2 run lidar_localization_ros2 generate_occupancy_map_from_pcd --pcd map.pcd --output-dir maps`.
-Candidates are scored at the map's ground under them plus 1.0 m. If the sensor sits much
-higher or lower, pass its height above the ground with `--sensor-height`, or one fixed
-map-frame z with `--global-seed-z`; candidates scored at the wrong height are rejected
-as weak.
-If no safe candidate is available, it asks for **2D Pose Estimate** in RViz; it never
-guesses the origin. See [quickstart and automatic initialization](docs/quickstart.md)
-and the [repeat-route site setup](docs/site_setup.md) guide.
-Use `--no-auto-initialize` to disable saved-pose restoration and global initialization,
-or launch with `use_continuous_time_deskew:=false` to disable deskew.
-
-Common launches:
-
-```bash
-# Standalone localization
-ros2 launch lidar_localization_ros2 nav2_lidar_localization.launch.py
-
-# Nav2
 ros2 launch lidar_localization_ros2 nav2_navigation.launch.py \
   map_yaml:=/absolute/path/to/map.yaml
+```
 
-# Livox MID-360
+Nav2 also needs a 2D occupancy map and an `odom -> base_link` source. In this mode the
+localizer publishes `map -> odom`.
+
+## Launch files
+
+Quickstart covers most setups. To launch directly:
+
+| Launch file | Use |
+| --- | --- |
+| `nav2_lidar_localization.launch.py` | Localization only |
+| `nav2_navigation.launch.py` | Localization plus the Nav2 stack |
+| `mid360_legged_localization.launch.py` | Livox MID-360 on a legged robot |
+| `lidar_localization.launch.py` | Base launch with every argument exposed |
+
+```bash
 ros2 launch lidar_localization_ros2 mid360_legged_localization.launch.py \
   map_path:=/absolute/path/to/map.pcd \
   cloud_topic:=/livox/points imu_topic:=/livox/imu
 ```
 
-With `lidar_localization.launch.py` and `mid360_legged_localization.launch.py`, the
-parameter YAML (`localization_param_dir:=...`) is the source of truth: frame, IMU,
-deskew, map and initial-pose arguments override it only when you pass them, and the
-static TF publishers use the same resolved `base_frame_id` as the node.
+## Topics and frames
 
-Check topics, TF, pose output, and diagnostics with:
+Default frames are `map`, `odom` and `base_link`.
 
-```bash
-ros2 run lidar_localization_ros2 check_lidar_localization_bringup.py \
-  --profile standalone
-```
+| | Topics |
+| --- | --- |
+| Inputs | `/cloud`, `/initialpose` (in `map`), `/odom`, `/imu` |
+| Outputs | `/pcl_pose`, `/path`, `/alignment_status`, `/reinitialization_requested` |
 
-The visualization `/path` keeps the latest 2000 poses by default. Set
-`path_max_poses: 0` to keep the entire history (memory and publish cost then
-increase with runtime); negative values fall back to 2000. Diagnostics expose
-`path_max_poses` and `path_pose_count` for monitoring long runs.
-
-Livox FLOAT64 `timestamp` fields can contain nanoseconds. `point_timestamp_unit`
-uses `auto` by default and selects one unit for the whole cloud, including points
-near scan start. Use `seconds` or `nanoseconds` explicitly for ambiguous data;
-see [IMU and deskew](docs/imu_estimation.md). Floating `t`/`offset_time` fields
-remain seconds, and integer time fields remain nanoseconds.
-
-## Runtime Contract
-
-The default frames are `map`, `odom`, and `base_link`.
-
-- `/initialpose` is expressed in `map`.
 - Standalone mode publishes `map -> base_link`.
-- Nav2 mode publishes `map -> odom` and requires an external `odom -> base_link`.
-- `use_odom: true` consumes `/odom`; it does not publish odometry TF.
-- Static LiDAR and IMU transforms must have only one publisher.
+- Nav2 mode publishes `map -> odom` and needs an external `odom -> base_link`.
+- `use_odom: true` reads `/odom`; it does not publish odometry TF.
+- Each static LiDAR and IMU transform must have exactly one publisher.
 
-Main inputs are `/cloud`, `/initialpose`, `/odom`, and `/imu`. Main outputs are
-`/pcl_pose`, `/path`, `/alignment_status`, and `/reinitialization_requested`. All
-topic names are configurable. See [frame contract](docs/frame_contract.md) and
-[troubleshooting](docs/troubleshooting.md) for details.
+All topic names can be changed. See the [frame contract](docs/frame_contract.md).
 
-Nav2 additionally requires a 2D occupancy map and an `odom -> base_link` source.
+## Benchmark
 
-## Reproduce the README Run
+Public datasets replayed through the same commands as above (odometry plus
+`quickstart.py --map`). Each run starts with no initial pose, so the localizer has to
+find the robot itself. Errors are measured in the map frame with no trajectory
+alignment, so a wrong start shows up as error.
 
-No robot is needed for the online public-bag check. After building and sourcing this
-package and `rko_lio` from [lidar_slam_ros2](https://github.com/rsasaki0109/lidar_slam_ros2):
+| Dataset | Runs | Started correctly | Median error | p95 error |
+| --- | --- | --- | --- | --- |
+| Koide outdoor, handheld MID-360 (4 sequences) | 12 | 12 | 0.08-0.12 m | 0.21-0.91 m |
+| Koide outdoor kidnap (sensor carried elsewhere) | 6 | 6 | 0.04-0.12 m | 15.9-60.5 m |
+| JEPLO, Unitree Go2, lidar_slam_ros2 map (4 sequences) | 12 | 12 | 0.03 m | 0.09-0.13 m |
+| JEPLO, Go2 on wide maps, [low-sensor settings](docs/go2_mid360_quickstart.md#large-maps) (7 sequences) | 18 | 18 | 0.02-0.03 m | - |
+
+Measured 2026-10-06 and 2026-10-11 on Jazzy at 1x. Ranges are over sequences.
+
+What this does not cover:
+
+- In the kidnap runs the error is large while the sensor is carried, until recovery.
+- On wide Go2 maps, the default search can stay ambiguous and ask for a manual pose
+  (Outdoor1). The low-sensor settings started every run in the table correctly; in six
+  later replays, one Outdoor2 run stayed ambiguous and asked for a manual pose.
+- No long multi-hour runs and no physical-hardware validation.
+
+Per-sequence tables, how to rerun, and dataset links: [docs/benchmark.md](docs/benchmark.md).
+
+## Try it without a robot
+
+Build this package and `rko_lio` from
+[lidar_slam_ros2](https://github.com/rsasaki0109/lidar_slam_ros2), then:
 
 ```bash
 ros2 run lidar_localization_ros2 run_koide_public_bag.py --download
 ```
 
-The command verifies official Koide downloads, prepares SI IMU input, runs online
-odometry and localization, supplies one initial pose, and reports map-frame error.
-Allow about five minutes for playback after preparation. Data is cached in
-`./koide-data`; logs, `estimate.tum`, and `summary.json` go to a new `./koide-run-*`
-directory. See [the public-bag guide](docs/koide-online-replay.md) for prerequisites,
-pass criteria, and troubleshooting.
-
-The run at the top of this page uses only public data (Koide Hard Point Cloud
-Localization Dataset, `outdoor_hard_02b`) and the launch files above.
-[How this was made](docs/readme-media.md) lists the odometry, TF bag, parameters and
-launch command needed to replay it and check the 0.26 m result.
+It downloads the Koide data, runs odometry and localization, and reports the error
+against the ground truth. Playback takes about five minutes. Data is cached in
+`./koide-data` and results go to `./koide-run-*`. See the
+[public-bag guide](docs/koide-online-replay.md).
 
 ## Documentation
 
-- [Validated scope](docs/v1_status.md)
-- [Frames](docs/frame_contract.md) and [troubleshooting](docs/troubleshooting.md)
-- [Benchmark: quickstart replays scored against ground truth](docs/benchmark.md) and the
-  [earlier benchmarking record](docs/benchmarking.md)
-- [Unitree Go2 / MID-360 in five minutes](docs/go2_mid360_quickstart.md)
-- [MID-360 bringup](docs/mid360_legged_jetson.md)
-- [IMU estimation](docs/imu_estimation.md) and [pose covariance](docs/pose_covariance.md)
-- [Global localization](docs/global_localization.md)
+Using it:
+
 - [Quickstart and automatic initialization](docs/quickstart.md)
+- [Go2 / MID-360 in five minutes](docs/go2_mid360_quickstart.md) and [MID-360 bringup](docs/mid360_legged_jetson.md)
+- [Repeat-route site setup](docs/site_setup.md)
+- [Runtime details](docs/runtime.md): parameter precedence, deskew, lifecycle
+- [Frames](docs/frame_contract.md) and [troubleshooting](docs/troubleshooting.md)
+
+How it works:
+
+- [Global localization](docs/global_localization.md)
+- [IMU and deskew](docs/imu_estimation.md) and [pose covariance](docs/pose_covariance.md)
+
+Results:
+
+- [Benchmark](docs/benchmark.md) and [validated scope](docs/v1_status.md)
 - [Koide demo gallery](docs/koide_gif_gallery.md)
 - [Release notes](CHANGELOG.md)
 
-## Support
+## License
 
-ROS 2 Jazzy is the primary target; Humble remains supported for existing deployments.
-[ndt_omp_ros2](https://github.com/rsasaki0109/ndt_omp_ros2) is required and
-[small_gicp](https://github.com/koide3/small_gicp) is optional.
-
-### Lifecycle startup
-
-The standalone, Nav2 localization and MID-360 launch files activate the localizer
-through `GetState`/`ChangeState` services, without relying on transition events.
-The startup helper exits once the node is active; it does not monitor or restart
-the localizer afterward. Callback failure, unexpected state or a 60-second wall
-clock deadline produces an error and a nonzero helper exit. An already active
-node is left unchanged. For direct use, `ros2 run lidar_localization_ros2
-start_lifecycle_node.py <node_name> --timeout <seconds>` accepts a relative node
-name in the helper's ROS namespace.
+BSD 2-Clause.
