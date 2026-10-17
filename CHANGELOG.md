@@ -312,7 +312,7 @@ container passed its embedded CTest suite.
 Reliability sprint, Jazzy support, and the artifact-first relocalization /
 global-localization foundation. Release boundary:
 `run_release_regression_suite.sh` `overall_pass=true` on a Jazzy build
-(2026-06-11, commit `64da698`); see `docs/public_validation_log.md`.
+(2026-06-11, commit `64da698`); see `docs/dev/public_validation_log.md`.
 
 ### Added
 
@@ -320,8 +320,8 @@ global-localization foundation. Release boundary:
 - `scripts/run_public_validation_dashboard.sh` for Markdown/HTML public validation dashboards
 - `param/benchmark/v1_1_boreas_dry_run_endpoint.example.yaml` for the v1.1 MVP dry-run endpoint chain
 - `scripts/run_v1_1_relocalization_smoke.sh` to guard the v1.1 claim boundary
-- `docs/global_localization_roadmap.md` defining the G1/G2/G3 global localization phases
-- `docs/development_plan.md` dated execution plan linked from README and the roadmap
+- `docs/dev/global_localization_roadmap.md` defining the G1/G2/G3 global localization phases
+- `docs/dev/development_plan.md` dated execution plan linked from README and the roadmap
 - `scripts/make_map_grid_relocalization_attempts.py` map-wide candidate baseline that needs no route prior
 - `scripts/make_bbs_relocalization_attempts.py` BBS_2D branch-and-bound candidate generator over the occupancy-grid pyramid
 

@@ -3,7 +3,7 @@
 Operations guide for the guarded global-localization stack: recovering a usable
 pose with **no** (or a lost) initial pose, and optionally re-seeding tracking
 automatically when it diverges. This is the *how to run it* companion to the
-design/status document, [global_localization_roadmap.md](global_localization_roadmap.md).
+design/status document, [global_localization_roadmap.md](dev/global_localization_roadmap.md).
 
 Quickstart enables guarded cold-start global initialization by default whenever a
 matching occupancy map is supplied. Without that required asset it remains inactive;
@@ -140,7 +140,7 @@ candidate is allowed to be published repeatedly (the Phase 3 lesson). They are:
 | `min_candidate_score` | A reset is never published from a candidate scoring below this (no *unsafe publication*). |
 | `min_seconds_between_attempts` | Two resets are never closer than this. |
 | `request_debounce_sec` | The request must persist this long before the first query (ignores transient blips). |
-| `recovery_fitness_threshold` | After a reset the supervisor waits for `/alignment_status` fitness back under this as *recovery evidence*. Launch arg `supervisor_recovery_fitness_threshold` (default `1.5`). **Do not loosen** on repetitive outdoor maps without GT cross-check: threshold `2.0` on Koide 180 s produced a rubric PASS that ground truth showed was an along-route aliased false confirm (~25–28 m off); see [g3_live_closed_loop.md](g3_live_closed_loop.md) (Koide 180 s boundary characterization, 2026-07-03). |
+| `recovery_fitness_threshold` | After a reset the supervisor waits for `/alignment_status` fitness back under this as *recovery evidence*. Launch arg `supervisor_recovery_fitness_threshold` (default `1.5`). **Do not loosen** on repetitive outdoor maps without GT cross-check: threshold `2.0` on Koide 180 s produced a rubric PASS that ground truth showed was an along-route aliased false confirm (~25–28 m off); see [g3_live_closed_loop.md](dev/g3_live_closed_loop.md) (Koide 180 s boundary characterization, 2026-07-03). |
 | `recovery_confirmation_samples` | The low-fitness recovery evidence must arrive for this many consecutive fresh, stable-tracking diagnostic samples before standing down. |
 | `settle_timeout_sec` | If recovery is not observed within this long, the attempt is counted failed. |
 | `max_attempts` | Hard ceiling on attempts for one continuous problem; it only resets on confirmed recovery or when the request clears — never as a side effect of attempting — then the supervisor **gives up** and surfaces an error for an operator rather than looping. |
@@ -173,8 +173,8 @@ gate (`check_recovery_pose_gt.py`, which requires the trace to *end* recovered)
 stays red because of two problems outside G3 — localizer corner fragility and
 BBS ambiguity on the north stretch; no run on 2026-07-04 produced a false
 confirm. Full defect chain and artifacts in
-[g3_live_closed_loop.md](g3_live_closed_loop.md) ("Real-kidnap re-baseline");
-remaining work in [global_localization_roadmap.md](global_localization_roadmap.md)
+[g3_live_closed_loop.md](dev/g3_live_closed_loop.md) ("Real-kidnap re-baseline");
+remaining work in [global_localization_roadmap.md](dev/global_localization_roadmap.md)
 (G3 section).
 
 ### Replaying a bag through the recovery stack

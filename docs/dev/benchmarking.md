@@ -1,6 +1,6 @@
 # Benchmarking
 
-> **Current benchmark:** [docs/benchmark.md](benchmark.md) replays public datasets through
+> **Current benchmark:** [docs/benchmark.md](../benchmark.md) replays public datasets through
 > the quickstart and scores them in the ground-truth frame (`tools/benchmark`).
 
 > **Note:** the offline Python tooling these commands use (benchmark runners, regression
@@ -45,7 +45,7 @@ cd ../repo
 source scripts/setup_local_env.sh
 ```
 
-See [local_build.md](local_build.md) for the no-sudo local-prefix setup.
+See [local_build.md](../local_build.md) for the no-sudo local-prefix setup.
 
 ## Map Format Notes
 
@@ -356,7 +356,7 @@ The `4.74 m` outlier was **not** caused by seed/map parameter drift. Diff of
 `autoware_istanbul_initial_pose_60s.yaml` and `public_istanbul_60s_benchmark.yaml`
 between the outlier and fresh rerun showed identical values. Error started near
 `0.02 m` and grew only in the second half of the window — classic long-horizon
-drift, not map-frame misalignment. See [map_alignment.md](map_alignment.md).
+drift, not map-frame misalignment. See [map_alignment.md](../map_alignment.md).
 
 Interpretation:
 

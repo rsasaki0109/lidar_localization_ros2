@@ -29,7 +29,7 @@ outdoor hard系列を、地図補正やglobal reinitializationに頼らず`odom 
 **2026-07-16達成:** GLIM CPU GICP + IMU構成は固定設定で3/3 runを通過した。coverageは
 各99.210%、start固定translation ATE RMSEは1.529--1.866 m、end errorは3.871--4.603 m、
 processing p95は0.0664--0.0884秒（scan period 0.1000秒）だった。再現手順、上流patch、全metricは
-[実験記録](../experiments/koide_odometry_glim_gicp6500/README.md)に固定した。
+[実験記録](../../experiments/koide_odometry_glim_gicp6500/README.md)に固定した。
 
 この達成trajectoryは既知地図やGTを使わないが、GLIMが走行中に生成したsubmap/global graphの補正と
 ground vehicleのconstant-z制約を含む。したがってproject-level LiDAR/IMU trajectory完走gateの達成とし、

@@ -1,7 +1,7 @@
 """Three-node bringup for the G3 guarded automatic reinitialization loop.
 
 Brings up, in one launch, the full closed recovery loop documented in
-``docs/global_localization_roadmap.md`` (G3 section):
+``docs/dev/global_localization_roadmap.md`` (G3 section):
 
 1. the core ``lidar_localization`` lifecycle node (raises
    ``/reinitialization_requested`` and publishes ``/alignment_status``),

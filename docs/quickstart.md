@@ -402,5 +402,5 @@ Leave IMU TF publication off as appropriate.
 Run the printed `check_lidar_localization_bringup.py` command when data or pose output is
 missing. See [frame contract](frame_contract.md), [troubleshooting](troubleshooting.md),
 [global localization](global_localization.md), and the
-[Phase 4 validation record](quickstart_validation.md) for lower-level details and the
+[Phase 4 validation record](dev/quickstart_validation.md) for lower-level details and the
 measured dataset boundary.

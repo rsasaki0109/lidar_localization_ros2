@@ -5,7 +5,7 @@
 // Python search (regenerate with scripts/generate_bbs_golden_fixtures.py). This
 // test runs the C++ port on the same inputs and asserts every candidate tuple
 // (tx, ty, yaw_index, hit_count) matches -- proving the port is bit-exact without
-// needing an idle machine (docs/g2_bbs_speedup.md). Pure C++/STL, so:
+// needing an idle machine (docs/dev/g2_bbs_speedup.md). Pure C++/STL, so:
 //
 //   g++ -std=c++17 -I include test/test_bbs_branch_and_bound.cpp -o /tmp/t && /tmp/t
 

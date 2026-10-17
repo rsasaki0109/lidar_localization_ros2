@@ -4,7 +4,7 @@
 // Pure C++ branch-and-bound (BBS_2D) global-localization search, a bit-exact
 // port of branch_and_bound_candidates in scripts/make_bbs_relocalization_attempts.py.
 //
-// Why a port (docs/g2_bbs_speedup.md): profiling the Python search on the real
+// Why a port (docs/dev/g2_bbs_speedup.md): profiling the Python search on the real
 // Koide map showed ~61% of the time is the cold-path per-node gather -- 250k
 // numpy calls each paying interpreter/per-call overhead on a tiny offset array --
 // not arithmetic. The Python code works around that with an adaptive FFT hit map;
