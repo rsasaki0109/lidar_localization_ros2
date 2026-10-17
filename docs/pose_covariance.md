@@ -112,7 +112,7 @@ Cannot:
 ## Recalibrating for your platform
 
 1. Run a benchmark replay with ground truth
-   (see [benchmarking.md](benchmarking.md)) to get `pose_trace.csv`,
+   (see [benchmarking.md](dev/benchmarking.md)) to get `pose_trace.csv`,
    `alignment_status.csv`, `trajectory_eval.json`.
 2. `python3 scripts/analyze_pose_covariance_calibration.py mylabel=/path/to/run`
 3. Pick floors near the reported p68 errors at low fitness; verify per-axis
@@ -173,5 +173,5 @@ fusion and arbitration.
 
 - [troubleshooting.md](troubleshooting.md) — `/alignment_status` field guide,
   `failure_category` taxonomy
-- [benchmarking.md](benchmarking.md) — public replay evaluation
-- [reliability_roadmap.md](reliability_roadmap.md) — issue triage
+- [benchmarking.md](dev/benchmarking.md) — public replay evaluation
+- [reliability_roadmap.md](dev/reliability_roadmap.md) — issue triage

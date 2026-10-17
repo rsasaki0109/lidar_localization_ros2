@@ -37,7 +37,7 @@ The v1 packaging pass validated these paths in this workspace:
 - mapless-public dataset scaffolding entry point
 - MID-360 launch/config/build path
 
-Use [../README.md](../README.md) for the short command list and [benchmarking.md](benchmarking.md)
+Use [../README.md](../README.md) for the short command list and [benchmarking.md](dev/benchmarking.md)
 for benchmark and regression commands.
 
 ## Current Public Snapshot
@@ -67,7 +67,7 @@ Earlier release-regression snapshot (a different workflow):
 This is public replay and controlled Nav2 regression validation. It is not a Jetson + MID-360
 hardware result.
 
-See [public_validation_log.md](public_validation_log.md) for the recorded snapshot history.
+See [public_validation_log.md](dev/public_validation_log.md) for the recorded snapshot history.
 
 ## Recommended Preset
 

@@ -244,7 +244,7 @@ gate; `imu_pose_history` failed even with median history coverage 1.0. The defau
 therefore keeps the existing guarded fallback: scans are only modified when readiness
 checks pass, and deployments that regress can set `use_continuous_time_deskew: false`.
 The full negative result is in
-[`research_driven_development_plan.md`](research_driven_development_plan.md).
+[`research_driven_development_plan.md`](dev/research_driven_development_plan.md).
 
 ## Runtime diagnostics
 
@@ -385,7 +385,7 @@ accuracy.
 - The estimator is exercised by the Koide real-bag smoke above and the HDL IMU
   smoke / throughput check in the release suite. These are *pipeline safety* and
   short-window health gates, **not** final backend rankings (see
-  [competitive_roadmap.md](competitive_roadmap.md)).
+  [competitive_roadmap.md](dev/competitive_roadmap.md)).
 - A longer controlled public **LiDAR + IMU + GT** accuracy benchmark is still
   open. Until that lands, the IMU estimator is offered as a working,
   math-verified, guarded option, **not** as a general accuracy improvement over
@@ -412,7 +412,7 @@ ros2 run lidar_localization_ros2 benchmark_from_manifest --manifest \
   param/benchmark/koide_hard_localization_outdoor_hard_01a_full380_ndt_omp_imu_on.yaml
 ```
 
-**Read the metrics the Phase 1 way** (docs/phase1_koide_backend_comparison.md): a
+**Read the metrics the Phase 1 way** (docs/dev/phase1_koide_backend_comparison.md): a
 lower translation RMSE alone is a trap on this hard sequence — an estimator can
 look better while tracking far fewer poses. Judge on **ok-rate, longest lost
 window, and pose count first**, then RMSE among the survivors. Only after this
@@ -422,9 +422,9 @@ on Koide; until then the limits above stand.
 ## Related docs
 
 - [pose_covariance.md](pose_covariance.md) — the twist-EKF hybrid covariance path
-- [interfaces.md](interfaces.md) — topics, including the optional `/imu` input
+- [interfaces.md](dev/interfaces.md) — topics, including the optional `/imu` input
 - [mid360_legged_jetson.md](mid360_legged_jetson.md) — a real IMU bringup
-- [competitive_roadmap.md](competitive_roadmap.md) — dataset/validation strategy
+- [competitive_roadmap.md](dev/competitive_roadmap.md) — dataset/validation strategy
 
 ## FLOAT64 timestamp units and optional odometry correction
 

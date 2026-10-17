@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regression tests for the G3 reinitialization guard policy.
 
-These encode the Decision Gates from docs/global_localization_roadmap.md as
+These encode the Decision Gates from docs/dev/global_localization_roadmap.md as
 adversarial sequences. They are the "regression test that fails on unsafe
 publication or false acceptance" the roadmap requires, and they exist because
 the Phase 3 degraded-acceptance work proved that a closed recovery loop can

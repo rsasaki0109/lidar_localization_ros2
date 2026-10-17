@@ -7,7 +7,7 @@ This guide covers the most common bringup failures reported in open issues
 [#48](https://github.com/rsasaki0109/lidar_localization_ros2/issues/48).
 
 For frame-tree and TF questions, see [frame_contract.md](frame_contract.md).
-For open-issue triage, see [reliability_roadmap.md](reliability_roadmap.md).
+For open-issue triage, see [reliability_roadmap.md](dev/reliability_roadmap.md).
 
 ## Symptom: Node Starts But Pose Never Updates
 
@@ -350,7 +350,7 @@ Separate these cases:
    - initial pose yaw error
    - check map origin and `/initialpose` seed
 2. **Drift over time**
-   - tuning / environment issue; see public benchmark limits in [benchmarking.md](benchmarking.md)
+   - tuning / environment issue; see public benchmark limits in [benchmarking.md](dev/benchmarking.md)
    - Istanbul public replay can show late-run drift even when early error is `< 0.1 m`
    - public preset enables `recovery_retry_from_last_pose` (`r3`, `gap<=1 s`, `seed<=15 m`); inspect
      `recovery_retry_from_last_pose_recovered` and late-run `seed_translation_since_accept_m`

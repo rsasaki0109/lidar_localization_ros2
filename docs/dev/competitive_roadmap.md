@@ -37,7 +37,7 @@ Current limits:
 - global relocalization is not production-ready; v1.1 is an artifact-first dry-run evaluation path
 - covariance semantics are still not strong enough to be a main competitive claim
 
-See [v1_status.md](v1_status.md), [public_validation_log.md](public_validation_log.md), and
+See [v1_status.md](../v1_status.md), [public_validation_log.md](public_validation_log.md), and
 [v1_1_relocalization.md](v1_1_relocalization.md) for the detailed validation boundary.
 
 ## Competitors
@@ -190,12 +190,12 @@ Unsafe claims:
 ## Useful Links
 
 - [benchmarking.md](benchmarking.md): benchmark and regression commands
-- [v1_status.md](v1_status.md): validated scope and known limits
+- [v1_status.md](../v1_status.md): validated scope and known limits
 - [v1_1_relocalization.md](v1_1_relocalization.md): relocalization MVP boundary
 - [global_localization_roadmap.md](global_localization_roadmap.md): map-wide global localization phases
 - [development_plan.md](development_plan.md): dated execution plan and current phase state
 - [public_validation_log.md](public_validation_log.md): recorded public validation snapshots
-- [mid360_legged_jetson.md](mid360_legged_jetson.md): MID-360 legged robot bringup notes
+- [mid360_legged_jetson.md](../mid360_legged_jetson.md): MID-360 legged robot bringup notes
 
 ## License Notes
 

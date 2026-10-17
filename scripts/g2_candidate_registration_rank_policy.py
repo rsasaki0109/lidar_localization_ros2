@@ -1,7 +1,7 @@
 """Pure policy for ranking G2 candidates by NDT registration fitness.
 
 BBS occupancy score does not separate perceptually aliased poses from the true
-location (see docs/g3_live_closed_loop.md). When NDT fitness is available, the
+location (see docs/dev/g3_live_closed_loop.md). When NDT fitness is available, the
 supervisor-facing score and candidate order should follow registration quality
 (lower fitness is better).
 """

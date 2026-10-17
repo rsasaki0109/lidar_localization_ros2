@@ -17,7 +17,7 @@ Related documents:
 - [competitive_roadmap.md](competitive_roadmap.md): mission, competitors, decision gates, claim rules
 - [reliability_roadmap.md](reliability_roadmap.md): issue triage matrix and sprint notes
 - [global_localization_roadmap.md](global_localization_roadmap.md): G1/G2/G3 global localization phases
-- [v1_status.md](v1_status.md): what v1.0.0 means and its validated boundary
+- [v1_status.md](../v1_status.md): what v1.0.0 means and its validated boundary
 - [public_validation_log.md](public_validation_log.md): recorded validation snapshots
 
 ## Current State (2026-07-14)
@@ -324,7 +324,7 @@ characterization, Jetson + MID-360 hardware validation as a separate track.
 What happened, in order, on a fresh Jazzy-only workspace:
 
 1. Workspace bootstrap: `repo` + `build_ws` (with `ndt_omp_ros2` `humble` branch) +
-   `local_prefix`, per [local_build.md](local_build.md). `colcon build` succeeded; all 32
+   `local_prefix`, per [local_build.md](../local_build.md). `colcon build` succeeded; all 32
    unit tests and the experiment suite passed.
 2. Two environment fixes were needed and are now on `main`:
    - `setup_local_env.sh` hardcoded Humble; it now resolves
@@ -490,7 +490,7 @@ Design points:
   replay-gate rule (no gate semantics changed); unit tests cover every category,
   the priority order, and boundary values.
 
-Documented for users in [troubleshooting.md](troubleshooting.md) ("Failure category").
+Documented for users in [troubleshooting.md](../troubleshooting.md) ("Failure category").
 Remaining Phase 3 work: covariance semantics (step 3, the promised real fix for #72).
 
 ### 2026-06-12: Calibrated /pcl_pose covariance (Phase 3 step 3, closes the #72 promise)
@@ -702,7 +702,7 @@ supervisor `use_odom_bridge_candidate` / anchor fitness gate)について、defa
   非劣化が無い。
 - 最良構成がsequence依存の固定値(`planar`/`height_only`、anchor gate有効/無効)であり、
   個別sequenceだけに効くparameter setをdefault候補にしない規則(`global_localization_lio_development_plan.md`)に抵触する。
-- 4系列のデータポイントは`docs/handover_glim_frontend_codex.md`に固定済み。
+- 4系列のデータポイントは引き継ぎメモ `docs/handover_glim_frontend_codex.md`(削除済み、git 履歴に残る)に記録した。
 - 既定値は既に保守的(全てopt-in)で、`test_create_lidar_localization_config.py`、
   `test_registration_seed_policy.cpp`、`test_reinitialization_supervisor_policy.py`、
   `test_glim_frontend_harness.py`が既定`false`を回帰固定している。verified: ctest 92/92。

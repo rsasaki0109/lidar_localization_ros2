@@ -202,7 +202,7 @@ NDT計算中に未来時刻のIMUがsmootherへ入る可能性を切り分ける
 RMSEは`6.599 m`だった。最初の不正確なIMU seed後にregistrationが連続rejectされ、accepted
 poseからの正しい積分窓が1 sを超えたためである。時刻同期だけでは、初期速度0やbiasを含む
 open-loop seed誤差を解決できない。prototypeはrevertした。測定値と判断は
-[`../experiments/imu_scan_time_sync/README.md`](../experiments/imu_scan_time_sync/README.md)に残す。
+[`../experiments/imu_scan_time_sync/README.md`](../../experiments/imu_scan_time_sync/README.md)に残す。
 
 次のIMU runtime候補は、初期速度を観測または推定し、NDTへ接続する前のopen-loop seed accuracy
 gateを通すことを前提とする。deskew適用率だけを上げる変更は引き続き採用しない。

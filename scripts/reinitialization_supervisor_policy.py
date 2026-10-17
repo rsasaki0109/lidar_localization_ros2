@@ -41,7 +41,7 @@ non-self-resetting bounds:
 
 Ranked-candidate walk -- the live-run lesson
 --------------------------------------------
-The 2026-06-15 live closed-loop run (docs/g3_live_closed_loop.md) showed the
+The 2026-06-15 live closed-loop run (docs/dev/g3_live_closed_loop.md) showed the
 *candidate score is not a registration score*: G2's BBS occupancy score labelled a
 190 m-wrong candidate 0.99 and the 5.5 m-correct one 0.998, so the score floor alone
 cannot separate them. The localizer's own NDT fitness *can* (that is what its
@@ -64,7 +64,7 @@ maxima a fresh query beats a deeper walk, so the supervisor abandons the query a
 ``max_walk_candidates`` and re-queries (spending one attempt) instead.
 
 These map directly onto the G3 Decision Gates in
-``docs/global_localization_roadmap.md``. ``test_reinitialization_supervisor_policy.py``
+``docs/dev/global_localization_roadmap.md``. ``test_reinitialization_supervisor_policy.py``
 fails if any of them regress.
 
 Conventions
@@ -132,7 +132,7 @@ class SupervisorParams:
     recovery_confirmation_samples: int = 3
     # Walk at most this many candidates from one query (counting the top one)
     # before abandoning the whole query and re-querying with a fresh scan. The
-    # 2026-06-15 live run (docs/g3_live_closed_loop.md) showed a stale query can
+    # 2026-06-15 live run (docs/dev/g3_live_closed_loop.md) showed a stale query can
     # return a full ranked list none of whose poses lock, so walking all 16 just
     # burned ~95 s at settle_timeout_sec each before the *next* query -- on a
     # newer, more distinctive scan -- produced the candidate that recovered. Past
@@ -712,7 +712,7 @@ def decide(
 
 # --- seed motion compensation --------------------------------------------------
 #
-# The decisive G3 live-run blocker (docs/g3_live_closed_loop.md, 5th clean run)
+# The decisive G3 live-run blocker (docs/dev/g3_live_closed_loop.md, 5th clean run)
 # was *not* the supervisor, the walk, candidate quality, or yaw: it was latency.
 # A G2 BBS query takes ~5-23 s, and the candidate it returns is a fix of the scan
 # taken when the query was *issued*. By the time the reset is published the vehicle
@@ -880,7 +880,7 @@ def estimate_seed_velocity(
 class TrustedSeedVelocityTracker:
     """Map-frame velocity from consecutive trusted localizer poses only.
 
-    The Koide 180 s boundary characterization (docs/g3_live_closed_loop.md) showed
+    The Koide 180 s boundary characterization (docs/dev/g3_live_closed_loop.md) showed
     that extrapolating reset seeds with velocity from the kidnapped localizer's pose
     history yields wrong direction and magnitude -- turning 1 m-accurate G2 fixes into
     14-28 m seed errors. Pose-derived velocity is trustworthy only while tracking was

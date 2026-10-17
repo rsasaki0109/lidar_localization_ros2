@@ -171,5 +171,5 @@ within your stack’s expected tolerance.
 ## Related docs
 
 - [troubleshooting.md](troubleshooting.md) — “Pose Looks Offset From Reality”
-- [benchmarking.md](benchmarking.md) — public Istanbul reference extraction
+- [benchmarking.md](dev/benchmarking.md) — public Istanbul reference extraction
 - [frame_contract.md](frame_contract.md) — `map` / `odom` / `base_link` contract
