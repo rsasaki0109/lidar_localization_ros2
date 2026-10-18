@@ -65,6 +65,26 @@ class TestAlignmentStatus(unittest.TestCase):
         self.assertEqual(result.phase, status.PHASE_LOST)
         self.assertIn("for 6 s", result.line)
 
+    def test_empty_scan_names_the_covered_sensor(self):
+        values = {"failure_category": "bad_match", "message": "filtered_scan_empty"}
+        result = status.alignment_status(values, "x")
+        self.assertEqual(result.phase, status.PHASE_DEGRADED)
+        self.assertIn("No usable scan points", result.line)
+        self.assertIn("covered", result.line)
+
+    def test_empty_scans_without_gap_turn_lost_from_last_good_sample(self):
+        tracker = status.StatusTracker(debounce_sec=2.0, lost_after_sec=5.0)
+        tracker.update_startup({"state": "active"}, 0.0)
+        tracker.update_alignment(HEALTHY, 0.0)
+        empty = {"failure_category": "bad_match", "message": "filtered_scan_empty"}
+        changes = []
+        for t in range(1, 12):
+            changes += tracker.update_alignment(empty, float(t))
+        self.assertEqual(
+            [c.phase for c in changes], [status.PHASE_DEGRADED, status.PHASE_LOST]
+        )
+        self.assertIn("for 7 s", changes[1].line)
+
     def test_reinitialization_request_is_lost(self):
         values = dict(HEALTHY, reinitialization_requested="true")
         result = status.alignment_status(values, "x")

@@ -15,6 +15,11 @@
   no accepted scan for 5 s counts as lost even while the category is `bad_match`.
   Diagnostics only; `--no-status` (launch arg `show_status:=false`) turns it off. New
   topics: `/localization_status/status` (JSON) and `/localization_status/marker`.
+- The status line names empty scans after filtering ("No usable scan points", e.g. a
+  covered sensor) and reports them as lost after 5 s without a good scan; before,
+  they read as a poor match until registration resumed (on the Koide
+  outdoor_kidnap_a replay, lost was reported at 37 s instead of 51 s). The status
+  node no longer prints a traceback on a second Ctrl-C.
 - Quickstart topic discovery ignores topics that only have subscribers and the
   localizer's own `/map` and `/initial_map` clouds, so a stale localizer no longer
   makes the scan topic look ambiguous, and it warns when a localizer is already

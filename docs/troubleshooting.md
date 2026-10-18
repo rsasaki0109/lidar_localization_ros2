@@ -20,10 +20,11 @@ table adds where to look next.
 | `Tracking.` / `Tracking again` | Tracking (green) | `healthy` | nothing |
 | `No initial pose yet` | Set pose: 2D Pose Estimate (P) (red) | `missing_initial_pose` | in RViz press **P** (2D Pose Estimate), click the robot's position and drag along its heading |
 | `Waiting for the map` | Waiting for the map (blue) | `missing_map` | [Map Not Visible in RViz](#symptom-map-not-visible-in-rviz-43-48) |
+| `No usable scan points` | Weak: no scan points (yellow) | `message` `filtered_scan_empty` / `filtered_scan_too_sparse` | sensor covered or blocked, `min_scan_range` / `max_scan_range` |
 | `Tracking is weak: only N scan points` | Weak: few scan points (yellow) | `weak_overlap` | sensor view, scan range filters, robot outside the map |
 | `Scans do not match the map well` | Weak: poor match (yellow) | `bad_match` | re-seed the pose; from the start: LiDAR TF and [map alignment](map_alignment.md) |
 | `Alignment is falling behind` | Weak: CPU overload (yellow) | `overload` | [Pose Rate Drops](#symptom-pose-rate-drops-or-tracking-is-lost-on-dense-maps) |
-| `Tracking lost` | Lost: set 2D Pose Estimate (red) | `stale_prediction`, `reinitialization_requested`, or no accepted scan for 5 s | wait for automatic recovery when global search is on, else set the pose |
+| `Tracking lost` | Lost: set 2D Pose Estimate (red) | `stale_prediction`, `reinitialization_requested`, or no accepted scan for 5 s (also while the scans are empty) | wait for automatic recovery when global search is on, else set the pose |
 | `No scan processed for N s` | No scans arriving (red) | no `/alignment_status` | `ros2 topic hz <cloud_topic>`; with `use_sim_time`, check that `/clock` runs (`ros2 bag play --clock`) |
 
 While the startup search runs, its own lines (`Searching the map for the robot ...`)

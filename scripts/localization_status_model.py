@@ -37,6 +37,11 @@ PHASE_COLORS = {
 
 TROUBLESHOOTING = "docs/troubleshooting.md"
 
+# Categories of a scan that was matched and accepted.
+_ACCEPTED_CATEGORIES = frozenset({"", "healthy", "overload"})
+# Messages for a scan with nothing left to register (see troubleshooting.md).
+_EMPTY_SCAN_MESSAGES = frozenset({"filtered_scan_empty", "filtered_scan_too_sparse"})
+
 _STARTUP_LABELS = {
     "waiting_for_scan": "Waiting for the first scan",
     "querying_global": "Searching the map",
@@ -71,16 +76,23 @@ def alignment_status(
     manual_pose_step: str,
     automatic_recovery: bool = False,
     lost_after_sec: float = 5.0,
+    since_good_sec: float = math.nan,
 ) -> Status:
     """Classify one /alignment_status sample into a user-facing status.
 
     A poor match outranks stale prediction in failure_category, so a kidnapped
     robot reads as bad_match for as long as scans keep being rejected; no
     accepted scan for ``lost_after_sec`` counts as lost whatever the category.
+    Scans that are empty after filtering (a covered sensor) carry no
+    accepted_gap_sec, so ``since_good_sec``, the caller's own count since the
+    last good sample, stands in for it.
     """
     category = str(values.get("failure_category", "") or "").strip()
+    message = str(values.get("message", "") or "").strip()
     reinit = _flag(values, "reinitialization_requested")
     gap = _number(values, "accepted_gap_sec")
+    if not math.isfinite(gap) and category not in _ACCEPTED_CATEGORIES:
+        gap = since_good_sec
     unmatched = math.isfinite(gap) and gap >= lost_after_sec
     if category == "missing_map":
         return Status(
@@ -113,6 +125,15 @@ def alignment_status(
             f"{recovery}{manual_pose_step}.",
             "Lost: set 2D Pose Estimate",
             SEVERITY_ERROR,
+        )
+    if message in _EMPTY_SCAN_MESSAGES:
+        return Status(
+            PHASE_DEGRADED,
+            "empty_scan",
+            "No usable scan points: the scan is empty after filtering. The sensor "
+            "may be covered or blocked, or the scan range filters remove every point.",
+            "Weak: no scan points",
+            SEVERITY_WARNING,
         )
     if category == "weak_overlap":
         points = _number(values, "filtered_point_count")
@@ -207,6 +228,7 @@ class StatusTracker:
         self.pending: Status | None = None
         self.pending_since = 0.0
         self.last_alignment_time: float | None = None
+        self.last_good_time: float | None = None
         self.running_since: float | None = None
 
     def update_startup(self, payload: dict, now: float) -> None:
@@ -221,9 +243,20 @@ class StatusTracker:
             self.running_since = now
         if self.startup is not None:
             return []
-        status = alignment_status(
-            values, self.manual_pose_step, self.automatic_recovery, self.lost_after_sec
+        good_since = (
+            self.last_good_time
+            if self.last_good_time is not None
+            else self.running_since
         )
+        status = alignment_status(
+            values,
+            self.manual_pose_step,
+            self.automatic_recovery,
+            self.lost_after_sec,
+            now - good_since if good_since is not None else math.nan,
+        )
+        if status.category in _ACCEPTED_CATEGORIES:
+            self.last_good_time = now
         return self._propose(status, now)
 
     def tick(self, now: float) -> list[Status]:
