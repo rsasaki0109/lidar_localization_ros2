@@ -55,6 +55,16 @@ class TestAlignmentStatus(unittest.TestCase):
         result = status.alignment_status(STALE, "set 2D Pose Estimate in RViz", True)
         self.assertIn("Automatic recovery is searching the map", result.line)
 
+    def test_long_rejection_streak_is_lost_even_as_bad_match(self):
+        short = dict(BAD_MATCH, accepted_gap_sec="3.0")
+        self.assertEqual(
+            status.alignment_status(short, "x").phase, status.PHASE_DEGRADED
+        )
+        long = dict(BAD_MATCH, accepted_gap_sec="6.0")
+        result = status.alignment_status(long, "x")
+        self.assertEqual(result.phase, status.PHASE_LOST)
+        self.assertIn("for 6 s", result.line)
+
     def test_reinitialization_request_is_lost(self):
         values = dict(HEALTHY, reinitialization_requested="true")
         result = status.alignment_status(values, "x")

@@ -6,9 +6,14 @@
   one line when tracking starts, weakens (few points, poor match, CPU overload), is
   lost, stops receiving scans, or comes back, each with what to do, and RViz shows the
   same status as a colored label above the robot (**Localization Status** display).
-  Changes are reported after they hold for 2 s, so single rejected scans stay quiet.
+  Changes are reported after they hold for 2 s, so single rejected scans stay quiet;
+  no accepted scan for 5 s counts as lost even while the category is `bad_match`.
   Diagnostics only; `--no-status` (launch arg `show_status:=false`) turns it off. New
   topics: `/localization_status/status` (JSON) and `/localization_status/marker`.
+- Quickstart topic discovery ignores topics that only have subscribers and the
+  localizer's own `/map` and `/initial_map` clouds, so a stale localizer no longer
+  makes the scan topic look ambiguous, and it warns when a localizer is already
+  running (`/alignment_status` is published).
 - Quickstart map errors suggest the fix: a directory or a missing file lists the
   `.pcd`/`.ply` maps next to it as `--map` options, and wrong extensions and empty
   files are named.

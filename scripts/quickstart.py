@@ -183,9 +183,16 @@ def discover_ros_graph(
         def spin(seconds):
             rclpy.spin_once(node, timeout_sec=seconds)
 
-        typed = wait_for_typed_topics(
-            node.get_topic_names_and_types, timeout_sec, sleep=spin
-        )
+        def published_topics():
+            # A topic that only has subscribers (a stale localizer waiting on
+            # its default input, say) is not an input.
+            return [
+                (name, type_names)
+                for name, type_names in node.get_topic_names_and_types()
+                if node.count_publishers(name) > 0
+            ]
+
+        typed = wait_for_typed_topics(published_topics, timeout_sec, sleep=spin)
         cloud_topic = cloud_topic_for(typed) if cloud_topic_for else None
         if (cloud_topic, CLOUD_TYPE) in typed:
             node.create_subscription(
@@ -889,6 +896,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.odom_frame, cloud_topic_for if args.lidar_frame is None else None
         )
         graph_checked = True
+        running = model.running_localizer_hint(typed)
+        if running:
+            input_hints.append(running)
+        typed = model.without_localizer_outputs(typed)
         if args.cloud_topic is None:
             cloud_topic, reason = model.select_discovered_topic(
                 typed, CLOUD_TYPE, cloud_topic

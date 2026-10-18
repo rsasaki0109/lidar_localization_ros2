@@ -23,7 +23,7 @@ table adds where to look next.
 | `Tracking is weak: only N scan points` | Weak: few scan points (yellow) | `weak_overlap` | sensor view, scan range filters, robot outside the map |
 | `Scans do not match the map well` | Weak: poor match (yellow) | `bad_match` | re-seed the pose; from the start: LiDAR TF and [map alignment](map_alignment.md) |
 | `Alignment is falling behind` | Weak: CPU overload (yellow) | `overload` | [Pose Rate Drops](#symptom-pose-rate-drops-or-tracking-is-lost-on-dense-maps) |
-| `Tracking lost` | Lost: set 2D Pose Estimate (red) | `stale_prediction` or `reinitialization_requested` | wait for automatic recovery when global search is on, else set the pose |
+| `Tracking lost` | Lost: set 2D Pose Estimate (red) | `stale_prediction`, `reinitialization_requested`, or no accepted scan for 5 s | wait for automatic recovery when global search is on, else set the pose |
 | `No scan processed for N s` | No scans arriving (red) | no `/alignment_status` | `ros2 topic hz <cloud_topic>`; with `use_sim_time`, check that `/clock` runs (`ros2 bag play --clock`) |
 
 While the startup search runs, its own lines (`Searching the map for the robot ...`)

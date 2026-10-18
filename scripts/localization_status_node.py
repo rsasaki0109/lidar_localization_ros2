@@ -39,17 +39,21 @@ class LocalizationStatusNode(Node):
         self.declare_parameter("manual_pose_step", "set 2D Pose Estimate in RViz")
         self.declare_parameter("automatic_recovery", False)
         self.declare_parameter("debounce_sec", 2.0)
+        self.declare_parameter("lost_after_sec", 5.0)
         self.declare_parameter("no_scan_timeout_sec", 5.0)
         self.declare_parameter("marker_height_m", 2.0)
+        self.declare_parameter("marker_text_size_m", 1.5)
 
         self.tracker = model.StatusTracker(
             manual_pose_step=str(self.get_parameter("manual_pose_step").value),
             debounce_sec=float(self.get_parameter("debounce_sec").value),
             no_scan_timeout_sec=float(self.get_parameter("no_scan_timeout_sec").value),
             automatic_recovery=bool(self.get_parameter("automatic_recovery").value),
+            lost_after_sec=float(self.get_parameter("lost_after_sec").value),
         )
         self.global_frame = str(self.get_parameter("global_frame_id").value)
         self.marker_height = float(self.get_parameter("marker_height_m").value)
+        self.marker_text_size = float(self.get_parameter("marker_text_size_m").value)
         self.position = (0.0, 0.0, 0.0)
         self.last_status_text = ""
 
@@ -142,7 +146,7 @@ class LocalizationStatusNode(Node):
         marker.pose.position.y = self.position[1]
         marker.pose.position.z = self.position[2] + self.marker_height
         marker.pose.orientation.w = 1.0
-        marker.scale.z = 0.8
+        marker.scale.z = self.marker_text_size
         r, g, b, a = model.PHASE_COLORS.get(status.phase, (1.0, 1.0, 1.0, 1.0))
         marker.color.r, marker.color.g, marker.color.b, marker.color.a = r, g, b, a
         marker.text = status.label or status.phase

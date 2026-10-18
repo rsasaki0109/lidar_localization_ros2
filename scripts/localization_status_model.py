@@ -67,11 +67,21 @@ class Status:
 
 
 def alignment_status(
-    values: dict, manual_pose_step: str, automatic_recovery: bool = False
+    values: dict,
+    manual_pose_step: str,
+    automatic_recovery: bool = False,
+    lost_after_sec: float = 5.0,
 ) -> Status:
-    """Classify one /alignment_status sample into a user-facing status."""
+    """Classify one /alignment_status sample into a user-facing status.
+
+    A poor match outranks stale prediction in failure_category, so a kidnapped
+    robot reads as bad_match for as long as scans keep being rejected; no
+    accepted scan for ``lost_after_sec`` counts as lost whatever the category.
+    """
     category = str(values.get("failure_category", "") or "").strip()
     reinit = _flag(values, "reinitialization_requested")
+    gap = _number(values, "accepted_gap_sec")
+    unmatched = math.isfinite(gap) and gap >= lost_after_sec
     if category == "missing_map":
         return Status(
             PHASE_WAITING_FOR_MAP,
@@ -89,8 +99,7 @@ def alignment_status(
             "Set pose: 2D Pose Estimate (P)",
             SEVERITY_WARNING,
         )
-    if category == "stale_prediction" or reinit:
-        gap = _number(values, "accepted_gap_sec")
+    if category == "stale_prediction" or reinit or unmatched:
         since = f" for {gap:.0f} s" if math.isfinite(gap) and gap >= 1.0 else ""
         recovery = (
             "Automatic recovery is searching the map; if it does not recover, "
@@ -99,7 +108,7 @@ def alignment_status(
         )
         return Status(
             PHASE_LOST,
-            category or "stale_prediction",
+            "stale_prediction",
             f"Tracking lost: no scan has matched the map{since}. "
             f"{recovery}{manual_pose_step}.",
             "Lost: set 2D Pose Estimate",
@@ -184,9 +193,11 @@ class StatusTracker:
         debounce_sec: float = 2.0,
         no_scan_timeout_sec: float = 5.0,
         automatic_recovery: bool = False,
+        lost_after_sec: float = 5.0,
     ) -> None:
         self.manual_pose_step = manual_pose_step
         self.automatic_recovery = automatic_recovery
+        self.lost_after_sec = lost_after_sec
         self.debounce_sec = debounce_sec
         self.no_scan_timeout_sec = no_scan_timeout_sec
         self.startup: Status | None = None
@@ -211,7 +222,7 @@ class StatusTracker:
         if self.startup is not None:
             return []
         status = alignment_status(
-            values, self.manual_pose_step, self.automatic_recovery
+            values, self.manual_pose_step, self.automatic_recovery, self.lost_after_sec
         )
         return self._propose(status, now)
 
