@@ -52,6 +52,13 @@ package, about 30 minutes on an 8-core machine.
 [small_gicp](https://github.com/koide3/small_gicp) is optional. For a manual or
 no-sudo build, see [local build](docs/local_build.md).
 
+No ROS install? Build the [Docker image](docs/docker.md) and check it in one command:
+
+```bash
+docker build -f docker/Dockerfile -t lidar_localization_ros2 .
+docker run --rm lidar_localization_ros2 /ws/src/lidar_localization_ros2/docker/smoke_status.sh
+```
+
 ## Quick start
 
 1. Start the LiDAR driver, and odometry if you have it.
@@ -193,6 +200,7 @@ against the ground truth. Playback takes about five minutes. Data is cached in
 Using it:
 
 - [Quickstart and automatic initialization](docs/quickstart.md)
+- [Docker](docs/docker.md): build, smoke test, and running on your data
 - [Go2 / MID-360 in five minutes](docs/go2_mid360_quickstart.md) and [MID-360 bringup](docs/mid360_legged_jetson.md)
 - [Repeat-route site setup](docs/site_setup.md)
 - [Runtime details](docs/runtime.md): parameter precedence, deskew, lifecycle

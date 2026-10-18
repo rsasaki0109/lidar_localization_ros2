@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add a Docker image (`docker/Dockerfile`, Jazzy by default, `ROS_DISTRO=humble`
+  also builds) with ndt_omp_ros2, and `docker/smoke_status.sh`, which runs quickstart
+  on a synthetic map and scan stream and checks the tracking, weak, lost and no-scan
+  status lines. See [docs/docker.md](docs/docker.md).
+
 - Quickstart now keeps reporting after startup: `localization_status_node.py` prints
   one line when tracking starts, weakens (few points, poor match, CPU overload), is
   lost, stops receiving scans, or comes back, each with what to do, and RViz shows the

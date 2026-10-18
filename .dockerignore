@@ -1,0 +1,16 @@
+# Build context is the repository root; keep it to what colcon needs.
+.git
+.github
+.pytest_cache
+.ruff_cache
+.vscode
+build
+install
+log
+**/__pycache__
+**/*.pyc
+data
+artifacts
+images
+koide-data
+koide-run-*
