@@ -14,7 +14,7 @@ docker build -f docker/Dockerfile -t lidar_localization_ros2 .
 docker build -f docker/Dockerfile --build-arg ROS_DISTRO=humble -t lidar_localization_ros2:humble .
 ```
 
-The build takes about 10 minutes on 4 cores. Dependencies are installed from
+The build takes about 15 minutes on 4 cores. Dependencies are installed from
 `package.xml` before the sources are copied, so after a source edit only the colcon
 step runs again.
 
@@ -33,7 +33,7 @@ appears. It ends with:
 PASS  discovery: ...
 PASS  tracking: Tracking.
 PASS  weak: Tracking is weak: only 40 scan points left after filtering. ...
-PASS  recovered: Tracking again after 6 s.
+PASS  recovered: Tracking again after 3 s.
 PASS  lost: Tracking lost: no scan has matched the map for 7 s. ...
 PASS  no scans: No scan processed for 5 s. ...
 All status checks passed (log: /tmp/lidarloc_smoke.XXXXXX/quickstart.log)
