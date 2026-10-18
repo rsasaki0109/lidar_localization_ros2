@@ -149,6 +149,8 @@ set(LIDAR_LOCALIZATION_CONFIG_SCRIPTS
   scripts/check_lidar_localization_bringup.py
   scripts/check_mid360_legged_bringup.py
   scripts/create_lidar_localization_config.py
+  scripts/localization_status_model.py
+  scripts/localization_status_node.py
   scripts/quickstart.py
   scripts/quickstart_model.py
   scripts/send_nav2_goal.py

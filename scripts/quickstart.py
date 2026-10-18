@@ -321,6 +321,13 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
         help="start RViz (turn off on a headless robot)",
     )
     session.add_argument(
+        "--status",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="print one line when tracking starts, weakens, is lost or recovers, "
+        "and show the status above the robot in RViz",
+    )
+    session.add_argument(
         "--bringup-check",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -668,6 +675,8 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         "enable_global_initialization": str(global_enabled).lower(),
         "enable_g3_recovery": str(g3_enabled).lower(),
         "start_rviz": str(args.rviz).lower(),
+        "show_status": str(args.status).lower(),
+        "manual_pose_step": manual_pose_step(args),
         "run_bringup_check": str(args.bringup_check).lower(),
         "saved_pose_max_age_sec": args.saved_pose_max_age_sec,
         "min_candidate_score": args.min_candidate_score,
@@ -727,19 +736,39 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
     return parts
 
 
+def _map_suggestion(directory: Path) -> str:
+    """Point at the maps in ``directory`` (a SLAM output folder, usually)."""
+    try:
+        found = sorted(
+            path
+            for path in directory.iterdir()
+            if path.is_file()
+            and path.suffix.lower() in config_tool.SUPPORTED_MAP_SUFFIXES
+        )
+    except OSError:
+        found = []
+    if found:
+        return (
+            "Did you mean "
+            + " or ".join(shlex.join(["--map", str(path)]) for path in found[:3])
+            + "?"
+        )
+    return "Pass a .pcd or .ply file, e.g. --map /absolute/path/to/map.pcd."
+
+
 def _validate(args) -> str | None:
     map_path = Path(args.map_path).expanduser()
     if map_path.is_dir():
-        return (
-            f"Map path is a directory: {map_path}. Pass a .pcd or .ply file with --map."
-        )
+        return f"Map path is a directory: {map_path}. " + _map_suggestion(map_path)
     if not map_path.is_file():
-        return (
-            f"Map file does not exist: {map_path}. "
-            "Use --map /absolute/path/to/map.pcd (or .ply)."
+        return f"Map file does not exist: {map_path}. " + _map_suggestion(
+            map_path.parent
         )
     if map_path.suffix.lower() not in config_tool.SUPPORTED_MAP_SUFFIXES:
-        return "Map must be a .pcd or .ply file."
+        kind = map_path.suffix or "a file without an extension"
+        return f"Map must be a .pcd or .ply file, not {kind}: {map_path}."
+    if map_path.stat().st_size == 0:
+        return f"Map file is empty: {map_path}. Re-export the map from SLAM."
     if args.occupancy_yaml:
         occupancy = Path(args.occupancy_yaml).expanduser()
         if not occupancy.is_file():

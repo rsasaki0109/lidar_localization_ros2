@@ -31,6 +31,8 @@ moving files into subdirectories.
   Python fallback used by the global-localization nodes.
 - `publish_*`, `relay_*`, `republish_*`, `record_*`, `send_*`, `inject_*`:
   small ROS graph adapters used by launches and recovery handling.
+- `localization_status_node.py`: one plain line per change of tracking health and a
+  status label in RViz; started by quickstart (`--no-status` turns it off).
 - `watch_alignment.py`, `watch_startup.py`: status watchers.
 - `tum_trajectory_to_pose_reference_csv*.py`, `augment_pointcloud_intensity.py`:
   dataset preparation.

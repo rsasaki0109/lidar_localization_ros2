@@ -288,6 +288,22 @@ Could not localize automatically: no unambiguous match was found. Set 2D Pose Es
 The machine-readable status, with the reason names listed under Troubleshooting, is
 published as JSON on `/startup_initialization/status` (and logged at debug level).
 
+Once it is localized, `localization_status` keeps reporting, one line per change of
+tracking health. A single rejected scan is not reported; a change is printed after it
+has held for 2 s:
+
+```text
+[localization_status]: Tracking.
+[localization_status]: Scans do not match the map well (fitness 4.50 > 2.00). If this lasts, set 2D Pose Estimate in RViz; if it happens from the start, check the LiDAR transform and the map frame.
+[localization_status]: Tracking again after 6 s.
+```
+
+RViz shows the same status as a colored label above the robot (**Localization
+Status** display): blue while starting, green while tracking, yellow when weak, red
+when lost or waiting for a pose. `--no-status` turns both off. The current status is
+also published as JSON on `/localization_status/status`. What each line means:
+[troubleshooting](troubleshooting.md#reading-the-status-line).
+
 The compiled G2 backend and 3D scoring are enabled by default. If scorer loading or
 scoring fails, quickstart rejects the 2D-only result instead of weakening the policy.
 Global candidates have no height of their own, and NDT scores them at a seed height:

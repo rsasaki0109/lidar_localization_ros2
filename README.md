@@ -71,13 +71,26 @@ Quickstart finds the cloud and IMU topics, `/clock`, an `odom -> base` TF and th
 LiDAR frame, and prints what it picked on its `Discovery:` line. Then it starts the
 localizer and RViz. On the first run it searches the whole map for the robot; next time
 it restores the pose saved for the same map. If the search finds no safe match, it asks
-you for **2D Pose Estimate** in RViz instead of guessing.
+you for **2D Pose Estimate** in RViz (press **P**, click the robot, drag along its
+heading) instead of guessing.
+
+While it runs, the terminal prints one line whenever tracking starts, weakens, is lost
+or comes back, with what to do about it, and RViz shows the same status above the
+robot:
+
+```text
+[localization_status]: Tracking.
+[localization_status]: Tracking lost: no scan has matched the map for 4 s. If it does not recover, set 2D Pose Estimate in RViz.
+```
+
+What each line means: [reading the status line](docs/troubleshooting.md#reading-the-status-line).
 
 Useful options:
 
 - `--dry-run` shows what it would start, without starting it.
 - `--profile mid360` uses the Livox MID-360 preset.
 - `--initial-pose X Y Z QX QY QZ QW` skips the search when you know the pose.
+- `--no-rviz` for a headless robot; `--no-status` turns the status line off.
 - `--help` lists the bringup options; `--help-all` adds the tuning ones.
 
 **Map from [lidar_slam_ros2](https://github.com/rsasaki0109/lidar_slam_ros2) with a
@@ -126,6 +139,7 @@ Default frames are `map`, `odom` and `base_link`.
 | --- | --- |
 | Inputs | `/cloud`, `/initialpose` (in `map`), `/odom`, `/imu` |
 | Outputs | `/pcl_pose`, `/path`, `/alignment_status`, `/reinitialization_requested` |
+| Status (quickstart) | `/localization_status/status` (JSON), `/localization_status/marker` (RViz label) |
 
 - Standalone mode publishes `map -> base_link`.
 - Nav2 mode publishes `map -> odom` and needs an external `odom -> base_link`.

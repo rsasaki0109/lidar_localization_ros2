@@ -798,6 +798,70 @@ class TestQuickstartCli(unittest.TestCase):
             self.assertIn("directory", stderr.getvalue())
             self.assertIn(".pcd or .ply", stderr.getvalue())
 
+    def test_map_directory_suggests_the_map_inside(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "map.pcd").write_bytes(b"pcd")
+            (Path(directory) / "notes.txt").write_text("x")
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                result = QUICKSTART.main(["--map", directory, "--dry-run"])
+            self.assertEqual(result, 2)
+            self.assertIn(
+                "Did you mean --map " + str(Path(directory) / "map.pcd") + "?",
+                stderr.getvalue(),
+            )
+            self.assertNotIn("notes.txt", stderr.getvalue())
+
+    def test_missing_map_suggests_a_neighbour(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "site.ply").write_bytes(b"ply")
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                result = QUICKSTART.main(
+                    ["--map", str(Path(directory) / "site.pcd"), "--dry-run"]
+                )
+            self.assertEqual(result, 2)
+            self.assertIn("Map file does not exist", stderr.getvalue())
+            self.assertIn("site.ply", stderr.getvalue())
+
+    def test_wrong_map_extension_and_empty_map_are_named(self):
+        with tempfile.TemporaryDirectory() as directory:
+            wrong = Path(directory) / "map.bag"
+            wrong.write_bytes(b"x")
+            empty = Path(directory) / "map.pcd"
+            empty.write_bytes(b"")
+            for path, expected in ((wrong, "not .bag"), (empty, "Map file is empty")):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    result = QUICKSTART.main(["--map", str(path), "--dry-run"])
+                self.assertEqual(result, 2)
+                self.assertIn(expected, stderr.getvalue())
+
+    def test_status_line_is_on_by_default_and_can_be_turned_off(self):
+        with tempfile.TemporaryDirectory() as directory:
+            map_path = Path(directory) / "site.pcd"
+            map_path.write_bytes(b"pcd")
+            for extra, expected in (
+                ([], "show_status:=true"),
+                (["--no-status"], "show_status:=false"),
+            ):
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout):
+                    result = QUICKSTART.main(
+                        [
+                            "--map",
+                            str(map_path),
+                            "--no-discover-topics",
+                            "--dry-run",
+                            *extra,
+                        ]
+                    )
+                self.assertEqual(result, 0)
+                self.assertIn(expected, stdout.getvalue())
+            self.assertIn(
+                "'manual_pose_step:=set 2D Pose Estimate in RViz'", stdout.getvalue()
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
