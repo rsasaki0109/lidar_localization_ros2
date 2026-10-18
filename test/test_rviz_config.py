@@ -56,6 +56,17 @@ class TestRvizConfig(unittest.TestCase):
         self.assertEqual(scan["Color Transformer"], "FlatColor")
         self.assertFalse(scan["Use rainbow"])
 
+    def test_status_marker_is_shown_in_both_configs(self):
+        for path in (RViz_PATH, RVIZ_MID360_PATH):
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            displays = {
+                d.get("Name"): d for d in data["Visualization Manager"]["Displays"]
+            }
+            status = displays["Localization Status"]
+            self.assertEqual(status["Class"], "rviz_default_plugins/Marker")
+            self.assertTrue(status["Enabled"])
+            self.assertEqual(status["Topic"]["Value"], "/localization_status/marker")
+
     def test_rviz_dir_is_installed_with_package(self):
         cmake = CMAKELISTS.read_text(encoding="utf-8")
         match = re.search(

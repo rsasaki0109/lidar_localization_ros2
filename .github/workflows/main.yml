@@ -23,11 +23,11 @@ jobs:
       - name: Install ruff
         run: pip install "ruff==0.16.8"
       - name: Ruff check
-        run: ruff check scripts test
+        run: ruff check scripts test docker
       - name: Ruff format check
-        run: ruff format --check scripts test
+        run: ruff format --check scripts test docker
       - name: ShellCheck
-        run: shellcheck scripts/*.sh
+        run: shellcheck scripts/*.sh docker/*.sh
 
   humble_build:
     name: Build on Humble

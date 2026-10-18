@@ -158,6 +158,16 @@ def generate_launch_description():
             description="Launch guarded G3 reinitialization when global search assets "
                         "are configured."),
         DeclareLaunchArgument("start_rviz", default_value="true"),
+        DeclareLaunchArgument(
+            "show_status",
+            default_value="true",
+            description="Print one line per change of tracking health and show "
+                        "the status above the robot in RViz."),
+        DeclareLaunchArgument(
+            "manual_pose_step",
+            default_value="set 2D Pose Estimate in RViz",
+            description="What the status line tells the operator to do when a "
+                        "pose is needed."),
         DeclareLaunchArgument("run_bringup_check", default_value="true"),
         DeclareLaunchArgument(
             "bringup_check_wait_sec",
@@ -361,6 +371,21 @@ def generate_launch_description():
                 LaunchConfiguration("use_sim_time"), value_type=bool),
         }],
     )
+    localization_status = Node(
+        package="lidar_localization_ros2",
+        executable="localization_status_node.py",
+        name="localization_status",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("show_status")),
+        parameters=[{
+            "pose_topic": LaunchConfiguration("pose_topic"),
+            "global_frame_id": LaunchConfiguration("global_frame_id"),
+            "manual_pose_step": LaunchConfiguration("manual_pose_step"),
+            "automatic_recovery": ParameterValue(g3_recovery_ready, value_type=bool),
+            "use_sim_time": ParameterValue(
+                LaunchConfiguration("use_sim_time"), value_type=bool),
+        }],
+    )
     def _rviz_node(context):
         package_share_inner = get_package_share_directory("lidar_localization_ros2")
         profile = LaunchConfiguration("profile").perform(context)
@@ -389,5 +414,5 @@ def generate_launch_description():
         + [OpaqueFunction(function=_localization_include),
            OpaqueFunction(function=_bringup_check), global_localization,
            reinitialization_supervisor, startup_initialization,
-           OpaqueFunction(function=_rviz_node)]
+           localization_status, OpaqueFunction(function=_rviz_node)]
     )

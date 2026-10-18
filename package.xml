@@ -34,6 +34,7 @@
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>tf2_sensor_msgs</exec_depend>
   <exec_depend>tf2_geometry_msgs</exec_depend>

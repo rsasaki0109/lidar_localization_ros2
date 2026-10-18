@@ -119,6 +119,24 @@ class TestDiscovery(unittest.TestCase):
         )
         self.assertEqual((selected, reason), ("/velodyne_points", "ambiguous"))
 
+    def test_localizer_map_clouds_are_not_scan_candidates(self):
+        typed = MODEL.without_localizer_outputs(
+            [
+                ("/cloud", "sensor_msgs/msg/PointCloud2"),
+                ("/map", "sensor_msgs/msg/PointCloud2"),
+                ("/initial_map", "sensor_msgs/msg/PointCloud2"),
+            ]
+        )
+        selected, reason = MODEL.select_discovered_topic(
+            typed, "sensor_msgs/msg/PointCloud2", "/velodyne_points"
+        )
+        self.assertEqual((selected, reason), ("/cloud", "single_detected"))
+
+    def test_running_localizer_is_reported(self):
+        status = ("/alignment_status", "diagnostic_msgs/msg/DiagnosticArray")
+        self.assertIsNone(MODEL.running_localizer_hint([]))
+        self.assertIn("already running", MODEL.running_localizer_hint([status]))
+
     def test_quaternion_from_rpy_matches_zyx_euler(self):
         for roll, pitch, yaw in (
             (math.pi, 0.0, 0.5),

@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Add a Docker image (`docker/Dockerfile`, Jazzy by default, `ROS_DISTRO=humble`
+  also builds) with ndt_omp_ros2, and `docker/smoke_status.sh`, which runs quickstart
+  on a synthetic map and scan stream and checks the tracking, weak, lost and no-scan
+  status lines. See [docs/docker.md](docs/docker.md).
+
+- Quickstart now keeps reporting after startup: `localization_status_node.py` prints
+  one line when tracking starts, weakens (few points, poor match, CPU overload), is
+  lost, stops receiving scans, or comes back, each with what to do, and RViz shows the
+  same status as a colored label above the robot (**Localization Status** display).
+  Changes are reported after they hold for 2 s, so single rejected scans stay quiet;
+  no accepted scan for 5 s counts as lost even while the category is `bad_match`.
+  Diagnostics only; `--no-status` (launch arg `show_status:=false`) turns it off. New
+  topics: `/localization_status/status` (JSON) and `/localization_status/marker`.
+- Quickstart topic discovery ignores topics that only have subscribers and the
+  localizer's own `/map` and `/initial_map` clouds, so a stale localizer no longer
+  makes the scan topic look ambiguous, and it warns when a localizer is already
+  running (`/alignment_status` is published).
+- Quickstart map errors suggest the fix: a directory or a missing file lists the
+  `.pcd`/`.ply` maps next to it as `--map` options, and wrong extensions and empty
+  files are named.
+
 - Add a sparse-band global search: `sparse_band_min_points` (G2 node, default 0 =
   off; launch arg `g2_sparse_band_min_points`; quickstart
   `--global-sparse-band-min-points`, **default 512**). A scan with fewer 2D points than

@@ -173,6 +173,32 @@ def load_stored_pose(
     return PoseLoadResult(pose, "ok")
 
 
+# Clouds the localizer publishes itself; never a LiDAR scan.
+LOCALIZER_CLOUD_OUTPUTS = frozenset({"/map", "/initial_map"})
+LOCALIZER_STATUS_TOPIC = ("/alignment_status", "diagnostic_msgs/msg/DiagnosticArray")
+
+
+def without_localizer_outputs(
+    typed_topics: Sequence[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    """Drop the localizer's own map clouds from the discovered inputs."""
+    return [
+        (name, type_name)
+        for name, type_name in typed_topics
+        if name not in LOCALIZER_CLOUD_OUTPUTS
+    ]
+
+
+def running_localizer_hint(typed_topics: Sequence[tuple[str, str]]) -> str | None:
+    """Warn when a localizer already runs: two would publish the same TF."""
+    if LOCALIZER_STATUS_TOPIC not in typed_topics:
+        return None
+    return (
+        "A localizer is already running (/alignment_status is published). Stop it "
+        "first (Ctrl-C in its terminal), or both will publish the map TF and pose."
+    )
+
+
 def select_discovered_topic(
     typed_topics: Sequence[tuple[str, str]], message_type: str, preferred: str
 ) -> tuple[str, str]:
