@@ -1,0 +1,58 @@
+name: docker
+
+# Builds docker/Dockerfile and runs the quickstart status smoke test on a
+# synthetic map. Path-filtered: the image build takes ~15 min cold, and the
+# GitHub Actions layer cache skips the dependency layers when only sources change.
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "docker/**"
+      - ".dockerignore"
+      - ".github/workflows/docker.yml"
+      - "CMakeLists.txt"
+      - "package.xml"
+      - "include/**"
+      - "src/**"
+      - "launch/**"
+      - "param/**"
+      - "rviz/**"
+      - "scripts/**"
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Docker image + status smoke test (Jazzy)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          tags: lidar_localization_ros2:ci
+          load: true
+          cache-from: type=gha,scope=docker-jazzy
+          cache-to: type=gha,scope=docker-jazzy,mode=max
+      - name: Status smoke test
+        run: |
+          docker run --rm lidar_localization_ros2:ci \
+            /ws/src/lidar_localization_ros2/docker/smoke_status.sh
+      - name: Status smoke test with RViz (Xvfb)
+        run: |
+          docker run --rm lidar_localization_ros2:ci \
+            /ws/src/lidar_localization_ros2/docker/smoke_status.sh --rviz

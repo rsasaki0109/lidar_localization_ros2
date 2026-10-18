@@ -76,3 +76,11 @@ docker run --rm -it --network host \
   lidar_localization_ros2 \
   bash -c 'cd /ws && colcon build --symlink-install && bash'
 ```
+
+## CI
+
+`.github/workflows/docker.yml` builds this image and runs the smoke test, with and
+without RViz, on pushes to `main` and on pull requests that touch the runtime,
+launch, parameter, RViz or Docker files. Layers are cached in GitHub Actions, so a
+source-only change rebuilds just the colcon step. It can also be started by hand
+from the Actions tab (`workflow_dispatch`).
