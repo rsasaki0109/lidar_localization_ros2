@@ -24,7 +24,8 @@ table adds where to look next.
 | `Tracking is weak: only N scan points` | Weak: few scan points (yellow) | `weak_overlap` | sensor view, scan range filters, robot outside the map |
 | `Scans do not match the map well` | Weak: poor match (yellow) | `bad_match` | re-seed the pose; from the start: LiDAR TF and [map alignment](map_alignment.md) |
 | `Alignment is falling behind` | Weak: CPU overload (yellow) | `overload` | [Pose Rate Drops](#symptom-pose-rate-drops-or-tracking-is-lost-on-dense-maps) |
-| `Tracking lost` | Lost: set 2D Pose Estimate (red) | `stale_prediction`, `reinitialization_requested`, or no accepted scan for 5 s (also while the scans are empty) | wait for automatic recovery when global search is on, else set the pose |
+| `No scan has matched the map ...; the pose follows odometry only` | Odometry only: check pose (orange) | as below, while an external `odom ->` TF still arrives (gap <= 2 s) | the pose may still be right; compare the scan with the map in RViz and set the pose only if it is off |
+| `Tracking lost` | Lost: set 2D Pose Estimate (red) | `stale_prediction`, `reinitialization_requested`, or no accepted scan for 5 s (also while the scans are empty), without live odometry | wait for automatic recovery when global search is on, else set the pose |
 | `No scan processed for N s` | No scans arriving (red) | no `/alignment_status` | `ros2 topic hz <cloud_topic>`; with `use_sim_time`, check that `/clock` runs (`ros2 bag play --clock`) |
 
 While the startup search runs, its own lines (`Searching the map for the robot ...`)
@@ -37,6 +38,14 @@ launch:
 ros2 run lidar_localization_ros2 localization_status_node.py \
   --ros-args -p pose_topic:=/pcl_pose
 ```
+
+On the public Koide replays (`outdoor_hard_02b`, `outdoor_kidnap_a`, RKO-LIO
+odometry), poses shown as Tracking had a median error of 0.05-0.06 m. Through 70 s of
+rejected scans in `outdoor_hard_02b` RKO-LIO kept the pose within 0.31 m, which is why
+that reads as odometry only rather than lost; when the sensor was covered and carried
+in `outdoor_kidnap_a`, the odometry stopped as well and the status read lost while the
+pose was 55-72 m off. Odometry only cannot tell a good bridged pose from a wrong reset:
+in the same `outdoor_hard_02b` run a recovery reset 8-23 m off also read odometry only.
 
 For every field of every scan, use `watch_alignment.py` or the sections below.
 

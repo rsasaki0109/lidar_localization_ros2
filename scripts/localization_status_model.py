@@ -17,6 +17,7 @@ PHASE_NEEDS_POSE = "needs_pose"
 PHASE_WAITING_FOR_MAP = "waiting_for_map"
 PHASE_TRACKING = "tracking"
 PHASE_DEGRADED = "degraded"
+PHASE_ODOMETRY_ONLY = "odometry_only"
 PHASE_LOST = "lost"
 PHASE_NO_SCANS = "no_scans"
 
@@ -31,6 +32,7 @@ PHASE_COLORS = {
     PHASE_NEEDS_POSE: (1.0, 0.35, 0.3, 1.0),
     PHASE_TRACKING: (0.3, 0.9, 0.4, 1.0),
     PHASE_DEGRADED: (1.0, 0.8, 0.2, 1.0),
+    PHASE_ODOMETRY_ONLY: (1.0, 0.55, 0.1, 1.0),
     PHASE_LOST: (1.0, 0.35, 0.3, 1.0),
     PHASE_NO_SCANS: (1.0, 0.35, 0.3, 1.0),
 }
@@ -77,6 +79,7 @@ def alignment_status(
     automatic_recovery: bool = False,
     lost_after_sec: float = 5.0,
     since_good_sec: float = math.nan,
+    odometry_live: bool = False,
 ) -> Status:
     """Classify one /alignment_status sample into a user-facing status.
 
@@ -86,6 +89,11 @@ def alignment_status(
     Scans that are empty after filtering (a covered sensor) carry no
     accepted_gap_sec, so ``since_good_sec``, the caller's own count since the
     last good sample, stands in for it.
+
+    Rejected scans do not mean a wrong pose while external odometry carries it:
+    on the Koide outdoor_hard_02b replay the pose stayed within 0.3 m through
+    90 s of rejected scans and a reinitialization request. With
+    ``odometry_live`` such a stretch reads as odometry only, not lost.
     """
     category = str(values.get("failure_category", "") or "").strip()
     message = str(values.get("message", "") or "").strip()
@@ -118,6 +126,21 @@ def alignment_status(
             if automatic_recovery
             else "If it does not recover, "
         )
+        if odometry_live:
+            searching = (
+                "Automatic recovery is searching the map. "
+                if automatic_recovery
+                else ""
+            )
+            return Status(
+                PHASE_ODOMETRY_ONLY,
+                "odometry_only",
+                f"No scan has matched the map{since}; the pose follows odometry "
+                f"only and can drift. {searching}If it looks wrong in RViz, "
+                f"{manual_pose_step}.",
+                "Odometry only: check pose",
+                SEVERITY_WARNING,
+            )
         return Status(
             PHASE_LOST,
             "stale_prediction",
@@ -237,7 +260,9 @@ class StatusTracker:
         if self.startup is None and self.running_since is None:
             self.running_since = now
 
-    def update_alignment(self, values: dict, now: float) -> list[Status]:
+    def update_alignment(
+        self, values: dict, now: float, odometry_live: bool = False
+    ) -> list[Status]:
         self.last_alignment_time = now
         if self.running_since is None and not self.startup_seen:
             self.running_since = now
@@ -254,6 +279,7 @@ class StatusTracker:
             self.automatic_recovery,
             self.lost_after_sec,
             now - good_since if good_since is not None else math.nan,
+            odometry_live,
         )
         if status.category in _ACCEPTED_CATEGORIES:
             self.last_good_time = now

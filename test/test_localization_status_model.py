@@ -85,6 +85,33 @@ class TestAlignmentStatus(unittest.TestCase):
         )
         self.assertIn("for 7 s", changes[1].line)
 
+    def test_rejections_with_live_odometry_read_odometry_only(self):
+        long = dict(BAD_MATCH, accepted_gap_sec="30.0")
+        result = status.alignment_status(
+            long, "set 2D Pose Estimate in RViz", True, odometry_live=True
+        )
+        self.assertEqual(result.phase, status.PHASE_ODOMETRY_ONLY)
+        self.assertEqual(result.severity, status.SEVERITY_WARNING)
+        self.assertIn("follows odometry only", result.line)
+        self.assertIn("Automatic recovery is searching the map", result.line)
+        reinit = dict(HEALTHY, reinitialization_requested="true")
+        self.assertEqual(
+            status.alignment_status(reinit, "x", odometry_live=True).phase,
+            status.PHASE_ODOMETRY_ONLY,
+        )
+
+    def test_odometry_dropout_turns_odometry_only_into_lost(self):
+        tracker = status.StatusTracker(debounce_sec=2.0)
+        tracker.update_startup({"state": "active"}, 0.0)
+        tracker.update_alignment(HEALTHY, 0.0, odometry_live=True)
+        long = dict(BAD_MATCH, accepted_gap_sec="10.0")
+        tracker.update_alignment(long, 1.0, odometry_live=True)
+        changes = tracker.update_alignment(long, 3.0, odometry_live=True)
+        self.assertEqual([c.phase for c in changes], [status.PHASE_ODOMETRY_ONLY])
+        tracker.update_alignment(long, 4.0, odometry_live=False)
+        changes = tracker.update_alignment(long, 6.0, odometry_live=False)
+        self.assertEqual([c.phase for c in changes], [status.PHASE_LOST])
+
     def test_reinitialization_request_is_lost(self):
         values = dict(HEALTHY, reinitialization_requested="true")
         result = status.alignment_status(values, "x")
