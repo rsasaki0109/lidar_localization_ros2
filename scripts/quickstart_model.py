@@ -215,6 +215,48 @@ def select_discovered_topic(
     return preferred, "ambiguous"
 
 
+ODOMETRY_TYPE = "nav_msgs/msg/Odometry"
+
+
+def odometry_topics(typed_topics: Sequence[tuple[str, str]]) -> list[str]:
+    """Published nav_msgs/Odometry topics: an odometry node is running."""
+    return sorted({name for name, kind in typed_topics if kind == ODOMETRY_TYPE})
+
+
+def odometry_tf_pending(
+    typed_topics: Sequence[tuple[str, str]],
+    tf_edges: Iterable[tuple[str, str]],
+    odom_frame: str,
+) -> bool:
+    """An odometry node runs but its odom -> base TF has not been seen yet.
+
+    LIO front ends advertise their Odometry topic at startup but publish TF only
+    after the first scans: RKO-LIO's first odom TF came 7 s after a Koide bag
+    started, after quickstart's discovery window had closed in some runs.
+    """
+    if not odometry_topics(typed_topics):
+        return False
+    return not any(parent == odom_frame for parent, _ in tf_edges)
+
+
+def odometry_tf_missing_hint(
+    typed_topics: Sequence[tuple[str, str]],
+    tf_edges: Iterable[tuple[str, str]],
+    odom_frame: str,
+    waited_sec: float,
+) -> str | None:
+    """Explain starting without odometry although an odometry node runs."""
+    if not odometry_tf_pending(typed_topics, tf_edges, odom_frame):
+        return None
+    topics = ", ".join(odometry_topics(typed_topics))
+    return (
+        f"Odometry is published on {topics}, but no {odom_frame} -> base TF "
+        f"arrived within {waited_sec:g} s, so motion prediction from odometry is "
+        "off. If the odometry starts later, restart quickstart, or pass "
+        "--odom-tf-prediction --base-frame FRAME."
+    )
+
+
 def select_odometry_frame(
     tf_edges: Iterable[tuple[str, str]], odom_frame: str, base_frame: str | None
 ) -> tuple[str, bool]:

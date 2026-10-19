@@ -315,6 +315,23 @@ class TestQuickstartCli(unittest.TestCase):
         finally:
             QUICKSTART.discover_ros_graph = original
 
+    def test_odometry_without_its_tf_gets_a_hint(self):
+        topics = [("/rko_lio/odom", "nav_msgs/msg/Odometry")]
+        original = QUICKSTART.discover_ros_graph
+        try:
+            for extra, expected in (([], True), (["--odom-tf-prediction"], False)):
+                QUICKSTART.discover_ros_graph = lambda *_: (topics, set(), None)
+                with tempfile.TemporaryDirectory() as directory:
+                    _, text = self._dry_run(
+                        Path(directory),
+                        ["--discover-topics", "--no-auto-occupancy-map", *extra],
+                    )
+                self.assertEqual(
+                    "Odometry is published on /rko_lio/odom" in text, expected, extra
+                )
+        finally:
+            QUICKSTART.discover_ros_graph = original
+
     def test_lidar_frame_comes_from_the_cloud_header(self):
         topics = [
             ("/points", "sensor_msgs/msg/PointCloud2"),
