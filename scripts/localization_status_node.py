@@ -149,7 +149,7 @@ class LocalizationStatusNode(Node):
     def _publish(self) -> None:
         status = self.tracker.display()
         text = json.dumps(
-            {"phase": status.phase, "category": status.category, "label": status.label},
+            {"phase": status.phase, "cause": status.cause, "label": status.label},
             sort_keys=True,
         )
         if text != self.last_status_text:

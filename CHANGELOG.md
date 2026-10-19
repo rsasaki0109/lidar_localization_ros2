@@ -2,49 +2,35 @@
 
 ## Unreleased
 
-- Quickstart discovery waits up to 10 s for the `odom ->` TF when a
-  `nav_msgs/Odometry` topic is already published, and prints a hint naming it when the
-  TF never arrives. A LIO front end publishes TF only after its first scans (RKO-LIO:
-  7 s after a cold Koide bag started), and in one public replay quickstart started
-  without odometry and then failed global initialization. Setups without an Odometry
-  topic do not wait.
-- Quickstart discovery reads the topic list again after its listening window before
-  deciding on odometry. The first snapshot is taken as soon as a cloud and an IMU
-  appear, and DDS can discover the odometry node after the bag player: in one Koide
-  replay `/rko_lio/odom` was missing from it, so neither the wait above nor its hint
-  applied and quickstart started with `odometry=none`.
-
+- Quickstart reports tracking health after startup. `localization_status_node.py`
+  prints one line when tracking starts, weakens (few or no scan points, poor match,
+  CPU overload), is lost, stops receiving scans, or comes back, each with what to do,
+  and RViz shows the same status as a colored label above the robot (**Localization
+  Status** display). A change is reported once it has held for 2 s. No accepted scan
+  for 5 s reads as lost, or as "the pose follows odometry only" (orange) while an
+  external `odom ->` TF still arrives: on the Koide outdoor_hard_02b replay RKO-LIO
+  kept the pose within 0.31 m through 70 s of rejected scans, while on
+  outdoor_kidnap_a, with the odometry stopped too, the pose was 55-72 m off. Odometry
+  only cannot tell a good bridged pose from a wrong reset. Diagnostics only;
+  `--no-status` (launch arg `show_status:=false`) turns it off. Topics:
+  `/localization_status/status` (JSON: `phase`, `cause`, `label`) and
+  `/localization_status/marker`.
+- Quickstart discovery and errors:
+  - map errors list the `.pcd`/`.ply` next to a directory or missing file as `--map`
+    options, and name wrong extensions and empty files;
+  - only published topics count, the localizer's own `/map` and `/initial_map` are
+    not scan candidates, and a running localizer (`/alignment_status` published)
+    is reported;
+  - when a `nav_msgs/Odometry` topic is published, discovery reads the topic list
+    again and waits up to 10 s for its `odom ->` TF, and names the topic in a hint
+    if the TF never arrives. RKO-LIO publishes the TF only after its first scans
+    (7 s after a cold Koide bag started), and DDS can discover it after the bag
+    player; Koide replays started with `odometry=none` and failed global
+    initialization in both cases.
 - Add a Docker image (`docker/Dockerfile`, Jazzy by default, `ROS_DISTRO=humble`
   also builds) with ndt_omp_ros2, and `docker/smoke_status.sh`, which runs quickstart
-  on a synthetic map and scan stream and checks the tracking, weak, lost and no-scan
-  status lines. See [docs/docker.md](docs/docker.md).
-
-- Quickstart now keeps reporting after startup: `localization_status_node.py` prints
-  one line when tracking starts, weakens (few points, poor match, CPU overload), is
-  lost, stops receiving scans, or comes back, each with what to do, and RViz shows the
-  same status as a colored label above the robot (**Localization Status** display).
-  Changes are reported after they hold for 2 s, so single rejected scans stay quiet;
-  no accepted scan for 5 s counts as lost even while the category is `bad_match`.
-  Diagnostics only; `--no-status` (launch arg `show_status:=false`) turns it off. New
-  topics: `/localization_status/status` (JSON) and `/localization_status/marker`.
-- With external odometry still arriving (an `odom ->` TF within 2 s), failing scans
-  read "the pose follows odometry only" (orange) instead of lost. On the Koide
-  outdoor_hard_02b replay RKO-LIO held the pose within 0.31 m through 70 s of rejected
-  scans that were reported as lost before. Without live odometry they still read lost
-  (outdoor_kidnap_a: 55-72 m off while the covered sensor was carried).
-- The status line names empty scans after filtering ("No usable scan points", e.g. a
-  covered sensor) and reports them as lost after 5 s without a good scan; before,
-  they read as a poor match until registration resumed (on the Koide
-  outdoor_kidnap_a replay, lost was reported at 37 s instead of 51 s). The status
-  node no longer prints a traceback on a second Ctrl-C.
-- Quickstart topic discovery ignores topics that only have subscribers and the
-  localizer's own `/map` and `/initial_map` clouds, so a stale localizer no longer
-  makes the scan topic look ambiguous, and it warns when a localizer is already
-  running (`/alignment_status` is published).
-- Quickstart map errors suggest the fix: a directory or a missing file lists the
-  `.pcd`/`.ply` maps next to it as `--map` options, and wrong extensions and empty
-  files are named.
-
+  on a synthetic map and scan stream and checks the status lines; CI runs both. See
+  [docs/docker.md](docs/docker.md).
 - Add a sparse-band global search: `sparse_band_min_points` (G2 node, default 0 =
   off; launch arg `g2_sparse_band_min_points`; quickstart
   `--global-sparse-band-min-points`, **default 512**). A scan with fewer 2D points than

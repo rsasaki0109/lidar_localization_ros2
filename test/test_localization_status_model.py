@@ -112,6 +112,18 @@ class TestAlignmentStatus(unittest.TestCase):
         changes = tracker.update_alignment(long, 6.0, odometry_live=False)
         self.assertEqual([c.phase for c in changes], [status.PHASE_LOST])
 
+    def test_lost_reports_its_cause(self):
+        reinit = dict(HEALTHY, reinitialization_requested="true")
+        long = dict(BAD_MATCH, accepted_gap_sec="6.0")
+        for values, cause in (
+            (STALE, "stale_prediction"),
+            (reinit, "reinitialization_requested"),
+            (long, "no_match"),
+        ):
+            result = status.alignment_status(values, "x")
+            self.assertEqual(result.phase, status.PHASE_LOST)
+            self.assertEqual(result.cause, cause)
+
     def test_reinitialization_request_is_lost(self):
         values = dict(HEALTHY, reinitialization_requested="true")
         result = status.alignment_status(values, "x")
@@ -195,6 +207,15 @@ class TestStatusTracker(unittest.TestCase):
         tracker.update_alignment(HEALTHY, 10.0)
         changes = tracker.update_alignment(HEALTHY, 12.0)
         self.assertEqual(changes[0].line, "Tracking again after 9 s.")
+
+    def test_lost_is_not_reported_again_when_only_its_cause_changes(self):
+        tracker = self.make()
+        tracker.update_alignment(HEALTHY, 0.0)
+        tracker.update_alignment(STALE, 1.0)
+        self.assertEqual(len(tracker.update_alignment(STALE, 3.0)), 1)
+        reinit = dict(STALE, reinitialization_requested="true")
+        self.assertEqual(tracker.update_alignment(reinit, 4.0), [])
+        self.assertEqual(tracker.update_alignment(reinit, 7.0), [])
 
     def test_pending_change_commits_on_tick(self):
         tracker = self.make()
