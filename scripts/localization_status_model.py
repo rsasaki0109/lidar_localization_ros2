@@ -39,10 +39,11 @@ PHASE_COLORS = {
 
 TROUBLESHOOTING = "docs/troubleshooting.md"
 
-# Categories of a scan that was matched and accepted.
+# failure_category values of a scan that was matched and accepted.
 _ACCEPTED_CATEGORIES = frozenset({"", "healthy", "overload"})
 # Messages for a scan with nothing left to register (see troubleshooting.md).
 _EMPTY_SCAN_MESSAGES = frozenset({"filtered_scan_empty", "filtered_scan_too_sparse"})
+_RECOVERY_SEARCHING = "Automatic recovery is searching the map"
 
 _STARTUP_LABELS = {
     "waiting_for_scan": "Waiting for the first scan",
@@ -67,10 +68,50 @@ class Status:
     """What localization is doing, for the terminal and for RViz."""
 
     phase: str
-    category: str = ""
+    # Why: a failure_category of /alignment_status, a startup state, or one of
+    # empty_scan, no_match, reinitialization_requested, no_scans.
+    cause: str = ""
     line: str = ""
     label: str = ""
     severity: str = SEVERITY_INFO
+
+
+def _lost_status(
+    cause: str,
+    since: str,
+    manual_pose_step: str,
+    automatic_recovery: bool,
+    odometry_live: bool,
+) -> Status:
+    """No scan has matched for a while: lost, unless odometry still carries it.
+
+    Rejected scans do not mean a wrong pose while external odometry runs; see
+    troubleshooting.md (Reading the Status Line) for the replays behind this.
+    """
+    if odometry_live:
+        searching = f"{_RECOVERY_SEARCHING}. " if automatic_recovery else ""
+        return Status(
+            PHASE_ODOMETRY_ONLY,
+            cause,
+            f"No scan has matched the map{since}; the pose follows odometry only "
+            f"and can drift. {searching}If it looks wrong in RViz, "
+            f"{manual_pose_step}.",
+            "Odometry only: check pose",
+            SEVERITY_WARNING,
+        )
+    recovery = (
+        f"{_RECOVERY_SEARCHING}; if it does not recover, "
+        if automatic_recovery
+        else "If it does not recover, "
+    )
+    return Status(
+        PHASE_LOST,
+        cause,
+        f"Tracking lost: no scan has matched the map{since}. "
+        f"{recovery}{manual_pose_step}.",
+        "Lost: set 2D Pose Estimate",
+        SEVERITY_ERROR,
+    )
 
 
 def alignment_status(
@@ -83,25 +124,16 @@ def alignment_status(
 ) -> Status:
     """Classify one /alignment_status sample into a user-facing status.
 
-    A poor match outranks stale prediction in failure_category, so a kidnapped
-    robot reads as bad_match for as long as scans keep being rejected; no
-    accepted scan for ``lost_after_sec`` counts as lost whatever the category.
-    Scans that are empty after filtering (a covered sensor) carry no
-    accepted_gap_sec, so ``since_good_sec``, the caller's own count since the
-    last good sample, stands in for it.
-
-    Rejected scans do not mean a wrong pose while external odometry carries it:
-    on the Koide outdoor_hard_02b replay the pose stayed within 0.3 m through
-    90 s of rejected scans and a reinitialization request. With
-    ``odometry_live`` such a stretch reads as odometry only, not lost.
+    A poor match outranks stale prediction in failure_category, so no accepted
+    scan for ``lost_after_sec`` counts as lost whatever the category. Empty
+    scans (a covered sensor) carry no accepted_gap_sec; ``since_good_sec``, the
+    caller's time since its last accepted sample, stands in for it.
     """
     category = str(values.get("failure_category", "") or "").strip()
     message = str(values.get("message", "") or "").strip()
-    reinit = _flag(values, "reinitialization_requested")
     gap = _number(values, "accepted_gap_sec")
     if not math.isfinite(gap) and category not in _ACCEPTED_CATEGORIES:
         gap = since_good_sec
-    unmatched = math.isfinite(gap) and gap >= lost_after_sec
     if category == "missing_map":
         return Status(
             PHASE_WAITING_FOR_MAP,
@@ -119,35 +151,18 @@ def alignment_status(
             "Set pose: 2D Pose Estimate (P)",
             SEVERITY_WARNING,
         )
-    if category == "stale_prediction" or reinit or unmatched:
+    if _flag(values, "reinitialization_requested"):
+        lost_cause = "reinitialization_requested"
+    elif category == "stale_prediction":
+        lost_cause = category
+    elif math.isfinite(gap) and gap >= lost_after_sec:
+        lost_cause = "no_match"
+    else:
+        lost_cause = ""
+    if lost_cause:
         since = f" for {gap:.0f} s" if math.isfinite(gap) and gap >= 1.0 else ""
-        recovery = (
-            "Automatic recovery is searching the map; if it does not recover, "
-            if automatic_recovery
-            else "If it does not recover, "
-        )
-        if odometry_live:
-            searching = (
-                "Automatic recovery is searching the map. "
-                if automatic_recovery
-                else ""
-            )
-            return Status(
-                PHASE_ODOMETRY_ONLY,
-                "odometry_only",
-                f"No scan has matched the map{since}; the pose follows odometry "
-                f"only and can drift. {searching}If it looks wrong in RViz, "
-                f"{manual_pose_step}.",
-                "Odometry only: check pose",
-                SEVERITY_WARNING,
-            )
-        return Status(
-            PHASE_LOST,
-            "stale_prediction",
-            f"Tracking lost: no scan has matched the map{since}. "
-            f"{recovery}{manual_pose_step}.",
-            "Lost: set 2D Pose Estimate",
-            SEVERITY_ERROR,
+        return _lost_status(
+            lost_cause, since, manual_pose_step, automatic_recovery, odometry_live
         )
     if message in _EMPTY_SCAN_MESSAGES:
         return Status(
@@ -281,7 +296,7 @@ class StatusTracker:
             now - good_since if good_since is not None else math.nan,
             odometry_live,
         )
-        if status.category in _ACCEPTED_CATEGORIES:
+        if _accepted(status):
             self.last_good_time = now
         return self._propose(status, now)
 
@@ -349,7 +364,7 @@ class StatusTracker:
         ):
             status = Status(
                 status.phase,
-                status.category,
+                status.cause,
                 f"Tracking again after {now - previous_since:.0f} s.",
                 status.label,
                 status.severity,
@@ -358,5 +373,14 @@ class StatusTracker:
         return [status]
 
 
+def _accepted(status: Status) -> bool:
+    """The sample was matched and accepted (overload is slow but accepted)."""
+    return status.phase == PHASE_TRACKING or status.cause == "overload"
+
+
 def _same(a: Status, b: Status) -> bool:
-    return a.phase == b.phase and a.category == b.category
+    """Same report: a different cause of weak tracking is new advice, but lost
+    stays one report whether rejections or a reinitialization request caused it."""
+    if a.phase != b.phase:
+        return False
+    return a.phase in (PHASE_LOST, PHASE_ODOMETRY_ONLY) or a.cause == b.cause
