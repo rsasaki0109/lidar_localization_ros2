@@ -162,14 +162,22 @@ Each scan:
 
 ```mermaid
 flowchart TD
+    odom[/"optional: external odometry<br/>e.g. RKO-LIO from lidar_slam_ros2,<br/>wheel or leg odometry"/]
     scan["LiDAR scan"] --> prep["range crop, voxel filter,<br/>deskew"]
-    prep --> seed["seed pose: last pose moved by<br/>odometry TF or IMU when available"]
+    prep --> seed["seed pose: last pose,<br/>moved by odometry or IMU if given"]
     seed --> reg["NDT or GICP against the map<br/>cropped around the seed"]
     reg --> gate{"converged, score under<br/>threshold, guards pass?"}
     gate -- yes --> pub["publish pose and TF,<br/>/alignment_status OK"]
     gate -- no --> bridge["keep the predicted pose<br/>(odometry bridge)"]
     bridge -- "rejected for long" --> reinit["/reinitialization_requested"]
+    odom -. "odom -> base TF" .-> seed
+    odom -. "carries the pose" .-> bridge
 ```
+
+Map matching is always NDT (default) or GICP. External odometry is optional: it only
+predicts the motion between scans and carries the pose where scans do not match the
+map. It helps with fast or handheld motion; quickstart uses it when it sees an
+`odom -> base` TF.
 
 `/alignment_status` reports each step, and quickstart's status line turns it into
 Tracking / Weak / Odometry only / Lost. Details: [global localization](docs/global_localization.md),
