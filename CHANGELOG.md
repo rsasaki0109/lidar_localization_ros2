@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Quickstart discovery waits up to 10 s for the `odom ->` TF when a
+  `nav_msgs/Odometry` topic is already published, and prints a hint naming it when the
+  TF never arrives. A LIO front end publishes TF only after its first scans (RKO-LIO:
+  7 s after a cold Koide bag started), and in one public replay quickstart started
+  without odometry and then failed global initialization. Setups without an Odometry
+  topic do not wait.
+
 - Add a Docker image (`docker/Dockerfile`, Jazzy by default, `ROS_DISTRO=humble`
   also builds) with ndt_omp_ros2, and `docker/smoke_status.sh`, which runs quickstart
   on a synthetic map and scan stream and checks the tracking, weak, lost and no-scan

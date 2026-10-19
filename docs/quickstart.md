@@ -121,6 +121,11 @@ prediction (`--odom-tf-prediction`); the choice is printed as `odometry=odom->..
 Without `--base-frame`, a single child of `odom` (RKO-LIO's `livox_frame`, for example)
 becomes the base frame, and `base_link` is kept otherwise. Start odometry before
 quickstart, or pass `--odom-tf-prediction` (`--no-odom-tf-prediction` turns it off).
+A LIO front end advertises its `nav_msgs/Odometry` topic at startup but publishes the
+TF only after its first scans (RKO-LIO on a cold Koide replay: 7 s after the bag
+started), so while an Odometry topic is published without that TF, quickstart waits up
+to 10 s more for it. If it still does not arrive, an `Input hint:` names the topic and
+quickstart starts without odometry prediction.
 Scan matching is then seeded from that odometry, `map -> odom` is published, and the
 odometry-bridged pose keeps flowing while scans are rejected. Handheld or other fast motion needs it: on the
 Koide `outdoor_hard_02b` handheld sequence at 1x, seeded at the true start pose, the

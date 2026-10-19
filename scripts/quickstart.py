@@ -117,6 +117,9 @@ def generate_occupancy_map(
 
 
 CLOUD_TYPE = "sensor_msgs/msg/PointCloud2"
+# How long discovery waits for the odom TF of an odometry node that already
+# advertises its Odometry topic (a LIO front end publishes TF after first scans).
+ODOMETRY_WAIT_SEC = 10.0
 IMU_TYPE = "sensor_msgs/msg/Imu"
 
 
@@ -146,9 +149,13 @@ def discover_ros_graph(
     cloud_topic_for=None,
     timeout_sec: float = 5.0,
     listen_sec: float = 1.5,
+    odometry_wait_sec: float = ODOMETRY_WAIT_SEC,
 ):
     """Return live (topic, type) pairs, the (parent, child) TF edges seen, and
     the frame_id of one message on the cloud topic cloud_topic_for(topics) picks.
+
+    When an Odometry topic is published but its odom TF has not appeared yet,
+    keep listening up to odometry_wait_sec for it.
     """
     try:
         import rclpy
@@ -209,6 +216,11 @@ def discover_ros_graph(
         deadline = time.monotonic() + listen_sec
         while time.monotonic() < deadline and (
             has_tf or (cloud_topic and not cloud_frames)
+        ):
+            spin(0.1)
+        deadline = time.monotonic() + odometry_wait_sec
+        while time.monotonic() < deadline and model.odometry_tf_pending(
+            typed, edges, odom_frame
         ):
             spin(0.1)
         cloud_frame = cloud_frames[0].lstrip("/") if cloud_frames else None
@@ -947,6 +959,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if odom_live
                 else f"odometry=none (no {args.odom_frame}->{base_frame} TF)"
             )
+            hint = model.odometry_tf_missing_hint(
+                typed, tf_edges, args.odom_frame, ODOMETRY_WAIT_SEC
+            )
+            if hint and args.odom_tf_prediction is not True:
+                input_hints.append(hint)
         if args.lidar_frame is None and cloud_frame:
             args.lidar_frame = cloud_frame
             discovery_notes.append(f"lidar_frame={cloud_frame} (cloud header)")

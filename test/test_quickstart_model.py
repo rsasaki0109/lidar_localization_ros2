@@ -132,6 +132,24 @@ class TestDiscovery(unittest.TestCase):
         )
         self.assertEqual((selected, reason), ("/cloud", "single_detected"))
 
+    def test_odometry_tf_is_awaited_only_when_an_odometry_node_runs(self):
+        odom = ("/rko_lio/odom", "nav_msgs/msg/Odometry")
+        cloud = ("/livox/points", "sensor_msgs/msg/PointCloud2")
+        self.assertFalse(MODEL.odometry_tf_pending([cloud], set(), "odom"))
+        self.assertTrue(MODEL.odometry_tf_pending([cloud, odom], set(), "odom"))
+        self.assertFalse(
+            MODEL.odometry_tf_pending([odom], {("odom", "livox_frame")}, "odom")
+        )
+        self.assertTrue(MODEL.odometry_tf_pending([odom], {("map", "odom")}, "odom"))
+
+    def test_missing_odometry_tf_hint_names_the_topic_and_the_flags(self):
+        odom = ("/rko_lio/odom", "nav_msgs/msg/Odometry")
+        self.assertIsNone(MODEL.odometry_tf_missing_hint([], set(), "odom", 10.0))
+        hint = MODEL.odometry_tf_missing_hint([odom], set(), "odom", 10.0)
+        self.assertIn("/rko_lio/odom", hint)
+        self.assertIn("within 10 s", hint)
+        self.assertIn("--odom-tf-prediction --base-frame FRAME", hint)
+
     def test_running_localizer_is_reported(self):
         status = ("/alignment_status", "diagnostic_msgs/msg/DiagnosticArray")
         self.assertIsNone(MODEL.running_localizer_hint([]))
