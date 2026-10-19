@@ -15,7 +15,7 @@
 
 <img src="./images/readme/localization_koide_outdoor_hard_02b.gif" alt="Handheld outdoor run tracked on a prior point-cloud map; the estimate follows the ground truth for the whole run" width="720">
 
-<p><em>Handheld Livox MID-360, ~390 m outdoors on a prior map, including stretches where the scans do not match the map and a section outside it. With RKO-LIO odometry, the error stays at 0.26 m RMSE for the whole run (<a href="https://zenodo.org/records/10122133">Koide Hard Point Cloud Localization Dataset</a> <code>outdoor_hard_02b</code>, CC BY 4.0). <a href="./docs/readme-media.md">How this was made</a> · <a href="./docs/koide_gif_gallery.md">more runs</a></em></p>
+<p><em>Handheld Livox MID-360, ~390 m outdoors on a prior map, including stretches where the scans do not match the map and a section outside it. Each scan is matched to the map with NDT; RKO-LIO odometry predicts the motion between scans and carries the pose where matching fails. The error is 0.26 m RMSE for the whole run, in an offline replay started from the ground-truth pose (<a href="https://zenodo.org/records/10122133">Koide Hard Point Cloud Localization Dataset</a> <code>outdoor_hard_02b</code>, CC BY 4.0). <a href="./docs/readme-media.md">How this was made</a> · <a href="./docs/koide_gif_gallery.md">more runs</a></em></p>
 
 </div>
 
@@ -137,6 +137,52 @@ ros2 launch lidar_localization_ros2 mid360_legged_localization.launch.py \
   map_path:=/absolute/path/to/map.pcd \
   cloud_topic:=/livox/points imu_topic:=/livox/imu
 ```
+
+## How it works
+
+Startup finds a first pose; then every scan is matched against the map near the
+predicted pose. When matching keeps failing, recovery searches the map again.
+
+```mermaid
+flowchart LR
+    start(["quickstart.py --map"]) --> explicit{"--initial-pose?"}
+    explicit -- yes --> verify
+    explicit -- no --> saved{"pose saved for<br/>this map?"}
+    saved -- yes --> verify["verify against<br/>the next scans"]
+    saved -- "no / fails" --> search["global search<br/>2D candidates + NDT score"]
+    search -- "two views agree" --> verify
+    search -- ambiguous --> operator["ask for<br/>2D Pose Estimate"]
+    operator --> verify
+    verify -- ok --> tracking(["tracking"])
+    tracking -- "reinitialization request<br/>or odometry dropout" --> recovery["recovery: query the<br/>global search, guarded reset"]
+    recovery --> verify
+```
+
+Each scan:
+
+```mermaid
+flowchart TD
+    odom[/"optional: external odometry<br/>e.g. RKO-LIO from lidar_slam_ros2,<br/>wheel or leg odometry"/]
+    scan["LiDAR scan"] --> prep["range crop, voxel filter,<br/>deskew"]
+    prep --> seed["seed pose: last pose,<br/>moved by odometry or IMU if given"]
+    seed --> reg["NDT or GICP against the map<br/>cropped around the seed"]
+    reg --> gate{"converged, score under<br/>threshold, guards pass?"}
+    gate -- yes --> pub["publish pose and TF,<br/>/alignment_status OK"]
+    gate -- no --> bridge["keep the predicted pose<br/>(odometry bridge)"]
+    bridge -- "rejected for long" --> reinit["/reinitialization_requested"]
+    odom -. "odom -> base TF" .-> seed
+    odom -. "carries the pose" .-> bridge
+```
+
+Map matching is always NDT (default) or GICP. External odometry is optional: it only
+predicts the motion between scans and carries the pose where scans do not match the
+map. It helps with fast or handheld motion; quickstart uses it when it sees an
+`odom -> base` TF.
+
+`/alignment_status` reports each step, and quickstart's status line turns it into
+Tracking / Weak / Odometry only / Lost. Details: [global localization](docs/global_localization.md),
+[initialization order](docs/quickstart.md#initialization-order),
+[runtime](docs/runtime.md), [reading the status line](docs/troubleshooting.md#reading-the-status-line).
 
 ## Topics and frames
 
