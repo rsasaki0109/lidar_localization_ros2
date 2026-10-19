@@ -8,6 +8,11 @@
   7 s after a cold Koide bag started), and in one public replay quickstart started
   without odometry and then failed global initialization. Setups without an Odometry
   topic do not wait.
+- Quickstart discovery reads the topic list again after its listening window before
+  deciding on odometry. The first snapshot is taken as soon as a cloud and an IMU
+  appear, and DDS can discover the odometry node after the bag player: in one Koide
+  replay `/rko_lio/odom` was missing from it, so neither the wait above nor its hint
+  applied and quickstart started with `odometry=none`.
 
 - Add a Docker image (`docker/Dockerfile`, Jazzy by default, `ROS_DISTRO=humble`
   also builds) with ndt_omp_ros2, and `docker/smoke_status.sh`, which runs quickstart
