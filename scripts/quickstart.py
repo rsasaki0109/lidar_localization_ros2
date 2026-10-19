@@ -218,6 +218,17 @@ def discover_ros_graph(
             has_tf or (cloud_topic and not cloud_frames)
         ):
             spin(0.1)
+        # The graph snapshot was taken as soon as a cloud and an IMU showed up;
+        # DDS discovers each process separately, so an odometry node started
+        # earlier can still be missing from it. Look again before deciding.
+        typed = sorted(
+            set(typed)
+            | {
+                (name, type_name)
+                for name, type_names in published_topics()
+                for type_name in type_names
+            }
+        )
         deadline = time.monotonic() + odometry_wait_sec
         while time.monotonic() < deadline and model.odometry_tf_pending(
             typed, edges, odom_frame
