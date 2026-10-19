@@ -299,8 +299,9 @@ has held for 2 s:
 ```
 
 RViz shows the same status as a colored label above the robot (**Localization
-Status** display): blue while starting, green while tracking, yellow when weak, red
-when lost or waiting for a pose. `--no-status` turns both off. The current status is
+Status** display): blue while starting, green while tracking, yellow when weak, orange
+while scans keep failing but external odometry still carries the pose, red when lost
+or waiting for a pose. `--no-status` turns both off. The current status is
 also published as JSON on `/localization_status/status`. What each line means:
 [troubleshooting](troubleshooting.md#reading-the-status-line).
 

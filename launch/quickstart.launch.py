@@ -381,6 +381,7 @@ def generate_launch_description():
             "pose_topic": LaunchConfiguration("pose_topic"),
             "global_frame_id": LaunchConfiguration("global_frame_id"),
             "manual_pose_step": LaunchConfiguration("manual_pose_step"),
+            "odom_frame_id": LaunchConfiguration("odom_frame_id"),
             "automatic_recovery": ParameterValue(g3_recovery_ready, value_type=bool),
             "use_sim_time": ParameterValue(
                 LaunchConfiguration("use_sim_time"), value_type=bool),

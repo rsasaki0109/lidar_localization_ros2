@@ -9,6 +9,7 @@ current status as a text marker above the robot and as JSON on
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sys
 from pathlib import Path
@@ -20,6 +21,7 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
+from tf2_msgs.msg import TFMessage
 from visualization_msgs.msg import Marker
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -41,6 +43,10 @@ class LocalizationStatusNode(Node):
         self.declare_parameter("debounce_sec", 2.0)
         self.declare_parameter("lost_after_sec", 5.0)
         self.declare_parameter("no_scan_timeout_sec", 5.0)
+        # External odometry (odom -> base on /tf) seen within this long carries the
+        # pose through rejected scans; the recovery supervisor uses the same gap.
+        self.declare_parameter("odom_frame_id", "odom")
+        self.declare_parameter("odometry_max_gap_sec", 2.0)
         self.declare_parameter("marker_height_m", 2.0)
         self.declare_parameter("marker_text_size_m", 1.5)
 
@@ -54,6 +60,9 @@ class LocalizationStatusNode(Node):
         self.global_frame = str(self.get_parameter("global_frame_id").value)
         self.marker_height = float(self.get_parameter("marker_height_m").value)
         self.marker_text_size = float(self.get_parameter("marker_text_size_m").value)
+        self.odom_frame = str(self.get_parameter("odom_frame_id").value).lstrip("/")
+        self.odometry_max_gap = float(self.get_parameter("odometry_max_gap_sec").value)
+        self.last_odometry_time: float | None = None
         self.position = (0.0, 0.0, 0.0)
         self.last_status_text = ""
 
@@ -84,6 +93,7 @@ class LocalizationStatusNode(Node):
             self._on_pose,
             10,
         )
+        self.create_subscription(TFMessage, "/tf", self._on_tf, 100)
         self.create_timer(0.5, self._on_timer)
 
     def _now(self) -> float:
@@ -103,8 +113,19 @@ class LocalizationStatusNode(Node):
             values = {kv.key: kv.value for kv in status.values}
             if "failure_category" not in values:
                 continue
-            self._report(self.tracker.update_alignment(values, self._now()))
+            now = self._now()
+            odometry_live = (
+                self.last_odometry_time is not None
+                and now - self.last_odometry_time <= self.odometry_max_gap
+            )
+            self._report(self.tracker.update_alignment(values, now, odometry_live))
             return
+
+    def _on_tf(self, msg: TFMessage) -> None:
+        for transform in msg.transforms:
+            if transform.header.frame_id.lstrip("/") == self.odom_frame:
+                self.last_odometry_time = self._now()
+                return
 
     def _on_pose(self, msg: PoseWithCovarianceStamped) -> None:
         p = msg.pose.pose.position
@@ -161,9 +182,10 @@ def main() -> None:
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        # A second Ctrl-C (from both the terminal and ros2 launch) can land here.
+        with contextlib.suppress(KeyboardInterrupt):
+            node.destroy_node()
+            rclpy.try_shutdown()
 
 
 if __name__ == "__main__":
