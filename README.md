@@ -15,7 +15,7 @@
 
 <img src="./images/readme/localization_koide_outdoor_hard_02b.gif" alt="Handheld outdoor run tracked on a prior point-cloud map; the estimate follows the ground truth for the whole run" width="720">
 
-<p><em>Handheld Livox MID-360, ~390 m outdoors on a prior map, including stretches where the scans do not match the map and a section outside it. With RKO-LIO odometry, the error stays at 0.26 m RMSE for the whole run (<a href="https://zenodo.org/records/10122133">Koide Hard Point Cloud Localization Dataset</a> <code>outdoor_hard_02b</code>, CC BY 4.0). <a href="./docs/readme-media.md">How this was made</a> · <a href="./docs/koide_gif_gallery.md">more runs</a></em></p>
+<p><em>Handheld Livox MID-360, ~390 m outdoors on a prior map, including stretches where the scans do not match the map and a section outside it. Each scan is matched to the map with NDT; RKO-LIO odometry predicts the motion between scans and carries the pose where matching fails. The error is 0.26 m RMSE for the whole run, in an offline replay started from the ground-truth pose (<a href="https://zenodo.org/records/10122133">Koide Hard Point Cloud Localization Dataset</a> <code>outdoor_hard_02b</code>, CC BY 4.0). <a href="./docs/readme-media.md">How this was made</a> · <a href="./docs/koide_gif_gallery.md">more runs</a></em></p>
 
 </div>
 
