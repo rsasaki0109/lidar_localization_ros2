@@ -138,6 +138,44 @@ ros2 launch lidar_localization_ros2 mid360_legged_localization.launch.py \
   cloud_topic:=/livox/points imu_topic:=/livox/imu
 ```
 
+## How it works
+
+Startup finds a first pose; then every scan is matched against the map near the
+predicted pose. When matching keeps failing, recovery searches the map again.
+
+```mermaid
+flowchart LR
+    start(["quickstart.py --map"]) --> explicit{"--initial-pose?"}
+    explicit -- yes --> verify
+    explicit -- no --> saved{"pose saved for<br/>this map?"}
+    saved -- yes --> verify["verify against<br/>the next scans"]
+    saved -- "no / fails" --> search["global search<br/>2D candidates + NDT score"]
+    search -- "two views agree" --> verify
+    search -- ambiguous --> operator["ask for<br/>2D Pose Estimate"]
+    operator --> verify
+    verify -- ok --> tracking(["tracking"])
+    tracking -- "reinitialization request<br/>or odometry dropout" --> recovery["recovery: query the<br/>global search, guarded reset"]
+    recovery --> verify
+```
+
+Each scan:
+
+```mermaid
+flowchart TD
+    scan["LiDAR scan"] --> prep["range crop, voxel filter,<br/>deskew"]
+    prep --> seed["seed pose: last pose moved by<br/>odometry TF or IMU when available"]
+    seed --> reg["NDT or GICP against the map<br/>cropped around the seed"]
+    reg --> gate{"converged, score under<br/>threshold, guards pass?"}
+    gate -- yes --> pub["publish pose and TF,<br/>/alignment_status OK"]
+    gate -- no --> bridge["keep the predicted pose<br/>(odometry bridge)"]
+    bridge -- "rejected for long" --> reinit["/reinitialization_requested"]
+```
+
+`/alignment_status` reports each step, and quickstart's status line turns it into
+Tracking / Weak / Odometry only / Lost. Details: [global localization](docs/global_localization.md),
+[initialization order](docs/quickstart.md#initialization-order),
+[runtime](docs/runtime.md), [reading the status line](docs/troubleshooting.md#reading-the-status-line).
+
 ## Topics and frames
 
 Default frames are `map`, `odom` and `base_link`.
