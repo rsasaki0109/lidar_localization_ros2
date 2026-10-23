@@ -47,7 +47,7 @@ void PCLLocalization::initializePubSub()
     std::bind(&PCLLocalization::mapReceived, this, std::placeholders::_1));
 
   map_switch_sub_ = create_subscription<std_msgs::msg::String>(
-    "map_switch", rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable(),
+    "map_switch", rclcpp::QoS(rclcpp::KeepLast(1)).reliable(),
     std::bind(&PCLLocalization::switchMapCallback, this, std::placeholders::_1));
 
   odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
