@@ -59,6 +59,7 @@
       enable_debug: true
       predict_pose_from_previous_delta: true
       reject_above_score_threshold: true
+      publish_tf: true
       enable_map_odom_tf: false
       global_frame_id: map
       odom_frame_id: odom

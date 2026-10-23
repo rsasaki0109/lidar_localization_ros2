@@ -21,6 +21,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("odom_frame_id", "odom");
   declare_parameter("base_frame_id", "base_link");
   declare_parameter("enable_map_odom_tf", false);
+  declare_parameter("publish_tf", true);
   declare_parameter("use_odom_tf_prediction", false);
   declare_parameter("constrain_odom_tf_prediction_to_planar", false);
   declare_parameter("constrain_odom_tf_prediction_height_only", false);

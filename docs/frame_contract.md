@@ -29,6 +29,13 @@ This document answers common frame-tree confusion reported in issues
 - another node must already publish `odom -> base_link` (wheel odom, `robot_localization`, replay helper, etc.)
 - if `odom -> base_link` is missing, TF lookup fails and map->odom is not published
 
+### Mode C: no TF from the localizer
+
+- `publish_tf: false`
+- the localizer broadcasts no TF at all; `/pcl_pose` is still published
+- use it when an external estimator (e.g. `robot_localization` fusing `/pcl_pose`) owns `map -> odom`
+- `enable_map_odom_tf` still decides whether the internal `map -> odom` anchor is maintained
+
 Use Mode B for Nav2-style stacks. Use Mode A for quick rosbag localization smoke.
 
 ## Odom Topic vs Odom TF
@@ -101,6 +108,7 @@ ros2 topic echo /alignment_status --once
 global_frame_id: map
 odom_frame_id: odom
 base_frame_id: base_link
+publish_tf: true
 enable_map_odom_tf: false
 use_odom: false
 ```

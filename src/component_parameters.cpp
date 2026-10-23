@@ -156,6 +156,7 @@ void PCLLocalization::initializeParameters()
   get_parameter("odom_frame_id", odom_frame_id_);
   get_parameter("base_frame_id", base_frame_id_);
   get_parameter("enable_map_odom_tf", enable_map_odom_tf_);
+  get_parameter("publish_tf", publish_tf_);
   get_parameter("use_odom_tf_prediction", use_odom_tf_prediction_);
   get_parameter(
     "constrain_odom_tf_prediction_to_planar",
@@ -556,6 +557,7 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(),"odom_frame_id: %s", odom_frame_id_.c_str());
   RCLCPP_INFO(get_logger(),"base_frame_id: %s", base_frame_id_.c_str());
   RCLCPP_INFO(get_logger(),"enable_map_odom_tf: %d", enable_map_odom_tf_);
+  RCLCPP_INFO(get_logger(), "publish_tf: %d", publish_tf_);
   RCLCPP_INFO(get_logger(),"use_odom_tf_prediction: %d", use_odom_tf_prediction_);
   RCLCPP_INFO(
     get_logger(), "constrain_odom_tf_prediction_to_planar: %d",

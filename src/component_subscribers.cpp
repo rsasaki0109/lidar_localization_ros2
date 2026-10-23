@@ -331,7 +331,9 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   }
   pose_pub_->publish(*corrent_pose_with_cov_stamped_ptr_);
   if (publishPoseTransform(msg->header.stamp, corrent_pose_with_cov_stamped_ptr_->pose.pose)) {
-    if (enable_map_odom_tf_) {
+    if (!publish_tf_) {
+      RCLCPP_INFO(get_logger(), "TF broadcast disabled (publish_tf: false)");
+    } else if (enable_map_odom_tf_) {
       RCLCPP_INFO(
         get_logger(),
         "published %s -> %s TF from initial pose",
