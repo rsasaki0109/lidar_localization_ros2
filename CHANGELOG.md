@@ -7,6 +7,10 @@
   leaves the current one. A scan being aligned during the switch is discarded, as after
   `/initialpose`. If the new map has a different origin, publish `/initialpose` right
   after the switch; the global localization node keeps the map it was started with.
+- Add `publish_tf` (default `true`). `false` turns off every TF the localizer
+  broadcasts, for setups where another node (for example `robot_localization` fusing
+  `/pcl_pose`) owns `map -> odom`; `/pcl_pose` and the other topics are still
+  published. See [Mode C in the frame contract](docs/frame_contract.md).
 - Quickstart reports tracking health after startup. `localization_status_node.py`
   prints one line when tracking starts, weakens (few or no scan points, poor match,
   CPU overload), is lost, stops receiving scans, or comes back, each with what to do,
