@@ -206,6 +206,7 @@ All topic names can be changed. See the [frame contract](docs/frame_contract.md)
 `/map_switch` (`std_msgs/String` holding a `.pcd` or `.ply` path) replaces the map at
 runtime and keeps the current pose; a map that fails to load leaves the current one.
 If the new map has a different origin, publish `/initialpose` right after the switch.
+The global localization node keeps the map it was started with.
 
 ## Benchmark
 

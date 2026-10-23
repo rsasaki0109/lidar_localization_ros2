@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add `/map_switch` (`std_msgs/String` holding a `.pcd` or `.ply` path): replaces the
+  map at runtime and keeps the current pose. A map that fails to load or has no points
+  leaves the current one. A scan being aligned during the switch is discarded, as after
+  `/initialpose`. If the new map has a different origin, publish `/initialpose` right
+  after the switch; the global localization node keeps the map it was started with.
 - Quickstart reports tracking health after startup. `localization_status_node.py`
   prints one line when tracking starts, weakens (few or no scan points, poor match,
   CPU overload), is lost, stops receiving scans, or comes back, each with what to do,

@@ -379,6 +379,10 @@ void PCLLocalization::switchMapCallback(const std_msgs::msg::String::ConstShared
     return;
   }
   map_path_ = msg->data;
+  // A scan aligned while the map was loading must not be applied: its result
+  // belongs to the old target, and the new target's warm-up align() has since
+  // overwritten the registration's converged flag, fitness and transform.
+  callback_state_coordinator_.advanceInitialPoseGeneration();
 }
 
 void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
@@ -799,12 +803,12 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     shutting_down_.load(std::memory_order_acquire) ||
     !callback_state_coordinator_.initialPoseGenerationMatches(seed_generation))
   {
-    // An /initialpose was accepted while this scan was being aligned; the seed
-    // (and therefore the result) belongs to the pre-reset belief, so applying
-    // it would silently undo the reset.
+    // An /initialpose or /map_switch was accepted while this scan was being
+    // aligned; the seed (and therefore the result) belongs to the pre-reset
+    // belief or the old map, so applying it would silently undo the change.
     RCLCPP_INFO(
       get_logger(),
-      "discarding alignment result seeded before the latest /initialpose");
+      "discarding alignment result seeded before the latest /initialpose or /map_switch");
     return;
   }
 
