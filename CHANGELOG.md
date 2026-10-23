@@ -4,9 +4,9 @@
 
 - Add `/map_switch` (`std_msgs/String` holding a `.pcd` or `.ply` path): replaces the
   map at runtime and keeps the current pose. A map that fails to load or has no points
-  leaves the current one. A scan being aligned during the switch is discarded, as after
-  `/initialpose`. If the new map has a different origin, publish `/initialpose` right
-  after the switch; the global localization node keeps the map it was started with.
+  leaves the current one. If the new map has a different origin, publish `/initialpose`
+  right after the switch; the global localization node keeps the map it was started
+  with.
 - Add `publish_tf` (default `true`). `false` turns off every TF the localizer
   broadcasts, for setups where another node (for example `robot_localization` fusing
   `/pcl_pose`) owns `map -> odom`; `/pcl_pose` and the other topics are still
