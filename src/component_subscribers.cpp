@@ -370,7 +370,7 @@ void PCLLocalization::switchMapCallback(const std_msgs::msg::String::ConstShared
     return;
   }
   RCLCPP_INFO(get_logger(), "map_switch: %s", msg->data.c_str());
-  if (!loadMapFromPath(msg->data)) {
+  if (!loadMapFromPath(msg->data, true)) {
     RCLCPP_ERROR(
       get_logger(), "map_switch: failed to load %s; keeping the current map",
       msg->data.c_str());

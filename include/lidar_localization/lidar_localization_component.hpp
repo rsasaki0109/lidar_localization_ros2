@@ -188,7 +188,7 @@ public:
   void initialPoseReceived(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
   void switchMapCallback(const std_msgs::msg::String::ConstSharedPtr msg);
-  bool loadMapFromPath(const std::string & path);
+  bool loadMapFromPath(const std::string & path, bool reject_empty_map = false);
   void odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr msg);
   void twistReceived(
     const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg,

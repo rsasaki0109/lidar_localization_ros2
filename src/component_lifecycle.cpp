@@ -201,7 +201,7 @@ CallbackReturn PCLLocalization::on_configure(const rclcpp_lifecycle::State &)
   return CallbackReturn::SUCCESS;
 }
 
-bool PCLLocalization::loadMapFromPath(const std::string & path)
+bool PCLLocalization::loadMapFromPath(const std::string & path, bool reject_empty_map)
 {
   pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
   pcl::PCLPointCloud2 raw_map_cloud;
@@ -234,6 +234,10 @@ bool PCLLocalization::loadMapFromPath(const std::string & path)
   }
 
   RCLCPP_INFO(get_logger(), "Map Size %ld", map_cloud_ptr->size());
+  if (reject_empty_map && map_cloud_ptr->empty()) {
+    RCLCPP_ERROR(get_logger(), "Map has no points: %s", path.c_str());
+    return false;
+  }
   const auto map_bounds = lidar_localization::computeMapBounds(*map_cloud_ptr);
   map_bounds_valid_ = map_bounds.valid;
   map_min_pt_ = map_bounds.min_point;
