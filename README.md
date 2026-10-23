@@ -197,6 +197,8 @@ Default frames are `map`, `odom` and `base_link`.
 - Standalone mode publishes `map -> base_link`.
 - Nav2 mode publishes `map -> odom` and needs an external `odom -> base_link`.
 - `use_odom: true` reads `/odom`; it does not publish odometry TF.
+- `publish_tf: false` turns off every TF the localizer broadcasts; use it when another
+  node (for example `robot_localization` fusing `/pcl_pose`) owns `map -> odom`.
 - Each static LiDAR and IMU transform must have exactly one publisher.
 
 All topic names can be changed. See the [frame contract](docs/frame_contract.md).

@@ -34,7 +34,7 @@ void PCLLocalization::publishCurrentPose(
     publishBridgePoseAsRejectedOutput(stamp);
     geometry_msgs::msg::TransformStamped frozen = last_good_map_to_odom_;
     frozen.header.stamp = stamp;
-    broadcaster_.sendTransform(frozen);
+    broadcastTransform(frozen);
     return;
   }
   publishPoseMessage(*corrent_pose_with_cov_stamped_ptr_);
@@ -69,6 +69,18 @@ void PCLLocalization::publishPathMessage()
   path_pub_->publish(*path_ptr_);
 }
 
+void PCLLocalization::broadcastTransform(
+  const geometry_msgs::msg::TransformStamped & transform)
+{
+  // publish_tf: false hands TF ownership to an external estimator (e.g.
+  // robot_localization fusing /pcl_pose). The map -> odom anchor bookkeeping
+  // keeps running so the odom-bridge features stay usable.
+  if (!publish_tf_) {
+    return;
+  }
+  broadcaster_.sendTransform(transform);
+}
+
 bool PCLLocalization::publishPoseTransform(
   const builtin_interfaces::msg::Time & stamp,
   const geometry_msgs::msg::Pose & pose,
@@ -81,7 +93,7 @@ bool PCLLocalization::publishPoseTransform(
       base_frame_id_,
       pose);
   if (!enable_map_odom_tf_) {
-    broadcaster_.sendTransform(map_to_base_link_stamped);
+    broadcastTransform(map_to_base_link_stamped);
     return true;
   }
 
@@ -111,7 +123,7 @@ bool PCLLocalization::publishMapToOdomTransform(
       map_to_base_link_stamped,
       odom_to_base_link_msg,
       level_map_to_odom_);
-  broadcaster_.sendTransform(map_to_odom);
+  broadcastTransform(map_to_odom);
   // Freeze this map -> odom offset so republishFrozenMapToOdomTransform can keep
   // it alive (re-stamped) through a dropout. Only called from accepted-match /
   // accepted-reset call sites (see publishPoseTransform's default and its one
@@ -145,7 +157,7 @@ void PCLLocalization::republishFrozenMapToOdomTransform(
   }
   geometry_msgs::msg::TransformStamped frozen = last_good_map_to_odom_;
   frozen.header.stamp = stamp;
-  broadcaster_.sendTransform(frozen);
+  broadcastTransform(frozen);
   publishOdomBridgePose(stamp, frozen);
 }
 
@@ -436,7 +448,7 @@ void PCLLocalization::timerPublishPose()
     // callback budget while /clock is slightly ahead of GLIM's newest TF.
     geometry_msgs::msg::TransformStamped frozen = last_good_map_to_odom_;
     frozen.header.stamp = pose_copy.header.stamp;
-    broadcaster_.sendTransform(frozen);
+    broadcastTransform(frozen);
   } else {
     publishPoseTransform(pose_copy.header.stamp, pose_copy.pose.pose, false);
   }
