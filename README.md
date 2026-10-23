@@ -190,7 +190,7 @@ Default frames are `map`, `odom` and `base_link`.
 
 | | Topics |
 | --- | --- |
-| Inputs | `/cloud`, `/initialpose` (in `map`), `/odom`, `/imu` |
+| Inputs | `/cloud`, `/initialpose` (in `map`), `/odom`, `/imu`, `/map_switch` |
 | Outputs | `/pcl_pose`, `/path`, `/alignment_status`, `/reinitialization_requested` |
 | Status (quickstart) | `/localization_status/status` (JSON), `/localization_status/marker` (RViz label) |
 
@@ -200,6 +200,9 @@ Default frames are `map`, `odom` and `base_link`.
 - Each static LiDAR and IMU transform must have exactly one publisher.
 
 All topic names can be changed. See the [frame contract](docs/frame_contract.md).
+
+`/map_switch` (`std_msgs/String` holding a `.pcd` or `.ply` path) replaces the map at
+runtime and keeps the current pose; a map that fails to load leaves the current one.
 
 ## Benchmark
 
