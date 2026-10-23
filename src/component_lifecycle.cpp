@@ -202,6 +202,106 @@ CallbackReturn PCLLocalization::on_configure(const rclcpp_lifecycle::State &)
   return CallbackReturn::SUCCESS;
 }
 
+bool PCLLocalization::loadMapFromPath(const std::string & path, bool reject_empty_map)
+{
+  pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
+  pcl::PCLPointCloud2 raw_map_cloud;
+  const auto map_file_format = lidar_localization::detectMapFileFormat(path);
+  if (map_file_format == lidar_localization::MapFileFormat::kPcd) {
+    RCLCPP_INFO(get_logger(), "Loading pcd map from: %s", path.c_str());
+    if (pcl::io::loadPCDFile(path, raw_map_cloud) == -1) {
+      RCLCPP_ERROR(get_logger(), "Failed to load pcd file: %s", path.c_str());
+      return false;
+    }
+  } else if (map_file_format == lidar_localization::MapFileFormat::kPly) {
+    RCLCPP_INFO(get_logger(), "Loading ply map from: %s", path.c_str());
+    if (pcl::io::loadPLYFile(path, raw_map_cloud) == -1) {
+      RCLCPP_ERROR(get_logger(), "Failed to load ply file: %s", path.c_str());
+      return false;
+    }
+  } else {
+    RCLCPP_ERROR(
+      get_logger(), "Unsupported map file format. Please use .pcd or .ply: %s",
+      path.c_str());
+    return false;
+  }
+
+  const bool map_has_intensity =
+    lidar_localization::convertPclCloudToXyzi(raw_map_cloud, *map_cloud_ptr);
+  if (!map_has_intensity) {
+    RCLCPP_WARN(
+      get_logger(),
+      "Map point cloud does not contain intensity. Falling back to xyz with zero intensity.");
+  }
+
+  RCLCPP_INFO(get_logger(), "Map Size %ld", map_cloud_ptr->size());
+  if (reject_empty_map && map_cloud_ptr->empty()) {
+    RCLCPP_ERROR(get_logger(), "Map has no points: %s", path.c_str());
+    return false;
+  }
+  const auto map_bounds = lidar_localization::computeMapBounds(*map_cloud_ptr);
+  map_bounds_valid_ = map_bounds.valid;
+  map_min_pt_ = map_bounds.min_point;
+  map_max_pt_ = map_bounds.max_point;
+
+  const auto map_msg = lidar_localization::makeInitialMapMessage(
+    raw_map_cloud, global_frame_id_, viz_downsample_, viz_voxel_leaf_size_);
+  if (initial_map_pub_) {
+    initial_map_pub_->publish(map_msg);
+    RCLCPP_INFO(get_logger(), "Initial Map Published");
+  }
+
+  // The map content changed: drop the crop guards and the cached local target.
+  consecutive_crop_failures_ = 0;
+  crop_failure_guard_active_ = false;
+  local_map_target_cached_ = false;
+
+  // A runtime map switch must not race with an align() running outside the state lock.
+  auto registration_execution_lock =
+    callback_state_coordinator_.lockRegistrationExecution();
+  const auto target_setup =
+    lidar_localization::planInitialMapTargetSetup(
+      enable_local_map_crop_, registration_method_);
+  use_local_map_crop_ = target_setup.use_local_map_crop;
+  if (use_local_map_crop_) {
+    // Keep the raw full map and only voxel-filter the cropped local target per scan.
+    full_map_cloud_ptr_ = map_cloud_ptr;
+    RCLCPP_INFO(
+      get_logger(), "Local map cropping enabled. Full map: %ld pts, radius: %.0fm",
+      full_map_cloud_ptr_->size(), local_map_radius_);
+    // Avoid building a full-map NDT target here. It can overflow on city-scale maps.
+    if (target_setup.create_ndt_initializer) {
+      use_ndt_initializer_ = true;
+      ndt_init_scan_count_ = 0;
+      ndt_initializer_.reset(
+        new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
+      ndt_initializer_->setStepSize(ndt_step_size_);
+      ndt_initializer_->setResolution(ndt_resolution_);
+      ndt_initializer_->setTransformationEpsilon(transform_epsilon_);
+      ndt_initializer_->setNumThreads(
+        lidar_localization::resolveRegistrationThreadCount(
+          ndt_num_threads_, omp_get_max_threads()));
+      ndt_initializer_->setInputTarget(map_cloud_ptr);
+      RCLCPP_INFO(get_logger(), "NDT initializer created (%d scans before GICP switch)",
+                  ndt_init_scans_required_);
+    } else {
+      use_ndt_initializer_ = false;
+      ndt_initializer_.reset();
+    }
+  } else {
+    full_map_cloud_ptr_.reset();
+    if (target_setup.set_full_map_as_registration_target && registration_) {
+      registration_->setInputTarget(map_cloud_ptr);
+      lidar_localization::keepRegistrationCloudAlive(
+        recent_target_clouds_, map_cloud_ptr, registration_target_cloud_keep_alive_count_);
+      warmUpRegistrationTarget(map_cloud_ptr);
+    }
+  }
+
+  map_recieved_ = true;
+  return true;
+}
+
 CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(get_logger(), "Activating");
@@ -239,84 +339,9 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
   }
 
   if (use_pcd_map_) {
-    pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud_ptr(new pcl::PointCloud<pcl::PointXYZI>);
-    pcl::PCLPointCloud2 raw_map_cloud;
-    bool map_has_intensity = true;
-    const auto map_file_format = lidar_localization::detectMapFileFormat(map_path_);
-    if (map_file_format == lidar_localization::MapFileFormat::kPcd) {
-      RCLCPP_INFO(get_logger(), "Loading pcd map from: %s", map_path_.c_str());
-      if (pcl::io::loadPCDFile(map_path_, raw_map_cloud) == -1) {
-        RCLCPP_ERROR(get_logger(), "Failed to load pcd file: %s", map_path_.c_str());
-        return CallbackReturn::FAILURE;
-      }
-    } else if (map_file_format == lidar_localization::MapFileFormat::kPly) {
-      RCLCPP_INFO(get_logger(), "Loading ply map from: %s", map_path_.c_str());
-      if (pcl::io::loadPLYFile(map_path_, raw_map_cloud) == -1) {
-        RCLCPP_ERROR(get_logger(), "Failed to load ply file: %s", map_path_.c_str());
-        return CallbackReturn::FAILURE;
-      }
-    } else {
-      RCLCPP_ERROR(
-        get_logger(), "Unsupported map file format. Please use .pcd or .ply: %s",
-        map_path_.c_str());
+    if (!loadMapFromPath(map_path_)) {
       return CallbackReturn::FAILURE;
     }
-
-    map_has_intensity =
-      lidar_localization::convertPclCloudToXyzi(raw_map_cloud, *map_cloud_ptr);
-    if (!map_has_intensity) {
-      RCLCPP_WARN(
-        get_logger(),
-        "Map point cloud does not contain intensity. Falling back to xyz with zero intensity.");
-    }
-
-    RCLCPP_INFO(get_logger(), "Map Size %ld", map_cloud_ptr->size());
-    const auto map_bounds = lidar_localization::computeMapBounds(*map_cloud_ptr);
-    map_bounds_valid_ = map_bounds.valid;
-    map_min_pt_ = map_bounds.min_point;
-    map_max_pt_ = map_bounds.max_point;
-
-    const auto map_msg = lidar_localization::makeInitialMapMessage(
-      raw_map_cloud, global_frame_id_, viz_downsample_, viz_voxel_leaf_size_);
-    initial_map_pub_->publish(map_msg);
-    RCLCPP_INFO(get_logger(), "Initial Map Published");
-
-    const auto target_setup =
-      lidar_localization::planInitialMapTargetSetup(
-        enable_local_map_crop_, registration_method_);
-    use_local_map_crop_ = target_setup.use_local_map_crop;
-    if (use_local_map_crop_) {
-      // Keep the raw full map and only voxel-filter the cropped local target per scan.
-      full_map_cloud_ptr_ = map_cloud_ptr;
-      local_map_target_cached_ = false;
-      RCLCPP_INFO(
-        get_logger(), "Local map cropping enabled. Full map: %ld pts, radius: %.0fm",
-        full_map_cloud_ptr_->size(), local_map_radius_);
-      // Avoid building a full-map NDT target here. It can overflow on city-scale maps.
-      if (target_setup.create_ndt_initializer) {
-        use_ndt_initializer_ = true;
-        ndt_init_scan_count_ = 0;
-        ndt_initializer_.reset(
-          new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
-        ndt_initializer_->setStepSize(ndt_step_size_);
-        ndt_initializer_->setResolution(ndt_resolution_);
-        ndt_initializer_->setTransformationEpsilon(transform_epsilon_);
-        ndt_initializer_->setNumThreads(
-          lidar_localization::resolveRegistrationThreadCount(
-            ndt_num_threads_, omp_get_max_threads()));
-        ndt_initializer_->setInputTarget(map_cloud_ptr);
-        RCLCPP_INFO(get_logger(), "NDT initializer created (%d scans before GICP switch)",
-                    ndt_init_scans_required_);
-      } else {
-        use_ndt_initializer_ = false;
-        ndt_initializer_.reset();
-      }
-    } else if (target_setup.set_full_map_as_registration_target) {
-      registration_->setInputTarget(map_cloud_ptr);
-      warmUpRegistrationTarget(map_cloud_ptr);
-    }
-
-    map_recieved_ = true;
   }
 
   // Start Nav2 bond if available
@@ -394,6 +419,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
 
   initial_pose_sub_.reset();
   map_sub_.reset();
+  map_switch_sub_.reset();
   odom_sub_.reset();
   twist_sub_.reset();
   cloud_sub_.reset();

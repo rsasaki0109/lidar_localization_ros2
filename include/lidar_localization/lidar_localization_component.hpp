@@ -46,6 +46,7 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/string.hpp"
 
 #include <pclomp/ndt_omp.h>
 #include <pclomp/gicp_omp.h>
@@ -186,6 +187,8 @@ public:
   void releaseRuntimeResources(bool leak_target_clouds_for_shutdown = false);
   void initialPoseReceived(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+  void switchMapCallback(const std_msgs::msg::String::ConstSharedPtr msg);
+  bool loadMapFromPath(const std::string & path, bool reject_empty_map = false);
   void odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr msg);
   void twistReceived(
     const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg,
@@ -226,6 +229,8 @@ public:
     initial_map_pub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::ConstSharedPtr
     map_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::ConstSharedPtr
+    map_switch_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::ConstSharedPtr
     odom_sub_;
   rclcpp::Subscription<geometry_msgs::msg::TwistWithCovarianceStamped>::ConstSharedPtr
