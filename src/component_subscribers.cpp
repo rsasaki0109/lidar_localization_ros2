@@ -470,33 +470,20 @@ void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr
   const geometry_msgs::msg::Pose previous_pose =
     corrent_pose_with_cov_stamped_ptr_->pose.pose;
 
-  tf2::Quaternion previous_quat_tf;
-  double roll, pitch, yaw;
-  tf2::fromMsg(corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation, previous_quat_tf);
+  const auto & twist = msg->twist.twist;
+  const auto integration = lidar_localization::integrateOdomTwist(
+    Eigen::Quaterniond(
+      previous_pose.orientation.w, previous_pose.orientation.x,
+      previous_pose.orientation.y, previous_pose.orientation.z),
+    Eigen::Vector3d(twist.linear.x, twist.linear.y, twist.linear.z),
+    Eigen::Vector3d(twist.angular.x, twist.angular.y, twist.angular.z),
+    dt_odom);
 
-  tf2::Matrix3x3(previous_quat_tf).getRPY(roll, pitch, yaw);
-
-  roll += msg->twist.twist.angular.x * dt_odom;
-  pitch += msg->twist.twist.angular.y * dt_odom;
-  yaw += msg->twist.twist.angular.z * dt_odom;
-
-  Eigen::Quaterniond quat_eig =
-    Eigen::AngleAxisd(roll, Eigen::Vector3d::UnitX()) *
-    Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()) *
-    Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ());
-
-  geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
-
-  Eigen::Vector3d odom{
-    msg->twist.twist.linear.x,
-    msg->twist.twist.linear.y,
-    msg->twist.twist.linear.z};
-  Eigen::Vector3d delta_position = quat_eig.matrix() * dt_odom * odom;
-
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x += delta_position.x();
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y += delta_position.y();
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z += delta_position.z();
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x += integration.delta_position.x();
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y += integration.delta_position.y();
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z += integration.delta_position.z();
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation =
+    tf2::toMsg(integration.orientation);
 
   if (!lidar_localization::isPoseFinite(corrent_pose_with_cov_stamped_ptr_->pose.pose)) {
     corrent_pose_with_cov_stamped_ptr_->pose.pose = previous_pose;

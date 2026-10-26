@@ -340,7 +340,7 @@ if(BUILD_TESTING)
   add_executable(test_odom_integration_policy
     test/test_odom_integration_policy.cpp)
   target_include_directories(test_odom_integration_policy PRIVATE
-    include)
+    include ${EIGEN3_INCLUDE_DIRS})
   ament_target_dependencies(test_odom_integration_policy
     geometry_msgs)
   add_test(
