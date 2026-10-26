@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `use_odom` prediction applies the `/odom` angular velocity about the body axes
+  (composed with the current orientation) instead of adding it to roll, pitch and yaw,
+  which turned a tilted robot about the wrong axes. Before #236 a tilted pose was also
+  rotated with zero angular velocity: roll and pitch were recomposed in the wrong
+  order. On level ground the prediction is unchanged.
 - Add `/map_switch` (`std_msgs/String` holding a `.pcd` or `.ply` path): replaces the
   map at runtime and keeps the current pose. A map that fails to load or has no points
   leaves the current one. If the new map has a different origin, publish `/initialpose`
