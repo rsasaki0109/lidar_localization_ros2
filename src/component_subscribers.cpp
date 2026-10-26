@@ -481,9 +481,9 @@ void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr
   yaw += msg->twist.twist.angular.z * dt_odom;
 
   Eigen::Quaterniond quat_eig =
-    Eigen::AngleAxisd(roll, Eigen::Vector3d::UnitX()) *
+    Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()) *
     Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()) *
-    Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ());
+    Eigen::AngleAxisd(roll, Eigen::Vector3d::UnitX());
 
   geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
 
