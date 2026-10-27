@@ -1,8 +1,10 @@
 # Development notes
 
 Plans, roadmaps and experiment records kept for maintainers. They describe how the
-package got where it is and may refer to tools that no longer exist. For using the
-package, start at the [top-level README](../../README.md).
+package got where it is and refer to tools that no longer exist: most went with the
+offline Python tooling in 6825f05 and still run from `git checkout 6825f05^`. For using
+the package, start at the [top-level README](../../README.md); the current benchmark is
+[benchmark.md](../benchmark.md).
 
 - Plans and roadmaps: [development plan](development_plan.md),
   [global localization roadmap](global_localization_roadmap.md),

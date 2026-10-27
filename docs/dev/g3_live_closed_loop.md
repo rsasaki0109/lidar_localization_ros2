@@ -1,5 +1,9 @@
 # G3 Live Closed-Loop Result (Koide outdoor_hard_01a)
 
+> **Note:** this is a development record. Most scripts, tests and experiment
+> directories it names were removed with the offline tooling in 6825f05; run them
+> from `git checkout 6825f05^`. The current benchmark is [benchmark.md](../benchmark.md).
+
 Date: 2026-06-15. This is the live exercise of the G3 post-reset recovery-evidence
 gate from [global_localization_roadmap.md](global_localization_roadmap.md): the
 three-node bringup (`launch/global_localization_recovery.launch.py`) run against the
