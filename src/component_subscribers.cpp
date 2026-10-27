@@ -394,6 +394,11 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
   }
 
   pcl::fromROSMsg(*msg, *map_cloud_ptr);
+  if (const auto warning = lidar_localization::largeMapCoordinateWarning(
+      lidar_localization::computeMapBounds(*map_cloud_ptr)))
+  {
+    RCLCPP_WARN(get_logger(), "%s", warning->c_str());
+  }
 
   const auto map_target_choice = lidar_localization::chooseMapSubscriptionTargetCloud(
     lidar_localization::usesFilteredTarget(registration_method_));

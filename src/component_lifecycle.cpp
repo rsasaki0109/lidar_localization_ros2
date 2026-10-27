@@ -240,6 +240,9 @@ bool PCLLocalization::loadMapFromPath(const std::string & path, bool reject_empt
     return false;
   }
   const auto map_bounds = lidar_localization::computeMapBounds(*map_cloud_ptr);
+  if (const auto warning = lidar_localization::largeMapCoordinateWarning(map_bounds)) {
+    RCLCPP_WARN(get_logger(), "%s", warning->c_str());
+  }
   map_bounds_valid_ = map_bounds.valid;
   map_min_pt_ = map_bounds.min_point;
   map_max_pt_ = map_bounds.max_point;

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Maps far from the origin (#68): the localizer warns at load when map coordinates
+  reach 131 km, where float32 points and poses are 1.6 cm or more apart. A synthetic
+  check found Autoware MGRS maps (up to 100 km) usable as they are (the pose moved by
+  at most 7.8 mm), while UTM coordinates moved it by up to 0.18 m and need shifting
+  near the origin. See
+  [troubleshooting](docs/troubleshooting.md#maps-far-from-the-origin-mgrs-utm-68)
+  and [experiments/large_map_coordinates](experiments/large_map_coordinates/README.md).
 - `use_odom` prediction applies the `/odom` angular velocity about the body axes
   (composed with the current orientation) instead of adding it to roll, pitch and yaw,
   which turned a tilted robot about the wrong axes. Before #236 a tilted pose was also

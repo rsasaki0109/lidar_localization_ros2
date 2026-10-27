@@ -1,7 +1,13 @@
 #ifndef LIDAR_LOCALIZATION_MAP_INITIALIZATION_POLICY_HPP_
 #define LIDAR_LOCALIZATION_MAP_INITIALIZATION_POLICY_HPP_
 
+#include <algorithm>
+#include <cmath>
+#include <iomanip>
+#include <limits>
 #include <memory>
+#include <optional>
+#include <sstream>
 #include <string>
 
 #include <pcl/PCLPointCloud2.h>
@@ -59,6 +65,43 @@ inline MapBounds3d computeMapBounds(const pcl::PointCloud<pcl::PointXYZI> & map_
   pcl::getMinMax3D(map_cloud, bounds.min_point, bounds.max_point);
   bounds.valid = true;
   return bounds;
+}
+
+// Map points and poses are float32. From 2^17 m (131 km) on, neighbouring
+// float32 values are 1.6 cm or more apart; MGRS grid coordinates (< 100 km)
+// stay below that, UTM northings (millions of m) do not.
+constexpr double kLargeMapCoordinateWarningM = 131072.0;
+
+// Distance between neighbouring float32 values at this coordinate.
+inline double float32CoordinateSpacingM(double coordinate_m)
+{
+  const float magnitude = static_cast<float>(std::abs(coordinate_m));
+  return static_cast<double>(
+    std::nextafter(magnitude, std::numeric_limits<float>::infinity()) - magnitude);
+}
+
+inline std::optional<std::string> largeMapCoordinateWarning(const MapBounds3d & bounds)
+{
+  if (!bounds.valid) {
+    return std::nullopt;
+  }
+  const double max_abs_coordinate = std::max({
+    std::abs(static_cast<double>(bounds.min_point.x)),
+    std::abs(static_cast<double>(bounds.max_point.x)),
+    std::abs(static_cast<double>(bounds.min_point.y)),
+    std::abs(static_cast<double>(bounds.max_point.y)),
+    std::abs(static_cast<double>(bounds.min_point.z)),
+    std::abs(static_cast<double>(bounds.max_point.z))});
+  if (max_abs_coordinate < kLargeMapCoordinateWarningM) {
+    return std::nullopt;
+  }
+  std::ostringstream message;
+  message << std::fixed << std::setprecision(0) << "Map coordinates reach "
+          << max_abs_coordinate << " m from the origin, where float32 map points and poses "
+          << "are " << std::setprecision(2) << float32CoordinateSpacingM(max_abs_coordinate)
+          << " m apart; localization loses accuracy. Shift the map near the origin "
+          << "(docs/troubleshooting.md, maps far from the origin).";
+  return message.str();
 }
 
 inline sensor_msgs::msg::PointCloud2 makeInitialMapMessage(
