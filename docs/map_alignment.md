@@ -26,9 +26,10 @@ If any of these disagree, pose looks offset, crops fail, or registration rejects
 | PLY | `map_path` + `use_pcd_map:=true` | same loader path as PCD |
 | External `PointCloud2` on `/map` | `use_pcd_map:=false` | map must already use `global_frame_id` |
 
-MGRS tiles, GeoTIFF, or projected raster maps are **not** loaded directly.
-Convert to a Cartesian point cloud in the frame you intend to localize in, then
-set that frame as `global_frame_id`.
+Tiled maps (for example one PCD per MGRS grid cell), GeoTIFF, or projected raster
+maps are **not** loaded directly. Merge tiles into one point cloud file, or convert to
+a Cartesian point cloud in the frame you intend to localize in, then set that frame as
+`global_frame_id`.
 
 ## Coordinate conventions
 
@@ -50,25 +51,31 @@ coordinate magnitude:
 
 | Coordinate magnitude | float32 step (quantization) |
 | --- | --- |
-| `~66,000` (Istanbul local frame) | `~0.008 m` (fine) |
+| `~66,000` (Istanbul map) | `~0.008 m` (fine) |
+| up to `100,000` (an Autoware MGRS grid map) | `<= 0.008 m` (fine) |
 | `~500,000` (UTM easting) | `~0.03 m` |
-| `~4,000,000` (UTM/MGRS northing) | `~0.25 m` |
+| `~4,000,000` (UTM northing) | `~0.25 m` |
 | `~8,000,000` | `~0.5 m` |
 
-So a map kept in **absolute MGRS/UTM coordinates** (six- to eight-digit northings)
-is silently snapped to a 0.25–0.5 m grid the moment it is loaded — registration can
-never do better than that floor, and in RViz the cloud looks coarse or, more often,
-**does not appear at all**: RViz/Ogre also renders in float32 with the camera at the
-origin, so a cloud millions of metres away is beyond the default view and clipping
-planes (this is the symptom reported in #68).
+MGRS grid coordinates stay within one 100 km square, so an MGRS map is in the first
+rows: a synthetic NDT check moved the pose by at most 7.8 mm there
+([experiments/large_map_coordinates](../experiments/large_map_coordinates/README.md)).
+A map kept in **absolute UTM coordinates** (seven-digit northings) is snapped to a
+0.25–0.5 m grid the moment it is loaded, and registration can never do better than
+that floor; the same check moved the pose by up to 0.18 m. The localizer warns at map
+load from 131 km.
 
-**Fix: localize in a recentered frame, not in absolute MGRS/UTM.** Subtract a fixed
+In RViz a map far from the origin often **does not appear at all**: the view starts at
+the origin, so the cloud is out of sight (the symptom reported in #68). Move the view
+to the map, as described in
+[troubleshooting](troubleshooting.md#maps-far-from-the-origin-mgrs-utm-68).
+
+**Fix for UTM-sized coordinates: localize in a recentered frame.** Subtract a fixed
 origin offset from the map so its coordinates are small (a few km at most), and use
 that same offset for `/initialpose`, any GNSS reference poses, and when interpreting
-`/pcl_pose`. This is exactly what the public setups already do — the Istanbul map is
-a local ENU frame (`x ≈ 66459`), and the Boreas maps are GT-aligned
-`*_loc_frame.pcd` rebuilds rather than absolute coordinates. MGRS tiles are **not**
-supported directly (see *Supported map inputs* above); convert and recenter first.
+`/pcl_pose`. The public setups do not need this: the Istanbul map is at `x ≈ 66459`,
+and the Boreas maps are GT-aligned `*_loc_frame.pcd` rebuilds rather than absolute
+coordinates.
 
 ### Common mismatch patterns
 
@@ -79,7 +86,8 @@ supported directly (see *Supported map inputs* above); convert and recenter firs
 | Offset grows over time | registration drift, not static map misalignment | see `/alignment_status` reject streak |
 | `local_map_crop_too_small` | pose seed far outside map bounds | initial pose or map path wrong |
 | Map visible, pose never moves | frame id mismatch on `/initialpose` | `header.frame_id` must equal `global_frame_id` |
-| Map not displayed in RViz / coarse-looking cloud | absolute MGRS/UTM coordinates exceed float32 precision | recenter the map to a local origin (see *Very large coordinates*, issue #68) |
+| Map not displayed in RViz | the view starts at the origin, far from the map | move the view to the map (see *Very large coordinates*, issue #68) |
+| Coarse-looking cloud, poor registration | absolute UTM coordinates exceed float32 precision | recenter the map to a local origin (see *Very large coordinates*) |
 
 ## Minimum alignment checklist
 
