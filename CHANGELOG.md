@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Record why a slope-aware twist GTSAM smoother stays out
+  ([experiments/twist_smoother_slope](experiments/twist_smoother_slope/README.md)). On
+  three windows of the Autoware Istanbul localization bag it changed only z (better on
+  two graded windows, twice as large on the flat start) while the baseline preset drifted
+  to 6-24 m horizontal RMSE. The experiment keeps a replay harness for the bag, and
+  `docs/dev/benchmarking.md` again has working Istanbul download steps.
+
 ## 1.4.0 - 2026-10-27
 
 ### Added

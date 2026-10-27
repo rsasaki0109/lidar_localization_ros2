@@ -305,34 +305,28 @@ repository and dataset URL instead of presenting local field logs as open benchm
 Use the official Autoware Istanbul localization assets for no-IMU urban replay and Nav2 regression.
 It is useful, but it should not be the main dataset for IMU or long-horizon robustness claims.
 
+The fetch script, `benchmark_extract_pose_reference_from_rosbag2` and the regression suite
+used for the Istanbul results below were removed with the offline tooling. The map and the
+57-minute localization bag come from the
+[Autoware urban-environment evaluation page](https://docs.autoware.org/main/simulation-evaluation/components_evaluation/localization_evaluation/urban-environment-evaluation/):
+
 ```bash
-source scripts/setup_local_env.sh
-scripts/fetch_official_autoware_istanbul_dataset.sh
+pip install gdown
+gdown 1WPWmFCjV7eQee4kyBpmGNlX7awerCPxc -O data/official/autoware_istanbul/map/
+gdown 1yEB5j74gPLLbkkf87cuCxUgHXTkgSZbn -O data/official/autoware_istanbul/localization_bag/
+ros2 bag reindex data/official/autoware_istanbul/localization_bag -s sqlite3
 ```
 
-Prepared assets:
-
-- `data/official/autoware_istanbul/pointcloud_map.pcd`
-- `data/official/autoware_istanbul/localization_rosbag`
-
-Recommended topics:
+Topics:
 
 - cloud: `/localization/util/downsample/pointcloud`
 - reference pose: `/sensing/gnss/pose_with_covariance`
 - twist: `/localization/twist_estimator/twist_with_covariance`
 
-Extract a reference CSV and initial-pose YAML directly from the bag:
-
-```bash
-ros2 run lidar_localization_ros2 benchmark_extract_pose_reference_from_rosbag2 \
-  --bag-path data/official/autoware_istanbul/localization_rosbag \
-  --pose-topic /sensing/gnss/pose_with_covariance \
-  --sample-topic /localization/util/downsample/pointcloud \
-  --bag-duration 60 \
-  --initial-pose-skip-sec 0.05 \
-  --output-csv /tmp/autoware_istanbul_reference_60s.csv \
-  --output-initial-pose-yaml /tmp/autoware_istanbul_initial_pose_60s.yaml
-```
+[experiments/twist_smoother_slope](../../experiments/twist_smoother_slope/README.md) has a
+working replay harness (`prepare.py`, `replay.py`) and the bag's pitfalls: header stamps 27
+days before the receive time, a stale first GNSS pose, and GNSS starting 6.3 s after the
+first cloud.
 
 Use a unique `ROS_DOMAIN_ID` for replay so unrelated ROS 2 traffic cannot leak into the benchmark.
 
