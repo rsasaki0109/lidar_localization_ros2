@@ -144,6 +144,7 @@ jobs:
                   if "/lidar_localization_ros2/src/" in entry["file"]:
                       print(entry["file"])
           PY
-          xargs -a "${RUNNER_TEMP}/clang_tidy_files.txt" -P2 -n1 clang-tidy \
+          # Up to 4 GB per file: three at a time fit the runner's 16 GB.
+          xargs -a "${RUNNER_TEMP}/clang_tidy_files.txt" -P3 -n1 clang-tidy \
             -p build/lidar_localization_ros2
         shell: bash
