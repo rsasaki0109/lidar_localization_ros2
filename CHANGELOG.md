@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Fix the twist GTSAM smoother (`use_gtsam_smoother`) dropping motion at every NDT
+  update: it put the NDT pose, a measurement at the scan stamp, on a node built from all
+  twist received until the scan was processed, so each update lost speed x processing
+  delay and the next NDT seed started behind. It now splits the twist at the scan stamp
+  and seeds NDT at the scan stamp. The twist subscription queues 1000 messages (was 5),
+  so twist received while a scan holds the state lock (a local map crop) is no longer
+  dropped.
+- Log an error at map load when the full-map NDT voxel grid needs more cells than int32
+  indexes: the target is then empty and NDT does not register (troubleshooting, *NDT
+  Does Not Correct the Pose on a Large Map*). `param/istanbul_gtsam_smoother.yaml` now
+  crops the map. On three windows of the Autoware Istanbul bag the preset went from
+  5.9, 20.1 and 51.1 m to 0.26, 1.11 and 0.51 m horizontal RMSE (median of three runs)
+  ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md)).
 - Record why a slope-aware twist GTSAM smoother stays out
   ([experiments/twist_smoother_slope](experiments/twist_smoother_slope/README.md)). On
   three windows of the Autoware Istanbul localization bag it changed only z (better on
