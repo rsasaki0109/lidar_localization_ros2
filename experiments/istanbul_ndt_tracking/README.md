@@ -8,8 +8,8 @@ GNSS? Three causes stacked, and each one hid the next.
 ## 1. The full-map NDT target was empty
 
 Without `enable_local_map_crop` the NDT voxel grid spans the map's bounding box,
-15.2 x 12.7 km and 284 m of height: 5.5e10 cells at `ndt_resolution: 1.0` (6.9e9 at 2 m,
-2.0e9 at 3 m). pclomp indexes the grid with int32, so it printed
+15.2 x 12.7 km and 284 m of height: 5.5e10 cells at `ndt_resolution: 1.0` (6.9e9 at 2 m;
+it first fits at 3 m, 2.0e9). pclomp indexes the grid with int32, so it printed
 `Leaf size is too small for the input dataset. Integer indices would overflow.`, left the
 target empty, and NDT returned its initial guess on every scan (corrections of 0.008 m).
 The pose was the twist dead reckoning from the GNSS initial pose.
@@ -71,7 +71,31 @@ so the seed and the reference were tens of meters off, and its results (also in
 
 ## Result
 
-RESULTS_TABLE
+Median of three runs (range). *Preset* is `971e29a` with the preset as it was (no crop);
+*+ crop* is the same build with `enable_local_map_crop: true`, `local_map_radius: 150.0`,
+`local_map_update_distance: 10.0`; *fix* is this change with the same crop.
+
+| Window | Variant | Horizontal RMSE m | z RMSE m | Yaw RMSE deg | 3D p95 m |
+| --- | --- | --- | --- | --- | --- |
+| A | preset | 5.900 (4.122-6.160) | 0.731 (0.731-0.733) | 0.712 (0.463-0.799) | 12.322 (8.267-12.903) |
+| A | + crop | 53.044 (49.685-55.307) | 0.647 (0.467-2.512) | 6.343 (3.328-8.711) | 120.036 (119.412-130.277) |
+| A | **fix** | **0.261** (0.224-0.267) | **0.236** (0.232-0.256) | 1.850 (1.841-1.866) | **0.514** (0.476-0.589) |
+| B | preset | 20.053 (19.695-20.228) | 38.420 (38.420-38.432) | 0.803 (0.789-0.933) | 58.056 (57.523-58.109) |
+| B | + crop | 249.014 (235.273-334.694) | 33.232 (28.967-37.411) | 11.788 (10.565-25.801) | 332.022 (331.656-429.600) |
+| B | **fix** | **1.106** (0.905-9.065) | **4.231** (0.518-37.894) | 1.766 (1.686-2.891) | **12.451** (2.003-48.903) |
+| C | preset | 51.050 (51.030-79.897) | 48.099 (47.772-48.468) | 0.281 (0.265-1.624) | 99.248 (98.788-131.563) |
+| C | + crop | 251.893 (220.978-380.528) | 38.186 (34.772-39.882) | 10.325 (8.055-13.328) | 308.469 (262.940-466.047) |
+| C | **fix** | **0.511** (0.472-0.585) | **0.618** (0.427-0.797) | 2.117 (2.092-2.151) | **1.494** (1.108-2.356) |
+
+- The crop alone makes every window worse: NDT now registers, and cause 2 throws it off
+  once the car moves.
+- With the fix, eight of nine runs stay within 1.2 m horizontal RMSE (the six of A and C
+  within 0.6 m). The ninth is the window B z failure under *Known limits*.
+- Yaw RMSE rises to about 2° wherever NDT registers: that is the GNSS orientation bias
+  (cause 1), not the localizer. The preset's low yaw RMSE comes from keeping the GNSS
+  initial yaw.
+- While parked in window A the fix stays within 0.1-0.3 m of the GNSS position, at NDT
+  fitness 0.2.
 
 ## Known limits
 

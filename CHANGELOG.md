@@ -13,7 +13,7 @@
   indexes: the target is then empty and NDT does not register (troubleshooting, *NDT
   Does Not Correct the Pose on a Large Map*). `param/istanbul_gtsam_smoother.yaml` now
   crops the map. On three windows of the Autoware Istanbul bag the preset went from
-  HEADLINE m to 0.26, 1.11 and 0.51 m horizontal RMSE
+  5.9, 20.1 and 51.1 m to 0.26, 1.11 and 0.51 m horizontal RMSE (median of three runs)
   ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md)).
 - Record why a slope-aware twist GTSAM smoother stays out
   ([experiments/twist_smoother_slope](experiments/twist_smoother_slope/README.md)). On
