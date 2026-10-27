@@ -16,8 +16,8 @@ jobs:
     name: Lint (ruff + shellcheck)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install ruff
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-22.04
     container: ros:humble
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
       - name: Copy repository
@@ -45,7 +45,7 @@ jobs:
         run: |
           source /opt/ros/humble/setup.bash
           sudo apt-get update
-          sudo apt-get install -y python3-rosdep python3-colcon-common-extensions python3-pytest
+          sudo apt-get install -y python3-rosdep python3-colcon-common-extensions python3-pytest ccache
           rosdep update
           cd ~/ros2_ws/src
           git clone https://github.com/rsasaki0109/ndt_omp_ros2.git -b humble
@@ -57,12 +57,21 @@ jobs:
           cd ~/ros2_ws/src/lidar_localization_ros2
           python3 -m pytest test/ -q
         shell: bash
+      - name: Restore compiler cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: ccache-humble-${{ github.sha }}
+          restore-keys: ccache-humble-
       - name: Build packages
         run: |
           source /opt/ros/humble/setup.bash
+          export CCACHE_DIR="$HOME/.ccache" CCACHE_MAXSIZE=1G
           cd ~/ros2_ws
-          colcon build
+          colcon build --cmake-args \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           source ~/ros2_ws/install/setup.bash
+          ccache --show-stats
         shell: bash
       - name: Run C++ tests
         run: |
@@ -77,7 +86,7 @@ jobs:
     runs-on: ubuntu-24.04
     container: ros:jazzy
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
       - name: Copy repository
@@ -88,7 +97,7 @@ jobs:
         run: |
           source /opt/ros/jazzy/setup.bash
           sudo apt-get update
-          sudo apt-get install -y python3-rosdep python3-colcon-common-extensions python3-pytest clang-tidy libomp-dev
+          sudo apt-get install -y python3-rosdep python3-colcon-common-extensions python3-pytest ccache clang-tidy libomp-dev
           rosdep update
           cd ~/ros2_ws/src
           # ndt_omp_ros2 does not publish a dedicated jazzy branch yet; humble is used in CI.
@@ -101,12 +110,21 @@ jobs:
           cd ~/ros2_ws/src/lidar_localization_ros2
           python3 -m pytest test/ -q
         shell: bash
+      - name: Restore compiler cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: ccache-jazzy-${{ github.sha }}
+          restore-keys: ccache-jazzy-
       - name: Build packages
         run: |
           source /opt/ros/jazzy/setup.bash
+          export CCACHE_DIR="$HOME/.ccache" CCACHE_MAXSIZE=1G
           cd ~/ros2_ws
-          colcon build --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          colcon build --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           source ~/ros2_ws/install/setup.bash
+          ccache --show-stats
         shell: bash
       - name: Run C++ tests
         run: |
