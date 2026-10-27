@@ -96,6 +96,8 @@ Median of three runs (range). *Preset* is `971e29a` with the preset as it was (n
   initial yaw.
 - While parked in window A the fix stays within 0.1-0.3 m of the GNSS position, at NDT
   fitness 0.2.
+- The *fix* runs queued 200 twist messages. One run per window with the committed build
+  (1000 messages, preset with the crop): 0.223, 0.918 and 0.504 m horizontal RMSE.
 
 ## Known limits
 
@@ -105,7 +107,7 @@ Median of three runs (range). *Preset* is `971e29a` with the preset as it was (n
   z seed rejected in [twist_smoother_slope](../twist_smoother_slope/README.md) was
   measured while NDT did not register; it is worth measuring again on top of this fix.
 - **Throughput.** Rebuilding the 150 m crop every 10 m takes about 1.7 s on 4 cores, so
-  the pose rate falls to 1.5-3 Hz while driving. A larger `local_map_update_distance` or
+  the pose rate falls to 0.9-3 Hz while driving (0.9 Hz at 21 m/s in window C). A larger `local_map_update_distance` or
   moving the crop out of the state lock would help; not measured here.
 
 Measured 2026-10-27 on ROS 2 Jazzy, 4 cores; baseline = `971e29a`. This is a
