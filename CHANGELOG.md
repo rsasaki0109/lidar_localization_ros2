@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `use_twist_ekf` predicts along slopes: the forward speed is split by the last NDT pitch
+  into horizontal and vertical motion (z was held constant), and the body yaw rate turns
+  the heading at `cos(roll) / cos(pitch)` of its value. On level ground the EKF is
+  unchanged (bit-identical state and covariance). The twist GTSAM smoother stays planar.
 - Maps far from the origin (#68): the localizer warns at load when map coordinates
   reach 131 km, where float32 points and poses are 1.6 cm or more apart. A synthetic
   check found Autoware MGRS maps (up to 100 km) usable as they are (the pose moved by

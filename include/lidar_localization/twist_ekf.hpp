@@ -3,6 +3,7 @@
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+#include <algorithm>
 #include <cmath>
 #include <optional>
 
@@ -93,10 +94,15 @@ public:
   /**
    * Predict step using twist measurement (body-frame).
    * @param vx_body  forward velocity (m/s) from twist
-   * @param wz       yaw rate (rad/s) from twist
+   * @param wz       body yaw rate (rad/s) from twist
    * @param stamp_sec current timestamp
+   * @param roll, pitch  body attitude (rad), e.g. from the latest NDT result.
+   *   On a slope the forward speed splits into horizontal and vertical motion
+   *   and the body yaw rate turns the heading at cos(roll) * wz / cos(pitch).
+   *   With both zero this is the planar model.
    */
-  void predict(double vx_body, double wz, double stamp_sec)
+  void predict(double vx_body, double wz, double stamp_sec,
+               double roll = 0.0, double pitch = 0.0)
   {
     if (!initialized_) { return; }
 
@@ -114,19 +120,26 @@ public:
     double yaw = x_(6);
     double cos_yaw = std::cos(yaw);
     double sin_yaw = std::sin(yaw);
+    // Body x axis in the map frame is (cos_pitch * cos_yaw, cos_pitch * sin_yaw, -sin_pitch).
+    double cos_pitch = std::cos(pitch);
+    double sin_pitch = std::sin(pitch);
+    // ZYX Euler rate: d(yaw)/dt = cos(roll) * wz / cos(pitch) when wx = wy = 0.
+    double yaw_rate_scale =
+      std::cos(roll) / std::copysign(std::max(std::abs(cos_pitch), 1e-3), cos_pitch);
 
     // World-frame velocity from body-frame speed
-    double vx_world = vx_corr * cos_yaw;
-    double vy_world = vx_corr * sin_yaw;
+    double vx_world = vx_corr * cos_pitch * cos_yaw;
+    double vy_world = vx_corr * cos_pitch * sin_yaw;
+    double vz_world = -vx_corr * sin_pitch;
 
     // State transition
     x_(0) += vx_world * dt;
     x_(1) += vy_world * dt;
-    // x_(2) unchanged (no vertical twist info)
+    x_(2) += vz_world * dt;
     x_(3) = vx_world;
     x_(4) = vy_world;
-    // x_(5) = 0
-    x_(6) += wz_corr * dt;
+    x_(5) = vz_world;
+    x_(6) += yaw_rate_scale * wz_corr * dt;
     // Normalize yaw to [-pi, pi]
     x_(6) = normalizeAngle(x_(6));
     // Biases: random walk, no change in prediction
@@ -136,21 +149,22 @@ public:
       Eigen::Matrix<double, STATE_DIM, STATE_DIM>::Identity();
 
     // d(px)/d(yaw)
-    F(0, 6) = -vx_corr * sin_yaw * dt;
+    F(0, 6) = -vx_corr * cos_pitch * sin_yaw * dt;
     // d(py)/d(yaw)
-    F(1, 6) = vx_corr * cos_yaw * dt;
-    // d(px)/d(speed_bias) = -cos_yaw * dt
-    F(0, 8) = -cos_yaw * dt;
-    // d(py)/d(speed_bias) = -sin_yaw * dt
-    F(1, 8) = -sin_yaw * dt;
-    // d(vx_world)/d(yaw)
-    F(3, 6) = -vx_corr * sin_yaw;
-    F(4, 6) = vx_corr * cos_yaw;
-    // d(vx_world)/d(speed_bias)
-    F(3, 8) = -cos_yaw;
-    F(4, 8) = -sin_yaw;
-    // d(yaw)/d(gyro_bias) = -dt
-    F(6, 7) = -dt;
+    F(1, 6) = vx_corr * cos_pitch * cos_yaw * dt;
+    // d(p)/d(speed_bias) = -(body x axis) * dt
+    F(0, 8) = -cos_pitch * cos_yaw * dt;
+    F(1, 8) = -cos_pitch * sin_yaw * dt;
+    F(2, 8) = sin_pitch * dt;
+    // d(v_world)/d(yaw)
+    F(3, 6) = -vx_corr * cos_pitch * sin_yaw;
+    F(4, 6) = vx_corr * cos_pitch * cos_yaw;
+    // d(v_world)/d(speed_bias)
+    F(3, 8) = -cos_pitch * cos_yaw;
+    F(4, 8) = -cos_pitch * sin_yaw;
+    F(5, 8) = sin_pitch;
+    // d(yaw)/d(gyro_bias)
+    F(6, 7) = -yaw_rate_scale * dt;
 
     // Process noise Q
     StateCov Q = StateCov::Zero();

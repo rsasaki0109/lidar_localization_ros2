@@ -590,6 +590,15 @@ if(BUILD_TESTING)
     COMMAND test_imu_preintegration
   )
 
+  add_executable(test_twist_ekf
+    test/test_twist_ekf.cpp)
+  target_include_directories(test_twist_ekf PRIVATE
+    include ${EIGEN3_INCLUDE_DIRS})
+  add_test(
+    NAME twist_ekf
+    COMMAND test_twist_ekf
+  )
+
   add_executable(test_bbs_branch_and_bound
     test/test_bbs_branch_and_bound.cpp)
   # The test includes bbs_golden_fixtures.inc from the test/ directory.
