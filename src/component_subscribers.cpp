@@ -56,6 +56,10 @@ void PCLLocalization::initializePubSub()
 
   // Direct twist history reception uses only its short mutex. Optional pose
   // backends retain state locking; capture that routing choice at configuration.
+  // They wait while a scan holds the state lock (a local map crop took 1.7 s on
+  // Istanbul), so queue the twist meanwhile: 10 s at 100 Hz. The default depth
+  // of 5 dropped it, and the pose backends lost that motion.
+  constexpr std::size_t kTwistQueueDepth = 1000;
   rclcpp::SubscriptionOptions twist_subscription_options;
   twist_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   twist_subscription_options.callback_group = twist_callback_group_;
@@ -65,7 +69,7 @@ void PCLLocalization::initializePubSub()
     subscription_generation = twist_subscription_generation_;
   }
   twist_sub_ = create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(
-    "twist", rclcpp::SensorDataQoS(),
+    "twist", rclcpp::SensorDataQoS().keep_last(kTwistQueueDepth),
     [this, subscription_generation,
       update_pose_backends = use_twist_ekf_ || use_gtsam_smoother_](
       const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg) {

@@ -162,8 +162,8 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       selected_seed.init_guess = imu_init_guess;
       break;
     case lidar_localization::RegistrationSeedSource::kGtsamSmoother:
-      selected_seed.init_guess =
-        gtsam_smoother_.predictedPoseMatrix(last_ndt_roll_, last_ndt_pitch_);
+      selected_seed.init_guess = gtsam_smoother_.predictedPoseMatrixAt(
+        last_ndt_roll_, last_ndt_pitch_, scan_stamp_sec);
       break;
     case lidar_localization::RegistrationSeedSource::kTwistEkf:
       selected_seed.init_guess = twist_ekf_.poseMatrix(last_ndt_roll_, last_ndt_pitch_);

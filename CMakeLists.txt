@@ -599,6 +599,15 @@ if(BUILD_TESTING)
     COMMAND test_twist_ekf
   )
 
+  add_executable(test_twist_gtsam_smoother
+    test/test_twist_gtsam_smoother.cpp)
+  target_include_directories(test_twist_gtsam_smoother PRIVATE
+    include ${EIGEN3_INCLUDE_DIRS})
+  add_test(
+    NAME twist_gtsam_smoother
+    COMMAND test_twist_gtsam_smoother
+  )
+
   add_executable(test_bbs_branch_and_bound
     test/test_bbs_branch_and_bound.cpp)
   # The test includes bbs_golden_fixtures.inc from the test/ directory.
