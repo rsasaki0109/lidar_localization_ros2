@@ -538,7 +538,7 @@ void PCLLocalization::twistReceived(
   }
 
   if (use_gtsam_smoother_ && gtsam_smoother_.isInitialized()) {
-    gtsam_smoother_.predict(vx, wz, stamp_sec);
+    gtsam_smoother_.predict(vx, wz, stamp_sec, last_ndt_roll_, last_ndt_pitch_);
   }
 }
 

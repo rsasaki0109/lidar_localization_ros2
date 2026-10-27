@@ -4,6 +4,7 @@
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
+#include <algorithm>
 #include <cmath>
 #include <deque>
 #include <iostream>
@@ -12,7 +13,8 @@
  * Sliding-window smoother fusing twist odometry with NDT measurements.
  *
  * Uses Pose2 (x, y, yaw) for the planar component.
- * Z, roll, pitch are taken directly from the latest NDT result.
+ * Z, roll, pitch are taken directly from the latest NDT result; between
+ * updates the predicted z follows the slope of the twist motion.
  *
  * Factors:
  *   - Between: accumulated twist odometry between scan timestamps
@@ -54,6 +56,7 @@ public:
     last_predict_time_ = 0.0;
     accumulated_dx_ = 0.0;
     accumulated_dy_ = 0.0;
+    accumulated_dz_ = 0.0;
     accumulated_dyaw_ = 0.0;
     latest_z_ = 0.0;
   }
@@ -80,7 +83,15 @@ public:
     initialized_ = true;
   }
 
-  void predict(double vx_body, double wz, double stamp_sec)
+  /**
+   * Accumulate twist odometry until the next update().
+   * @param roll, pitch  body attitude (rad), e.g. from the latest NDT result.
+   *   On a slope only cos(pitch) of the forward speed is planar motion, the
+   *   rest moves the predicted z, and the body yaw rate turns the heading at
+   *   cos(roll) * wz / cos(pitch). With both zero this is the planar model.
+   */
+  void predict(double vx_body, double wz, double stamp_sec,
+               double roll = 0.0, double pitch = 0.0)
   {
     if (!initialized_) { return; }
 
@@ -91,13 +102,17 @@ public:
     }
     last_predict_time_ = stamp_sec;
 
-    double dyaw = wz * dt;
-    double dx = vx_body * dt;
+    double cos_pitch = std::cos(pitch);
+    double yaw_rate_scale =
+      std::cos(roll) / std::copysign(std::max(std::abs(cos_pitch), 1e-3), cos_pitch);
+    double dyaw = wz * yaw_rate_scale * dt;
+    double dx = vx_body * cos_pitch * dt;
 
     double c = std::cos(accumulated_dyaw_);
     double s = std::sin(accumulated_dyaw_);
     accumulated_dx_ += dx * c;
     accumulated_dy_ += dx * s;
+    accumulated_dz_ += -vx_body * std::sin(pitch) * dt;
     accumulated_dyaw_ += dyaw;
   }
 
@@ -134,6 +149,7 @@ public:
     // Reset accumulator
     accumulated_dx_ = 0.0;
     accumulated_dy_ = 0.0;
+    accumulated_dz_ = 0.0;
     accumulated_dyaw_ = 0.0;
 
     // Trim sliding window
@@ -175,7 +191,7 @@ public:
     if (!initialized_ || poses_.empty()) return Eigen::Matrix4f::Identity();
 
     const auto & p = poses_.back();
-    return buildMatrix(p.x, p.y, p.yaw, roll, pitch);
+    return buildMatrix(p.x, p.y, latest_z_, p.yaw, roll, pitch);
   }
 
   // Returns the twist-predicted pose (for NDT init_guess)
@@ -189,18 +205,18 @@ public:
     double pred_x = p.x + c * accumulated_dx_ - s * accumulated_dy_;
     double pred_y = p.y + s * accumulated_dx_ + c * accumulated_dy_;
     double pred_yaw = p.yaw + accumulated_dyaw_;
-    return buildMatrix(pred_x, pred_y, pred_yaw, roll, pitch);
+    return buildMatrix(pred_x, pred_y, latest_z_ + accumulated_dz_, pred_yaw, roll, pitch);
   }
 
 private:
-  Eigen::Matrix4f buildMatrix(double px, double py, double yaw_val,
+  Eigen::Matrix4f buildMatrix(double px, double py, double pz, double yaw_val,
                                float roll, float pitch) const
   {
     Eigen::Affine3f affine = Eigen::Affine3f::Identity();
     affine.translation() = Eigen::Vector3f(
       static_cast<float>(px),
       static_cast<float>(py),
-      static_cast<float>(latest_z_));
+      static_cast<float>(pz));
     affine.linear() = (
       Eigen::AngleAxisf(static_cast<float>(yaw_val), Eigen::Vector3f::UnitZ()) *
       Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) *
@@ -392,6 +408,7 @@ private:
 
   double accumulated_dx_{0.0};
   double accumulated_dy_{0.0};
+  double accumulated_dz_{0.0};
   double accumulated_dyaw_{0.0};
 
   double latest_z_{0.0};
