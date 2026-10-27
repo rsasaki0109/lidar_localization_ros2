@@ -15,12 +15,15 @@
   crops the map. On three windows of the Autoware Istanbul bag the preset went from
   5.9, 20.1 and 51.1 m to 0.26, 1.11 and 0.51 m horizontal RMSE (median of three runs)
   ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md)).
-- Record why a slope-aware twist GTSAM smoother stays out
-  ([experiments/twist_smoother_slope](experiments/twist_smoother_slope/README.md)). On
-  three windows of the Autoware Istanbul localization bag it changed only z (better on
-  two graded windows, twice as large on the flat start) while the baseline preset drifted
-  to 6-24 m horizontal RMSE. The experiment keeps a replay harness for the bag, and
-  `docs/dev/benchmarking.md` again has working Istanbul download steps.
+- The twist GTSAM smoother's NDT seed follows the slope: `predict()` takes the last NDT
+  roll and pitch, only `cos(pitch)` of the forward speed is planar odometry, the rest
+  moves the seed's z, and the yaw rate turns the heading at `cos(roll) / cos(pitch)`. On
+  the graded Istanbul windows z no longer falls behind while NDT is rejected (worst z RMSE
+  of three runs 19.4 m to 2.0 m and 28.1 m to 0.47 m); the first measurement, made while
+  NDT did not register, had rejected it
+  ([experiments/twist_smoother_slope](experiments/twist_smoother_slope/README.md)). The
+  experiment keeps a replay harness for the bag, and `docs/dev/benchmarking.md` again has
+  working Istanbul download steps.
 
 ## 1.4.0 - 2026-10-27
 
