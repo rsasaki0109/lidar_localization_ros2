@@ -1,7 +1,9 @@
 #include "lidar_localization/map_initialization_policy.hpp"
 
 #include <cassert>
+#include <cmath>
 #include <cstddef>
+#include <string>
 
 #include <pcl/conversions.h>
 
@@ -90,6 +92,40 @@ void test_initial_map_target_setup_plan()
   assert(!plan.set_full_map_as_registration_target);
 }
 
+void test_float32_coordinate_spacing()
+{
+  assert(ll::float32CoordinateSpacingM(1.0) == std::ldexp(1.0, -23));
+  // MGRS grid coordinates stay below 100 km: 7.8 mm spacing.
+  assert(ll::float32CoordinateSpacingM(99950.0) == std::ldexp(1.0, -7));
+  assert(ll::float32CoordinateSpacingM(-99950.0) == std::ldexp(1.0, -7));
+  // A UTM northing: 0.25 m spacing.
+  assert(ll::float32CoordinateSpacingM(3.9e6) == 0.25);
+}
+
+void test_large_map_coordinate_warning()
+{
+  pcl::PointCloud<pcl::PointXYZI> empty_cloud;
+  assert(!ll::largeMapCoordinateWarning(ll::computeMapBounds(empty_cloud)));
+
+  pcl::PointCloud<pcl::PointXYZI> mgrs_cloud;
+  mgrs_cloud.push_back(make_point(99900.0f, 99900.0f, 40.0f));
+  mgrs_cloud.push_back(make_point(99999.0f, 99999.0f, 60.0f));
+  assert(!ll::largeMapCoordinateWarning(ll::computeMapBounds(mgrs_cloud)));
+
+  pcl::PointCloud<pcl::PointXYZI> utm_cloud;
+  utm_cloud.push_back(make_point(350000.0f, 3900000.0f));
+  utm_cloud.push_back(make_point(350100.0f, 3900100.0f));
+  const auto warning = ll::largeMapCoordinateWarning(ll::computeMapBounds(utm_cloud));
+  assert(warning);
+  assert(warning->find("3900100 m") != std::string::npos);
+  assert(warning->find("0.25 m apart") != std::string::npos);
+
+  // Far on the negative side counts too.
+  pcl::PointCloud<pcl::PointXYZI> negative_cloud;
+  negative_cloud.push_back(make_point(-200000.0f, 0.0f));
+  assert(ll::largeMapCoordinateWarning(ll::computeMapBounds(negative_cloud)));
+}
+
 int main()
 {
   test_map_file_format_detection_matches_existing_path_matching();
@@ -97,5 +133,7 @@ int main()
   test_make_initial_map_message_sets_frame_and_preserves_points_without_downsample();
   test_make_initial_map_message_can_downsample();
   test_initial_map_target_setup_plan();
+  test_float32_coordinate_spacing();
+  test_large_map_coordinate_warning();
   return 0;
 }

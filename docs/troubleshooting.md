@@ -379,6 +379,31 @@ RViz tips:
 If the map displays but localization fails, the issue is usually initial pose or
 scan frame mismatch, not map publishing.
 
+## Maps Far From the Origin (MGRS, UTM) (#68)
+
+Map points and poses are float32, so precision depends on how far the map is from
+the origin:
+
+| Map coordinates | float32 spacing | Effect on the pose |
+| --- | --- | --- |
+| up to 100 km (an Autoware MGRS grid map) | 7.8 mm or less | at most 7.8 mm; use the map as it is |
+| millions of m (UTM easting/northing) | 0.25-0.5 m | up to 0.18 m; the map file already rounds points to this spacing |
+
+The numbers come from a synthetic check that shifts one scene and its scans and
+compares the NDT results
+([experiments/large_map_coordinates](../experiments/large_map_coordinates/README.md)).
+The localizer logs a warning when a loaded map reaches 131 km (2^17 m) from the
+origin.
+
+- **MGRS maps**: no change is needed. RViz starts its view at the origin, so the
+  map is out of sight: move the view to the map (**Views** panel, *Focal Point*),
+  or publish a static TF from `map` to a frame at the map's center and set the
+  view's *Target Frame* to it.
+- **UTM or other large coordinates**: shift the map near the origin when exporting it
+  (subtract a fixed offset, for example the first pose or a rounded map center), and
+  keep the offset to convert `/pcl_pose` back. Shifting the float32 file afterwards
+  does not restore the precision it lost when it was written.
+
 ## Symptom: Pose Looks Offset From Reality (#44, #75)
 
 See the full map-alignment guide in [map_alignment.md](map_alignment.md).
