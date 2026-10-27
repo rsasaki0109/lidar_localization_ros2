@@ -189,6 +189,9 @@ the live policy and avoids introducing a second offline correction model.
 
 ## Reproduce a measured run
 
+The two scripts below were removed with the offline tooling in 6825f05; run them from
+`git checkout 6825f05^`.
+
 ```bash
 python3 scripts/run_koide_glim_odometry_benchmark.py \
   --bag "$DATA/sequences/outdoor_hard_01a" \

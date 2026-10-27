@@ -52,10 +52,10 @@ variance = std^2
 ### Why a floor model
 
 Calibration against ground truth (`scripts/analyze_pose_covariance_calibration.py`,
-report archived at
-[`experiments/pose_covariance/calibration_2026_06_12.json`](../experiments/pose_covariance/calibration_2026_06_12.json))
-showed that **within the accepted-fitness range the actual error is dominated by
-a per-dataset floor, not by the fitness score**:
+report `experiments/pose_covariance/calibration_2026_06_12.json`; both were removed
+with the offline tooling in 6825f05 and stay readable with `git show 6825f05^:<path>`)
+showed that **within the accepted-fitness range the actual error is dominated by a
+per-dataset floor, not by the fitness score**:
 
 | Run | matched poses | abs xy error p68 at fitness < 0.5 | p68 at fitness 2–4 |
 | --- | --- | --- | --- |
@@ -111,13 +111,21 @@ Cannot:
 
 ## Recalibrating for your platform
 
-1. Run a benchmark replay with ground truth
-   (see [benchmarking.md](dev/benchmarking.md)) to get `pose_trace.csv`,
-   `alignment_status.csv`, `trajectory_eval.json`.
-2. `python3 scripts/analyze_pose_covariance_calibration.py mylabel=/path/to/run`
-3. Pick floors near the reported p68 errors at low fitness; verify per-axis
-   coverage with `--model`.
+1. Replay a dataset with ground truth through `tools/benchmark/run_benchmark.py`
+   (see [benchmark.md](benchmark.md)). Each run directory keeps `est.tum` (the
+   published poses), `covariance.txt` (stamp and the xx, yy and yaw-yaw variances of
+   each pose) and `alignment.jsonl` (per-scan `fitness_score` and status).
+2. Match each pose to the ground truth by stamp and compute the per-axis x, y and yaw
+   errors. Bin them by `fitness_score` and note the p68 error at low fitness, and the
+   share of errors within 1σ/2σ/3σ of the published standard deviations.
+3. Pick floors near the p68 errors at low fitness, and check that the coverage does
+   not drop well below the table above.
 4. Override the `covariance_*` parameters.
+
+The analyzer that produced the numbers above was removed in 6825f05;
+`git show 6825f05^:scripts/analyze_pose_covariance_calibration.py` recovers it, but it
+reads the older run layout (`pose_trace.csv`, `alignment_status.csv`,
+`trajectory_eval.json`).
 
 ## Practical usage guidance
 
@@ -130,13 +138,11 @@ Cannot:
 
 ## Reference arbitration consumer
 
-The guidance above ("usable, but also watch `/alignment_status`") is backed by a
-runnable, tested reference consumer rather than left as prose:
-
-- policy: `experiments/pose_arbitration/policy.py`
-- fixtures: `experiments/pose_arbitration/fixtures/`
-- regression test: `test/test_pose_arbitration_policy.py`
-- demo: `python3 scripts/demo_pose_arbitration.py`
+The guidance above ("usable, but also watch `/alignment_status`") was checked with a
+reference consumer. Its policy (`experiments/pose_arbitration/policy.py`), fixtures,
+regression test (`test/test_pose_arbitration_policy.py`) and demo
+(`scripts/demo_pose_arbitration.py`) were removed with the offline tooling in 6825f05;
+`git show 6825f05^:<path>` recovers them. The results below are kept as a record.
 
 It contrasts two consumers of a published pose:
 

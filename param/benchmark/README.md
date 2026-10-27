@@ -14,8 +14,11 @@ comparison or release boundary.
 | `*_sweep.json` | Parameter sweep specification |
 
 The scripts consuming each schema are the source of truth. Most run manifests
-are handled by `benchmark_from_manifest`; comparison specifications are handled
-by `benchmark_compare_runs` or a named experiment script.
+were handled by `benchmark_from_manifest` and comparison specifications by
+`benchmark_compare_runs` or a named experiment script; those were removed with
+the offline tooling in 6825f05 (run them from `git checkout 6825f05^`). Current
+replays use `tools/benchmark/run_benchmark.py` with the suites in
+`tools/benchmark/suites/`.
 
 ## Naming
 

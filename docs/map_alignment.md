@@ -98,12 +98,12 @@ Work through these before tuning NDT parameters:
    - if subscribing to `/map`, verify `header.frame_id == global_frame_id`
 2. **Seed pose in map frame**
    - `/initialpose` uses `header.frame_id = map` (or your `global_frame_id`)
-   - for benchmark replay, use the extracted YAML from the reference bag window
+   - for benchmark replay, seed from the reference pose at the window start
 3. **Verify lidar extrinsics**
    - cloud frame reaches `base_link` through TF or is already in `base_link`
 4. **Sanity-check against a known pose**
    - compare first accepted `/pcl_pose` to a reference pose at the same timestamp
-   - on Istanbul public data, `benchmark_extract_pose_reference_from_rosbag2` writes both reference CSV and initial-pose YAML from the same bag window
+   - on Istanbul public data, the replay harness seeds from and scores against the same GNSS reference (next section)
 
 Quick commands:
 
@@ -123,21 +123,20 @@ ros2 run tf2_ros tf2_echo map base_link
 
 ## Using the public Istanbul reference seed
 
-The demo and regression scripts derive seed pose and GT from the **same bag window**:
+The replay harness in
+[experiments/twist_smoother_slope](../experiments/twist_smoother_slope/README.md) takes
+the seed pose and the reference from the **same GNSS stream**:
 
 ```bash
-ros2 run lidar_localization_ros2 benchmark_extract_pose_reference_from_rosbag2 \
-  --bag-path data/official/autoware_istanbul/localization_rosbag \
-  --pose-topic /sensing/gnss/pose_with_covariance \
-  --sample-topic /localization/util/downsample/pointcloud \
-  --bag-duration 60 \
-  --initial-pose-skip-sec 0.05 \
-  --output-csv /tmp/autoware_istanbul_reference_60s.csv \
-  --output-initial-pose-yaml /tmp/autoware_istanbul_initial_pose_60s.yaml
+python3 experiments/twist_smoother_slope/prepare.py \
+  "$ISTANBUL/localization_bag" /tmp/istanbul_fixture
 ```
 
-Template parameters live in `param/public_istanbul_60s_benchmark.yaml`.
-The runner merges that template with the extracted initial pose and resolved `map_path`.
+`prepare.py` writes the GNSS reference (`gnss_reference.csv`) and the cloud time map.
+`replay.py` then sets `set_initial_pose` from the reference at the window start, plays
+the window and scores `/pcl_pose` against the same reference. The bag's header stamps
+are 27 days behind its receive time and its first GNSS poses are stale; the harness
+README lists these pitfalls.
 
 If your custom map was **not** built in the same frame as your live sensors,
 do not reuse this seed verbatim — align or transform the map first.
@@ -179,5 +178,5 @@ within your stack’s expected tolerance.
 ## Related docs
 
 - [troubleshooting.md](troubleshooting.md) — “Pose Looks Offset From Reality”
-- [benchmarking.md](dev/benchmarking.md) — public Istanbul reference extraction
+- [twist_smoother_slope](../experiments/twist_smoother_slope/README.md) — public Istanbul replay and GNSS reference
 - [frame_contract.md](frame_contract.md) — `map` / `odom` / `base_link` contract

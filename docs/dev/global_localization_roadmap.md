@@ -1,5 +1,9 @@
 # Global Localization Roadmap
 
+> **Note:** this is a development record. Most scripts, tests and experiment
+> directories it names were removed with the offline tooling in 6825f05; run them
+> from `git checkout 6825f05^`. The current benchmark is [benchmark.md](../benchmark.md).
+
 Last updated: 2026-07-03
 
 This document defines how global localization (pose estimation without a user-provided

@@ -1,5 +1,9 @@
 # Boreas Starter Workflow
 
+> **Note:** this is a development record. Most scripts, tests and experiment
+> directories it names were removed with the offline tooling in 6825f05; run them
+> from `git checkout 6825f05^`. The current benchmark is [benchmark.md](../benchmark.md).
+
 ## Goal
 
 Use Boreas as the first public `LiDAR + IMU + GT` dataset for the mapless-public workflow.

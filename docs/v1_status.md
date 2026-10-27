@@ -127,7 +127,8 @@ Starter manifests:
 - `param/benchmark/v1_1_boreas_localizer_only.example.yaml` — health / candidate scaffolding only
 - `param/benchmark/v1_1_boreas_dry_run_endpoint.example.yaml` — full no-publish MVP chain
 
-Smoke check:
+Smoke check (the script was removed with the offline tooling in 6825f05; run it from
+`git checkout 6825f05^`):
 
 ```bash
 source scripts/setup_local_env.sh

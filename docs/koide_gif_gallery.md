@@ -188,6 +188,10 @@ reference trajectory.
 Keep the large maps, bags, generated occupancy maps, and reference CSV files outside the
 repository.
 
+The preparation, replay and rendering scripts below were removed with the offline
+tooling in 6825f05. They are kept as the record of how the GIFs were made; run them
+from `git checkout 6825f05^`.
+
 Prepare the evaluation and rendering assets after sourcing ROS 2:
 
 ```bash
