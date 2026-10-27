@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <iomanip>
 #include <limits>
 #include <memory>
@@ -43,6 +44,8 @@ struct InitialMapTargetSetupPlan
   bool use_local_map_crop{false};
   bool create_ndt_initializer{false};
   bool set_full_map_as_registration_target{true};
+  // An NDT voxel grid (the target or the NDT initializer) is built over the full map.
+  bool builds_full_map_ndt_grid{true};
 };
 
 inline MapFileFormat detectMapFileFormat(const std::string & map_path)
@@ -104,6 +107,45 @@ inline std::optional<std::string> largeMapCoordinateWarning(const MapBounds3d & 
   return message.str();
 }
 
+// NDT indexes its voxel grid with int32. Past that many cells, pclomp (and PCL)
+// leave the target empty and NDT returns its initial guess: it does not
+// register. A city-scale map gets there at 1 m (Istanbul: 15 x 13 km, 5.5e10).
+inline double ndtVoxelGridCellCount(const MapBounds3d & bounds, double resolution_m)
+{
+  // The float arithmetic of pclomp::VoxelGridCovariance::applyFilter.
+  const float inverse_resolution = 1.0f / static_cast<float>(resolution_m);
+  const auto cells = [inverse_resolution](float min_value, float max_value) {
+      return static_cast<double>(
+        static_cast<std::int64_t>((max_value - min_value) * inverse_resolution) + 1);
+    };
+  return cells(bounds.min_point.x, bounds.max_point.x) *
+         cells(bounds.min_point.y, bounds.max_point.y) *
+         cells(bounds.min_point.z, bounds.max_point.z);
+}
+
+inline std::optional<std::string> ndtVoxelGridOverflowWarning(
+  const MapBounds3d & bounds, double resolution_m)
+{
+  if (!bounds.valid || !(resolution_m > 0.0)) {
+    return std::nullopt;
+  }
+  const double cells = ndtVoxelGridCellCount(bounds, resolution_m);
+  if (cells <= static_cast<double>(std::numeric_limits<std::int32_t>::max())) {
+    return std::nullopt;
+  }
+  std::ostringstream message;
+  message << std::fixed << std::setprecision(0) << "The map spans "
+          << bounds.max_point.x - bounds.min_point.x << " x "
+          << bounds.max_point.y - bounds.min_point.y << " x "
+          << bounds.max_point.z - bounds.min_point.z << " m: an NDT voxel grid over it at "
+          << std::setprecision(2) << "ndt_resolution " << resolution_m << " m needs "
+          << std::scientific << std::setprecision(1) << cells
+          << " cells, more than int32 indexes, so NDT gets an empty target and does not "
+          << "register. Set enable_local_map_crop (docs/troubleshooting.md, NDT does not "
+          << "correct the pose on a large map).";
+  return message.str();
+}
+
 inline sensor_msgs::msg::PointCloud2 makeInitialMapMessage(
   pcl::PCLPointCloud2 & raw_map_cloud,
   const std::string & frame_id,
@@ -134,6 +176,8 @@ inline InitialMapTargetSetupPlan planInitialMapTargetSetup(
   plan.use_local_map_crop = enable_local_map_crop || usesFilteredTarget(backend);
   plan.create_ndt_initializer = plan.use_local_map_crop && supportsNdtInitializer(backend);
   plan.set_full_map_as_registration_target = !plan.use_local_map_crop;
+  plan.builds_full_map_ndt_grid = plan.create_ndt_initializer ||
+    (plan.set_full_map_as_registration_target && usesNdtVoxelGrid(backend));
   return plan;
 }
 

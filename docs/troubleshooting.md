@@ -265,7 +265,25 @@ scan, so `cloud_queue_depth: 1` drops scans and fast turns lose track.
   seed (`use_odom_tf_prediction`), the odometry must keep its motion across dropped
   scans: an odometry that loses it makes every later seed miss, and at the higher rate
   the localization then follows the error instead of recovering between updates
-- or, when the full map fits in memory, disable the crop for NDT backends
+- or, when the full map fits in memory and its NDT voxel grid can be indexed (next
+  section), disable the crop for NDT backends
+
+## Symptom: NDT Does Not Correct the Pose on a Large Map
+
+Without a crop, the NDT voxel grid spans the bounding box of the whole map, and NDT
+indexes it with int32. A city-scale map needs more cells than that: the Autoware
+Istanbul map (15.2 x 12.7 km, 284 m of height) needs 5.5e10 at `ndt_resolution: 1.0`.
+The target is then left empty (PCL prints `Leaf size is too small for the input
+dataset. Integer indices would overflow.`), and NDT returns its initial guess: the
+pose follows only the twist or odometry seed, `correction_translation_m` in
+`/alignment_status` stays near zero, and the error grows with the distance driven.
+The localizer logs an error with the map's extent when it builds such a grid; the
+NDT initializer of the GICP backends, which takes the full map, is checked too.
+
+- set `enable_local_map_crop: true` with a `local_map_update_distance` (previous
+  section); the crop's grid covers only the radius
+- a coarser `ndt_resolution` needs fewer cells (Istanbul fits from 3 m) but matches
+  less precisely
 
 ## Symptom: Pose Jumps Along a Corridor-Like Axis
 

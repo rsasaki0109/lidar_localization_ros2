@@ -266,6 +266,13 @@ bool PCLLocalization::loadMapFromPath(const std::string & path, bool reject_empt
     lidar_localization::planInitialMapTargetSetup(
       enable_local_map_crop_, registration_method_);
   use_local_map_crop_ = target_setup.use_local_map_crop;
+  if (target_setup.builds_full_map_ndt_grid) {
+    if (const auto error =
+      lidar_localization::ndtVoxelGridOverflowWarning(map_bounds, ndt_resolution_))
+    {
+      RCLCPP_ERROR(get_logger(), "%s", error->c_str());
+    }
+  }
   if (use_local_map_crop_) {
     // Keep the raw full map and only voxel-filter the cropped local target per scan.
     full_map_cloud_ptr_ = map_cloud_ptr;
