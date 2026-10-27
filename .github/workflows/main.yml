@@ -45,20 +45,17 @@ jobs:
         run: |
           source /opt/ros/humble/setup.bash
           sudo apt-get update
-          sudo apt-get install -y python3-rosdep python3-colcon-common-extensions
+          sudo apt-get install -y python3-rosdep python3-colcon-common-extensions python3-pytest
           rosdep update
           cd ~/ros2_ws/src
           git clone https://github.com/rsasaki0109/ndt_omp_ros2.git -b humble
           rosdep install -r -y --from-paths . --ignore-src
         shell: bash
-      - name: Run quickstart and bringup tests
+      - name: Run Python tests
         run: |
           source /opt/ros/humble/setup.bash
-          cd ~/ros2_ws/src/lidar_localization_ros2/test
-          python3 -m unittest -v \
-            test_quickstart_cli test_quickstart_model \
-            test_mid360_bringup_model test_cli_command_contract \
-            test_create_lidar_localization_config
+          cd ~/ros2_ws/src/lidar_localization_ros2
+          python3 -m pytest test/ -q
         shell: bash
       - name: Build packages
         run: |
@@ -66,6 +63,13 @@ jobs:
           cd ~/ros2_ws
           colcon build
           source ~/ros2_ws/install/setup.bash
+        shell: bash
+      - name: Run C++ tests
+        run: |
+          source /opt/ros/humble/setup.bash
+          cd ~/ros2_ws
+          colcon test --packages-select lidar_localization_ros2
+          colcon test-result --verbose
         shell: bash
 
   jazzy_build:
@@ -84,21 +88,18 @@ jobs:
         run: |
           source /opt/ros/jazzy/setup.bash
           sudo apt-get update
-          sudo apt-get install -y python3-rosdep python3-colcon-common-extensions clang-tidy libomp-dev
+          sudo apt-get install -y python3-rosdep python3-colcon-common-extensions python3-pytest clang-tidy libomp-dev
           rosdep update
           cd ~/ros2_ws/src
           # ndt_omp_ros2 does not publish a dedicated jazzy branch yet; humble is used in CI.
           git clone https://github.com/rsasaki0109/ndt_omp_ros2.git -b humble
           rosdep install -r -y --from-paths . --ignore-src
         shell: bash
-      - name: Run quickstart and bringup tests
+      - name: Run Python tests
         run: |
           source /opt/ros/jazzy/setup.bash
-          cd ~/ros2_ws/src/lidar_localization_ros2/test
-          python3 -m unittest -v \
-            test_quickstart_cli test_quickstart_model \
-            test_mid360_bringup_model test_cli_command_contract \
-            test_create_lidar_localization_config
+          cd ~/ros2_ws/src/lidar_localization_ros2
+          python3 -m pytest test/ -q
         shell: bash
       - name: Build packages
         run: |
@@ -106,6 +107,13 @@ jobs:
           cd ~/ros2_ws
           colcon build --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           source ~/ros2_ws/install/setup.bash
+        shell: bash
+      - name: Run C++ tests
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          cd ~/ros2_ws
+          colcon test --packages-select lidar_localization_ros2
+          colcon test-result --verbose
         shell: bash
       - name: Static analysis (clang-tidy on src/)
         run: |
