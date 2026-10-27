@@ -4,6 +4,7 @@
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <deque>
@@ -14,7 +15,8 @@
  * Sliding-window smoother fusing twist odometry with NDT measurements.
  *
  * Uses Pose2 (x, y, yaw) for the planar component.
- * Z, roll, pitch are taken directly from the latest NDT result.
+ * Z, roll, pitch are taken directly from the latest NDT result; between
+ * updates the predicted z follows the slope of the twist motion.
  *
  * Factors:
  *   - Between: twist odometry between scan timestamps (each twist message counts
@@ -83,7 +85,15 @@ public:
     initialized_ = true;
   }
 
-  void predict(double vx_body, double wz, double stamp_sec)
+  /**
+   * Accumulate twist odometry.
+   * @param roll, pitch  body attitude (rad), e.g. from the latest NDT result.
+   *   On a slope only cos(pitch) of the forward speed is planar motion, the
+   *   rest moves the predicted z, and the body yaw rate turns the heading at
+   *   cos(roll) * wz / cos(pitch). With both zero this is the planar model.
+   */
+  void predict(double vx_body, double wz, double stamp_sec,
+               double roll = 0.0, double pitch = 0.0)
   {
     if (!initialized_) { return; }
 
@@ -94,7 +104,12 @@ public:
     }
     last_predict_time_ = stamp_sec;
 
-    const TwistStep step{stamp_sec, vx_body * dt, wz * dt};
+    const double cos_pitch = std::cos(pitch);
+    const double yaw_rate_scale =
+      std::cos(roll) / std::copysign(std::max(std::abs(cos_pitch), 1e-3), cos_pitch);
+    const TwistStep step{
+      stamp_sec, vx_body * cos_pitch * dt, -vx_body * std::sin(pitch) * dt,
+      wz * yaw_rate_scale * dt};
     accumulated_.add(step);
     pending_steps_.push_back(step);
     // Bound the memory while no scan updates (40 s at 100 Hz).
@@ -184,7 +199,7 @@ public:
     if (!initialized_ || poses_.empty()) return Eigen::Matrix4f::Identity();
 
     const auto & p = poses_.back();
-    return buildMatrix(p.x, p.y, p.yaw, roll, pitch);
+    return buildMatrix(p.x, p.y, latest_z_, p.yaw, roll, pitch);
   }
 
   // Returns the pose predicted with all received twist
@@ -205,6 +220,7 @@ private:
   {
     double stamp;
     double dx;
+    double dz;
     double dyaw;
   };
 
@@ -213,12 +229,14 @@ private:
   {
     double dx{0.0};
     double dy{0.0};
+    double dz{0.0};
     double dyaw{0.0};
 
     void add(const TwistStep & step)
     {
       dx += step.dx * std::cos(dyaw);
       dy += step.dx * std::sin(dyaw);
+      dz += step.dz;
       dyaw += step.dyaw;
     }
   };
@@ -244,17 +262,17 @@ private:
     double pred_x = p.x + c * motion.dx - s * motion.dy;
     double pred_y = p.y + s * motion.dx + c * motion.dy;
     double pred_yaw = p.yaw + motion.dyaw;
-    return buildMatrix(pred_x, pred_y, pred_yaw, roll, pitch);
+    return buildMatrix(pred_x, pred_y, latest_z_ + motion.dz, pred_yaw, roll, pitch);
   }
 
-  Eigen::Matrix4f buildMatrix(double px, double py, double yaw_val,
+  Eigen::Matrix4f buildMatrix(double px, double py, double pz, double yaw_val,
                                float roll, float pitch) const
   {
     Eigen::Affine3f affine = Eigen::Affine3f::Identity();
     affine.translation() = Eigen::Vector3f(
       static_cast<float>(px),
       static_cast<float>(py),
-      static_cast<float>(latest_z_));
+      static_cast<float>(pz));
     affine.linear() = (
       Eigen::AngleAxisf(static_cast<float>(yaw_val), Eigen::Vector3f::UnitZ()) *
       Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) *
