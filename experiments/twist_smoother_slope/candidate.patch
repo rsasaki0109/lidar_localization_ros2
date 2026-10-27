@@ -1,0 +1,279 @@
+From 787c4f72d4b5611605775fa21b474d73c5f7453e Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 27 Oct 2026 11:45:48 +0000
+Subject: [PATCH] Twist GTSAM smoother: slope-aware odometry and predicted z
+
+The smoother accumulated the twist's forward speed as planar motion and
+seeded NDT with the last NDT z. Give predict() the last NDT roll and
+pitch: only cos(pitch) of the speed is planar odometry, the rest moves
+the predicted z of the seed, and the body yaw rate turns the heading
+at cos(roll) / cos(pitch). The window stays planar (Pose2); z, roll and
+pitch still come from NDT. With roll = pitch = 0 the arithmetic is the
+old one: 100 random level-ground runs gave bit-identical seeds, poses
+and z against main. Add the smoother's first tests.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01GXUTxp1jp6iH1mo1Uzq365
+---
+ CMakeLists.txt                                |  9 ++
+ .../twist_gtsam_smoother.hpp                  | 33 +++++--
+ src/component_subscribers.cpp                 |  2 +-
+ test/test_twist_gtsam_smoother.cpp            | 99 +++++++++++++++++++
+ 4 files changed, 134 insertions(+), 9 deletions(-)
+ create mode 100644 test/test_twist_gtsam_smoother.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d2904c0..0392e60 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -599,6 +599,15 @@ if(BUILD_TESTING)
+     COMMAND test_twist_ekf
+   )
+ 
++  add_executable(test_twist_gtsam_smoother
++    test/test_twist_gtsam_smoother.cpp)
++  target_include_directories(test_twist_gtsam_smoother PRIVATE
++    include ${EIGEN3_INCLUDE_DIRS})
++  add_test(
++    NAME twist_gtsam_smoother
++    COMMAND test_twist_gtsam_smoother
++  )
++
+   add_executable(test_bbs_branch_and_bound
+     test/test_bbs_branch_and_bound.cpp)
+   # The test includes bbs_golden_fixtures.inc from the test/ directory.
+diff --git a/include/lidar_localization/twist_gtsam_smoother.hpp b/include/lidar_localization/twist_gtsam_smoother.hpp
+index b9058c1..00d2aee 100644
+--- a/include/lidar_localization/twist_gtsam_smoother.hpp
++++ b/include/lidar_localization/twist_gtsam_smoother.hpp
+@@ -4,6 +4,7 @@
+ #include <Eigen/Core>
+ #include <Eigen/Dense>
+ #include <Eigen/Geometry>
++#include <algorithm>
+ #include <cmath>
+ #include <deque>
+ #include <iostream>
+@@ -12,7 +13,8 @@
+  * Sliding-window smoother fusing twist odometry with NDT measurements.
+  *
+  * Uses Pose2 (x, y, yaw) for the planar component.
+- * Z, roll, pitch are taken directly from the latest NDT result.
++ * Z, roll, pitch are taken directly from the latest NDT result; between
++ * updates the predicted z follows the slope of the twist motion.
+  *
+  * Factors:
+  *   - Between: accumulated twist odometry between scan timestamps
+@@ -54,6 +56,7 @@ public:
+     last_predict_time_ = 0.0;
+     accumulated_dx_ = 0.0;
+     accumulated_dy_ = 0.0;
++    accumulated_dz_ = 0.0;
+     accumulated_dyaw_ = 0.0;
+     latest_z_ = 0.0;
+   }
+@@ -80,7 +83,15 @@ public:
+     initialized_ = true;
+   }
+ 
+-  void predict(double vx_body, double wz, double stamp_sec)
++  /**
++   * Accumulate twist odometry until the next update().
++   * @param roll, pitch  body attitude (rad), e.g. from the latest NDT result.
++   *   On a slope only cos(pitch) of the forward speed is planar motion, the
++   *   rest moves the predicted z, and the body yaw rate turns the heading at
++   *   cos(roll) * wz / cos(pitch). With both zero this is the planar model.
++   */
++  void predict(double vx_body, double wz, double stamp_sec,
++               double roll = 0.0, double pitch = 0.0)
+   {
+     if (!initialized_) { return; }
+ 
+@@ -91,13 +102,17 @@ public:
+     }
+     last_predict_time_ = stamp_sec;
+ 
+-    double dyaw = wz * dt;
+-    double dx = vx_body * dt;
++    double cos_pitch = std::cos(pitch);
++    double yaw_rate_scale =
++      std::cos(roll) / std::copysign(std::max(std::abs(cos_pitch), 1e-3), cos_pitch);
++    double dyaw = wz * yaw_rate_scale * dt;
++    double dx = vx_body * cos_pitch * dt;
+ 
+     double c = std::cos(accumulated_dyaw_);
+     double s = std::sin(accumulated_dyaw_);
+     accumulated_dx_ += dx * c;
+     accumulated_dy_ += dx * s;
++    accumulated_dz_ += -vx_body * std::sin(pitch) * dt;
+     accumulated_dyaw_ += dyaw;
+   }
+ 
+@@ -134,6 +149,7 @@ public:
+     // Reset accumulator
+     accumulated_dx_ = 0.0;
+     accumulated_dy_ = 0.0;
++    accumulated_dz_ = 0.0;
+     accumulated_dyaw_ = 0.0;
+ 
+     // Trim sliding window
+@@ -175,7 +191,7 @@ public:
+     if (!initialized_ || poses_.empty()) return Eigen::Matrix4f::Identity();
+ 
+     const auto & p = poses_.back();
+-    return buildMatrix(p.x, p.y, p.yaw, roll, pitch);
++    return buildMatrix(p.x, p.y, latest_z_, p.yaw, roll, pitch);
+   }
+ 
+   // Returns the twist-predicted pose (for NDT init_guess)
+@@ -189,18 +205,18 @@ public:
+     double pred_x = p.x + c * accumulated_dx_ - s * accumulated_dy_;
+     double pred_y = p.y + s * accumulated_dx_ + c * accumulated_dy_;
+     double pred_yaw = p.yaw + accumulated_dyaw_;
+-    return buildMatrix(pred_x, pred_y, pred_yaw, roll, pitch);
++    return buildMatrix(pred_x, pred_y, latest_z_ + accumulated_dz_, pred_yaw, roll, pitch);
+   }
+ 
+ private:
+-  Eigen::Matrix4f buildMatrix(double px, double py, double yaw_val,
++  Eigen::Matrix4f buildMatrix(double px, double py, double pz, double yaw_val,
+                                float roll, float pitch) const
+   {
+     Eigen::Affine3f affine = Eigen::Affine3f::Identity();
+     affine.translation() = Eigen::Vector3f(
+       static_cast<float>(px),
+       static_cast<float>(py),
+-      static_cast<float>(latest_z_));
++      static_cast<float>(pz));
+     affine.linear() = (
+       Eigen::AngleAxisf(static_cast<float>(yaw_val), Eigen::Vector3f::UnitZ()) *
+       Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) *
+@@ -392,6 +408,7 @@ private:
+ 
+   double accumulated_dx_{0.0};
+   double accumulated_dy_{0.0};
++  double accumulated_dz_{0.0};
+   double accumulated_dyaw_{0.0};
+ 
+   double latest_z_{0.0};
+diff --git a/src/component_subscribers.cpp b/src/component_subscribers.cpp
+index 95083a7..9397b20 100644
+--- a/src/component_subscribers.cpp
++++ b/src/component_subscribers.cpp
+@@ -538,7 +538,7 @@ void PCLLocalization::twistReceived(
+   }
+ 
+   if (use_gtsam_smoother_ && gtsam_smoother_.isInitialized()) {
+-    gtsam_smoother_.predict(vx, wz, stamp_sec);
++    gtsam_smoother_.predict(vx, wz, stamp_sec, last_ndt_roll_, last_ndt_pitch_);
+   }
+ }
+ 
+diff --git a/test/test_twist_gtsam_smoother.cpp b/test/test_twist_gtsam_smoother.cpp
+new file mode 100644
+index 0000000..0caacef
+--- /dev/null
++++ b/test/test_twist_gtsam_smoother.cpp
+@@ -0,0 +1,99 @@
++#include "lidar_localization/twist_gtsam_smoother.hpp"
++
++#include <cassert>
++#include <cmath>
++
++namespace
++{
++
++constexpr double kDt = 0.1;
++
++bool near(double a, double b, double tol = 1e-6)
++{
++  return std::abs(a - b) < tol;
++}
++
++double deg(double d)
++{
++  return d * M_PI / 180.0;
++}
++
++// Accumulates steps * kDt seconds of constant twist after `start`.
++void drive(
++  TwistGtsamSmoother & smoother, double start, double vx, double wz, int steps,
++  double roll, double pitch)
++{
++  for (int i = 1; i <= steps; ++i) {
++    smoother.predict(vx, wz, start + i * kDt, roll, pitch);
++  }
++}
++
++void test_level_prediction_is_planar()
++{
++  TwistGtsamSmoother smoother;
++  smoother.initialize(0.0, 0.0, 1.5, 0.3, 0.0);
++  drive(smoother, 0.0, 1.0, 0.0, 10, 0.0, 0.0);
++  const Eigen::Matrix4f predicted = smoother.predictedPoseMatrix(0.0f, 0.0f);
++  assert(near(predicted(0, 3), std::cos(0.3)));
++  assert(near(predicted(1, 3), std::sin(0.3)));
++  assert(predicted(2, 3) == 1.5f);
++}
++
++void test_climbing_moves_the_predicted_seed_up()
++{
++  // Negative pitch tilts the nose up.
++  const double pitch = deg(-10.0);
++  TwistGtsamSmoother smoother;
++  smoother.initialize(0.0, 0.0, 1.0, 0.0, 0.0);
++  drive(smoother, 0.0, 1.0, 0.0, 20, 0.0, pitch);
++  const Eigen::Matrix4f predicted =
++    smoother.predictedPoseMatrix(0.0f, static_cast<float>(pitch));
++  assert(near(predicted(0, 3), 2.0 * std::cos(pitch)));
++  assert(near(predicted(1, 3), 0.0));
++  assert(near(predicted(2, 3), 1.0 + 2.0 * std::sin(-pitch)));
++}
++
++void test_update_takes_z_from_ndt_and_restarts_the_slope()
++{
++  const double pitch = deg(-10.0);
++  TwistGtsamSmoother smoother;
++  smoother.initialize(0.0, 0.0, 1.0, 0.0, 0.0);
++  drive(smoother, 0.0, 1.0, 0.0, 20, 0.0, pitch);
++  // NDT agrees with the slope-aware odometry.
++  const double x = 2.0 * std::cos(pitch);
++  const double z = 1.0 + 2.0 * std::sin(-pitch);
++  assert(smoother.update(x, 0.0, z, 0.0, 1.0, 2.0));
++  assert(near(smoother.px(), x));
++  assert(near(smoother.pz(), z));
++  // Right after the update there is no accumulated motion left.
++  const Eigen::Matrix4f predicted =
++    smoother.predictedPoseMatrix(0.0f, static_cast<float>(pitch));
++  assert(near(predicted(0, 3), x, 1e-5));
++  assert(near(predicted(2, 3), z, 1e-5));
++}
++
++void test_roll_and_pitch_scale_the_heading_rate()
++{
++  TwistGtsamSmoother rolled;
++  rolled.initialize(0.0, 0.0, 0.0, 0.0, 0.0);
++  drive(rolled, 0.0, 0.0, 0.1, 10, deg(20.0), 0.0);
++  const Eigen::Matrix4f rolled_pose = rolled.predictedPoseMatrix(0.0f, 0.0f);
++  assert(near(std::atan2(rolled_pose(1, 0), rolled_pose(0, 0)), 0.1 * std::cos(deg(20.0))));
++
++  TwistGtsamSmoother pitched;
++  pitched.initialize(0.0, 0.0, 0.0, 0.0, 0.0);
++  drive(pitched, 0.0, 0.0, 0.1, 10, 0.0, deg(30.0));
++  const Eigen::Matrix4f pitched_pose = pitched.predictedPoseMatrix(0.0f, 0.0f);
++  assert(near(std::atan2(pitched_pose(1, 0), pitched_pose(0, 0)), 0.1 / std::cos(deg(30.0))));
++}
++
++}  // namespace
++
++int main()
++{
++  test_level_prediction_is_planar();
++  test_climbing_moves_the_predicted_seed_up();
++  test_update_takes_z_from_ndt_and_restarts_the_slope();
++  test_roll_and_pitch_scale_the_heading_rate();
++  return 0;
++}
+-- 
+2.43.0
+

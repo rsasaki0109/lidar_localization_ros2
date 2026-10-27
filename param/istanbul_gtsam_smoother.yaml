@@ -1,5 +1,7 @@
 # Preset: Autoware Istanbul with the experimental GTSAM twist smoother.
 # Status: dataset-specific experiment; not a recommended runtime default.
+# Replayed 2026-10-27 on three windows of the localization bag, it drifted to
+# 6-24 m horizontal RMSE (experiments/twist_smoother_slope/README.md).
 
 /**:
   ros__parameters:
