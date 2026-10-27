@@ -534,7 +534,7 @@ void PCLLocalization::twistReceived(
   double wz = msg->twist.twist.angular.z;
 
   if (use_twist_ekf_ && twist_ekf_.isInitialized()) {
-    twist_ekf_.predict(vx, wz, stamp_sec);
+    twist_ekf_.predict(vx, wz, stamp_sec, last_ndt_roll_, last_ndt_pitch_);
   }
 
   if (use_gtsam_smoother_ && gtsam_smoother_.isInitialized()) {
