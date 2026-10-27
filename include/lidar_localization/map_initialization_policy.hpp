@@ -123,7 +123,7 @@ inline double ndtVoxelGridCellCount(const MapBounds3d & bounds, double resolutio
          cells(bounds.min_point.z, bounds.max_point.z);
 }
 
-inline std::optional<std::string> ndtVoxelGridOverflowWarning(
+inline std::optional<std::string> ndtVoxelGridOverflowError(
   const MapBounds3d & bounds, double resolution_m)
 {
   if (!bounds.valid || !(resolution_m > 0.0)) {

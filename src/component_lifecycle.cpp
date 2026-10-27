@@ -268,7 +268,7 @@ bool PCLLocalization::loadMapFromPath(const std::string & path, bool reject_empt
   use_local_map_crop_ = target_setup.use_local_map_crop;
   if (target_setup.builds_full_map_ndt_grid) {
     if (const auto error =
-      lidar_localization::ndtVoxelGridOverflowWarning(map_bounds, ndt_resolution_))
+      lidar_localization::ndtVoxelGridOverflowError(map_bounds, ndt_resolution_))
     {
       RCLCPP_ERROR(get_logger(), "%s", error->c_str());
     }
