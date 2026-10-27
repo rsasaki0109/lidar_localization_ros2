@@ -264,6 +264,7 @@ void PCLLocalization::initializeParameters()
   get_parameter("enable_local_map_crop", enable_local_map_crop_);
   get_parameter("local_map_radius", local_map_radius_);
   get_parameter("local_map_update_distance", local_map_update_distance_);
+  get_parameter("local_map_async_rebuild", local_map_async_rebuild_);
   int requested_min_registration_points = 0;
   get_parameter("min_registration_points", requested_min_registration_points);
   min_registration_points_ =
@@ -649,6 +650,7 @@ void PCLLocalization::initializeParameters()
     get_logger(), "min_registration_points: %zu", min_registration_points_);
   RCLCPP_INFO(
     get_logger(), "local_map_update_distance: %lf", local_map_update_distance_);
+  RCLCPP_INFO(get_logger(), "local_map_async_rebuild: %d", local_map_async_rebuild_);
   RCLCPP_INFO(
     get_logger(), "reject_above_score_threshold: %d", measurement_gate_config_.reject_above_score_threshold);
   RCLCPP_INFO(

@@ -336,14 +336,48 @@ bool PCLLocalization::setInputTargetForPose(const Eigen::Matrix4f & center_pose_
     return false;
   }
 
+  auto reuse_target = [this]() {
+      const auto reuse_decision = lidar_localization::handleLocalMapTargetSuccess();
+      consecutive_crop_failures_ = reuse_decision.consecutive_crop_failures;
+      crop_failure_guard_active_ = reuse_decision.crop_failure_guard_active;
+      return true;
+    };
+  const bool async_rebuild = local_map_async_rebuild_ && spare_ndt_omp_registration_;
+  if (async_rebuild && takeLocalMapRebuild(cx, cy, false)) {
+    return reuse_target();
+  }
   if (lidar_localization::shouldReuseLocalMapTarget(
       local_map_target_cached_, local_map_target_center_x_, local_map_target_center_y_,
       cx, cy, local_map_update_distance_))
   {
-    const auto reuse_decision = lidar_localization::handleLocalMapTargetSuccess();
-    consecutive_crop_failures_ = reuse_decision.consecutive_crop_failures;
-    crop_failure_guard_active_ = reuse_decision.crop_failure_guard_active;
-    return true;
+    return reuse_target();
+  }
+  if (async_rebuild) {
+    const bool rebuild_running = local_map_rebuild_.valid();
+    const auto step = lidar_localization::planLocalMapAsyncRebuild(
+      local_map_target_cached_,
+      lidar_localization::planarDistance(
+        local_map_target_center_x_, local_map_target_center_y_, cx, cy),
+      lidar_localization::localMapAsyncReuseLimit(
+        local_map_radius_, scan_max_range_, local_map_update_distance_),
+      rebuild_running,
+      rebuild_running && lidar_localization::planarDistance(
+        local_map_rebuild_center_x_, local_map_rebuild_center_y_, cx, cy) <
+      std::max(local_map_update_distance_, 1.0));
+    switch (step) {
+      case lidar_localization::LocalMapAsyncRebuildStep::kReuseAndStartRebuild:
+        startLocalMapRebuild(cx, cy);
+        return reuse_target();
+      case lidar_localization::LocalMapAsyncRebuildStep::kReuse:
+        return reuse_target();
+      case lidar_localization::LocalMapAsyncRebuildStep::kWaitForRebuild:
+        if (takeLocalMapRebuild(cx, cy, true)) {
+          return reuse_target();
+        }
+        break;
+      case lidar_localization::LocalMapAsyncRebuildStep::kBuildNow:
+        break;
+    }
   }
 
   pcl::PointCloud<pcl::PointXYZI>::Ptr local_map =
@@ -399,6 +433,77 @@ bool PCLLocalization::setInputTargetForPose(const Eigen::Matrix4f & center_pose_
   consecutive_crop_failures_ = success_decision.consecutive_crop_failures;
   crop_failure_guard_active_ = success_decision.crop_failure_guard_active;
   return true;
+}
+
+void PCLLocalization::startLocalMapRebuild(float center_x, float center_y)
+{
+  local_map_rebuild_center_x_ = center_x;
+  local_map_rebuild_center_y_ = center_y;
+  // The task owns what it reads: a map switch or cleanup swaps the members.
+  local_map_rebuild_ = std::async(
+    std::launch::async,
+    [full_map = full_map_cloud_ptr_, registration = spare_ndt_omp_registration_,
+    radius = local_map_radius_, min_points = local_map_min_points_, center_x, center_y]() {
+      LocalMapRebuild rebuild;
+      rebuild.center_x = center_x;
+      rebuild.center_y = center_y;
+      rebuild.target = lidar_localization::cropLocalMapByRadius(
+        *full_map, center_x, center_y, radius);
+      rebuild.ready = lidar_localization::validateLocalMapCropSize(
+        rebuild.target->size(), min_points).target_ready;
+      if (rebuild.ready) {
+        registration->setInputTarget(rebuild.target);
+      }
+      return rebuild;
+    });
+}
+
+bool PCLLocalization::takeLocalMapRebuild(float center_x, float center_y, bool wait)
+{
+  if (!local_map_rebuild_.valid()) {
+    return false;
+  }
+  if (!wait &&
+    local_map_rebuild_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+  {
+    return false;
+  }
+  LocalMapRebuild rebuild;
+  try {
+    rebuild = local_map_rebuild_.get();
+  } catch (const std::exception & error) {
+    RCLCPP_WARN(get_logger(), "Background local map rebuild failed: %s", error.what());
+    return false;
+  }
+  // A target built around a center the pose has since left is not used.
+  if (!rebuild.ready ||
+    lidar_localization::planarDistance(rebuild.center_x, rebuild.center_y, center_x, center_y) >=
+    lidar_localization::localMapAsyncReuseLimit(
+      local_map_radius_, scan_max_range_, local_map_update_distance_))
+  {
+    return false;
+  }
+  auto registration_execution_lock =
+    callback_state_coordinator_.lockRegistrationExecution();
+  std::swap(ndt_omp_registration_, spare_ndt_omp_registration_);
+  registration_ = ndt_omp_registration_.get();
+  if (registration_source_cloud_) {
+    registration_->setInputSource(registration_source_cloud_);
+  }
+  lidar_localization::keepRegistrationCloudAlive(
+    recent_target_clouds_, rebuild.target, registration_target_cloud_keep_alive_count_);
+  local_map_target_cached_ = true;
+  local_map_target_center_x_ = rebuild.center_x;
+  local_map_target_center_y_ = rebuild.center_y;
+  return true;
+}
+
+void PCLLocalization::discardLocalMapRebuild()
+{
+  if (local_map_rebuild_.valid()) {
+    local_map_rebuild_.wait();
+    local_map_rebuild_ = std::future<LocalMapRebuild>();
+  }
 }
 
 lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
@@ -675,6 +780,7 @@ void PCLLocalization::setRegistrationSourceCloud(
   const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud)
 {
   registration_->setInputSource(source_cloud);
+  registration_source_cloud_ = source_cloud;
   lidar_localization::keepRegistrationCloudAlive(
     recent_source_clouds_, source_cloud, registration_source_cloud_keep_alive_count_);
 }

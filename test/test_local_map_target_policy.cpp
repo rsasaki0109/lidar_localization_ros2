@@ -179,6 +179,29 @@ void test_local_map_target_reuse_distance()
   assert(!ll::shouldReuseLocalMapTarget(true, 0.0f, 0.0f, 10.0f, 0.0f, 5.0));
 }
 
+void test_local_map_async_rebuild_plan()
+{
+  using Step = ll::LocalMapAsyncRebuildStep;
+  // A 150 m crop with a 100 m scan covers every scan point for 50 m.
+  assert(ll::localMapAsyncReuseLimit(150.0, 100.0, 10.0) == 50.0);
+  // A crop no larger than the scan range falls back to the update distance.
+  assert(ll::localMapAsyncReuseLimit(80.0, 100.0, 10.0) == 10.0);
+
+  // Moved past the update distance: keep aligning, build the next one meanwhile.
+  assert(ll::planLocalMapAsyncRebuild(true, 12.0, 50.0, false, false) ==
+    Step::kReuseAndStartRebuild);
+  assert(ll::planLocalMapAsyncRebuild(true, 30.0, 50.0, true, true) == Step::kReuse);
+  // Past the reuse limit: wait for a rebuild around here, else build now.
+  assert(ll::planLocalMapAsyncRebuild(true, 50.0, 50.0, true, true) == Step::kWaitForRebuild);
+  assert(ll::planLocalMapAsyncRebuild(true, 60.0, 50.0, true, false) == Step::kBuildNow);
+  assert(ll::planLocalMapAsyncRebuild(true, 60.0, 50.0, false, false) == Step::kBuildNow);
+  // Nothing cached (start, map switch, /initialpose).
+  assert(ll::planLocalMapAsyncRebuild(false, 0.0, 50.0, false, false) == Step::kBuildNow);
+  assert(ll::planLocalMapAsyncRebuild(false, 0.0, 50.0, true, true) == Step::kWaitForRebuild);
+
+  assert(ll::planarDistance(0.0f, 0.0f, 3.0f, 4.0f) == 5.0);
+}
+
 int main()
 {
   test_crop_bounds_are_optional_and_radius_expanded();
@@ -190,5 +213,6 @@ int main()
   test_crop_failure_count_and_log_throttles();
   test_target_failure_handling_decision();
   test_target_success_resets_runtime_guard_state();
+  test_local_map_async_rebuild_plan();
   return 0;
 }

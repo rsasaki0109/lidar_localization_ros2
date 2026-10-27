@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
+#include <future>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -248,6 +249,21 @@ public:
   pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr pcl_registration_;
   boost::shared_ptr<lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>>
     ndt_omp_registration_;
+  // local_map_async_rebuild: the next local target is built on this twin of
+  // ndt_omp_registration_ in the background, then the two are swapped.
+  boost::shared_ptr<lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>>
+    spare_ndt_omp_registration_;
+  struct LocalMapRebuild
+  {
+    bool ready{false};
+    float center_x{0.0f};
+    float center_y{0.0f};
+    pcl::PointCloud<pcl::PointXYZI>::Ptr target;
+  };
+  std::future<LocalMapRebuild> local_map_rebuild_;
+  float local_map_rebuild_center_x_{0.0f};
+  float local_map_rebuild_center_y_{0.0f};
+  pcl::PointCloud<pcl::PointXYZI>::Ptr registration_source_cloud_;
   pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp_omp_registration_;
 #ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
   small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>::Ptr small_gicp_registration_;
@@ -287,6 +303,7 @@ public:
   std::size_t local_map_min_points_{100};
   std::size_t min_registration_points_{0};
   double local_map_update_distance_{0.0};
+  bool local_map_async_rebuild_{false};
   bool local_map_target_cached_{false};
   float local_map_target_center_x_{0.0f};
   float local_map_target_center_y_{0.0f};
@@ -569,6 +586,9 @@ public:
     const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud,
     const Eigen::Matrix4f & init_guess);
   bool setInputTargetForPose(const Eigen::Matrix4f & center_pose_matrix);
+  void startLocalMapRebuild(float center_x, float center_y);
+  bool takeLocalMapRebuild(float center_x, float center_y, bool wait);
+  void discardLocalMapRebuild();
   void warmUpRegistrationTarget(const pcl::PointCloud<pcl::PointXYZI>::Ptr & target);
   void broadcastTransform(const geometry_msgs::msg::TransformStamped & transform);
   lidar_localization::AlignmentAttempt runAlignmentAttempt(
