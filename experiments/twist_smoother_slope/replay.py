@@ -78,6 +78,9 @@ def run_window(args):
             "initial_pose_qw": float(qw),
         }
     )
+    for item in args.set:
+        key, value = item.split("=", 1)
+        p[key] = yaml.safe_load(value)
     (out / "params.yaml").write_text(yaml.safe_dump(params))
 
     env = dict(os.environ, ROS_DOMAIN_ID=str(args.domain), RCUTILS_COLORIZED_OUTPUT="0")
@@ -92,6 +95,7 @@ def run_window(args):
         {
             "ws": str(args.ws),
             "preset": args.preset,
+            "overrides": args.set,
             "start": args.start,
             "duration": args.duration,
             "wall_play_sec": round(play_sec, 1),
@@ -251,4 +255,11 @@ if __name__ == "__main__":
     parser.add_argument("--out", required=True)
     parser.add_argument("--preset", default="istanbul_gtsam_smoother.yaml")
     parser.add_argument("--domain", type=int, default=73)
+    parser.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="override a preset parameter (YAML value); repeatable",
+    )
     run_window(parser.parse_args())
