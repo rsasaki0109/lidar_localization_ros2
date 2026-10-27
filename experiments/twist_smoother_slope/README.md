@@ -5,6 +5,14 @@ twice as large on the flat start window, horizontal unchanged. The baseline pres
 not track any window (6-24 m horizontal RMSE), so neither variant was in a usable regime.
 Runtime code is unchanged; the candidate is kept as [candidate.patch](candidate.patch).
 
+> **Later finding:** neither variant could track, because NDT did not register: the
+> full-map NDT target of this preset overflowed and was empty, and with a crop the
+> smoother dropped motion at every update. Window C also started inside a GNSS outage.
+> See [istanbul_ndt_tracking](../istanbul_ndt_tracking/README.md), which fixes both and
+> measures window C at 2300 s instead. The candidate was measured without registration;
+> it needs measuring again on top of that fix (the patch predates it and adds the same
+> test file, so it has to be rebased).
+
 ## Candidate
 
 The twist smoother (`use_gtsam_smoother`) keeps one planar pose (x, y, yaw) per scan and
@@ -51,7 +59,8 @@ Pitfalls of this bag, all handled by `replay.py`:
 - **`public_istanbul_60s_benchmark.yaml` cannot keep up on 4 cores.** It rebuilds the local
   NDT target from the full map on every scan (`local_map_update_distance: 0`) and processed
   about 21 of 600 scans in 60 s, so its documented 1.2 m could not be checked here.
-  `istanbul_gtsam_smoother.yaml` builds the target once and keeps up (9-10 poses/s).
+  `istanbul_gtsam_smoother.yaml` built the full-map target once and kept up (9-10
+  poses/s), but that target was empty (see the note above).
 
 ## Method
 

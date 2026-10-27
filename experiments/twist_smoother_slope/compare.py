@@ -15,12 +15,14 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-# Seconds from bag start and window length: the old 60 s regression start, and
-# the two stretches with sustained 7-10 % grades.
+# Seconds from bag start and window length: the old 60 s regression start, the
+# stretch with sustained 6-10 % grades, and the fastest climb (4-5 % at up to
+# 21 m/s). GNSS is accurate (sigma <= 0.52 m) in all three; it is not during
+# 750-1030 s and 3020-3215 s, where the first window C (3160 s) started.
 WINDOWS = {
     "A_start_0": (0, 60),
     "B_grade_2820": (2820, 150),
-    "C_grade_3160": (3160, 120),
+    "C_climb_2300": (2300, 120),
 }
 METRICS = (
     ("horizontal_m", "rmse"),

@@ -1,7 +1,8 @@
 # Preset: Autoware Istanbul with the experimental GTSAM twist smoother.
 # Status: dataset-specific experiment; not a recommended runtime default.
-# Replayed 2026-10-27 on three windows of the localization bag, it drifted to
-# 6-24 m horizontal RMSE (experiments/twist_smoother_slope/README.md).
+# Without the local map crop the full-map NDT voxel grid overflowed and NDT did
+# not register (6-24 m horizontal RMSE). With it, replayed 2026-10-27 on three
+# windows of the localization bag (experiments/istanbul_ndt_tracking/README.md).
 
 /**:
   ros__parameters:
@@ -33,6 +34,10 @@
     use_imu: false
     enable_debug: false
     predict_pose_from_previous_delta: false
+    # The 15 x 13 km map needs 5.5e10 NDT cells at 1 m: crop it.
+    enable_local_map_crop: true
+    local_map_radius: 150.0
+    local_map_update_distance: 10.0
     reject_above_score_threshold: false
     enable_map_odom_tf: false
     global_frame_id: map
