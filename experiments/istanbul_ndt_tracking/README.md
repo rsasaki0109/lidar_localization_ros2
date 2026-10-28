@@ -181,6 +181,70 @@ nothing.
 Measured 2026-10-28 on ROS 2 Jazzy, 4 cores. This is a public-dataset replay, not a
 physical-robot test.
 
+## Background rebuild for the GICP backends
+
+`local_map_async_rebuild` first covered NDT_OMP only. The GICP backends build most of
+their target lazily, in the first `align()` after `setInputTarget()`: the PCL search
+tree (every backend), the target covariances, and the small_gicp VGICP voxel map. So the
+background task now crops, voxel-filters the crop for the GICP backends as the scan
+callback does, sets the target on the twin and aligns about 100 of its points once;
+the scan callback then swaps in a target that is ready.
+
+Target build cost on the 150 m crop around the window A start (141k points,
+`voxel_leaf_size: 0.2`, 4 threads; two runs each):
+
+| Backend | Crop | Voxel filter | `setInputTarget` | First `align()` on 100 points |
+| --- | --- | --- | --- | --- |
+| NDT_OMP | 0.10-0.11 s | - | 1.37-1.59 s | 0.07-0.10 s |
+| SMALL_GICP | 0.08-0.09 s | 0.02 s | 0.02 s | 0.17 s |
+| SMALL_VGICP | 0.09-0.10 s | 0.02 s | 0.02-0.03 s | 0.27 s |
+| GICP_OMP | 0.09 s | 0.02 s | 0.00 s | 1.96-2.17 s |
+
+The preset with `registration_method: SMALL_GICP` (small_gicp 2.1.0 from
+`ros-jazzy-small-gicp-vendor`), without and with the background rebuild, one build,
+median of three runs (range):
+
+| Window | Variant | Pose rate | Horizontal RMSE m | z RMSE m | 3D p95 m |
+| --- | --- | --- | --- | --- | --- |
+| A | sync | 7.1 Hz | 0.256 (0.255-0.256) | 0.175 (0.175-0.175) | 0.485 (0.485-0.485) |
+| A | async | **8.0 Hz** | 0.256 (0.256-0.257) | 0.176 (0.176-0.176) | 0.486 (0.486-0.486) |
+| B | sync | 7.9 Hz | 0.774 (0.768-0.775) | 0.388 (0.388-0.390) | 1.802 (1.718-1.813) |
+| B | async | **9.5 Hz** | 0.761 (0.760-0.762) | 0.396 (0.395-0.396) | 1.678 (1.677-1.680) |
+| C | sync | 7.2 Hz | 0.450 (0.450-0.452) | 0.115 (0.115-0.115) | 0.873 (0.871-0.876) |
+| C | async | **9.4 Hz** | 0.450 (0.450-0.450) | 0.114 (0.114-0.115) | 0.871 (0.871-0.871) |
+
+The scans arrive at 10 Hz; accuracy is unchanged. With SMALL_GICP the preset also
+tracked as well as with NDT_OMP in this session (0.26, 0.77 and 0.45 m against 0.26,
+0.91 and 0.54 m horizontal RMSE below) at 7-9 Hz against 1.3-3.1 Hz; small_gicp is an
+optional dependency, so the preset stays on NDT_OMP.
+
+NDT_OMP, the preset as it is, `main` against this change (which adds the warm-up align
+in the background), median of three runs (range):
+
+| Window | Variant | Pose rate | Horizontal RMSE m | z RMSE m | 3D p95 m |
+| --- | --- | --- | --- | --- | --- |
+| A | main | 3.1 Hz | 0.259 (0.255-0.340) | 0.338 (0.259-0.369) | 0.779 (0.605-0.829) |
+| A | change | 2.6 Hz | 0.260 (0.239-0.266) | 0.291 (0.285-0.390) | 0.694 (0.658-0.737) |
+| B | main | 2.3 Hz | 0.912 (0.870-0.918) | 0.631 (0.587-0.661) | 2.275 (2.142-2.288) |
+| B | change | 2.6 Hz | 0.916 (0.776-0.995) | 0.760 (0.579-0.812) | 2.350 (1.962-2.703) |
+| C | main | 1.3 Hz | 0.542 (0.483-0.562) | 0.328 (0.327-0.367) | 1.115 (0.964-1.119) |
+| C | change | 1.3 Hz | 0.530 (0.485-0.531) | 0.370 (0.329-0.386) | 1.072 (0.975-1.155) |
+
+Every range overlaps: no measurable change for NDT_OMP. These NDT runs vary more from
+run to run than the SMALL_GICP ones; the container ran as slowly as in *All fixes
+together*.
+
+GICP_OMP could not show the effect: on window C it lost track with and without the
+background rebuild (0.3-0.7 Hz, 49-51 m horizontal RMSE, three runs each). On window A
+`main` and this change ran it alike, 0.65 and 0.83 Hz (one run each), and published only
+8-13 poses in the first 14 s while parked, when no target is rebuilt.
+
+Two of the 45 replays failed in the harness (one stopped the localizer before it
+logged anything; the other's log was not kept) and were run again.
+
+Measured 2026-10-28 on ROS 2 Jazzy, 4 cores. This is a public-dataset replay, not a
+physical-robot test.
+
 ## All fixes together
 
 `main` after #248 (slope-aware z seed), #249 (Twist EKF) and #250 (background rebuild),

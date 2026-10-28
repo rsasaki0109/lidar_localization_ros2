@@ -265,14 +265,18 @@ scan, so `cloud_queue_depth: 1` drops scans and fast turns lose track.
   seed (`use_odom_tf_prediction`), the odometry must keep its motion across dropped
   scans: an odometry that loses it makes every later seed miss, and at the higher rate
   the localization then follows the error instead of recovering between updates
-- with `NDT_OMP`, set `local_map_async_rebuild: true` to build the next target in the
+- set `local_map_async_rebuild: true` (any backend) to build the next target in the
   background while scans keep aligning against the cached one. The cached target is used
   until the crop center has moved `local_map_radius - scan_max_range` (at least
   `local_map_update_distance`); only past that does a scan wait for a target around
-  itself. On the Istanbul map a 150 m crop took 0.6-0.8 s to build, which held the pose
-  rate to 0.9 Hz at 21 m/s without it. It is off by default (measured on Istanbul only);
-  turn it on for dense maps and fast motion. On the dense Koide outdoor map an 80 m crop
-  holds 670k points and its target took 4.6-4.9 s to build on a 4-vCPU VM
+  itself, so it helps only while `local_map_radius - scan_max_range` is larger than
+  `local_map_update_distance`. On the Istanbul map a 150 m crop took 0.6-0.8 s to
+  build for NDT_OMP, which held the pose rate to 0.9 Hz at 21 m/s without it; for the
+  GICP backends, which compute the target covariances in the first alignment, it took
+  0.2 s (SMALL_GICP), 0.3 s (SMALL_VGICP) and 1-2 s (GICP_OMP) after the crop. It is off
+  by default (measured on Istanbul only); turn it on for dense maps and fast motion. On
+  the dense Koide outdoor map an 80 m crop holds 670k points and its NDT target took
+  4.6-4.9 s to build on a 4-vCPU VM
 - or, when the full map fits in memory and its NDT voxel grid can be indexed (next
   section), disable the crop for NDT backends
 
