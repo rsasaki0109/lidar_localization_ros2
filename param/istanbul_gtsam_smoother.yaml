@@ -1,10 +1,9 @@
 # Preset: Autoware Istanbul with the experimental GTSAM twist smoother.
 # Status: dataset-specific experiment; not a recommended runtime default.
 # Without the local map crop the full-map NDT voxel grid overflowed and NDT did
-# not register. Replayed 2026-10-27 on three windows of the localization bag, the
-# crop and the scan-stamp smoother fix took the horizontal RMSE from 5.9-51 m to
-# 0.26-1.1 m (experiments/istanbul_ndt_tracking/README.md); the slope-aware seed
-# keeps z on the grades (experiments/twist_smoother_slope/README.md).
+# not register (5.9-51 m horizontal RMSE). Replayed 2026-10-28 on three windows of
+# the localization bag, this preset gave 0.25, 0.87 and 0.50 m horizontal RMSE
+# (median of three runs on 4 cores; experiments/istanbul_ndt_tracking/README.md).
 
 /**:
   ros__parameters:
