@@ -3,10 +3,10 @@
 localizer of one colcon workspace and score /pcl_pose against the bag's GNSS
 pose (horizontal, z, 3D and yaw errors).
 
-usage: replay.py --ws WS --fixture DIR --bag BAG --map PCD --start SEC --duration SEC
-                 --out DIR [--preset FILE] [--domain N]
+usage: istanbul_replay.py --ws WS --fixture DIR --bag BAG --map PCD --start SEC --duration SEC
+                          --out DIR [--preset FILE] [--set KEY=VALUE ...] [--domain N]
 
-FIXTURE is prepare.py's output directory. The run directory gets params.yaml,
+FIXTURE is istanbul_prepare.py's output directory. The run directory gets params.yaml,
 node.log, est.tum (record_pose.py) and score.json.
 """
 
@@ -245,7 +245,9 @@ def evaluate(est_path, ref, t0, t1):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--ws", required=True, help="colcon workspace with install/")
-    parser.add_argument("--fixture", required=True, help="prepare.py output directory")
+    parser.add_argument(
+        "--fixture", required=True, help="istanbul_prepare.py output directory"
+    )
     parser.add_argument("--bag", required=True)
     parser.add_argument("--map", required=True)
     parser.add_argument(

@@ -323,8 +323,8 @@ Topics:
 - reference pose: `/sensing/gnss/pose_with_covariance`
 - twist: `/localization/twist_estimator/twist_with_covariance`
 
-[experiments/twist_smoother_slope](../../experiments/twist_smoother_slope/README.md) has a
-working replay harness (`prepare.py`, `replay.py`) and the bag's pitfalls: header stamps 27
+[benchmark.md](../benchmark.md#autoware-istanbul-vehicle-preset-replay) has the current
+replay tools (`tools/benchmark/istanbul_*.py`) and the bag's pitfalls: header stamps 27
 days before the receive time, a stale first GNSS pose, and GNSS starting 6.3 s after the
 first cloud.
 

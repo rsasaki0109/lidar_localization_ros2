@@ -207,3 +207,60 @@ The dataset's own leave-one-out maps (`maps_loo_*`) are not used: their floor is
 smeared over 0.7 m (-0.4 to +0.3 m), so the occupancy grid generated for global
 search marks almost the whole room as occupied, and initialization fails or lands on
 the wrong pose. A map from lidar_slam_ros2 of the same room has its floor within 0.1 m.
+
+## Autoware Istanbul (vehicle, preset replay)
+
+A second, narrower benchmark for a car at up to 21 m/s on grades: the localization bag
+of the [Autoware Istanbul urban
+evaluation](https://docs.autoware.org/main/simulation-evaluation/components_evaluation/localization_evaluation/urban-environment-evaluation/)
+replayed through `param/istanbul_gtsam_smoother.yaml`, with the bag's twist and no
+odometry. Unlike the runs above it does not go through the quickstart and does not
+initialize globally: each run starts from the GNSS pose at the window start and is
+scored against `/sensing/gnss/pose_with_covariance`, interpolated at each pose stamp.
+
+```bash
+gdown 1WPWmFCjV7eQee4kyBpmGNlX7awerCPxc -O "$ISTANBUL/map/"
+gdown 1yEB5j74gPLLbkkf87cuCxUgHXTkgSZbn -O "$ISTANBUL/localization_bag/"
+ros2 bag reindex "$ISTANBUL/localization_bag" -s sqlite3
+python3 tools/benchmark/istanbul_prepare.py "$ISTANBUL/localization_bag" /tmp/istanbul_fixture
+# one window through one workspace
+python3 tools/benchmark/istanbul_replay.py --ws WS --fixture /tmp/istanbul_fixture \
+  --bag "$ISTANBUL/localization_bag" --map "$ISTANBUL/map/pointcloud_map.pcd" \
+  --start 2300 --duration 120 --out /tmp/istanbul_run
+# a baseline and a candidate workspace, three windows, three runs each
+python3 tools/benchmark/istanbul_compare.py --base-ws BASE_WS --cand-ws CAND_WS \
+  --fixture /tmp/istanbul_fixture --bag "$ISTANBUL/localization_bag" \
+  --map "$ISTANBUL/map/pointcloud_map.pcd" --out /tmp/istanbul_compare
+```
+
+`--set KEY=VALUE` overrides a preset parameter (`--cand-set` for the candidate only);
+the preset is read from the checkout that holds the tools. Set `ROS2_CLI` and
+`ROS_PYTHON` when `python3` is not the interpreter the ROS distro was built for.
+
+| Window | Bag time | Why |
+| --- | --- | --- |
+| A | 0-60 s | parked for 15 s, then up to 10 m/s |
+| B | 2820-2970 s | sustained 6-10 % grades |
+| C | 2300-2420 s | the fastest climb, 4-5 % at up to 21 m/s |
+
+Median horizontal RMSE of three runs on 2026-10-28 (4 vCPUs): 0.25, 0.87 and 0.50 m, at
+1.6-3.6 poses/s; how they were reached is in
+[experiments/istanbul_ndt_tracking](../experiments/istanbul_ndt_tracking/README.md).
+
+What to keep in mind with this bag (`istanbul_prepare.py` and `istanbul_replay.py`
+handle the first three):
+
+- **Header stamps are 2,371,531.4 s (27 days) before the bag's receive time.** The bag
+  carries its own `/clock` in the header time base: it is played instead of `--clock`,
+  and window starts are mapped through the clouds' stamps.
+- **The first GNSS message is stamped 6.3 s after the first cloud**, and the first
+  messages repeat a stale pose 1.9 m and 146° off the next ones; they are dropped.
+- **GNSS drops out during 750-1030 s and 3020-3215 s** (sigma up to 92 m); windows there
+  have neither a usable start pose nor a usable reference.
+- **The GNSS orientation is about 2° off the direction of travel** (median -2.26° over
+  the bag), so yaw RMSE against it carries that bias, and dead reckoning from the GNSS
+  initial yaw drifts sideways.
+- The localizer reads `/localization/util/downsample/pointcloud` (1500 points,
+  `base_link`) and `/localization/twist_estimator/twist_with_covariance`, which matches
+  the GNSS-derived speed and yaw rate within 0.05 m/s and 0.002 rad/s. Grades reach
+  9.6 % where GNSS is accurate (z from -65 to +177 m over the route).
