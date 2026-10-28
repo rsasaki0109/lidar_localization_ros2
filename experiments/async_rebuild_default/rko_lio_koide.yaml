@@ -1,0 +1,5 @@
+# RKO-LIO for the Koide MID-360 bags: LiDAR and IMU share livox_frame, which is
+# also the estimated frame, so the extrinsics are identity and no TF is needed.
+extrinsic_imu2base_quat_xyzw_xyz: [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+extrinsic_lidar2base_quat_xyzw_xyz: [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+initialization_phase: true

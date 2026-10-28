@@ -4,11 +4,15 @@ workspace, with a quickstart-generated config and no external odometry, and scor
 /pcl_pose against the ground truth (tools/benchmark/benchmark_eval.py).
 
 usage: replay_koide.py --ws WS --bag SEQ_DIR --map PLY --gt TUM --config YAML --out DIR
-                       [--start SEC] [--duration SEC] [--set KEY=VALUE ...] [--domain N]
+                       [--odometry] [--start SEC] [--duration SEC] [--set KEY=VALUE ...]
+                       [--domain N]
 
 The localizer starts from the ground-truth pose at the replay start, in the LiDAR
-frame (the ground truth is the LiDAR trajectory). The run directory gets
-params.yaml, node.log, est.tum, alignment.jsonl and score.json.
+frame (the ground truth is the LiDAR trajectory). With --odometry, RKO-LIO
+(ros-jazzy-rko-lio) runs alongside and publishes odom -> LiDAR, as in the
+quickstart benchmark; generate the config with --odom-tf-prediction then. The run
+directory gets params.yaml, node.log, odometry.log, est.tum, alignment.jsonl and
+score.json.
 """
 
 import argparse
@@ -23,7 +27,8 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-REPO = Path(__file__).resolve().parents[2]
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[1]
 sys.path.insert(0, str(REPO / "tools" / "benchmark"))
 
 import benchmark_eval  # noqa: E402
@@ -118,6 +123,7 @@ def main(args):
     with (
         (out / "node.log").open("w") as node_log,
         (out / "recorder.log").open("w") as recorder_log,
+        (out / "odometry.log").open("w") as odometry_log,
     ):
         node = subprocess.Popen(
             [
@@ -134,9 +140,29 @@ def main(args):
             env=env,
             start_new_session=True,
         )
-        recorder = None
+        recorder = odometry = None
         try:
             lifecycle(args.ws, env)
+            if args.odometry:
+                odometry = subprocess.Popen(
+                    [
+                        "bash",
+                        "-c",
+                        shell(
+                            args.ws,
+                            f"exec {ROS2} launch rko_lio odometry.launch.py "
+                            f"lidar_topic:={CLOUD} imu_topic:={IMU} "
+                            f"base_frame:={LIDAR_FRAME} autodetect:=false "
+                            f"config_file:={HERE / 'rko_lio_koide.yaml'} "
+                            "use_sim_time:=true",
+                        ),
+                    ],
+                    stdout=odometry_log,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    start_new_session=True,
+                )
+                time.sleep(5.0)
             recorder = subprocess.Popen(
                 [
                     "bash",
@@ -170,10 +196,10 @@ def main(args):
             play_sec = time.time() - began
             time.sleep(3.0)
         finally:
-            for proc in (recorder, node):
+            for proc in (recorder, odometry, node):
                 if proc is not None:
                     os.killpg(proc.pid, signal.SIGINT)
-            for proc in (recorder, node):
+            for proc in (recorder, odometry, node):
                 if proc is None:
                     continue
                 try:
@@ -207,6 +233,7 @@ def main(args):
             "duration_sec": round(duration, 1),
             "wall_play_sec": round(play_sec, 1),
             "overrides": args.set,
+            "odometry": args.odometry,
         }
     )
     (out / "score.json").write_text(json.dumps(result, indent=1))
@@ -224,5 +251,6 @@ if __name__ == "__main__":
     parser.add_argument("--start", type=float, default=0.0)
     parser.add_argument("--duration", type=float, default=0.0, help="0 = to the end")
     parser.add_argument("--domain", type=int, default=60)
+    parser.add_argument("--odometry", action="store_true", help="run RKO-LIO alongside")
     parser.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
     main(parser.parse_args())
