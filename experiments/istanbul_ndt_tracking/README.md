@@ -101,11 +101,11 @@ Median of three runs (range). *Preset* is `971e29a` with the preset as it was (n
 
 ## Known limits
 
-- **z on grades.** The smoother is planar and keeps the last NDT z. In one of the three
+- **z on grades.** The smoother is planar and kept the last NDT z. In one of the three
   window B runs NDT was rejected for a few scans on the 6 % descent, z fell behind by
-  about 1 m/s, and NDT did not recover (9.1 m horizontal, 37.9 m z RMSE). The slope-aware
-  z seed rejected in [twist_smoother_slope](../twist_smoother_slope/README.md) was
-  measured while NDT did not register; it is worth measuring again on top of this fix.
+  about 1 m/s, and NDT did not recover (9.1 m horizontal, 37.9 m z RMSE). Fixed since by
+  the slope-aware z seed ([twist_smoother_slope](../twist_smoother_slope/README.md),
+  measured again on top of this fix).
 - **Throughput.** Rebuilding the 150 m crop every 10 m takes about 1.7 s on 4 cores, so
   the pose rate falls to 0.9-3 Hz while driving (0.9 Hz at 21 m/s in window C). A larger `local_map_update_distance` or
   moving the crop out of the state lock would help; not measured here.
