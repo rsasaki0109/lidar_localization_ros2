@@ -473,14 +473,9 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   ndt_initializer_.reset();
   use_ndt_initializer_ = false;
   registration_ = nullptr;
-  pcl_registration_.reset();
-  ndt_omp_registration_.reset();
-  spare_ndt_omp_registration_.reset();
+  registration_objects_ = RegistrationObjects();
+  spare_registration_objects_ = RegistrationObjects();
   registration_source_cloud_.reset();
-  gicp_omp_registration_.reset();
-#ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
-  small_gicp_registration_.reset();
-#endif
   registration_execution_lock.unlock();
 
   {

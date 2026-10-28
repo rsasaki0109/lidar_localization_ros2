@@ -241,6 +241,26 @@ Eigen::Matrix4f PCLLocalization::refineSeedWithNdtInitializer(
   return refined_seed;
 }
 
+namespace
+{
+
+// About 100 points spread over the target, aligned once to build what
+// pcl::Registration and the backends set up lazily in the first align() after
+// setInputTarget(): the target search tree, GICP target covariances, the
+// small_gicp VGICP voxel map.
+pcl::PointCloud<pcl::PointXYZI>::Ptr sampleWarmUpSource(
+  const pcl::PointCloud<pcl::PointXYZI> & target)
+{
+  pcl::PointCloud<pcl::PointXYZI>::Ptr probe(new pcl::PointCloud<pcl::PointXYZI>());
+  const std::size_t stride = std::max<std::size_t>(1, target.size() / 100);
+  for (std::size_t i = 0; i < target.size(); i += stride) {
+    probe->push_back(target.points[i]);
+  }
+  return probe;
+}
+
+}  // namespace
+
 void PCLLocalization::warmUpRegistrationTarget(
   const pcl::PointCloud<pcl::PointXYZI>::Ptr & target)
 {
@@ -252,11 +272,7 @@ void PCLLocalization::warmUpRegistrationTarget(
   if (!registration_ || !target || target->empty()) {
     return;
   }
-  pcl::PointCloud<pcl::PointXYZI>::Ptr probe(new pcl::PointCloud<pcl::PointXYZI>());
-  const std::size_t stride = std::max<std::size_t>(1, target->size() / 100);
-  for (std::size_t i = 0; i < target->size(); i += stride) {
-    probe->push_back(target->points[i]);
-  }
+  const auto probe = sampleWarmUpSource(*target);
   const auto start = std::chrono::steady_clock::now();
   registration_->setInputSource(probe);
   lidar_localization::keepRegistrationCloudAlive(
@@ -343,7 +359,8 @@ bool PCLLocalization::setInputTargetForPose(const Eigen::Matrix4f & center_pose_
       crop_failure_guard_active_ = reuse_decision.crop_failure_guard_active;
       return true;
     };
-  const bool async_rebuild = local_map_async_rebuild_ && spare_ndt_omp_registration_;
+  const bool async_rebuild =
+    local_map_async_rebuild_ && spare_registration_objects_.get() != nullptr;
   if (async_rebuild && takeLocalMapRebuild(cx, cy, false)) {
     return reuse_target();
   }
@@ -443,18 +460,38 @@ void PCLLocalization::startLocalMapRebuild(float center_x, float center_y)
   // The task owns what it reads: a map switch or cleanup swaps the members.
   local_map_rebuild_ = std::async(
     std::launch::async,
-    [full_map = full_map_cloud_ptr_, registration = spare_ndt_omp_registration_,
-    radius = local_map_radius_, min_points = local_map_min_points_, center_x, center_y]() {
+    [full_map = full_map_cloud_ptr_, objects = spare_registration_objects_,
+    radius = local_map_radius_, min_points = local_map_min_points_,
+    filter_target = lidar_localization::usesFilteredTarget(registration_method_),
+    leaf = voxel_leaf_size_, center_x, center_y]() {
       LocalMapRebuild rebuild;
       rebuild.center_x = center_x;
       rebuild.center_y = center_y;
-      rebuild.target = lidar_localization::cropLocalMapByRadius(
-        *full_map, center_x, center_y, radius);
-      rebuild.ready = lidar_localization::validateLocalMapCropSize(
-        rebuild.target->size(), min_points).target_ready;
-      if (rebuild.ready) {
-        registration->setInputTarget(rebuild.target);
+      pcl::PointCloud<pcl::PointXYZI>::Ptr local_map =
+        lidar_localization::cropLocalMapByRadius(*full_map, center_x, center_y, radius);
+      pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_local_map(
+        new pcl::PointCloud<pcl::PointXYZI>());
+      if (filter_target) {
+        pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter;
+        voxel_grid_filter.setLeafSize(leaf, leaf, leaf);
+        voxel_grid_filter.setInputCloud(local_map);
+        voxel_grid_filter.filter(*filtered_local_map);
       }
+      const auto target_selection = lidar_localization::chooseTargetAfterLocalMapCrop(
+        local_map->size(), filtered_local_map->size(), min_points, filter_target);
+      rebuild.ready = target_selection.target_ready;
+      if (!rebuild.ready) {
+        return rebuild;
+      }
+      rebuild.target = target_selection.target_cloud ==
+        lidar_localization::LocalMapTargetCloud::kFilteredLocalMap ?
+        filtered_local_map : local_map;
+      auto * registration = objects.get();
+      registration->setInputTarget(rebuild.target);
+      rebuild.warm_up_source = sampleWarmUpSource(*rebuild.target);
+      registration->setInputSource(rebuild.warm_up_source);
+      pcl::PointCloud<pcl::PointXYZI> output;
+      registration->align(output, Eigen::Matrix4f::Identity());
       return rebuild;
     });
 }
@@ -486,11 +523,13 @@ bool PCLLocalization::takeLocalMapRebuild(float center_x, float center_y, bool w
   }
   auto registration_execution_lock =
     callback_state_coordinator_.lockRegistrationExecution();
-  std::swap(ndt_omp_registration_, spare_ndt_omp_registration_);
-  registration_ = ndt_omp_registration_.get();
+  std::swap(registration_objects_, spare_registration_objects_);
+  registration_ = registration_objects_.get();
   if (registration_source_cloud_) {
     registration_->setInputSource(registration_source_cloud_);
   }
+  lidar_localization::keepRegistrationCloudAlive(
+    recent_source_clouds_, rebuild.warm_up_source, registration_source_cloud_keep_alive_count_);
   lidar_localization::keepRegistrationCloudAlive(
     recent_target_clouds_, rebuild.target, registration_target_cloud_keep_alive_count_);
   local_map_target_cached_ = true;
@@ -549,10 +588,10 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   attempt.has_converged = registration_->hasConverged();
   attempt.fitness_score = registration_->getFitnessScore();
 
-  if (enable_registration_localizability_diagnostics_ && ndt_omp_registration_) {
+  if (enable_registration_localizability_diagnostics_ && registration_objects_.ndt_omp) {
     Eigen::Matrix<double, 6, 6> hessian;
     std::size_t correspondence_count = 0;
-    ndt_omp_registration_->evaluateFinalScoreHessian(
+    registration_objects_.ndt_omp->evaluateFinalScoreHessian(
       hessian, correspondence_count);
     attempt.registration_localizability =
       lidar_localization::analyzeRegistrationHessian(hessian, correspondence_count);

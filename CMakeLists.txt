@@ -638,6 +638,12 @@ if(BUILD_TESTING)
   add_test(NAME twist_subscription_lifecycle COMMAND test_twist_subscription_lifecycle)
   set_tests_properties(twist_subscription_lifecycle PROPERTIES TIMEOUT 30)
 
+  add_executable(test_local_map_async_rebuild test/test_local_map_async_rebuild.cpp)
+  target_link_libraries(test_local_map_async_rebuild
+    lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+  add_test(NAME local_map_async_rebuild COMMAND test_local_map_async_rebuild)
+  set_tests_properties(local_map_async_rebuild PROPERTIES TIMEOUT 120)
+
   add_executable(test_causal_twist_history test/test_causal_twist_history.cpp)
   target_include_directories(test_causal_twist_history PRIVATE include)
   target_link_libraries(test_causal_twist_history Eigen3::Eigen)

@@ -12,13 +12,18 @@
   twist GTSAM smoother. `test/test_istanbul_benchmark_tools.py` covers them without ROS:
   the GNSS reference cleanup, the window start in the header-stamp time base, the
   initial pose and overrides, the scores and the comparison runs and summary.
-- Add `local_map_async_rebuild` (default `false`, NDT_OMP): with the local map crop, the
-  next target is built on a twin NDT object in the background while scans keep aligning
-  against the cached one, which covers every scan point until the pose has moved
-  `local_map_radius - scan_max_range`. On the Istanbul map a 150 m crop took 0.6-0.8 s
-  to build in the scan callback; with this the pose rate at 21 m/s went from 0.9 to
-  5.2 Hz. `param/istanbul_gtsam_smoother.yaml` enables it
+- Add `local_map_async_rebuild` (default `false`, every registration backend): with the
+  local map crop, the next target is built on a twin registration object in the
+  background while scans keep aligning against the cached one, which covers every scan
+  point until the pose has moved `local_map_radius - scan_max_range`. On the Istanbul map
+  a 150 m crop took 0.6-0.8 s to build in the scan callback; with this the NDT_OMP pose
+  rate at 21 m/s went from 0.9 to 5.2 Hz. `param/istanbul_gtsam_smoother.yaml` enables it
   ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md)).
+  For the GICP backends the background task also voxel-filters the crop and aligns about
+  100 of its points once, so the target covariances (small_gicp VGICP: the voxel map) and
+  the search tree, which the backends build in the first `align()`, are ready when the
+  scan callback swaps the target in. On the same preset with SMALL_GICP the pose rate went
+  from 7.1-7.9 to 8.0-9.5 Hz (10 Hz scans) at unchanged accuracy.
 - Fix the twist EKF (`use_twist_ekf`) pulling the state back at every NDT update: it
   compared the NDT result, the pose at the scan stamp, with the state predicted up to
   the latest twist. It now carries the result along its predicted trajectory from the
