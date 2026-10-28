@@ -23,6 +23,7 @@ both `nav2_ndt_urban.yaml` and `nav2_humble_pointcloud.yaml`.
 | `boreas_ndt_velodyne.yaml` | Boreas Velodyne 128 |
 | `hdl_imu_preint.yaml` | Official hdl_localization sample with IMU preintegration |
 | `istanbul_gtsam_smoother.yaml` | Autoware Istanbul GTSAM smoother experiment |
+| `istanbul_small_gicp.yaml` | Autoware Istanbul optional SMALL_GICP comparison |
 | `koide_indoor_ndt.yaml` | Koide indoor NDT_OMP baseline |
 | `koide_indoor_smallgicp.yaml` | Koide indoor optional SMALL_GICP comparison |
 | `public_istanbul_60s_benchmark.yaml` | Autoware Istanbul public 60 s validation template |

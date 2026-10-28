@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- CMake also looks for `small_gicp_vendor`, so on Jazzy `ros-jazzy-small-gicp-vendor`
+  from apt enables the `SMALL_GICP` and `SMALL_VGICP` backends without a local
+  small_gicp install (Humble has no such package); the configure log says when
+  small_gicp support is enabled.
+- Add `param/istanbul_small_gicp.yaml`: `istanbul_gtsam_smoother.yaml` with
+  `registration_method: SMALL_GICP`. On the three Istanbul windows it gave 0.26, 0.76 and
+  0.45 m horizontal RMSE at 8.0-9.5 Hz, against 0.26, 0.91 and 0.54 m at 1.3-3.1 Hz for the
+  NDT_OMP preset in the same session (`docs/benchmark.md`).
 - `-O2 -g` is now added only when `CMAKE_BUILD_TYPE` is unset, so `Release` builds no
   longer carry debug info. This lowers compiler memory use and binary size on small
   boards. Builds without a build type are unchanged.

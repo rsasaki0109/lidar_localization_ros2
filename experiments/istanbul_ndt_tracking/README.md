@@ -216,7 +216,8 @@ median of three runs (range):
 The scans arrive at 10 Hz; accuracy is unchanged. With SMALL_GICP the preset also
 tracked as well as with NDT_OMP in this session (0.26, 0.77 and 0.45 m against 0.26,
 0.91 and 0.54 m horizontal RMSE below) at 7-9 Hz against 1.3-3.1 Hz; small_gicp is an
-optional dependency, so the preset stays on NDT_OMP.
+optional dependency, so the preset stays on NDT_OMP;
+`param/istanbul_small_gicp.yaml` keeps this configuration.
 
 NDT_OMP, the preset as it is, `main` against this change (which adds the warm-up align
 in the background), median of three runs (range):
