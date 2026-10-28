@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Fix the twist EKF (`use_twist_ekf`) pulling the state back at every NDT update: it
+  compared the NDT result, the pose at the scan stamp, with the state predicted up to
+  the latest twist. It now carries the result along its predicted trajectory from the
+  scan stamp to the state's time, and seeds NDT and publishes with the pose at the scan
+  stamp. On the Istanbul windows A and C the EKF went from 19 and 270 m to 0.25 and
+  0.54 m horizontal RMSE; window B still fails in z
+  ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md)).
 - Fix the twist GTSAM smoother (`use_gtsam_smoother`) dropping motion at every NDT
   update: it put the NDT pose, a measurement at the scan stamp, on a node built from all
   twist received until the scan was processed, so each update lost speed x processing
