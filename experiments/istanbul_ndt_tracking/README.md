@@ -111,6 +111,9 @@ Median of three runs (range). *Preset* is `971e29a` with the preset as it was (n
   fell to 0.9-3 Hz while driving (0.9 Hz at 21 m/s in window C). Fixed since by
   `local_map_async_rebuild` (*Background target rebuild* below).
 
+Measured 2026-10-27 on ROS 2 Jazzy, 4 cores; baseline = `971e29a`. This is a
+public-dataset replay, not a physical-robot test.
+
 ## Background target rebuild
 
 With `local_map_async_rebuild: true` (NDT_OMP) the next target is built on a twin NDT
@@ -130,11 +133,11 @@ two objects are swapped. Same windows, preset with the crop, against `main` at
 
 The pose rate is the median count of published poses over the window length. Window B's
 z failure on `main` (one run of three) is the planar-z limit above; at the higher rate
-NDT kept z in all three runs. On the parked start of window A the rate gain does not
-help, and the error stays within run-to-run spread.
+NDT kept z in all three runs. Window A, parked for 15 s and then at up to 10 m/s, comes
+out slightly worse: 0.01 m horizontal and 0.07 m z RMSE (0.30 against 0.24 m).
 
-Measured 2026-10-27 on ROS 2 Jazzy, 4 cores; baseline = `971e29a`. This is a
-public-dataset replay, not a physical-robot test.
+Measured 2026-10-28 on ROS 2 Jazzy, 4 cores. This is a public-dataset replay, not a
+physical-robot test.
 
 ## Rerun
 
