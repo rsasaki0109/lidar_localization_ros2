@@ -28,12 +28,10 @@ the new node like the planar motion (`test/test_twist_gtsam_smoother.cpp`).
 The map (256 MB, 18.7 M points) and the 57-minute localization bag of the
 [Autoware Istanbul urban evaluation](https://docs.autoware.org/main/simulation-evaluation/components_evaluation/localization_evaluation/urban-environment-evaluation/):
 
-```bash
-gdown 1WPWmFCjV7eQee4kyBpmGNlX7awerCPxc -O "$ISTANBUL/map/"
-gdown 1yEB5j74gPLLbkkf87cuCxUgHXTkgSZbn -O "$ISTANBUL/localization_bag/"
-ros2 bag reindex "$ISTANBUL/localization_bag" -s sqlite3
-python3 experiments/twist_smoother_slope/prepare.py "$ISTANBUL/localization_bag" /tmp/istanbul_fixture
-```
+Download and preparation, and the bag's pitfalls, are in
+[docs/benchmark.md](../../docs/benchmark.md#autoware-istanbul-vehicle-preset-replay); the
+replay tools are `tools/benchmark/istanbul_*.py` (they started here as
+`prepare.py`, `replay.py` and `compare.py`).
 
 The localizer reads `/localization/util/downsample/pointcloud` (1500 points, `base_link`)
 and `/localization/twist_estimator/twist_with_covariance`; `/sensing/gnss/pose_with_covariance`
@@ -41,7 +39,7 @@ is the reference. The route climbs up to 10.5 % (bridges, tunnels; z from -65 to
 The twist matches the GNSS-derived speed and yaw rate within 0.05 m/s and 0.002 rad/s
 (sampled every 5 s over the first minute).
 
-Pitfalls of this bag, all handled by `replay.py`:
+Pitfalls of this bag, all handled by `istanbul_replay.py`:
 
 - **Header stamps are 2,371,531.4 s (27 days) before the bag's receive time.** The bag
   carries its own `/clock` in the header time base: play it instead of `--clock`, and map
@@ -93,10 +91,10 @@ then (no crop).
 
 ### Method
 
-`compare.py` runs `replay.py` for the baseline and the candidate alternately, three times
-over three windows, with `param/istanbul_gtsam_smoother.yaml`. Each run starts from the GNSS
-pose at the window start and scores `/pcl_pose` against the GNSS reference interpolated
-at each pose stamp.
+`istanbul_compare.py` runs `istanbul_replay.py` for the baseline and the candidate
+alternately, three times over three windows, with `param/istanbul_gtsam_smoother.yaml`.
+Each run starts from the GNSS pose at the window start and scores `/pcl_pose` against the
+GNSS reference interpolated at each pose stamp.
 
 | Window | Bag time | Why |
 | --- | --- | --- |
@@ -133,7 +131,7 @@ This is a public-dataset replay, not a physical-robot test.
 
 ```bash
 # BASE_WS built from 2d91060 (main before this change), CAND_WS from this change
-python3 experiments/twist_smoother_slope/compare.py \
+python3 tools/benchmark/istanbul_compare.py \
   --base-ws BASE_WS --cand-ws CAND_WS --fixture /tmp/istanbul_fixture \
   --bag "$ISTANBUL/localization_bag" --map "$ISTANBUL/map/pointcloud_map.pcd" \
   --out /tmp/istanbul_compare

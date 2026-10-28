@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Extract what replay.py needs from the Autoware Istanbul localization bag.
+"""Extract what istanbul_replay.py needs from the Autoware Istanbul localization bag.
 
 Writes into OUT_DIR:
   gnss_reference.csv  /sensing/gnss/pose_with_covariance at ~20 Hz (t, x, y, z, quaternion)
   time_map.txt        bag receive time and header stamp of every cloud
   bag_start.txt       the bag's start time, which `ros2 bag play --start-offset` counts from
 
-usage: prepare.py BAG_DIR OUT_DIR
+usage: istanbul_prepare.py BAG_DIR OUT_DIR
 """
 
 import csv

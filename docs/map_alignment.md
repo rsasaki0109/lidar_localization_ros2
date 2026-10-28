@@ -123,20 +123,19 @@ ros2 run tf2_ros tf2_echo map base_link
 
 ## Using the public Istanbul reference seed
 
-The replay harness in
-[experiments/twist_smoother_slope](../experiments/twist_smoother_slope/README.md) takes
-the seed pose and the reference from the **same GNSS stream**:
+The Istanbul replay tools ([benchmark](benchmark.md#autoware-istanbul-vehicle-preset-replay))
+take the seed pose and the reference from the **same GNSS stream**:
 
 ```bash
-python3 experiments/twist_smoother_slope/prepare.py \
+python3 tools/benchmark/istanbul_prepare.py \
   "$ISTANBUL/localization_bag" /tmp/istanbul_fixture
 ```
 
-`prepare.py` writes the GNSS reference (`gnss_reference.csv`) and the cloud time map.
-`replay.py` then sets `set_initial_pose` from the reference at the window start, plays
-the window and scores `/pcl_pose` against the same reference. The bag's header stamps
-are 27 days behind its receive time and its first GNSS poses are stale; the harness
-README lists these pitfalls.
+`istanbul_prepare.py` writes the GNSS reference (`gnss_reference.csv`) and the cloud time
+map. `istanbul_replay.py` then sets `set_initial_pose` from the reference at the window
+start, plays the window and scores `/pcl_pose` against the same reference. The bag's
+header stamps are 27 days behind its receive time, its first GNSS poses are stale, and
+GNSS drops out twice; the benchmark page lists these pitfalls.
 
 If your custom map was **not** built in the same frame as your live sensors,
 do not reuse this seed verbatim — align or transform the map first.
@@ -178,5 +177,5 @@ within your stack’s expected tolerance.
 ## Related docs
 
 - [troubleshooting.md](troubleshooting.md) — “Pose Looks Offset From Reality”
-- [twist_smoother_slope](../experiments/twist_smoother_slope/README.md) — public Istanbul replay and GNSS reference
+- [benchmark.md](benchmark.md#autoware-istanbul-vehicle-preset-replay) — public Istanbul replay and GNSS reference
 - [frame_contract.md](frame_contract.md) — `map` / `odom` / `base_link` contract

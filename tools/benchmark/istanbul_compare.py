@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Run a baseline and a candidate workspace alternately over the Istanbul
-windows with replay.py, then print a summary table (median and range).
+windows with istanbul_replay.py, then print a summary table (median and range).
 
-usage: compare.py --base-ws WS --cand-ws WS --fixture DIR --bag BAG --map PCD --out DIR
-                  [--repeats N] [--set KEY=VALUE ...] [--cand-set KEY=VALUE ...]
-                  [--summary-only]
+usage: istanbul_compare.py --base-ws WS --cand-ws WS --fixture DIR --bag BAG --map PCD
+                           --out DIR [--repeats N] [--set KEY=VALUE ...]
+                           [--cand-set KEY=VALUE ...] [--summary-only]
 """
 
 import argparse
@@ -48,7 +48,7 @@ def run(args):
                 subprocess.run(
                     [
                         sys.executable,
-                        str(HERE / "replay.py"),
+                        str(HERE / "istanbul_replay.py"),
                         "--ws",
                         ws,
                         "--fixture",
@@ -112,7 +112,7 @@ if __name__ == "__main__":
         action="append",
         default=[],
         metavar="KEY=VALUE",
-        help="preset override for both variants (replay.py --set); repeatable",
+        help="preset override for both variants (istanbul_replay.py --set); repeatable",
     )
     parser.add_argument(
         "--cand-set",

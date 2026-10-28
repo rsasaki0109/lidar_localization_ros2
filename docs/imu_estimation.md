@@ -18,9 +18,9 @@ tracking) so the IMU path never affects users who do not enable it.
 | Layer | Parameter | What it does | Addresses |
 | --- | --- | --- | --- |
 | Twist prediction | `use_twist_prediction` (+ `twist_prediction_use_angular_velocity`) | Constant-twist motion prediction between scans, using the IMU/odom angular velocity to rotate the seed | #77 (angular velocity) |
-| Twist EKF | `use_twist_ekf` | A small constant-velocity EKF on the twist (forward speed and yaw rate), feeding both the prediction seed and the published covariance. It moves along the slope given by the last NDT roll and pitch | #77 (estimator) |
+| Twist EKF | `use_twist_ekf` | A small constant-velocity EKF on the twist (forward speed and yaw rate), feeding both the prediction seed and the published covariance. It moves along the slope given by the last NDT roll and pitch. Experimental: on the graded and fast Istanbul windows it lost track in three of six runs, where the twist GTSAM smoother kept all of them; prefer the smoother | #77 (estimator) |
 | **IMU preintegration + smoother** | `use_imu` + `use_imu_preintegration` | On-manifold IMU preintegration (Forster et al. 2017) inside a sliding-window Gauss-Newton optimizer with 6-DOF NDT priors and online gyro/accel bias estimation | #36, #77 |
-| Twist GTSAM smoother | `use_gtsam_smoother` | Sliding-window odometry+NDT smoother (no raw IMU). Planar (x, y, yaw per pose): z, roll and pitch come from NDT, and between updates the NDT seed's z follows the slope given by the last NDT pitch | #77 (estimator) |
+| Twist GTSAM smoother | `use_gtsam_smoother` | Sliding-window odometry+NDT smoother (no raw IMU). Planar (x, y, yaw per pose): z, roll and pitch come from NDT, and between updates the NDT seed's z follows the slope given by the last NDT pitch. Used by `param/istanbul_gtsam_smoother.yaml` | #77 (estimator) |
 
 The headline item is the **IMU preintegration estimator**:
 

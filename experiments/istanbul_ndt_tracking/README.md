@@ -53,7 +53,7 @@ fell back 10-14 m at each one. The subscription now queues 1000 messages.
 
 ## Method
 
-`../twist_smoother_slope/compare.py` replays three windows three times per variant with
+`tools/benchmark/istanbul_compare.py` replays three windows three times per variant with
 `param/istanbul_gtsam_smoother.yaml`, starts from the GNSS pose at the window start and
 scores `/pcl_pose` against the GNSS reference.
 
@@ -217,15 +217,15 @@ Measured 2026-10-28 on ROS 2 Jazzy, 4 cores.
 ## Rerun
 
 ```bash
-python3 experiments/twist_smoother_slope/prepare.py "$ISTANBUL/localization_bag" /tmp/istanbul_fixture
+python3 tools/benchmark/istanbul_prepare.py "$ISTANBUL/localization_bag" /tmp/istanbul_fixture
 # BASE_WS built from 971e29a, CAND_WS from this change
-python3 experiments/twist_smoother_slope/compare.py \
+python3 tools/benchmark/istanbul_compare.py \
   --base-ws BASE_WS --cand-ws CAND_WS --fixture /tmp/istanbul_fixture \
   --bag "$ISTANBUL/localization_bag" --map "$ISTANBUL/map/pointcloud_map.pcd" \
   --out /tmp/istanbul_compare \
   --set enable_local_map_crop=false --cand-set enable_local_map_crop=true
 ```
 
-`replay.py` reads the preset from this checkout, which now crops: the overrides turn the
+`istanbul_replay.py` reads the preset from this checkout, which now crops: the overrides turn the
 crop off for the baseline, as the preset was, and back on for the candidate. Pass only
 `--set enable_local_map_crop=true` to compare both builds with the crop.

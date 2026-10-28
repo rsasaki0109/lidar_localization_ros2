@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The Autoware Istanbul replay tools moved from `experiments/twist_smoother_slope` to
+  `tools/benchmark/istanbul_{prepare,replay,compare}.py`, and `docs/benchmark.md` now
+  describes the Istanbul benchmark (windows, GNSS reference and its pitfalls, latest
+  results). `docs/imu_estimation.md` marks the twist EKF experimental and recommends the
+  twist GTSAM smoother.
 - Add `local_map_async_rebuild` (default `false`, NDT_OMP): with the local map crop, the
   next target is built on a twin NDT object in the background while scans keep aligning
   against the cached one, which covers every scan point until the pose has moved
