@@ -162,6 +162,15 @@ z failure on `main` (one run of three) is the planar-z limit above; at the highe
 NDT kept z in all three runs. Window A, parked for 15 s and then at up to 10 m/s, comes
 out slightly worse: 0.01 m horizontal and 0.07 m z RMSE (0.30 against 0.24 m).
 
+That window A difference is a sampling effect, not a worse pose (three more runs per
+variant on 2026-10-28). While parked every variant had the same z RMSE, 0.24-0.25 m (a
+constant map-to-GNSS z offset). While moving, the background rebuild published about four
+times as many poses (155-173 against 40-48), so its RMSE covers more and harder moments.
+Scored only at the scan stamps both published (13-26 per run), it was better
+horizontally in seven of nine pairs, and z went either way. A 5 m update distance or
+three NDT threads (a stale cached target, or CPU contention with the rebuild) changed
+nothing.
+
 Measured 2026-10-28 on ROS 2 Jazzy, 4 cores. This is a public-dataset replay, not a
 physical-robot test.
 
