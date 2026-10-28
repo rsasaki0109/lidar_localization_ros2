@@ -98,6 +98,9 @@ jobs:
           source /opt/ros/jazzy/setup.bash
           sudo apt-get update
           sudo apt-get install -y python3-rosdep python3-colcon-common-extensions python3-pytest ccache clang-tidy libomp-dev
+          # Optional small_gicp: Jazzy builds, tests and lints the SMALL_GICP backends;
+          # Humble keeps covering the build without it.
+          sudo apt-get install -y ros-jazzy-small-gicp-vendor
           rosdep update
           cd ~/ros2_ws/src
           # ndt_omp_ros2 does not publish a dedicated jazzy branch yet; humble is used in CI.

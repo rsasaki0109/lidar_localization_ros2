@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The Jazzy CI job installs `ros-jazzy-small-gicp-vendor`, so it builds, tests and
+  lints the `SMALL_GICP` and `SMALL_VGICP` code (`test_local_map_async_rebuild` covers
+  them); the Humble job still builds without small_gicp.
 - CMake also looks for `small_gicp_vendor`, so on Jazzy `ros-jazzy-small-gicp-vendor`
   from apt enables the `SMALL_GICP` and `SMALL_VGICP` backends without a local
   small_gicp install (Humble has no such package); the configure log says when
