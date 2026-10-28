@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `-O2 -g` is now added only when `CMAKE_BUILD_TYPE` is unset, so `Release` builds no
+  longer carry debug info. This lowers compiler memory use and binary size on small
+  boards. Builds without a build type are unchanged.
 - Add `/map_switch` (`std_msgs/String` holding a `.pcd` or `.ply` path): replaces the
   map at runtime and keeps the current pose. A map that fails to load or has no points
   leaves the current one. If the new map has a different origin, publish `/initialpose`
