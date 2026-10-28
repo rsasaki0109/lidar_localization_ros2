@@ -49,8 +49,7 @@ subscription kept the default depth of 5 (50 ms at 100 Hz), and the smoother ski
 over 1 s, so each rebuild cost about 1.2 s of motion: with rebuilds every 30 m the pose
 fell back 10-14 m at each one. The subscription now queues 1000 messages.
 
-`TwistEkf::update()` takes no stamp either and has cause 2 as well. No preset enables
-it; it is left for a separate change.
+`TwistEkf::update()` took no stamp either and had cause 2 as well; see *Twist EKF* below.
 
 ## Method
 
@@ -99,13 +98,40 @@ Median of three runs (range). *Preset* is `971e29a` with the preset as it was (n
 - The *fix* runs queued 200 twist messages. One run per window with the committed build
   (1000 messages, preset with the crop): 0.223, 0.918 and 0.504 m horizontal RMSE.
 
+## Twist EKF
+
+The EKF compared the NDT result, the pose at the scan stamp, with the state predicted up
+to the latest twist, so every update pulled the state back by speed x delay. It now
+keeps its predicted trajectory, carries the result along it from the scan stamp to the
+state's time (turned by the measured heading), shifts the trajectory by every
+correction, and seeds NDT and publishes with the pose at the scan stamp
+(`test/test_twist_ekf.cpp`).
+
+The same three windows with `use_twist_ekf: true`, `use_gtsam_smoother: false` and the
+crop, against `main` at `2d91060`, median of three runs (range):
+
+| Window | Variant | Horizontal RMSE m | z RMSE m | 3D p95 m |
+| --- | --- | --- | --- | --- |
+| A | main | 19.047 (14.213-33.546) | 8.721 (6.180-9.675) | 51.949 (38.384-81.512) |
+| A | **fix** | **0.253** (0.205-0.340) | **0.501** (0.254-0.804) | **0.836** (0.560-2.068) |
+| B | main | 456.330 (412.452-471.294) | 63.798 (22.753-131.827) | 644.058 (559.150-685.918) |
+| B | fix | 36.978 (28.515-46.145) | 43.951 (19.919-50.019) | 83.134 (48.802-89.706) |
+| C | main | 270.216 (248.568-323.545) | 34.836 (11.362-42.738) | 342.849 (303.544-392.624) |
+| C | **fix** | **0.537** (0.516-1.220) | **0.750** (0.728-2.661) | **1.445** (1.369-6.223) |
+
+Window B still fails with the EKF, in z first: on the 6 % descent its z fell 2.5 m below
+GNSS within 23 s while NDT matched (fitness 0.4), NDT then rejected the scans, and the
+pose diverged. The smoother tracks the same window. Why the EKF's z does not follow the
+accepted NDT z is not established here; no preset enables the EKF. Measured 2026-10-28
+on ROS 2 Jazzy, 4 cores.
+
 ## Known limits
 
-- **z on grades.** The smoother is planar and keeps the last NDT z. In one of the three
+- **z on grades.** The smoother is planar and kept the last NDT z. In one of the three
   window B runs NDT was rejected for a few scans on the 6 % descent, z fell behind by
-  about 1 m/s, and NDT did not recover (9.1 m horizontal, 37.9 m z RMSE). The slope-aware
-  z seed rejected in [twist_smoother_slope](../twist_smoother_slope/README.md) was
-  measured while NDT did not register; it is worth measuring again on top of this fix.
+  about 1 m/s, and NDT did not recover (9.1 m horizontal, 37.9 m z RMSE). Fixed since by
+  the slope-aware z seed ([twist_smoother_slope](../twist_smoother_slope/README.md),
+  measured again on top of this fix).
 - **Throughput.** Every 10 m the scan callback cropped the map (0.06 s) and built the
   NDT target of the 150 m crop (0.6-0.8 s, 141k points) before aligning, so the pose rate
   fell to 0.9-3 Hz while driving (0.9 Hz at 21 m/s in window C). Fixed since by

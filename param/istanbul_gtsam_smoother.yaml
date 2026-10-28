@@ -3,8 +3,8 @@
 # Without the local map crop the full-map NDT voxel grid overflowed and NDT did
 # not register. Replayed 2026-10-27 on three windows of the localization bag, the
 # crop and the scan-stamp smoother fix took the horizontal RMSE from 5.9-51 m to
-# 0.26-1.1 m; z on grades is a known limit
-# (experiments/istanbul_ndt_tracking/README.md).
+# 0.26-1.1 m (experiments/istanbul_ndt_tracking/README.md); the slope-aware seed
+# keeps z on the grades (experiments/twist_smoother_slope/README.md).
 
 /**:
   ros__parameters:

@@ -166,7 +166,8 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
         last_ndt_roll_, last_ndt_pitch_, scan_stamp_sec);
       break;
     case lidar_localization::RegistrationSeedSource::kTwistEkf:
-      selected_seed.init_guess = twist_ekf_.poseMatrix(last_ndt_roll_, last_ndt_pitch_);
+      selected_seed.init_guess =
+        twist_ekf_.poseMatrixAt(last_ndt_roll_, last_ndt_pitch_, scan_stamp_sec);
       break;
     case lidar_localization::RegistrationSeedSource::kTwistPrediction: {
       const double dt = lidar_localization::clampPredictionDt(
