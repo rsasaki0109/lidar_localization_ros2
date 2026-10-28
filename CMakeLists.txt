@@ -39,6 +39,9 @@ find_package(pcl_conversions REQUIRED)
 find_package(PCL REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(ndt_omp_ros2 REQUIRED)
+# Optional. The ROS vendor package (ros-<distro>-small-gicp-vendor) installs
+# small_gicp under its own prefix and adds that prefix to CMAKE_PREFIX_PATH.
+find_package(small_gicp_vendor QUIET)
 find_package(small_gicp QUIET CONFIG)
 find_package(nav2_util QUIET)
 find_package(bondcpp QUIET)
@@ -87,6 +90,7 @@ ament_target_dependencies(lidar_localization_component
 if(small_gicp_FOUND)
   target_compile_definitions(lidar_localization_component PUBLIC LIDAR_LOCALIZATION_HAVE_SMALL_GICP=1)
   target_link_libraries(lidar_localization_component small_gicp::small_gicp)
+  message(STATUS "small_gicp support enabled (SMALL_GICP, SMALL_VGICP)")
 endif()
 
 if(nav2_util_FOUND AND bondcpp_FOUND)

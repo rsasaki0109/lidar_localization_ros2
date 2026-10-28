@@ -64,5 +64,9 @@ The current no-sudo setup in this workspace uses:
 
 ## Notes
 
+- With `sudo` on Jazzy, `small_gicp` does not need the local prefix:
+  `sudo apt install ros-jazzy-small-gicp-vendor`, and CMake finds it through
+  `small_gicp_vendor` (the configure log prints `small_gicp support enabled`). Humble
+  has no such package.
 - The `ndt_omp_ros2` checkout in `../build_ws/src/ndt_omp_ros2` is patched locally so the library is exported cleanly and the visualization sample app is disabled by default.
 - After the build finishes, `source scripts/setup_local_env.sh` is enough to make `ros2 run lidar_localization_ros2 ...` resolve correctly in a new shell.

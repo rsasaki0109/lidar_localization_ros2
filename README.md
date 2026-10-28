@@ -49,8 +49,10 @@ source ~/lidarloc_ws/install/setup.bash
 
 This builds [ndt_omp_ros2](https://github.com/rsasaki0109/ndt_omp_ros2) and this
 package, about 30 minutes on an 8-core machine.
-[small_gicp](https://github.com/koide3/small_gicp) is optional. For a manual or
-no-sudo build, see [local build](docs/local_build.md).
+[small_gicp](https://github.com/koide3/small_gicp) is optional (`SMALL_GICP` and
+`SMALL_VGICP` backends): on Jazzy, `sudo apt install ros-jazzy-small-gicp-vendor`
+before building is enough. For Humble, a manual or no-sudo build, see
+[local build](docs/local_build.md).
 
 No ROS install? Build the [Docker image](docs/docker.md) and check it in one command:
 
