@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add `local_map_async_rebuild` (default `false`, NDT_OMP): with the local map crop, the
+  next target is built on a twin NDT object in the background while scans keep aligning
+  against the cached one, which covers every scan point until the pose has moved
+  `local_map_radius - scan_max_range`. On the Istanbul map a 150 m crop took 0.6-0.8 s
+  to build in the scan callback; with this the pose rate at 21 m/s went from 0.9 to
+  5.2 Hz. `param/istanbul_gtsam_smoother.yaml` enables it
+  ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md)).
 - Fix the twist GTSAM smoother (`use_gtsam_smoother`) dropping motion at every NDT
   update: it put the NDT pose, a measurement at the scan stamp, on a node built from all
   twist received until the scan was processed, so each update lost speed x processing

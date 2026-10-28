@@ -40,6 +40,8 @@
     enable_local_map_crop: true
     local_map_radius: 150.0
     local_map_update_distance: 10.0
+    # Build the next crop's target in the background: 0.9 -> 5.2 Hz at 21 m/s.
+    local_map_async_rebuild: true
     reject_above_score_threshold: false
     enable_map_odom_tf: false
     global_frame_id: map
