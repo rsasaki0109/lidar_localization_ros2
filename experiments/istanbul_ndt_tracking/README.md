@@ -122,7 +122,8 @@ crop, against `main` at `2d91060`, median of three runs (range):
 Window B still fails with the EKF, in z first: on the 6 % descent its z fell 2.5 m below
 GNSS within 23 s while NDT matched (fitness 0.4), NDT then rejected the scans, and the
 pose diverged. The smoother tracks the same window. Why the EKF's z does not follow the
-accepted NDT z is not established here; no preset enables the EKF.
+accepted NDT z is not established here; no preset enables the EKF. Measured 2026-10-28
+on ROS 2 Jazzy, 4 cores.
 
 ## Known limits
 
