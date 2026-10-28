@@ -186,8 +186,6 @@ public:
   void initializeParameters();
   void initializePubSub();
   void initializeRegistration();
-  RegistrationObjects makeRegistrationObjects(
-    lidar_localization::RegistrationBackend backend) const;
   void releaseRuntimeResources(bool leak_target_clouds_for_shutdown = false);
   void initialPoseReceived(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
@@ -261,6 +259,8 @@ public:
 #endif
     pcl::Registration<pcl::PointXYZI, pcl::PointXYZI> * get() const;
   };
+  RegistrationObjects makeRegistrationObjects(
+    lidar_localization::RegistrationBackend backend) const;
   pcl::Registration<pcl::PointXYZI, pcl::PointXYZI> * registration_{nullptr};
   RegistrationObjects registration_objects_;
   // local_map_async_rebuild: the next local target is built on this twin of

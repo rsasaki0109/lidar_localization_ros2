@@ -1,4 +1,5 @@
 #include <lidar_localization/lidar_localization_component.hpp>
+#include "lidar_localization/local_map_target_policy.hpp"
 #include <pcl/filters/voxel_grid.h>
 #include <cassert>
 #include <cmath>
@@ -121,6 +122,8 @@ void checkBackend(const std::string & method)
   const auto warm_up_source = second->getInputSource();
   assert(warm_up_source && !warm_up_source->empty());
   assert(warm_up_source->size() < target->size() / 10);
+  // The first align() on a target builds its search tree.
+  assert(second->getSearchMethodTarget()->getInputCloud() == target);
 #ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
   if (node.registration_objects_.small_gicp) {
     assert(node.registration_objects_.small_gicp->getTargetCovariances().size() == target->size());
