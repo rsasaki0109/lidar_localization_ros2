@@ -1,5 +1,8 @@
 # Preset: Autoware Istanbul 60 s public benchmark template.
 # Status: reproducible validation input; not a general runtime default.
+# Kept as the v1.1 regression suite used it. On 4 cores it rebuilds the crop on
+# every scan and published 6 poses in 60 s (2026-10-28); for Istanbul replays use
+# istanbul_gtsam_smoother.yaml (experiments/istanbul_ndt_tracking/README.md).
 
 /**:
   ros__parameters:

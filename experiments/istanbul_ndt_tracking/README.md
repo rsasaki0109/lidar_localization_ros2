@@ -165,6 +165,39 @@ out slightly worse: 0.01 m horizontal and 0.07 m z RMSE (0.30 against 0.24 m).
 Measured 2026-10-28 on ROS 2 Jazzy, 4 cores. This is a public-dataset replay, not a
 physical-robot test.
 
+## All fixes together
+
+`main` after #248 (slope-aware z seed), #249 (Twist EKF) and #250 (background rebuild),
+preset as on `main` (crop, `local_map_async_rebuild`), against `main` after #247
+(`2d91060`). Median of three runs (range):
+
+| Window | Variant | Pose rate | Horizontal RMSE m | z RMSE m | 3D p95 m |
+| --- | --- | --- | --- | --- | --- |
+| A | #247 | 1.6 Hz | 0.234 (0.227-0.240) | 0.223 (0.217-0.239) | 0.526 (0.504-0.534) |
+| A | now | 3.6 Hz | 0.251 (0.247-0.255) | 0.279 (0.274-0.326) | 0.681 (0.667-0.687) |
+| B | #247 | 0.7 Hz | 5.460 (3.516-11.765) | 33.411 (22.196-40.622) | 43.880 (28.477-50.455) |
+| B | **now** | 3.5 Hz | **0.874** (0.842-0.880) | **0.681** (0.557-0.791) | **2.246** (2.061-2.334) |
+| C | #247 | 0.6 Hz | 2.723 (1.483-7.676) | 42.967 (30.167-46.231) | 59.165 (45.804-63.119) |
+| C | **now** | 1.6 Hz | **0.498** (0.487-0.567) | **0.377** (0.331-0.405) | **1.037** (0.991-1.094) |
+
+- The container ran slower than in the earlier comparisons: the current build published
+  1.6-3.6 Hz here, where the background rebuild alone reached 5.2-5.8 Hz, and the #247
+  build 0.6-1.6 Hz, against 0.9-2.9 Hz before. At 0.6-0.7 Hz the #247
+  build lost z on the grades in all six runs of B and C (z RMSE 22-46 m), against one or
+  two of three before; its result swings with the machine's speed. The current build kept
+  every run within 0.88 m horizontal RMSE, at 1.6 Hz on window C.
+- Window A is slightly worse, 0.02 m horizontal and 0.06 m z, as with the background
+  rebuild alone.
+
+`param/public_istanbul_60s_benchmark.yaml` (the v1.1 regression template, kept as it
+was) on window A with the current build, three runs each: as it is, it published 6 poses
+in 60 s (it rebuilds the crop on every scan). With `local_map_update_distance: 10.0` and
+`local_map_async_rebuild: true` it published 62-181 poses, 0.39, 0.42 and 3.03 m
+horizontal RMSE; 101 of its 164 aligned scans were rejected at fitness above 6. That
+preset seeds NDT from the twist prediction, without the smoother.
+
+Measured 2026-10-28 on ROS 2 Jazzy, 4 cores.
+
 ## Rerun
 
 ```bash

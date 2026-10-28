@@ -53,7 +53,8 @@ Pitfalls of this bag, all handled by `replay.py`:
   `/sensing/gnss/pose` is already usable as the `base_link` reference.
 - **`public_istanbul_60s_benchmark.yaml` cannot keep up on 4 cores.** It rebuilds the local
   NDT target from the full map on every scan (`local_map_update_distance: 0`) and processed
-  about 21 of 600 scans in 60 s, so its documented 1.2 m could not be checked here.
+  about 21 of 600 scans in 60 s, so its documented 1.2 m could not be checked here
+  (later measurements in [istanbul_ndt_tracking](../istanbul_ndt_tracking/README.md)).
   `istanbul_gtsam_smoother.yaml` built the full-map target once and kept up (9-10
   poses/s), but that target was empty (see the intro).
 
