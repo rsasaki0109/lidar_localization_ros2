@@ -125,6 +125,13 @@ pose diverged. The smoother tracks the same window. Why the EKF's z does not fol
 accepted NDT z is not established here; no preset enables the EKF. Measured 2026-10-28
 on ROS 2 Jazzy, 4 cores.
 
+A larger position process noise is not the fix. One window B run each tracked with
+`ekf_sigma_pos: 0.1` (0.87 m) and `0.5` (0.98 m) where the default 0.01 failed, but three
+runs per window of 0.01 against 0.1 failed equally often: three of the six window B and C
+runs failed with either value (horizontal RMSE 10-226 m), and the others tracked within
+1.3 m. On this container the EKF on windows B and C fails intermittently, and the
+default stays 0.01.
+
 ## Known limits
 
 - **z on grades.** The smoother is planar and kept the last NDT z. In one of the three
@@ -161,6 +168,15 @@ The pose rate is the median count of published poses over the window length. Win
 z failure on `main` (one run of three) is the planar-z limit above; at the higher rate
 NDT kept z in all three runs. Window A, parked for 15 s and then at up to 10 m/s, comes
 out slightly worse: 0.01 m horizontal and 0.07 m z RMSE (0.30 against 0.24 m).
+
+That window A difference is a sampling effect, not a worse pose (three more runs per
+variant on 2026-10-28). While parked every variant had the same z RMSE, 0.24-0.25 m (a
+constant map-to-GNSS z offset). While moving, the background rebuild published about four
+times as many poses (155-173 against 40-48), so its RMSE covers more and harder moments.
+Scored only at the scan stamps both published (13-26 per run), it was better
+horizontally in seven of nine pairs, and z went either way. A 5 m update distance or
+three NDT threads (a stale cached target, or CPU contention with the rebuild) changed
+nothing.
 
 Measured 2026-10-28 on ROS 2 Jazzy, 4 cores. This is a public-dataset replay, not a
 physical-robot test.

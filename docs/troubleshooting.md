@@ -270,7 +270,9 @@ scan, so `cloud_queue_depth: 1` drops scans and fast turns lose track.
   until the crop center has moved `local_map_radius - scan_max_range` (at least
   `local_map_update_distance`); only past that does a scan wait for a target around
   itself. On the Istanbul map a 150 m crop took 0.6-0.8 s to build, which held the pose
-  rate to 0.9 Hz at 21 m/s without it
+  rate to 0.9 Hz at 21 m/s without it. It is off by default (measured on Istanbul only);
+  turn it on for dense maps and fast motion. On the dense Koide outdoor map an 80 m crop
+  holds 670k points and its target took 4.6-4.9 s to build on a 4-vCPU VM
 - or, when the full map fits in memory and its NDT voxel grid can be indexed (next
   section), disable the crop for NDT backends
 
