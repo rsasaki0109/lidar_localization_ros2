@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add `local_map_async_rebuild` (default `false`, NDT_OMP): with the local map crop, the
+  next target is built on a twin NDT object in the background while scans keep aligning
+  against the cached one, which covers every scan point until the pose has moved
+  `local_map_radius - scan_max_range`. On the Istanbul map a 150 m crop took 0.6-0.8 s
+  to build in the scan callback; with this the pose rate at 21 m/s went from 0.9 to
+  5.2 Hz. `param/istanbul_gtsam_smoother.yaml` enables it
+  ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md)).
 - Fix the twist EKF (`use_twist_ekf`) pulling the state back at every NDT update: it
   compared the NDT result, the pose at the scan stamp, with the state predicted up to
   the latest twist. It now carries the result along its predicted trajectory from the

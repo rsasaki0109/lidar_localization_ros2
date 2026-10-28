@@ -132,12 +132,38 @@ on ROS 2 Jazzy, 4 cores.
   about 1 m/s, and NDT did not recover (9.1 m horizontal, 37.9 m z RMSE). Fixed since by
   the slope-aware z seed ([twist_smoother_slope](../twist_smoother_slope/README.md),
   measured again on top of this fix).
-- **Throughput.** Rebuilding the 150 m crop every 10 m takes about 1.7 s on 4 cores, so
-  the pose rate falls to 0.9-3 Hz while driving (0.9 Hz at 21 m/s in window C). A larger `local_map_update_distance` or
-  moving the crop out of the state lock would help; not measured here.
+- **Throughput.** Every 10 m the scan callback cropped the map (0.06 s) and built the
+  NDT target of the 150 m crop (0.6-0.8 s, 141k points) before aligning, so the pose rate
+  fell to 0.9-3 Hz while driving (0.9 Hz at 21 m/s in window C). Fixed since by
+  `local_map_async_rebuild` (*Background target rebuild* below).
 
 Measured 2026-10-27 on ROS 2 Jazzy, 4 cores; baseline = `971e29a`. This is a
 public-dataset replay, not a physical-robot test.
+
+## Background target rebuild
+
+With `local_map_async_rebuild: true` (NDT_OMP) the next target is built on a twin NDT
+object while scans keep aligning against the cached one, which still covers every scan
+point until the pose has moved `local_map_radius - scan_max_range` (50 m here); then the
+two objects are swapped. Same windows, preset with the crop, against `main` at
+`2d91060`, median of three runs (range):
+
+| Window | Variant | Pose rate | Horizontal RMSE m | z RMSE m | 3D p95 m |
+| --- | --- | --- | --- | --- | --- |
+| A | main | 2.9 Hz | 0.230 (0.228-0.236) | 0.235 (0.220-0.244) | 0.474 (0.459-0.516) |
+| A | async | **5.6 Hz** | 0.241 (0.237-0.265) | 0.301 (0.293-0.327) | 0.689 (0.647-0.768) |
+| B | main | 1.3 Hz | 2.469 (1.019-25.806) | 3.426 (0.604-37.073) | 8.310 (2.327-55.426) |
+| B | async | **5.8 Hz** | **0.843** (0.819-0.844) | **0.552** (0.535-0.582) | **2.058** (1.916-2.227) |
+| C | main | 0.9 Hz | 0.501 (0.500-0.523) | 0.588 (0.579-0.603) | 1.568 (1.513-1.699) |
+| C | async | **5.2 Hz** | **0.459** (0.452-0.470) | **0.351** (0.328-0.367) | **0.969** (0.954-0.979) |
+
+The pose rate is the median count of published poses over the window length. Window B's
+z failure on `main` (one run of three) is the planar-z limit above; at the higher rate
+NDT kept z in all three runs. Window A, parked for 15 s and then at up to 10 m/s, comes
+out slightly worse: 0.01 m horizontal and 0.07 m z RMSE (0.30 against 0.24 m).
+
+Measured 2026-10-28 on ROS 2 Jazzy, 4 cores. This is a public-dataset replay, not a
+physical-robot test.
 
 ## Rerun
 

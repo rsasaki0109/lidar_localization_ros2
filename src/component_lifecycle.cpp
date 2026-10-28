@@ -94,6 +94,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("local_map_min_points", 100);
   declare_parameter("min_registration_points", 0);
   declare_parameter("local_map_update_distance", 0.0);
+  declare_parameter("local_map_async_rebuild", false);
   declare_parameter(
     "registration_source_cloud_keep_alive_count",
     static_cast<int>(lidar_localization::kDefaultRegistrationSourceCloudKeepAliveCount));
@@ -257,6 +258,7 @@ bool PCLLocalization::loadMapFromPath(const std::string & path, bool reject_empt
   // The map content changed: drop the crop guards and the cached local target.
   consecutive_crop_failures_ = 0;
   crop_failure_guard_active_ = false;
+  discardLocalMapRebuild();
   local_map_target_cached_ = false;
 
   // A runtime map switch must not race with an align() running outside the state lock.
@@ -465,6 +467,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   last_odom_bridge_source_advance_node_stamp_ = builtin_interfaces::msg::Time{};
   has_last_odom_bridge_source_advance_node_stamp_ = false;
 
+  discardLocalMapRebuild();
   auto registration_execution_lock =
     callback_state_coordinator_.lockRegistrationExecution();
   ndt_initializer_.reset();
@@ -472,6 +475,8 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   registration_ = nullptr;
   pcl_registration_.reset();
   ndt_omp_registration_.reset();
+  spare_ndt_omp_registration_.reset();
+  registration_source_cloud_.reset();
   gicp_omp_registration_.reset();
 #ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
   small_gicp_registration_.reset();

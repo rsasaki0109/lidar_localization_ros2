@@ -117,9 +117,12 @@ void PCLLocalization::initializeRegistration()
 {
   RCLCPP_INFO(get_logger(), "initializeRegistration");
 
+  discardLocalMapRebuild();
   registration_ = nullptr;
   pcl_registration_.reset();
   ndt_omp_registration_.reset();
+  spare_ndt_omp_registration_.reset();
+  registration_source_cloud_.reset();
   gicp_omp_registration_.reset();
 #ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
   small_gicp_registration_.reset();
@@ -148,16 +151,23 @@ void PCLLocalization::initializeRegistration()
     registration_ = pcl_registration_.get();
   }
   else if (registration_backend == lidar_localization::RegistrationBackend::kNdtOmp) {
-    boost::shared_ptr<lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>>
-      ndt_omp(new lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>());
-    ndt_omp->setStepSize(ndt_step_size_);
-    ndt_omp->setResolution(ndt_resolution_);
-    ndt_omp->setTransformationEpsilon(transform_epsilon_);
-    ndt_omp->setNumThreads(
-      lidar_localization::resolveRegistrationThreadCount(
-        ndt_num_threads_, omp_get_max_threads()));
-    ndt_omp_registration_ = ndt_omp;
+    auto make_ndt_omp = [this]() {
+        boost::shared_ptr<lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>>
+        ndt_omp(new lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>());
+        ndt_omp->setStepSize(ndt_step_size_);
+        ndt_omp->setResolution(ndt_resolution_);
+        ndt_omp->setTransformationEpsilon(transform_epsilon_);
+        ndt_omp->setNumThreads(
+          lidar_localization::resolveRegistrationThreadCount(
+            ndt_num_threads_, omp_get_max_threads()));
+        ndt_omp->setMaximumIterations(ndt_max_iterations_);
+        return ndt_omp;
+      };
+    ndt_omp_registration_ = make_ndt_omp();
     registration_ = ndt_omp_registration_.get();
+    if (local_map_async_rebuild_) {
+      spare_ndt_omp_registration_ = make_ndt_omp();
+    }
   }
   else if (registration_backend == lidar_localization::RegistrationBackend::kGicpOmp) {
     pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp_omp(
@@ -424,6 +434,7 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
   }
 
   // The map topic replaces the whole registration target.
+  discardLocalMapRebuild();
   local_map_target_cached_ = false;
   map_recieved_ = true;
   RCLCPP_INFO(get_logger(), "mapReceived end");
