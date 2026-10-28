@@ -49,24 +49,26 @@ def shell(ws, command):
     return f"source {ws}/install/setup.bash && {command}"
 
 
-def run_window(args):
-    out, fixture = Path(args.out), Path(args.fixture)
-    out.mkdir(parents=True, exist_ok=True)
-    ref = load_reference(fixture)
+def window_start_stamp(fixture, start):
+    """The header stamp of the window that starts START seconds into the bag."""
     # Header stamps (and the bag's own /clock) are 2371531.4 s before the bag's
     # receive time, so map the window start through the clouds' stamps.
     time_map = np.loadtxt(fixture / "time_map.txt")
     bag_start = float((fixture / "bag_start.txt").read_text())
-    t_start = float(np.interp(bag_start + args.start, time_map[:, 0], time_map[:, 1]))
+    return float(np.interp(bag_start + start, time_map[:, 0], time_map[:, 1]))
+
+
+def window_params(preset_path, map_path, ref, t_start, overrides):
+    """The preset with the map, sim time, the reference pose at T_START as the
+    initial pose, and the KEY=VALUE overrides (YAML values) applied."""
     _, x, y, z, qx, qy, qz, qw = ref[
         min(int(np.searchsorted(ref[:, 0], t_start)), len(ref) - 1)
     ]
-
-    params = yaml.safe_load((REPO / "param" / args.preset).read_text())
+    params = yaml.safe_load(Path(preset_path).read_text())
     p = params["/**"]["ros__parameters"]
     p.update(
         {
-            "map_path": str(args.map),
+            "map_path": str(map_path),
             "use_sim_time": True,
             "set_initial_pose": True,
             "initial_pose_x": float(x),
@@ -78,9 +80,20 @@ def run_window(args):
             "initial_pose_qw": float(qw),
         }
     )
-    for item in args.set:
+    for item in overrides:
         key, value = item.split("=", 1)
         p[key] = yaml.safe_load(value)
+    return params
+
+
+def run_window(args):
+    out, fixture = Path(args.out), Path(args.fixture)
+    out.mkdir(parents=True, exist_ok=True)
+    ref = load_reference(fixture)
+    t_start = window_start_stamp(fixture, args.start)
+    params = window_params(
+        REPO / "param" / args.preset, args.map, ref, t_start, args.set
+    )
     (out / "params.yaml").write_text(yaml.safe_dump(params))
 
     env = dict(os.environ, ROS_DOMAIN_ID=str(args.domain), RCUTILS_COLORIZED_OUTPUT="0")

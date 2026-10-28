@@ -6,7 +6,9 @@
   `tools/benchmark/istanbul_{prepare,replay,compare}.py`, and `docs/benchmark.md` now
   describes the Istanbul benchmark (windows, GNSS reference and its pitfalls, latest
   results). `docs/imu_estimation.md` marks the twist EKF experimental and recommends the
-  twist GTSAM smoother.
+  twist GTSAM smoother. `test/test_istanbul_benchmark_tools.py` covers them without ROS:
+  the GNSS reference cleanup, the window start in the header-stamp time base, the
+  initial pose and overrides, the scores and the comparison runs and summary.
 - Add `local_map_async_rebuild` (default `false`, NDT_OMP): with the local map crop, the
   next target is built on a twin NDT object in the background while scans keep aligning
   against the cached one, which covers every scan point until the pose has moved
