@@ -2,11 +2,16 @@
 
 ## Unreleased
 
+- `-O2 -g` is now added only when `CMAKE_BUILD_TYPE` is unset, so `Release` builds no
+  longer carry debug info. This lowers compiler memory use and binary size on small
+  boards. Builds without a build type are unchanged.
 - The Autoware Istanbul replay tools moved from `experiments/twist_smoother_slope` to
   `tools/benchmark/istanbul_{prepare,replay,compare}.py`, and `docs/benchmark.md` now
   describes the Istanbul benchmark (windows, GNSS reference and its pitfalls, latest
   results). `docs/imu_estimation.md` marks the twist EKF experimental and recommends the
-  twist GTSAM smoother.
+  twist GTSAM smoother. `test/test_istanbul_benchmark_tools.py` covers them without ROS:
+  the GNSS reference cleanup, the window start in the header-stamp time base, the
+  initial pose and overrides, the scores and the comparison runs and summary.
 - Add `local_map_async_rebuild` (default `false`, every registration backend): with the
   local map crop, the next target is built on a twin registration object in the
   background while scans keep aligning against the cached one, which covers every scan
