@@ -125,6 +125,13 @@ pose diverged. The smoother tracks the same window. Why the EKF's z does not fol
 accepted NDT z is not established here; no preset enables the EKF. Measured 2026-10-28
 on ROS 2 Jazzy, 4 cores.
 
+A larger position process noise is not the fix. One window B run each tracked with
+`ekf_sigma_pos: 0.1` (0.87 m) and `0.5` (0.98 m) where the default 0.01 failed, but three
+runs per window of 0.01 against 0.1 failed equally often: three of the six window B and C
+runs failed with either value (horizontal RMSE 10-226 m), and the others tracked within
+1.3 m. On this container the EKF on windows B and C fails intermittently, and the
+default stays 0.01.
+
 ## Known limits
 
 - **z on grades.** The smoother is planar and kept the last NDT z. In one of the three
