@@ -18,9 +18,9 @@ tracking) so the IMU path never affects users who do not enable it.
 | Layer | Parameter | What it does | Addresses |
 | --- | --- | --- | --- |
 | Twist prediction | `use_twist_prediction` (+ `twist_prediction_use_angular_velocity`) | Constant-twist motion prediction between scans, using the IMU/odom angular velocity to rotate the seed | #77 (angular velocity) |
-| Twist EKF | `use_twist_ekf` | A small constant-velocity EKF on the twist, feeding both the prediction seed and the published covariance | #77 (estimator) |
+| Twist EKF | `use_twist_ekf` | A small constant-velocity EKF on the twist (forward speed and yaw rate), feeding both the prediction seed and the published covariance. It moves along the slope given by the last NDT roll and pitch. Experimental: on the graded and fast Istanbul windows it lost track in three of six runs, where the twist GTSAM smoother kept all of them; prefer the smoother | #77 (estimator) |
 | **IMU preintegration + smoother** | `use_imu` + `use_imu_preintegration` | On-manifold IMU preintegration (Forster et al. 2017) inside a sliding-window Gauss-Newton optimizer with 6-DOF NDT priors and online gyro/accel bias estimation | #36, #77 |
-| Twist GTSAM smoother | `use_gtsam_smoother` | Sliding-window odometry+NDT smoother (no raw IMU) | #77 (estimator) |
+| Twist GTSAM smoother | `use_gtsam_smoother` | Sliding-window odometry+NDT smoother (no raw IMU). Planar (x, y, yaw per pose): z, roll and pitch come from NDT, and between updates the NDT seed's z follows the slope given by the last NDT pitch. Used by `param/istanbul_gtsam_smoother.yaml` | #77 (estimator) |
 
 The headline item is the **IMU preintegration estimator**:
 
@@ -282,9 +282,9 @@ Use these before tuning noise values. If `imu_preintegration_status` is
 first. If it is `imu_preintegration_fallback_mode`, inspect the correction guard
 messages and the LiDAR alignment quality around the transition.
 
-For a quick runtime smoke test during rosbag replay (the validation and comparison
-scripts below were removed with the offline tooling in 6825f05; check out an earlier
-commit to run them, or watch `/alignment_status` directly):
+For a quick runtime smoke test during rosbag replay (the validation, comparison and
+smoke scripts below were removed with the offline tooling in 6825f05; run them from
+`git checkout 6825f05^`, or watch `/alignment_status` directly):
 
 ```bash
 ros2 run lidar_localization_ros2 validate_lidar_localization_imu.py \
@@ -403,7 +403,8 @@ Both are the Phase 1 NDT_OMP winner config on the real `outdoor_hard_01a` bag
 (which carries `/livox/imu`, 75947 samples over 380 s, plus GT); they differ
 **only** in `use_imu_preintegration` (and `output_dir` / `ros_domain_id`), so any
 metric delta is attributable to the Forster preintegration smoother. Run both
-back-to-back and compare:
+back-to-back and compare (`benchmark_from_manifest` was removed in 6825f05; run it
+from `git checkout 6825f05^`):
 
 ```bash
 ros2 run lidar_localization_ros2 benchmark_from_manifest --manifest \

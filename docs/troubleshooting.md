@@ -265,7 +265,33 @@ scan, so `cloud_queue_depth: 1` drops scans and fast turns lose track.
   seed (`use_odom_tf_prediction`), the odometry must keep its motion across dropped
   scans: an odometry that loses it makes every later seed miss, and at the higher rate
   the localization then follows the error instead of recovering between updates
-- or, when the full map fits in memory, disable the crop for NDT backends
+- with `NDT_OMP`, set `local_map_async_rebuild: true` to build the next target in the
+  background while scans keep aligning against the cached one. The cached target is used
+  until the crop center has moved `local_map_radius - scan_max_range` (at least
+  `local_map_update_distance`); only past that does a scan wait for a target around
+  itself. On the Istanbul map a 150 m crop took 0.6-0.8 s to build, which held the pose
+  rate to 0.9 Hz at 21 m/s without it. It is off by default (measured on Istanbul only);
+  turn it on for dense maps and fast motion. On the dense Koide outdoor map an 80 m crop
+  holds 670k points and its target took 4.6-4.9 s to build on a 4-vCPU VM
+- or, when the full map fits in memory and its NDT voxel grid can be indexed (next
+  section), disable the crop for NDT backends
+
+## Symptom: NDT Does Not Correct the Pose on a Large Map
+
+Without a crop, the NDT voxel grid spans the bounding box of the whole map, and NDT
+indexes it with int32. A city-scale map needs more cells than that: the Autoware
+Istanbul map (15.2 x 12.7 km, 284 m of height) needs 5.5e10 at `ndt_resolution: 1.0`.
+The target is then left empty (PCL prints `Leaf size is too small for the input
+dataset. Integer indices would overflow.`), and NDT returns its initial guess: the
+pose follows only the twist or odometry seed, `correction_translation_m` in
+`/alignment_status` stays near zero, and the error grows with the distance driven.
+The localizer logs an error with the map's extent when it builds such a grid; the
+NDT initializer of the GICP backends, which takes the full map, is checked too.
+
+- set `enable_local_map_crop: true` with a `local_map_update_distance` (previous
+  section); the crop's grid covers only the radius
+- a coarser `ndt_resolution` needs fewer cells (Istanbul fits from 3 m) but matches
+  less precisely
 
 ## Symptom: Pose Jumps Along a Corridor-Like Axis
 
@@ -378,6 +404,31 @@ RViz tips:
 
 If the map displays but localization fails, the issue is usually initial pose or
 scan frame mismatch, not map publishing.
+
+## Maps Far From the Origin (MGRS, UTM) (#68)
+
+Map points and poses are float32, so precision depends on how far the map is from
+the origin:
+
+| Map coordinates | float32 spacing | Effect on the pose |
+| --- | --- | --- |
+| up to 100 km (an Autoware MGRS grid map) | 7.8 mm or less | at most 7.8 mm; use the map as it is |
+| millions of m (UTM easting/northing) | 0.25-0.5 m | up to 0.18 m; the map file already rounds points to this spacing |
+
+The numbers come from a synthetic check that shifts one scene and its scans and
+compares the NDT results
+([experiments/large_map_coordinates](../experiments/large_map_coordinates/README.md)).
+The localizer logs a warning when a loaded map reaches 131 km (2^17 m) from the
+origin.
+
+- **MGRS maps**: no change is needed. RViz starts its view at the origin, so the
+  map is out of sight: move the view to the map (**Views** panel, *Focal Point*),
+  or publish a static TF from `map` to a frame at the map's center and set the
+  view's *Target Frame* to it.
+- **UTM or other large coordinates**: shift the map near the origin when exporting it
+  (subtract a fixed offset, for example the first pose or a rounded map center), and
+  keep the offset to convert `/pcl_pose` back. Shifting the float32 file afterwards
+  does not restore the precision it lost when it was written.
 
 ## Symptom: Pose Looks Offset From Reality (#44, #75)
 

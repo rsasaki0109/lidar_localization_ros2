@@ -5,6 +5,59 @@
 - `-O2 -g` is now added only when `CMAKE_BUILD_TYPE` is unset, so `Release` builds no
   longer carry debug info. This lowers compiler memory use and binary size on small
   boards. Builds without a build type are unchanged.
+- The Autoware Istanbul replay tools moved from `experiments/twist_smoother_slope` to
+  `tools/benchmark/istanbul_{prepare,replay,compare}.py`, and `docs/benchmark.md` now
+  describes the Istanbul benchmark (windows, GNSS reference and its pitfalls, latest
+  results). `docs/imu_estimation.md` marks the twist EKF experimental and recommends the
+  twist GTSAM smoother.
+- Add `local_map_async_rebuild` (default `false`, NDT_OMP): with the local map crop, the
+  next target is built on a twin NDT object in the background while scans keep aligning
+  against the cached one, which covers every scan point until the pose has moved
+  `local_map_radius - scan_max_range`. On the Istanbul map a 150 m crop took 0.6-0.8 s
+  to build in the scan callback; with this the pose rate at 21 m/s went from 0.9 to
+  5.2 Hz. `param/istanbul_gtsam_smoother.yaml` enables it
+  ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md)).
+- Fix the twist EKF (`use_twist_ekf`) pulling the state back at every NDT update: it
+  compared the NDT result, the pose at the scan stamp, with the state predicted up to
+  the latest twist. It now carries the result along its predicted trajectory from the
+  scan stamp to the state's time, and seeds NDT and publishes with the pose at the scan
+  stamp. On the Istanbul windows A and C the EKF went from 19 and 270 m to 0.25 and
+  0.54 m horizontal RMSE; window B still fails in z
+  ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md)).
+- Fix the twist GTSAM smoother (`use_gtsam_smoother`) dropping motion at every NDT
+  update: it put the NDT pose, a measurement at the scan stamp, on a node built from all
+  twist received until the scan was processed, so each update lost speed x processing
+  delay and the next NDT seed started behind. It now splits the twist at the scan stamp
+  and seeds NDT at the scan stamp. The twist subscription queues 1000 messages (was 5),
+  so twist received while a scan holds the state lock (a local map crop) is no longer
+  dropped.
+- Log an error at map load when the full-map NDT voxel grid needs more cells than int32
+  indexes: the target is then empty and NDT does not register (troubleshooting, *NDT
+  Does Not Correct the Pose on a Large Map*). `param/istanbul_gtsam_smoother.yaml` now
+  crops the map. On three windows of the Autoware Istanbul bag the preset went from
+  5.9, 20.1 and 51.1 m to 0.26, 1.11 and 0.51 m horizontal RMSE (median of three runs)
+  ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md)).
+- The twist GTSAM smoother's NDT seed follows the slope: `predict()` takes the last NDT
+  roll and pitch, only `cos(pitch)` of the forward speed is planar odometry, the rest
+  moves the seed's z, and the yaw rate turns the heading at `cos(roll) / cos(pitch)`. On
+  the graded Istanbul windows z no longer falls behind while NDT is rejected (worst z RMSE
+  of three runs 19.4 m to 2.0 m and 28.1 m to 0.47 m); the first measurement, made while
+  NDT did not register, had rejected it
+  ([experiments/twist_smoother_slope](experiments/twist_smoother_slope/README.md)). The
+  experiment keeps a replay harness for the bag, and `docs/dev/benchmarking.md` again has
+  working Istanbul download steps.
+
+## 1.4.0 - 2026-10-27
+
+### Added
+
+- Maps far from the origin (#68): the localizer warns at load when map coordinates
+  reach 131 km, where float32 points and poses are 1.6 cm or more apart. A synthetic
+  check found Autoware MGRS maps (up to 100 km) usable as they are (the pose moved by
+  at most 7.8 mm), while UTM coordinates moved it by up to 0.18 m and need shifting
+  near the origin. See
+  [troubleshooting](docs/troubleshooting.md#maps-far-from-the-origin-mgrs-utm-68)
+  and [experiments/large_map_coordinates](experiments/large_map_coordinates/README.md).
 - Add `/map_switch` (`std_msgs/String` holding a `.pcd` or `.ply` path): replaces the
   map at runtime and keeps the current pose. A map that fails to load or has no points
   leaves the current one. If the new map has a different origin, publish `/initialpose`
@@ -27,18 +80,6 @@
   `--no-status` (launch arg `show_status:=false`) turns it off. Topics:
   `/localization_status/status` (JSON: `phase`, `cause`, `label`) and
   `/localization_status/marker`.
-- Quickstart discovery and errors:
-  - map errors list the `.pcd`/`.ply` next to a directory or missing file as `--map`
-    options, and name wrong extensions and empty files;
-  - only published topics count, the localizer's own `/map` and `/initial_map` are
-    not scan candidates, and a running localizer (`/alignment_status` published)
-    is reported;
-  - when a `nav_msgs/Odometry` topic is published, discovery reads the topic list
-    again and waits up to 10 s for its `odom ->` TF, and names the topic in a hint
-    if the TF never arrives. RKO-LIO publishes the TF only after its first scans
-    (7 s after a cold Koide bag started), and DDS can discover it after the bag
-    player; Koide replays started with `odometry=none` and failed global
-    initialization in both cases.
 - Add a Docker image (`docker/Dockerfile`, Jazzy by default, `ROS_DISTRO=humble`
   also builds) with ndt_omp_ros2, and `docker/smoke_status.sh`, which runs quickstart
   on a synthetic map and scan stream and checks the status lines; CI runs both. See
@@ -53,9 +94,6 @@
   Long_Stairs and Outdoor2 self maps; Outdoor1 stays ambiguous and asks for a manual
   pose. On handheld Koide replays it fired on no query
   ([experiments/go2_wide_map_global_init](experiments/go2_wide_map_global_init/README.md#searching-again-only-when-the-band-is-sparse-round-4)).
-- `run_benchmark.py` lists runs whose RKO-LIO odometry stalled (registration loop
-  over 10 s), and `score.json` keeps the longest loop. Such runs looked like
-  localizer failures in the post_init_jump replays.
 - Add `seed_correction_guard_exact_start_translation_m` (node default `0`, off;
   quickstart configs `0.1`): when the first accepted update after an initial pose
   corrects it by at most this much, the seed correction guard's warmup ends at once.
@@ -64,13 +102,6 @@
   start both runs held, where the previous quickstart settings lost both. On the EIL,
   wide-map and Koide regression replays it fired once, on a correct start
   ([experiments/post_init_jump](experiments/post_init_jump/README.md)).
-- Record why the Go2 global search settings stay opt-in
-  ([experiments/go2_wide_map_global_init](experiments/go2_wide_map_global_init/README.md#should-these-settings-be-the-defaults-koide-handheld)).
-  On handheld Koide replays, a 256-point version initialized later in all 12 runs and
-  wrongly in 2; the defaults were right in all 12. On the Go2 data, consecutive
-  answers of the defaults' saturated 2D search mostly agree 1-3 m off the robot,
-  which the two-view startup consensus then confirms; starting each query's yaw
-  sweep at another sample did not change that (not promoted).
 - Add opt-in quickstart options for global search with a sensor low above the
   ground: `--global-z-min` / `--global-z-max` (the G2 scan height band, launch
   args `g2_z_min_m` / `g2_z_max_m`, defaults 0.5 / 5.0 m as before) and
@@ -97,6 +128,45 @@
   A Koide replay (three runs per mode) did not support promotion: the mode
   regresses `outdoor_kidnap_b` recovery, where RKO-LIO odometry drops out
   throughout.
+
+### Changed
+
+- Quickstart discovery and errors:
+  - map errors list the `.pcd`/`.ply` next to a directory or missing file as `--map`
+    options, and name wrong extensions and empty files;
+  - only published topics count, the localizer's own `/map` and `/initial_map` are
+    not scan candidates, and a running localizer (`/alignment_status` published)
+    is reported;
+  - when a `nav_msgs/Odometry` topic is published, discovery reads the topic list
+    again and waits up to 10 s for its `odom ->` TF, and names the topic in a hint
+    if the TF never arrives. RKO-LIO publishes the TF only after its first scans
+    (7 s after a cold Koide bag started), and DDS can discover it after the bag
+    player; Koide replays started with `odometry=none` and failed global
+    initialization in both cases.
+- `run_benchmark.py` lists runs whose RKO-LIO odometry stalled (registration loop
+  over 10 s), and `score.json` keeps the longest loop. Such runs looked like
+  localizer failures in the post_init_jump replays.
+- Record why the Go2 global search settings stay opt-in
+  ([experiments/go2_wide_map_global_init](experiments/go2_wide_map_global_init/README.md#should-these-settings-be-the-defaults-koide-handheld)).
+  On handheld Koide replays, a 256-point version initialized later in all 12 runs and
+  wrongly in 2; the defaults were right in all 12. On the Go2 data, consecutive
+  answers of the defaults' saturated 2D search mostly agree 1-3 m off the robot,
+  which the two-view startup consensus then confirms; starting each query's yaw
+  sweep at another sample did not change that (not promoted).
+- CI runs the C++ tests (`colcon test`) and the whole Python suite (`pytest test/`) on
+  Humble and Jazzy (#238), with Node 24 actions and a ccache compiler cache (#240).
+
+### Fixed
+
+- `use_twist_ekf` predicts along slopes: the forward speed is split by the last NDT pitch
+  into horizontal and vertical motion (z was held constant), and the body yaw rate turns
+  the heading at `cos(roll) / cos(pitch)` of its value. On level ground the EKF is
+  unchanged (bit-identical state and covariance). The twist GTSAM smoother stays planar.
+- `use_odom` prediction applies the `/odom` angular velocity about the body axes
+  (composed with the current orientation) instead of adding it to roll, pitch and yaw,
+  which turned a tilted robot about the wrong axes. Before #236 a tilted pose was also
+  rotated with zero angular velocity: roll and pitch were recomposed in the wrong
+  order. On level ground the prediction is unchanged.
 
 ## 1.3.0 - 2026-10-09
 

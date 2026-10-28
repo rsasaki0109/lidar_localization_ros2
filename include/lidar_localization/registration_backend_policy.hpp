@@ -58,6 +58,12 @@ inline bool usesFilteredTarget(const std::string & registration_method)
   return usesFilteredTarget(parseRegistrationBackend(registration_method));
 }
 
+inline bool usesNdtVoxelGrid(RegistrationBackend backend)
+{
+  return backend == RegistrationBackend::kPclNdt ||
+         backend == RegistrationBackend::kNdtOmp;
+}
+
 inline bool supportsNdtInitializer(RegistrationBackend backend)
 {
   return usesFilteredTarget(backend);

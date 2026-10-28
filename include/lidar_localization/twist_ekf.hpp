@@ -3,7 +3,10 @@
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <deque>
 #include <optional>
 
 /**
@@ -17,7 +20,10 @@
  *   [8]   speed_bias (vx bias, m/s)
  *
  * Prediction uses twist (body-frame vx, wz) at ~100 Hz.
- * Update uses NDT alignment result (px, py, pz, yaw) at ~10 Hz.
+ * Update uses NDT alignment result (px, py, pz, yaw) at ~10 Hz. The result is
+ * the pose at the scan stamp, while the state has moved on with the twist
+ * received since: the update moves the measurement to the state's time along
+ * the EKF's own trajectory (kept in history_).
  */
 class TwistEkf
 {
@@ -60,6 +66,7 @@ public:
     P_ = StateCov::Identity() * 100.0;  // large initial uncertainty
     initialized_ = false;
     last_predict_time_ = 0.0;
+    history_.clear();
   }
 
   /**
@@ -86,6 +93,8 @@ public:
 
     initialized_ = true;
     last_predict_time_ = stamp_sec;
+    history_.clear();
+    recordHistory(stamp_sec);
   }
 
   bool isInitialized() const { return initialized_; }
@@ -93,10 +102,15 @@ public:
   /**
    * Predict step using twist measurement (body-frame).
    * @param vx_body  forward velocity (m/s) from twist
-   * @param wz       yaw rate (rad/s) from twist
+   * @param wz       body yaw rate (rad/s) from twist
    * @param stamp_sec current timestamp
+   * @param roll, pitch  body attitude (rad), e.g. from the latest NDT result.
+   *   On a slope the forward speed splits into horizontal and vertical motion
+   *   and the body yaw rate turns the heading at cos(roll) * wz / cos(pitch).
+   *   With both zero this is the planar model.
    */
-  void predict(double vx_body, double wz, double stamp_sec)
+  void predict(double vx_body, double wz, double stamp_sec,
+               double roll = 0.0, double pitch = 0.0)
   {
     if (!initialized_) { return; }
 
@@ -114,19 +128,26 @@ public:
     double yaw = x_(6);
     double cos_yaw = std::cos(yaw);
     double sin_yaw = std::sin(yaw);
+    // Body x axis in the map frame is (cos_pitch * cos_yaw, cos_pitch * sin_yaw, -sin_pitch).
+    double cos_pitch = std::cos(pitch);
+    double sin_pitch = std::sin(pitch);
+    // ZYX Euler rate: d(yaw)/dt = cos(roll) * wz / cos(pitch) when wx = wy = 0.
+    double yaw_rate_scale =
+      std::cos(roll) / std::copysign(std::max(std::abs(cos_pitch), 1e-3), cos_pitch);
 
     // World-frame velocity from body-frame speed
-    double vx_world = vx_corr * cos_yaw;
-    double vy_world = vx_corr * sin_yaw;
+    double vx_world = vx_corr * cos_pitch * cos_yaw;
+    double vy_world = vx_corr * cos_pitch * sin_yaw;
+    double vz_world = -vx_corr * sin_pitch;
 
     // State transition
     x_(0) += vx_world * dt;
     x_(1) += vy_world * dt;
-    // x_(2) unchanged (no vertical twist info)
+    x_(2) += vz_world * dt;
     x_(3) = vx_world;
     x_(4) = vy_world;
-    // x_(5) = 0
-    x_(6) += wz_corr * dt;
+    x_(5) = vz_world;
+    x_(6) += yaw_rate_scale * wz_corr * dt;
     // Normalize yaw to [-pi, pi]
     x_(6) = normalizeAngle(x_(6));
     // Biases: random walk, no change in prediction
@@ -136,21 +157,22 @@ public:
       Eigen::Matrix<double, STATE_DIM, STATE_DIM>::Identity();
 
     // d(px)/d(yaw)
-    F(0, 6) = -vx_corr * sin_yaw * dt;
+    F(0, 6) = -vx_corr * cos_pitch * sin_yaw * dt;
     // d(py)/d(yaw)
-    F(1, 6) = vx_corr * cos_yaw * dt;
-    // d(px)/d(speed_bias) = -cos_yaw * dt
-    F(0, 8) = -cos_yaw * dt;
-    // d(py)/d(speed_bias) = -sin_yaw * dt
-    F(1, 8) = -sin_yaw * dt;
-    // d(vx_world)/d(yaw)
-    F(3, 6) = -vx_corr * sin_yaw;
-    F(4, 6) = vx_corr * cos_yaw;
-    // d(vx_world)/d(speed_bias)
-    F(3, 8) = -cos_yaw;
-    F(4, 8) = -sin_yaw;
-    // d(yaw)/d(gyro_bias) = -dt
-    F(6, 7) = -dt;
+    F(1, 6) = vx_corr * cos_pitch * cos_yaw * dt;
+    // d(p)/d(speed_bias) = -(body x axis) * dt
+    F(0, 8) = -cos_pitch * cos_yaw * dt;
+    F(1, 8) = -cos_pitch * sin_yaw * dt;
+    F(2, 8) = sin_pitch * dt;
+    // d(v_world)/d(yaw)
+    F(3, 6) = -vx_corr * cos_pitch * sin_yaw;
+    F(4, 6) = vx_corr * cos_pitch * cos_yaw;
+    // d(v_world)/d(speed_bias)
+    F(3, 8) = -cos_pitch * cos_yaw;
+    F(4, 8) = -cos_pitch * sin_yaw;
+    F(5, 8) = sin_pitch;
+    // d(yaw)/d(gyro_bias)
+    F(6, 7) = -yaw_rate_scale * dt;
 
     // Process noise Q
     StateCov Q = StateCov::Zero();
@@ -165,21 +187,37 @@ public:
     Q(8, 8) = params_.sigma_speed_bias * params_.sigma_speed_bias * dt;
 
     P_ = F * P_ * F.transpose() + Q;
+    recordHistory(stamp_sec);
   }
 
   /**
    * Update step using NDT alignment result.
    * @param px, py, pz, yaw  NDT result in map frame
    * @param fitness_score     NDT fitness score (lower = better)
+   * @param stamp_sec         scan stamp of the result; without it the result is
+   *                          taken as the pose at the latest prediction
    * @return true if update was applied, false if rejected
    */
   bool update(double px, double py, double pz, double yaw_meas,
-              double fitness_score)
+              double fitness_score, std::optional<double> stamp_sec = std::nullopt)
   {
     if (!initialized_) { return false; }
 
     if (fitness_score > params_.fitness_reject) {
       return false;
+    }
+
+    if (stamp_sec) {
+      // Carry the measurement over the motion the EKF predicted since the scan,
+      // turned by the heading the measurement gives the scan pose.
+      const PoseSample & at_scan = sampleAt(*stamp_sec);
+      const double turn = normalizeAngle(yaw_meas - at_scan.yaw);
+      const double dx = x_(0) - at_scan.x;
+      const double dy = x_(1) - at_scan.y;
+      px += std::cos(turn) * dx - std::sin(turn) * dy;
+      py += std::sin(turn) * dx + std::cos(turn) * dy;
+      pz += x_(2) - at_scan.z;
+      yaw_meas = normalizeAngle(yaw_meas + normalizeAngle(x_(6) - at_scan.yaw));
     }
 
     // Adaptive measurement noise based on fitness
@@ -215,8 +253,16 @@ public:
     Eigen::Matrix<double, STATE_DIM, MEAS_DIM> K = P_ * H.transpose() * S.inverse();
 
     // State update
-    x_ += K * y;
+    const StateVec correction = K * y;
+    x_ += correction;
     x_(6) = normalizeAngle(x_(6));
+    // The trajectory the next measurement is carried along includes this correction.
+    for (auto & sample : history_) {
+      sample.x += correction(0);
+      sample.y += correction(1);
+      sample.z += correction(2);
+      sample.yaw = normalizeAngle(sample.yaw + correction(6));
+    }
 
     // Covariance update (Joseph form for numerical stability)
     auto I = StateCov::Identity();
@@ -246,20 +292,65 @@ public:
    */
   Eigen::Matrix4f poseMatrix(double roll, double pitch) const
   {
+    return buildMatrix(x_(0), x_(1), x_(2), x_(6), roll, pitch);
+  }
+
+  /**
+   * Pose at a scan stamp: the latest predicted state at or before it (for the
+   * NDT seed, and for the pose published with that scan's stamp).
+   */
+  Eigen::Matrix4f poseMatrixAt(double roll, double pitch, double stamp_sec) const
+  {
+    if (history_.empty()) {return poseMatrix(roll, pitch);}
+    const PoseSample & sample = sampleAt(stamp_sec);
+    return buildMatrix(sample.x, sample.y, sample.z, sample.yaw, roll, pitch);
+  }
+
+private:
+  // The state after a prediction or initialization.
+  struct PoseSample
+  {
+    double stamp;
+    double x;
+    double y;
+    double z;
+    double yaw;
+  };
+
+  // 10 s at 100 Hz: longer than a scan waits to be aligned.
+  static constexpr std::size_t kMaxHistory = 1000;
+
+  void recordHistory(double stamp_sec)
+  {
+    history_.push_back(PoseSample{stamp_sec, x_(0), x_(1), x_(2), x_(6)});
+    while (history_.size() > kMaxHistory) {
+      history_.pop_front();
+    }
+  }
+
+  // The latest sample at or before the stamp, else the oldest one.
+  const PoseSample & sampleAt(double stamp_sec) const
+  {
+    for (auto it = history_.rbegin(); it != history_.rend(); ++it) {
+      if (it->stamp <= stamp_sec) {return *it;}
+    }
+    return history_.front();
+  }
+
+  static Eigen::Matrix4f buildMatrix(
+    double x, double y, double z, double yaw, double roll, double pitch)
+  {
     Eigen::Affine3f affine = Eigen::Affine3f::Identity();
     affine.translation() = Eigen::Vector3f(
-      static_cast<float>(x_(0)),
-      static_cast<float>(x_(1)),
-      static_cast<float>(x_(2)));
+      static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
     affine.linear() = (
-      Eigen::AngleAxisf(static_cast<float>(x_(6)), Eigen::Vector3f::UnitZ()) *
-      Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) *
-      Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX())
+      Eigen::AngleAxisf(static_cast<float>(yaw), Eigen::Vector3f::UnitZ()) *
+      Eigen::AngleAxisf(static_cast<float>(pitch), Eigen::Vector3f::UnitY()) *
+      Eigen::AngleAxisf(static_cast<float>(roll), Eigen::Vector3f::UnitX())
     ).toRotationMatrix();
     return affine.matrix();
   }
 
-private:
   static double normalizeAngle(double a)
   {
     while (a > M_PI) { a -= 2.0 * M_PI; }
@@ -272,6 +363,7 @@ private:
   StateCov P_;
   bool initialized_{false};
   double last_predict_time_{0.0};
+  std::deque<PoseSample> history_;
 };
 
 #endif  // TWIST_EKF_HPP_

@@ -1,7 +1,9 @@
 #include "lidar_localization/map_initialization_policy.hpp"
 
 #include <cassert>
+#include <cmath>
 #include <cstddef>
+#include <string>
 
 #include <pcl/conversions.h>
 
@@ -78,16 +80,83 @@ void test_initial_map_target_setup_plan()
   assert(!plan.use_local_map_crop);
   assert(!plan.create_ndt_initializer);
   assert(plan.set_full_map_as_registration_target);
+  assert(plan.builds_full_map_ndt_grid);
 
+  plan = ll::planInitialMapTargetSetup(false, "NDT_OMP");
+  assert(plan.set_full_map_as_registration_target);
+  assert(plan.builds_full_map_ndt_grid);
+
+  // The GICP backends crop, but their NDT initializer takes the full map.
   plan = ll::planInitialMapTargetSetup(false, "GICP");
   assert(plan.use_local_map_crop);
   assert(plan.create_ndt_initializer);
   assert(!plan.set_full_map_as_registration_target);
+  assert(plan.builds_full_map_ndt_grid);
 
   plan = ll::planInitialMapTargetSetup(true, "NDT");
   assert(plan.use_local_map_crop);
   assert(!plan.create_ndt_initializer);
   assert(!plan.set_full_map_as_registration_target);
+  assert(!plan.builds_full_map_ndt_grid);
+}
+
+void test_float32_coordinate_spacing()
+{
+  assert(ll::float32CoordinateSpacingM(1.0) == std::ldexp(1.0, -23));
+  // MGRS grid coordinates stay below 100 km: 7.8 mm spacing.
+  assert(ll::float32CoordinateSpacingM(99950.0) == std::ldexp(1.0, -7));
+  assert(ll::float32CoordinateSpacingM(-99950.0) == std::ldexp(1.0, -7));
+  // A UTM northing: 0.25 m spacing.
+  assert(ll::float32CoordinateSpacingM(3.9e6) == 0.25);
+}
+
+void test_large_map_coordinate_warning()
+{
+  pcl::PointCloud<pcl::PointXYZI> empty_cloud;
+  assert(!ll::largeMapCoordinateWarning(ll::computeMapBounds(empty_cloud)));
+
+  pcl::PointCloud<pcl::PointXYZI> mgrs_cloud;
+  mgrs_cloud.push_back(make_point(99900.0f, 99900.0f, 40.0f));
+  mgrs_cloud.push_back(make_point(99999.0f, 99999.0f, 60.0f));
+  assert(!ll::largeMapCoordinateWarning(ll::computeMapBounds(mgrs_cloud)));
+
+  pcl::PointCloud<pcl::PointXYZI> utm_cloud;
+  utm_cloud.push_back(make_point(350000.0f, 3900000.0f));
+  utm_cloud.push_back(make_point(350100.0f, 3900100.0f));
+  const auto warning = ll::largeMapCoordinateWarning(ll::computeMapBounds(utm_cloud));
+  assert(warning);
+  assert(warning->find("3900100 m") != std::string::npos);
+  assert(warning->find("0.25 m apart") != std::string::npos);
+
+  // Far on the negative side counts too.
+  pcl::PointCloud<pcl::PointXYZI> negative_cloud;
+  negative_cloud.push_back(make_point(-200000.0f, 0.0f));
+  assert(ll::largeMapCoordinateWarning(ll::computeMapBounds(negative_cloud)));
+}
+
+void test_ndt_voxel_grid_overflow_error()
+{
+  ll::MapBounds3d bounds;
+  assert(!ll::ndtVoxelGridOverflowError(bounds, 1.0));
+
+  // A 300 m local crop around the Istanbul route fits easily.
+  bounds.valid = true;
+  bounds.min_point = make_point(66300.0f, 43470.0f, -10.0f);
+  bounds.max_point = make_point(66600.0f, 43770.0f, 90.0f);
+  assert(ll::ndtVoxelGridCellCount(bounds, 1.0) == 301.0 * 301.0 * 101.0);
+  assert(!ll::ndtVoxelGridOverflowError(bounds, 1.0));
+
+  // The full Istanbul map overflows at 1 m and at 2 m, and fits from 3 m.
+  bounds.min_point = make_point(63368.21f, 38581.27f, -66.12f);
+  bounds.max_point = make_point(78591.57f, 51305.61f, 217.69f);
+  const auto error = ll::ndtVoxelGridOverflowError(bounds, 1.0);
+  assert(error);
+  assert(error->find("15223 x 12724 x 284 m") != std::string::npos);
+  assert(error->find("ndt_resolution 1.00 m needs 5.5e+10 cells") != std::string::npos);
+  assert(error->find("enable_local_map_crop") != std::string::npos);
+  assert(ll::ndtVoxelGridOverflowError(bounds, 2.0));
+  assert(!ll::ndtVoxelGridOverflowError(bounds, 3.0));
+  assert(!ll::ndtVoxelGridOverflowError(bounds, 0.0));
 }
 
 int main()
@@ -97,5 +166,8 @@ int main()
   test_make_initial_map_message_sets_frame_and_preserves_points_without_downsample();
   test_make_initial_map_message_can_downsample();
   test_initial_map_target_setup_plan();
+  test_float32_coordinate_spacing();
+  test_large_map_coordinate_warning();
+  test_ndt_voxel_grid_overflow_error();
   return 0;
 }

@@ -1,5 +1,9 @@
 # Phase 1: Koide backend comparison (NDT_OMP vs SMALL_GICP vs SMALL_VGICP)
 
+> **Note:** this is a development record. Most scripts, tests and experiment
+> directories it names were removed with the offline tooling in 6825f05; run them
+> from `git checkout 6825f05^`. The current benchmark is [benchmark.md](../benchmark.md).
+
 First result on the locally-available Koide data, `outdoor_hard_01a`, 60 s smoke
 window. Run with the GT-aligned diagnostic-map manifests' data absent; this uses
 the runnable `01a` sequence + `map_outdoor_hard.ply`. Numbers are indicative

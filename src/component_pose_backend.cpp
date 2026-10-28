@@ -105,8 +105,9 @@ PCLLocalization::updateTwistEkfPoseBackend(
 
   PlanarSmootherBackendUpdate update;
   update.updated = twist_ekf_.update(
-    observation.x, observation.y, observation.z, observation.yaw, attempt.fitness_score);
-  update.pose = twist_ekf_.poseMatrix(last_ndt_roll_, last_ndt_pitch_);
+    observation.x, observation.y, observation.z, observation.yaw, attempt.fitness_score,
+    stamp_sec);
+  update.pose = twist_ekf_.poseMatrixAt(last_ndt_roll_, last_ndt_pitch_, stamp_sec);
   update.rejected_status_message = "ekf_update_rejected";
   return update;
 }

@@ -1,7 +1,9 @@
 #ifndef LIDAR_LOCALIZATION_LOCAL_MAP_TARGET_POLICY_HPP_
 #define LIDAR_LOCALIZATION_LOCAL_MAP_TARGET_POLICY_HPP_
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <limits>
 
@@ -145,6 +147,51 @@ inline bool shouldReuseLocalMapTarget(
   const double dx = static_cast<double>(center_x) - static_cast<double>(cached_center_x);
   const double dy = static_cast<double>(center_y) - static_cast<double>(cached_center_y);
   return dx * dx + dy * dy < update_distance_m * update_distance_m;
+}
+
+// With local_map_async_rebuild the next target is built in the background
+// while scans keep aligning against the cached one. That target still covers
+// every scan point until the crop center has moved radius - scan range away
+// from it; past that a scan waits for a target around itself.
+inline double localMapAsyncReuseLimit(
+  double radius_m, double scan_max_range_m, double update_distance_m)
+{
+  return std::max(update_distance_m, radius_m - scan_max_range_m);
+}
+
+enum class LocalMapAsyncRebuildStep
+{
+  kReuse,
+  kReuseAndStartRebuild,
+  kWaitForRebuild,
+  kBuildNow,
+};
+
+// Called when the cached target is not reused outright (moved >= update
+// distance, or none cached).
+inline LocalMapAsyncRebuildStep planLocalMapAsyncRebuild(
+  bool has_cached_target,
+  double moved_m,
+  double reuse_limit_m,
+  bool rebuild_running,
+  bool running_rebuild_is_near)
+{
+  if (has_cached_target && moved_m < reuse_limit_m) {
+    return rebuild_running ?
+           LocalMapAsyncRebuildStep::kReuse :
+           LocalMapAsyncRebuildStep::kReuseAndStartRebuild;
+  }
+  if (rebuild_running && running_rebuild_is_near) {
+    return LocalMapAsyncRebuildStep::kWaitForRebuild;
+  }
+  return LocalMapAsyncRebuildStep::kBuildNow;
+}
+
+inline double planarDistance(float ax, float ay, float bx, float by)
+{
+  return std::hypot(
+    static_cast<double>(ax) - static_cast<double>(bx),
+    static_cast<double>(ay) - static_cast<double>(by));
 }
 
 inline std::size_t localMapReserveCapacity(std::size_t full_map_points)

@@ -1,8 +1,12 @@
 #ifndef LIDAR_LOCALIZATION_ODOM_INTEGRATION_POLICY_HPP_
 #define LIDAR_LOCALIZATION_ODOM_INTEGRATION_POLICY_HPP_
 
+#include <Eigen/Core>
+#include <Eigen/Geometry>
+
 #include "geometry_msgs/msg/pose.hpp"
 #include "lidar_localization/pose_finite.hpp"
+#include "lidar_localization/so3_utils.hpp"
 
 namespace lidar_localization
 {
@@ -68,6 +72,28 @@ inline OdomAdmissionDecision decideOdomAdmission(const OdomAdmissionInput & inpu
     return decision;
   }
   return decision;
+}
+
+struct OdomTwistIntegration
+{
+  Eigen::Quaterniond orientation{Eigen::Quaterniond::Identity()};
+  Eigen::Vector3d delta_position{Eigen::Vector3d::Zero()};
+};
+
+// The twist is in the body frame (nav_msgs/Odometry child_frame_id), so the
+// rotation composes on the right of the current orientation. Adding the body
+// rates to roll/pitch/yaw instead is only correct while the body stays level.
+inline OdomTwistIntegration integrateOdomTwist(
+  const Eigen::Quaterniond & orientation,
+  const Eigen::Vector3d & linear_velocity,
+  const Eigen::Vector3d & angular_velocity,
+  double dt_sec)
+{
+  OdomTwistIntegration result;
+  result.orientation =
+    (orientation * Eigen::Quaterniond(so3::Exp(angular_velocity * dt_sec))).normalized();
+  result.delta_position = result.orientation * (linear_velocity * dt_sec);
+  return result;
 }
 
 }  // namespace lidar_localization

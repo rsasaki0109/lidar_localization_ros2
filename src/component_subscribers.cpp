@@ -56,6 +56,10 @@ void PCLLocalization::initializePubSub()
 
   // Direct twist history reception uses only its short mutex. Optional pose
   // backends retain state locking; capture that routing choice at configuration.
+  // They wait while a scan holds the state lock (a local map crop took 1.7 s on
+  // Istanbul), so queue the twist meanwhile: 10 s at 100 Hz. The default depth
+  // of 5 dropped it, and the pose backends lost that motion.
+  constexpr std::size_t kTwistQueueDepth = 1000;
   rclcpp::SubscriptionOptions twist_subscription_options;
   twist_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   twist_subscription_options.callback_group = twist_callback_group_;
@@ -65,7 +69,7 @@ void PCLLocalization::initializePubSub()
     subscription_generation = twist_subscription_generation_;
   }
   twist_sub_ = create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(
-    "twist", rclcpp::SensorDataQoS(),
+    "twist", rclcpp::SensorDataQoS().keep_last(kTwistQueueDepth),
     [this, subscription_generation,
       update_pose_backends = use_twist_ekf_ || use_gtsam_smoother_](
       const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg) {
@@ -113,9 +117,12 @@ void PCLLocalization::initializeRegistration()
 {
   RCLCPP_INFO(get_logger(), "initializeRegistration");
 
+  discardLocalMapRebuild();
   registration_ = nullptr;
   pcl_registration_.reset();
   ndt_omp_registration_.reset();
+  spare_ndt_omp_registration_.reset();
+  registration_source_cloud_.reset();
   gicp_omp_registration_.reset();
 #ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
   small_gicp_registration_.reset();
@@ -144,16 +151,23 @@ void PCLLocalization::initializeRegistration()
     registration_ = pcl_registration_.get();
   }
   else if (registration_backend == lidar_localization::RegistrationBackend::kNdtOmp) {
-    boost::shared_ptr<lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>>
-      ndt_omp(new lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>());
-    ndt_omp->setStepSize(ndt_step_size_);
-    ndt_omp->setResolution(ndt_resolution_);
-    ndt_omp->setTransformationEpsilon(transform_epsilon_);
-    ndt_omp->setNumThreads(
-      lidar_localization::resolveRegistrationThreadCount(
-        ndt_num_threads_, omp_get_max_threads()));
-    ndt_omp_registration_ = ndt_omp;
+    auto make_ndt_omp = [this]() {
+        boost::shared_ptr<lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>>
+        ndt_omp(new lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>());
+        ndt_omp->setStepSize(ndt_step_size_);
+        ndt_omp->setResolution(ndt_resolution_);
+        ndt_omp->setTransformationEpsilon(transform_epsilon_);
+        ndt_omp->setNumThreads(
+          lidar_localization::resolveRegistrationThreadCount(
+            ndt_num_threads_, omp_get_max_threads()));
+        ndt_omp->setMaximumIterations(ndt_max_iterations_);
+        return ndt_omp;
+      };
+    ndt_omp_registration_ = make_ndt_omp();
     registration_ = ndt_omp_registration_.get();
+    if (local_map_async_rebuild_) {
+      spare_ndt_omp_registration_ = make_ndt_omp();
+    }
   }
   else if (registration_backend == lidar_localization::RegistrationBackend::kGicpOmp) {
     pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp_omp(
@@ -394,6 +408,11 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
   }
 
   pcl::fromROSMsg(*msg, *map_cloud_ptr);
+  if (const auto warning = lidar_localization::largeMapCoordinateWarning(
+      lidar_localization::computeMapBounds(*map_cloud_ptr)))
+  {
+    RCLCPP_WARN(get_logger(), "%s", warning->c_str());
+  }
 
   const auto map_target_choice = lidar_localization::chooseMapSubscriptionTargetCloud(
     lidar_localization::usesFilteredTarget(registration_method_));
@@ -415,6 +434,7 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
   }
 
   // The map topic replaces the whole registration target.
+  discardLocalMapRebuild();
   local_map_target_cached_ = false;
   map_recieved_ = true;
   RCLCPP_INFO(get_logger(), "mapReceived end");
@@ -470,33 +490,20 @@ void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr
   const geometry_msgs::msg::Pose previous_pose =
     corrent_pose_with_cov_stamped_ptr_->pose.pose;
 
-  tf2::Quaternion previous_quat_tf;
-  double roll, pitch, yaw;
-  tf2::fromMsg(corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation, previous_quat_tf);
+  const auto & twist = msg->twist.twist;
+  const auto integration = lidar_localization::integrateOdomTwist(
+    Eigen::Quaterniond(
+      previous_pose.orientation.w, previous_pose.orientation.x,
+      previous_pose.orientation.y, previous_pose.orientation.z),
+    Eigen::Vector3d(twist.linear.x, twist.linear.y, twist.linear.z),
+    Eigen::Vector3d(twist.angular.x, twist.angular.y, twist.angular.z),
+    dt_odom);
 
-  tf2::Matrix3x3(previous_quat_tf).getRPY(roll, pitch, yaw);
-
-  roll += msg->twist.twist.angular.x * dt_odom;
-  pitch += msg->twist.twist.angular.y * dt_odom;
-  yaw += msg->twist.twist.angular.z * dt_odom;
-
-  Eigen::Quaterniond quat_eig =
-    Eigen::AngleAxisd(roll, Eigen::Vector3d::UnitX()) *
-    Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()) *
-    Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ());
-
-  geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
-
-  Eigen::Vector3d odom{
-    msg->twist.twist.linear.x,
-    msg->twist.twist.linear.y,
-    msg->twist.twist.linear.z};
-  Eigen::Vector3d delta_position = quat_eig.matrix() * dt_odom * odom;
-
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x += delta_position.x();
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y += delta_position.y();
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z += delta_position.z();
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x += integration.delta_position.x();
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y += integration.delta_position.y();
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z += integration.delta_position.z();
+  corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation =
+    tf2::toMsg(integration.orientation);
 
   if (!lidar_localization::isPoseFinite(corrent_pose_with_cov_stamped_ptr_->pose.pose)) {
     corrent_pose_with_cov_stamped_ptr_->pose.pose = previous_pose;
@@ -542,11 +549,11 @@ void PCLLocalization::twistReceived(
   double wz = msg->twist.twist.angular.z;
 
   if (use_twist_ekf_ && twist_ekf_.isInitialized()) {
-    twist_ekf_.predict(vx, wz, stamp_sec);
+    twist_ekf_.predict(vx, wz, stamp_sec, last_ndt_roll_, last_ndt_pitch_);
   }
 
   if (use_gtsam_smoother_ && gtsam_smoother_.isInitialized()) {
-    gtsam_smoother_.predict(vx, wz, stamp_sec);
+    gtsam_smoother_.predict(vx, wz, stamp_sec, last_ndt_roll_, last_ndt_pitch_);
   }
 }
 

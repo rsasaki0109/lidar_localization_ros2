@@ -4,18 +4,23 @@
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <deque>
 #include <iostream>
+#include <limits>
 
 /**
  * Sliding-window smoother fusing twist odometry with NDT measurements.
  *
  * Uses Pose2 (x, y, yaw) for the planar component.
- * Z, roll, pitch are taken directly from the latest NDT result.
+ * Z, roll, pitch are taken directly from the latest NDT result; between
+ * updates the predicted z follows the slope of the twist motion.
  *
  * Factors:
- *   - Between: accumulated twist odometry between scan timestamps
+ *   - Between: twist odometry between scan timestamps (each twist message counts
+ *     toward the scan its stamp precedes, however late the scan is processed)
  *   - Prior:   NDT measurement with robust Huber kernel
  *   - Anchor:  prior on oldest pose in window
  *
@@ -52,9 +57,9 @@ public:
     poses_.clear();
     initialized_ = false;
     last_predict_time_ = 0.0;
-    accumulated_dx_ = 0.0;
-    accumulated_dy_ = 0.0;
-    accumulated_dyaw_ = 0.0;
+    accumulated_ = Motion{};
+    folded_ = Motion{};
+    pending_steps_.clear();
     latest_z_ = 0.0;
   }
 
@@ -80,7 +85,15 @@ public:
     initialized_ = true;
   }
 
-  void predict(double vx_body, double wz, double stamp_sec)
+  /**
+   * Accumulate twist odometry.
+   * @param roll, pitch  body attitude (rad), e.g. from the latest NDT result.
+   *   On a slope only cos(pitch) of the forward speed is planar motion, the
+   *   rest moves the predicted z, and the body yaw rate turns the heading at
+   *   cos(roll) * wz / cos(pitch). With both zero this is the planar model.
+   */
+  void predict(double vx_body, double wz, double stamp_sec,
+               double roll = 0.0, double pitch = 0.0)
   {
     if (!initialized_) { return; }
 
@@ -91,14 +104,19 @@ public:
     }
     last_predict_time_ = stamp_sec;
 
-    double dyaw = wz * dt;
-    double dx = vx_body * dt;
-
-    double c = std::cos(accumulated_dyaw_);
-    double s = std::sin(accumulated_dyaw_);
-    accumulated_dx_ += dx * c;
-    accumulated_dy_ += dx * s;
-    accumulated_dyaw_ += dyaw;
+    const double cos_pitch = std::cos(pitch);
+    const double yaw_rate_scale =
+      std::cos(roll) / std::copysign(std::max(std::abs(cos_pitch), 1e-3), cos_pitch);
+    const TwistStep step{
+      stamp_sec, vx_body * cos_pitch * dt, -vx_body * std::sin(pitch) * dt,
+      wz * yaw_rate_scale * dt};
+    accumulated_.add(step);
+    pending_steps_.push_back(step);
+    // Bound the memory while no scan updates (40 s at 100 Hz).
+    while (pending_steps_.size() > kMaxPendingSteps) {
+      folded_.add(pending_steps_.front());
+      pending_steps_.pop_front();
+    }
   }
 
   bool update(double px, double py, double pz, double yaw_meas,
@@ -108,10 +126,21 @@ public:
 
     bool accept_ndt = (fitness_score <= params_.fitness_reject);
 
+    // The NDT pose is the pose at the scan stamp: the twist received after it,
+    // while the scan waited and was aligned, moves on from the new node.
+    const Motion odom = motionThrough(stamp_sec);
+    std::deque<TwistStep> later_steps;
+    for (const auto & step : pending_steps_) {
+      if (step.stamp > stamp_sec) {later_steps.push_back(step);}
+    }
+    pending_steps_.swap(later_steps);
+    folded_ = Motion{};
+    accumulated_ = motionThrough(std::numeric_limits<double>::infinity());
+
     PoseEntry entry;
-    entry.odom_dx = accumulated_dx_;
-    entry.odom_dy = accumulated_dy_;
-    entry.odom_dyaw = accumulated_dyaw_;
+    entry.odom_dx = odom.dx;
+    entry.odom_dy = odom.dy;
+    entry.odom_dyaw = odom.dyaw;
     entry.has_odom = true;
 
     if (accept_ndt) {
@@ -126,15 +155,10 @@ public:
     const auto & prev = poses_.back();
     double c = std::cos(prev.yaw);
     double s = std::sin(prev.yaw);
-    entry.x = prev.x + c * accumulated_dx_ - s * accumulated_dy_;
-    entry.y = prev.y + s * accumulated_dx_ + c * accumulated_dy_;
-    entry.yaw = normalizeAngle(prev.yaw + accumulated_dyaw_);
+    entry.x = prev.x + c * odom.dx - s * odom.dy;
+    entry.y = prev.y + s * odom.dx + c * odom.dy;
+    entry.yaw = normalizeAngle(prev.yaw + odom.dyaw);
     poses_.push_back(entry);
-
-    // Reset accumulator
-    accumulated_dx_ = 0.0;
-    accumulated_dy_ = 0.0;
-    accumulated_dyaw_ = 0.0;
 
     // Trim sliding window
     while (static_cast<int>(poses_.size()) > params_.window_size) {
@@ -175,32 +199,80 @@ public:
     if (!initialized_ || poses_.empty()) return Eigen::Matrix4f::Identity();
 
     const auto & p = poses_.back();
-    return buildMatrix(p.x, p.y, p.yaw, roll, pitch);
+    return buildMatrix(p.x, p.y, latest_z_, p.yaw, roll, pitch);
   }
 
-  // Returns the twist-predicted pose (for NDT init_guess)
+  // Returns the pose predicted with all received twist
   Eigen::Matrix4f predictedPoseMatrix(float roll, float pitch) const
+  {
+    return predictedPoseMatrix(roll, pitch, accumulated_);
+  }
+
+  // Returns the pose predicted at a scan stamp (for NDT init_guess)
+  Eigen::Matrix4f predictedPoseMatrixAt(float roll, float pitch, double stamp_sec) const
+  {
+    return predictedPoseMatrix(roll, pitch, motionThrough(stamp_sec));
+  }
+
+private:
+  // A twist message's body-frame increment, ending at its stamp.
+  struct TwistStep
+  {
+    double stamp;
+    double dx;
+    double dz;
+    double dyaw;
+  };
+
+  // Planar motion relative to the latest pose node.
+  struct Motion
+  {
+    double dx{0.0};
+    double dy{0.0};
+    double dz{0.0};
+    double dyaw{0.0};
+
+    void add(const TwistStep & step)
+    {
+      dx += step.dx * std::cos(dyaw);
+      dy += step.dx * std::sin(dyaw);
+      dz += step.dz;
+      dyaw += step.dyaw;
+    }
+  };
+
+  static constexpr std::size_t kMaxPendingSteps = 4000;
+
+  Motion motionThrough(double stamp_sec) const
+  {
+    Motion motion = folded_;
+    for (const auto & step : pending_steps_) {
+      if (step.stamp <= stamp_sec) {motion.add(step);}
+    }
+    return motion;
+  }
+
+  Eigen::Matrix4f predictedPoseMatrix(float roll, float pitch, const Motion & motion) const
   {
     if (!initialized_ || poses_.empty()) return Eigen::Matrix4f::Identity();
 
     const auto & p = poses_.back();
     double c = std::cos(p.yaw);
     double s = std::sin(p.yaw);
-    double pred_x = p.x + c * accumulated_dx_ - s * accumulated_dy_;
-    double pred_y = p.y + s * accumulated_dx_ + c * accumulated_dy_;
-    double pred_yaw = p.yaw + accumulated_dyaw_;
-    return buildMatrix(pred_x, pred_y, pred_yaw, roll, pitch);
+    double pred_x = p.x + c * motion.dx - s * motion.dy;
+    double pred_y = p.y + s * motion.dx + c * motion.dy;
+    double pred_yaw = p.yaw + motion.dyaw;
+    return buildMatrix(pred_x, pred_y, latest_z_ + motion.dz, pred_yaw, roll, pitch);
   }
 
-private:
-  Eigen::Matrix4f buildMatrix(double px, double py, double yaw_val,
+  Eigen::Matrix4f buildMatrix(double px, double py, double pz, double yaw_val,
                                float roll, float pitch) const
   {
     Eigen::Affine3f affine = Eigen::Affine3f::Identity();
     affine.translation() = Eigen::Vector3f(
       static_cast<float>(px),
       static_cast<float>(py),
-      static_cast<float>(latest_z_));
+      static_cast<float>(pz));
     affine.linear() = (
       Eigen::AngleAxisf(static_cast<float>(yaw_val), Eigen::Vector3f::UnitZ()) *
       Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) *
@@ -390,9 +462,11 @@ private:
   bool initialized_{false};
   double last_predict_time_{0.0};
 
-  double accumulated_dx_{0.0};
-  double accumulated_dy_{0.0};
-  double accumulated_dyaw_{0.0};
+  // Motion through all received twist, and through the steps folded out of
+  // pending_steps_; pending_steps_ holds the steps since the latest node.
+  Motion accumulated_;
+  Motion folded_;
+  std::deque<TwistStep> pending_steps_;
 
   double latest_z_{0.0};
 };

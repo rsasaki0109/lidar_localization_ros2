@@ -342,7 +342,7 @@ if(BUILD_TESTING)
   add_executable(test_odom_integration_policy
     test/test_odom_integration_policy.cpp)
   target_include_directories(test_odom_integration_policy PRIVATE
-    include)
+    include ${EIGEN3_INCLUDE_DIRS})
   ament_target_dependencies(test_odom_integration_policy
     geometry_msgs)
   add_test(
@@ -590,6 +590,24 @@ if(BUILD_TESTING)
   add_test(
     NAME imu_preintegration
     COMMAND test_imu_preintegration
+  )
+
+  add_executable(test_twist_ekf
+    test/test_twist_ekf.cpp)
+  target_include_directories(test_twist_ekf PRIVATE
+    include ${EIGEN3_INCLUDE_DIRS})
+  add_test(
+    NAME twist_ekf
+    COMMAND test_twist_ekf
+  )
+
+  add_executable(test_twist_gtsam_smoother
+    test/test_twist_gtsam_smoother.cpp)
+  target_include_directories(test_twist_gtsam_smoother PRIVATE
+    include ${EIGEN3_INCLUDE_DIRS})
+  add_test(
+    NAME twist_gtsam_smoother
+    COMMAND test_twist_gtsam_smoother
   )
 
   add_executable(test_bbs_branch_and_bound

@@ -1,5 +1,9 @@
 # G2 BBS query speedup: profiling and the C++ port plan
 
+> **Note:** this is a development record. Most scripts, tests and experiment
+> directories it names were removed with the offline tooling in 6825f05; run them
+> from `git checkout 6825f05^`. The current benchmark is [benchmark.md](../benchmark.md).
+
 The G3 live closed-loop work ([g3_live_closed_loop.md](g3_live_closed_loop.md))
 isolated **query latency** as the dominant blocker to live recovery: a BBS query
 takes ~5–23 s, so the candidate it returns is stale by the time the supervisor
