@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `-O2 -g` is now added only when `CMAKE_BUILD_TYPE` is unset, so `Release` builds no
+  longer carry debug info. This lowers compiler memory use and binary size on small
+  boards. Builds without a build type are unchanged.
 - The Autoware Istanbul replay tools moved from `experiments/twist_smoother_slope` to
   `tools/benchmark/istanbul_{prepare,replay,compare}.py`, and `docs/benchmark.md` now
   describes the Istanbul benchmark (windows, GNSS reference and its pitfalls, latest
