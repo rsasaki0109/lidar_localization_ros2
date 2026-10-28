@@ -81,6 +81,7 @@
 #include "lidar_localization/pose_backend_selection_policy.hpp"
 #include "lidar_localization/pose_publish_policy.hpp"
 #include "lidar_localization/point_field_read.hpp"
+#include "lidar_localization/registration_backend_policy.hpp"
 #include "lidar_localization/registration_cloud_keep_alive_policy.hpp"
 #include "lidar_localization/registration_observation_policy.hpp"
 #include "lidar_localization/registration_seed_policy.hpp"
@@ -185,6 +186,8 @@ public:
   void initializeParameters();
   void initializePubSub();
   void initializeRegistration();
+  RegistrationObjects makeRegistrationObjects(
+    lidar_localization::RegistrationBackend backend) const;
   void releaseRuntimeResources(bool leak_target_clouds_for_shutdown = false);
   void initialPoseReceived(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
@@ -245,29 +248,36 @@ public:
 
   // --- Registration backends ---
 
+  // The owner of one registration backend; only the member for
+  // registration_method_ is set.
+  struct RegistrationObjects
+  {
+    pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr pcl;
+    boost::shared_ptr<lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>>
+    ndt_omp;
+    pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp_omp;
+#ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
+    small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>::Ptr small_gicp;
+#endif
+    pcl::Registration<pcl::PointXYZI, pcl::PointXYZI> * get() const;
+  };
   pcl::Registration<pcl::PointXYZI, pcl::PointXYZI> * registration_{nullptr};
-  pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr pcl_registration_;
-  boost::shared_ptr<lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>>
-    ndt_omp_registration_;
+  RegistrationObjects registration_objects_;
   // local_map_async_rebuild: the next local target is built on this twin of
-  // ndt_omp_registration_ in the background, then the two are swapped.
-  boost::shared_ptr<lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>>
-    spare_ndt_omp_registration_;
+  // registration_objects_ in the background, then the two are swapped.
+  RegistrationObjects spare_registration_objects_;
   struct LocalMapRebuild
   {
     bool ready{false};
     float center_x{0.0f};
     float center_y{0.0f};
     pcl::PointCloud<pcl::PointXYZI>::Ptr target;
+    pcl::PointCloud<pcl::PointXYZI>::Ptr warm_up_source;
   };
   std::future<LocalMapRebuild> local_map_rebuild_;
   float local_map_rebuild_center_x_{0.0f};
   float local_map_rebuild_center_y_{0.0f};
   pcl::PointCloud<pcl::PointXYZI>::Ptr registration_source_cloud_;
-  pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp_omp_registration_;
-#ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
-  small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>::Ptr small_gicp_registration_;
-#endif
   pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter_;
 
   // --- Shared callback state ---
