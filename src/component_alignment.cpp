@@ -586,6 +586,7 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
     return attempt;
   }
   attempt.has_converged = registration_->hasConverged();
+  attempt.registration_iterations = registration_objects_.finalIterationCount();
   attempt.fitness_score = registration_->getFitnessScore();
 
   if (enable_registration_localizability_diagnostics_ && registration_objects_.ndt_omp) {

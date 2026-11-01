@@ -222,6 +222,8 @@ These keys are diagnostics only — they never change acceptance behavior.
 | `consecutive_rejected_updates` | high streak means seed or map is wrong |
 | `seed_translation_since_accept_m` | large drift since last accept → open-loop problem |
 | `filtered_point_count` | very low → scan preprocessing or crop issue |
+| `alignment_time_sec` | wall time of the registration call; at or above `diagnostics_overload_alignment_time_sec` the scan reads as `overload` |
+| `registration_iterations` | iterations of that call (`NDT`, `NDT_OMP`, `SMALL_GICP`, `SMALL_VGICP`; `-1` for the other backends); at or above `ndt_max_iterations` it ran to the cap instead of converging |
 | `reinitialization_requested` | `true` means node wants a new `/initialpose` |
 
 Watch live:
@@ -250,6 +252,16 @@ Do not expect automatic relocalization in v1.1 runtime; use a new `/initialpose`
 when `reinitialization_requested` stays true.
 
 ## Symptom: Pose Rate Drops or Tracking Is Lost on Dense Maps
+
+First rule out an unoptimized build: `alignment_time_sec` far above the scan period
+while `registration_iterations` stays low (under about 10). `ndt_omp_ros2` sets no
+`CMAKE_BUILD_TYPE`, so a `colcon build` without `--cmake-args -DCMAKE_BUILD_TYPE=Release`
+compiled its NDT and GICP code without optimization, and the localizer ran that code:
+on the Istanbul bag NDT_OMP took 220-260 ms per 1500-point scan instead of 11-12 ms
+(1.5-3.1 instead of 9-10 Hz). The localizer now compiles that code itself with its own
+flags; with an older version, rebuild `ndt_omp_ros2` with
+`-DCMAKE_BUILD_TYPE=Release`. Timings quoted below that were measured before this fix
+may include that slowdown.
 
 With `enable_local_map_crop: true` (and always for GICP/small_gicp backends) the
 target is cropped and handed to the registration backend on every scan, which rebuilds

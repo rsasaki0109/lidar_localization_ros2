@@ -69,6 +69,7 @@ void test_build_alignment_diagnostic_values_order_and_strings()
   input.open_loop_strict_active = false;
   input.borderline_seed_gate_active = true;
   input.alignment_time_sec = 0.01;
+  input.registration_iterations = 9;
   input.filtered_point_count = 123;
   input.correction_translation_m = 0.2;
   input.correction_yaw_deg = 0.3;
@@ -146,7 +147,7 @@ void test_build_alignment_diagnostic_values_order_and_strings()
   input.soft_odom_correction_gate_enabled = true;
 
   const auto values = ll::buildAlignmentDiagnosticValues(input);
-  assert(values.size() == 99);
+  assert(values.size() == 100);
   assert(values[0].first == "registration_method");
   assert(values[0].second == "NDT");
   assert(values[1].first == "has_converged");
@@ -269,6 +270,7 @@ void test_build_alignment_diagnostic_values_order_and_strings()
   assert(values[96].first == "path_pose_count" && values[96].second == "456");
   assert(values[97].first == "point_timestamp_unit" && values[97].second == "nanoseconds");
   assert(values[98].first == "soft_odom_correction_gate_enabled" && values[98].second == "true");
+  assert(values[99].first == "registration_iterations" && values[99].second == "9");
 }
 
 int main()

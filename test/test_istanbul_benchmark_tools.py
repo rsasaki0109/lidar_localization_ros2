@@ -240,3 +240,83 @@ def test_summary_reports_the_median_and_range_per_variant(tmp_path, capsys):
         "| B_grade_2820 | cand | 1 | 0.250 (0.250-0.250) | 0.400 (0.400-0.400)"
         " | 0.500 (0.500-0.500) | 1.000 (1.000-1.000) |",
     ]
+
+
+def _write_alignment(path, records):
+    path.write_text("".join(json.dumps(r) + "\n" for r in records))
+
+
+def test_alignment_cost_counts_the_window_scans_and_skips_scans_without_registration(
+    tmp_path,
+):
+    # 10 Hz scans with stamps 0.0-19.9 s; the window 5-15 s holds 101 of them.
+    stamps = np.arange(0.0, 20.0, 0.1)
+    np.savetxt(tmp_path / "time_map.txt", np.column_stack([stamps + STAMP_LAG, stamps]))
+    records = [
+        # Before the window.
+        {"stamp": 2.0, "alignment_time_sec": "9.0", "registration_iterations": "36"},
+        # Rejected before registration: no alignment ran.
+        {
+            "stamp": 5.5,
+            "alignment_time_sec": "0.000000",
+            "registration_iterations": "-1",
+        },
+        {"stamp": 6.0, "alignment_time_sec": "0.100", "registration_iterations": "4"},
+        {"stamp": 7.0, "alignment_time_sec": "0.300", "registration_iterations": "36"},
+        {"stamp": 8.0, "alignment_time_sec": "0.200", "registration_iterations": "6"},
+        # A backend that does not report iterations still counts as aligned.
+        {"stamp": 9.0, "alignment_time_sec": "0.400", "registration_iterations": "-1"},
+        # Recorded before registration_iterations existed.
+        {"stamp": 10.0, "alignment_time_sec": "0.500"},
+        {"stamp": 16.0, "alignment_time_sec": "9.0", "registration_iterations": "36"},
+    ]
+    _write_alignment(tmp_path / "alignment.jsonl", records)
+
+    cost = replay.evaluate_alignment(
+        tmp_path / "alignment.jsonl", tmp_path / "time_map.txt", 5.0, 15.0, 35
+    )
+    assert cost["scans"] == 101
+    assert cost["aligned_scans"] == 5
+    assert cost["aligned_share"] == round(5 / 101, 3)
+    assert cost["align_ms"] == {"median": 300.0, "p95": 480.0, "max": 500.0}
+    assert cost["iterations"]["median"] == 6.0
+    assert cost["iterations"]["max"] == 36
+    assert cost["iterations"]["at_cap_share"] == round(1 / 3, 3)
+
+
+def test_alignment_cost_without_records_reports_no_aligned_scans(tmp_path):
+    cost = replay.evaluate_alignment(
+        tmp_path / "alignment.jsonl", tmp_path / "time_map.txt", 0.0, 10.0, 35
+    )
+    assert cost == {"scans": 0, "aligned_scans": 0}
+
+
+def test_summary_adds_the_alignment_cost_table_for_runs_that_have_it(tmp_path, capsys):
+    for repeat, (rate, median_ms) in enumerate(((2.0, 300.0), (3.0, 200.0))):
+        run = tmp_path / "A_start_0" / f"base_{repeat}"
+        run.mkdir(parents=True)
+        score = _score(0.2)
+        score["poses_per_sec"] = rate
+        score["alignment"] = {
+            "scans": 600,
+            "aligned_scans": int(rate * 60),
+            "aligned_share": rate / 10.0,
+            "align_ms": {"median": median_ms, "p95": 2 * median_ms, "max": 900.0},
+            "iterations": {"median": 8.0, "p95": 30.0, "max": 36, "at_cap_share": 0.05},
+        }
+        (run / "score.json").write_text(json.dumps(score))
+    # A run recorded before the alignment cost was scored.
+    old = tmp_path / "A_start_0" / "cand_0"
+    old.mkdir(parents=True)
+    (old / "score.json").write_text(json.dumps(_score(0.3)))
+    compare.summarize(tmp_path)
+
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 2 + 2 + 1 + 2 + 1
+    assert lines[4] == ""
+    assert lines[5].startswith("| window | variant | runs | pose rate Hz |")
+    assert lines[7] == (
+        "| A_start_0 | base | 2 | 2.5 (2.0-3.0) | 0.25 (0.20-0.30)"
+        " | 250.0 (200.0-300.0) | 500.0 (400.0-600.0) | 8.00 (8.00-8.00)"
+        " | 0.05 (0.05-0.05) |"
+    )

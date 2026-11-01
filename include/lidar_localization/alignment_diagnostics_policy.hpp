@@ -42,6 +42,8 @@ struct AlignmentDiagnosticValuesInput
   bool open_loop_strict_active{false};
   bool borderline_seed_gate_active{false};
   double alignment_time_sec{0.0};
+  // Iterations of the selected registration attempt; -1 when the backend does not report them.
+  int registration_iterations{-1};
   std::size_t filtered_point_count{0};
   double correction_translation_m{NAN};
   double correction_yaw_deg{NAN};
@@ -149,7 +151,7 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
   const AlignmentDiagnosticValuesInput & input)
 {
   std::vector<DiagnosticKeyValue> values;
-  values.reserve(99);
+  values.reserve(100);
   auto append = [&values](const std::string & key, const std::string & value) {
       values.emplace_back(key, value);
     };
@@ -309,6 +311,7 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
   append("path_pose_count", std::to_string(input.path_pose_count));
   append("point_timestamp_unit", input.point_timestamp_unit);
   append("soft_odom_correction_gate_enabled", boolString(input.soft_odom_correction_gate_enabled));
+  append("registration_iterations", std::to_string(input.registration_iterations));
   return values;
 }
 

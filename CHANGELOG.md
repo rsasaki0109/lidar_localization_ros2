@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Fix `NDT_OMP` and `GICP_OMP` running unoptimized: `ndt_omp_ros2` sets no
+  `CMAKE_BUILD_TYPE`, so a plain `colcon build` (as in `AGENTS.md` and CI) compiled its
+  NDT and GICP code without optimization, and the localizer ran that code. The
+  component now compiles the `pcl::PointXYZI` instantiations itself
+  (`src/ndt_omp_instantiation.cpp`) with this package's flags, whatever build type
+  `ndt_omp_ros2` has. On the Istanbul windows with `param/istanbul_gtsam_smoother.yaml`,
+  NDT_OMP went from 3.1, 3.0 and 1.5 Hz to 8.9, 10.0 and 10.0 Hz (10 Hz scans; median
+  alignment 223-262 ms to 11-12 ms), and horizontal RMSE from 0.37, 0.88 and 0.47 m to
+  0.23, 0.75 and 0.46 m (median of three runs, 4 cores). Building `ndt_omp_ros2` with
+  `-DCMAKE_BUILD_TYPE=Release` gave the same result
+  ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md#unoptimized-ndt_omp)).
+  The Istanbul NDT_OMP pose rates in the entries below match such a build.
+- `/alignment_status` reports `registration_iterations`: the iteration count of the
+  selected registration attempt for `NDT`, `NDT_OMP`, `SMALL_GICP` and `SMALL_VGICP`
+  (`-1` for the other backends), next to `alignment_time_sec`. A scan at or above
+  `ndt_max_iterations` ran to the cap instead of converging.
+- `tools/benchmark/istanbul_replay.py` scores the alignment cost into `score.json`
+  (`alignment`): the share of the window's scans that were aligned, the alignment time
+  (median, p95, max) and the iterations (median, p95, max, share at the cap).
+  `istanbul_compare.py` prints them in a second table, and `record_pose.py` keeps
+  `alignment_time_sec` and `registration_iterations` in `alignment.jsonl`.
 - The Jazzy CI job installs `ros-jazzy-small-gicp-vendor`, so it builds, tests and
   lints the `SMALL_GICP` and `SMALL_VGICP` code (`test_local_map_async_rebuild` covers
   them); the Humble job still builds without small_gicp.
@@ -12,7 +33,8 @@
 - Add `param/istanbul_small_gicp.yaml`: `istanbul_gtsam_smoother.yaml` with
   `registration_method: SMALL_GICP`. On the three Istanbul windows it gave 0.26, 0.76 and
   0.45 m horizontal RMSE at 8.0-9.5 Hz, against 0.26, 0.91 and 0.54 m at 1.3-3.1 Hz for the
-  NDT_OMP preset in the same session (`docs/benchmark.md`).
+  NDT_OMP preset in the same session (`docs/benchmark.md`). That NDT_OMP ran unoptimized
+  (first entry); optimized, it gave 0.23, 0.75 and 0.46 m at 8.9-10 Hz.
 - `-O2 -g` is now added only when `CMAKE_BUILD_TYPE` is unset, so `Release` builds no
   longer carry debug info. This lowers compiler memory use and binary size on small
   boards. Builds without a build type are unchanged.

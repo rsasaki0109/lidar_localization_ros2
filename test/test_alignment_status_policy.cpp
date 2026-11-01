@@ -15,6 +15,7 @@ ll::AlignmentStatusInput default_status_input()
   input.has_converged = true;
   input.fitness_score = 6.0;
   input.alignment_time_sec = 0.05;
+  input.registration_iterations = 7;
   input.filtered_point_count = 1200;
   input.correction_translation_m = 0.2;
   input.correction_yaw_deg = 0.3;
@@ -64,6 +65,7 @@ void test_make_alignment_status_input_combines_observation_and_context()
   observation.has_converged = false;
   observation.fitness_score = 9.0;
   observation.alignment_time_sec = 0.2;
+  observation.registration_iterations = 11;
   observation.filtered_point_count = 345;
   observation.correction_translation_m = 1.2;
   observation.correction_yaw_deg = 3.4;
@@ -93,6 +95,7 @@ void test_make_alignment_status_input_combines_observation_and_context()
   assert(!input.has_converged);
   assert(input.fitness_score == 9.0);
   assert(input.alignment_time_sec == 0.2);
+  assert(input.registration_iterations == 11);
   assert(input.filtered_point_count == 345);
   assert(input.correction_translation_m == 1.2);
   assert(input.correction_yaw_deg == 3.4);
@@ -158,6 +161,7 @@ void test_make_diagnostic_input_preserves_status_context()
 
   assert(diagnostic_input.registration_method == "NDT");
   assert(diagnostic_input.has_converged);
+  assert(diagnostic_input.registration_iterations == 7);
   assert(diagnostic_input.effective_score_threshold == 5.0);
   assert(diagnostic_input.recovery_state == "reinitialization_requested");
   assert(diagnostic_input.recovery_action == "request_reinitialization");

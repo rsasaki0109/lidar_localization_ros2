@@ -155,6 +155,7 @@ public:
     bool has_converged;
     double fitness_score;
     double alignment_time_sec;
+    int registration_iterations;
     std::size_t filtered_point_count;
     double correction_translation_m;
     double correction_yaw_deg;
@@ -258,6 +259,8 @@ public:
     small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>::Ptr small_gicp;
 #endif
     pcl::Registration<pcl::PointXYZI, pcl::PointXYZI> * get() const;
+    // Iterations of the last align(); -1 when the backend does not report them.
+    int finalIterationCount() const;
   };
   RegistrationObjects makeRegistrationObjects(
     lidar_localization::RegistrationBackend backend) const;
@@ -825,5 +828,6 @@ public:
     bool imu_prediction_active = false,
     const std::string & registration_seed_source = "not_selected",
     const lidar_localization::RegistrationLocalizabilityMetrics &
-    registration_localizability = lidar_localization::RegistrationLocalizabilityMetrics{});
+    registration_localizability = lidar_localization::RegistrationLocalizabilityMetrics{},
+    int registration_iterations = -1);
 };
