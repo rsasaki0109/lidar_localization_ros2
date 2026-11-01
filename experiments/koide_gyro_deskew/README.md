@@ -71,6 +71,35 @@ stamp. Median (p90):
 Measured 2026-11-01 on ROS 2 Jazzy, 4 vCPUs. This is an offline check of one public
 sequence, not the online replay.
 
+## Online check
+
+The same build alternated `run_koide_public_bag.py` runs between two profiles. One is
+the profile on `main` (60 m range, background map rebuild). The other adds
+`continuous_time_deskew_mode: imu_pose_history`, which with this change runs on the gyro
+alone. Same setup and RKO-LIO binary as in
+[koide_online_coverage](../koide_online_coverage/README.md). Median (range) of three
+runs each:
+
+| Profile | Failed | Coverage % | Missed clouds | RMSE m | Alignment p95 ms | Median iterations |
+| --- | --- | --- | --- | --- | --- | --- |
+| `main` | 0 | 99.0 (99.0-99.3) | 23 (15-23) | 0.234 (0.233-0.240) | 150 (139-156) | 4 |
+| + gyro deskew | 0 | **99.7** (99.5-100.0) | **6** (1-12) | **0.227** (0.227-0.231) | **114** (112-127) | 3 |
+
+- **Every gate metric improves**, and the three runs of each profile do not overlap in
+  coverage, RMSE or alignment p95. The seed still comes from the RKO `odom` TF, as
+  without the deskew, and the published pose stays the registration result.
+- **The deskew applied to 69% of the clouds.**
+  - 16% span more than `scan_period` x `scan_time_range_max_duration_ratio` (0.2 s),
+    most of them only just: median 0.201 s, up to 0.7 s. They hold two sweeps.
+  - 13-15% arrived before the IMU sample covering the sweep end
+    (`continuous_time_deskew_pose_history_ends_too_early`). In the bag's order that
+    sample is at most 4.3 ms late (median 0.4 ms), less than one IMU period.
+- These `main` runs scored higher than the runs of
+  [koide_online_coverage](../koide_online_coverage/README.md) (97.2-99.2%) on the same
+  profile, in another hour of the same container. Compare profiles within one session.
+
+`online_results.json` holds the per-run numbers (`summarize_runs.py`).
+
 ## Rerun
 
 ```bash

@@ -34,6 +34,7 @@ void PCLLocalization::declareImuPreintegrationParameters()
   declare_parameter("continuous_time_cloud_stamp_reference", "start");
   declare_parameter("continuous_time_deskew_reference_time_sec", 0.0);
   declare_parameter("continuous_time_pose_history_duration_sec", 2.0);
+  declare_parameter("continuous_time_pose_history_max_end_gap_sec", 0.0);
   declare_parameter("enable_localizability_guard", false);
   declare_parameter("localizability_min_xy_eigen_ratio", 0.05);
   declare_parameter("enable_registration_localizability_diagnostics", false);
@@ -78,6 +79,9 @@ void PCLLocalization::loadImuPreintegrationParameters()
   get_parameter(
     "continuous_time_pose_history_duration_sec",
     continuous_time_pose_history_duration_sec_);
+  get_parameter(
+    "continuous_time_pose_history_max_end_gap_sec",
+    continuous_time_pose_history_max_end_gap_sec_);
   get_parameter("enable_localizability_guard", enable_localizability_guard_);
   get_parameter(
     "enable_registration_localizability_diagnostics",
@@ -110,6 +114,14 @@ void PCLLocalization::loadImuPreintegrationParameters()
     RCLCPP_WARN(
       get_logger(), "continuous_time_pose_history_duration_sec must be positive; using 2.0");
     continuous_time_pose_history_duration_sec_ = 2.0;
+  }
+  if (
+    !std::isfinite(continuous_time_pose_history_max_end_gap_sec_) ||
+    continuous_time_pose_history_max_end_gap_sec_ < 0.0)
+  {
+    RCLCPP_WARN(
+      get_logger(), "continuous_time_pose_history_max_end_gap_sec must be >= 0; using 0.0");
+    continuous_time_pose_history_max_end_gap_sec_ = 0.0;
   }
 
   if (!use_imu_preintegration_) {
@@ -632,6 +644,9 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "continuous_time_pose_history_duration_sec: %lf",
     continuous_time_pose_history_duration_sec_);
+  RCLCPP_INFO(
+    get_logger(), "continuous_time_pose_history_max_end_gap_sec: %lf",
+    continuous_time_pose_history_max_end_gap_sec_);
   RCLCPP_INFO(
     get_logger(), "enable_localizability_guard: %d", enable_localizability_guard_);
   RCLCPP_INFO(

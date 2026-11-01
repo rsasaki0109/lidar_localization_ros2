@@ -446,7 +446,8 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
       scan_start_sec,
       latest_scan_time_duration_sec_,
       pose_history,
-      continuous_time_deskew_reference_time_sec_);
+      continuous_time_deskew_reference_time_sec_,
+      continuous_time_pose_history_max_end_gap_sec_);
     latest_continuous_time_deskew_pose_history_coverage_ratio_ =
       deskew_result.coverage_ratio;
     latest_continuous_time_deskew_status_ =
@@ -461,6 +462,7 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
     latest_continuous_time_deskew_point_count_ = deskew_result.deskewed_point_count;
     latest_continuous_time_deskew_skipped_invalid_time_count_ =
       deskew_result.skipped_invalid_time_count;
+    latest_continuous_time_deskew_clamped_time_count_ = deskew_result.clamped_time_count;
     RCLCPP_DEBUG_THROTTLE(
       get_logger(), *get_clock(), 10000,
       "Piecewise IMU pose-history deskew applied to %zu points (coverage=%.3f).",

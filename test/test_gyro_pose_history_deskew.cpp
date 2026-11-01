@@ -82,6 +82,22 @@ int main(int argc, char ** argv)
   assert(std::abs(at_start.cloud->front().x - 10.0f) < 1e-4f);
   assert(std::abs(at_start.cloud->front().y) < 1e-4f);
 
+  // A sweep ending 50 ms after the last IMU sample (10.3 s): rejected by default,
+  // deskewed with a 60 ms end gap, the late point holding the last rotation.
+  auto late = scan_with_point_at(0.1);
+  node.latest_scan_time_duration_sec_ = 0.1;
+  assert(!node.applyContinuousTimeDeskewIfEnabled(late, 10.25));
+  assert(
+    node.latest_continuous_time_deskew_status_ ==
+    std::string("continuous_time_deskew_pose_history_ends_too_early"));
+  node.continuous_time_pose_history_max_end_gap_sec_ = 0.06;
+  assert(node.applyContinuousTimeDeskewIfEnabled(late, 10.25));
+  assert(node.latest_continuous_time_deskew_clamped_time_count_ == 1);
+  const double held = yaw_rate * 0.05;  // 10.25 s to the last sample at 10.3 s
+  assert(std::abs(late.cloud->front().x - 10.0 * std::cos(held)) < 1e-3);
+  assert(std::abs(late.cloud->front().y - 10.0 * std::sin(held)) < 1e-3);
+  node.continuous_time_pose_history_max_end_gap_sec_ = 0.0;
+
   // relative_motion still waits for IMU preintegration.
   node.continuous_time_deskew_mode_ = "relative_motion";
   assert(!node.usesGyroPoseHistoryWithoutPreintegration());

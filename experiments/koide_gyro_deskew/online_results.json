@@ -1,0 +1,96 @@
+{
+ "main": {
+  "rko032_base_7": {
+   "passed": true,
+   "rmse_m": 0.24,
+   "p95_error_m": 0.597,
+   "diagnostic_coverage": 0.9896,
+   "missed_clouds": 23,
+   "missed_clouds_100_132_s": 21,
+   "max_output_gap_sec": 1.0,
+   "alignment_ms": {
+    "median": 46.1,
+    "p95": 150.2,
+    "max": 904.5
+   },
+   "iterations_median": 4.0
+  },
+  "rko032_base_8": {
+   "passed": true,
+   "rmse_m": 0.233,
+   "p95_error_m": 0.548,
+   "diagnostic_coverage": 0.9896,
+   "missed_clouds": 23,
+   "missed_clouds_100_132_s": 23,
+   "max_output_gap_sec": 1.0,
+   "alignment_ms": {
+    "median": 47.1,
+    "p95": 156.5,
+    "max": 836.7
+   },
+   "iterations_median": 4.0
+  },
+  "rko032_base_9": {
+   "passed": true,
+   "rmse_m": 0.234,
+   "p95_error_m": 0.554,
+   "diagnostic_coverage": 0.9932,
+   "missed_clouds": 15,
+   "missed_clouds_100_132_s": 14,
+   "max_output_gap_sec": 0.9,
+   "alignment_ms": {
+    "median": 43.7,
+    "p95": 139.2,
+    "max": 847.8
+   },
+   "iterations_median": 4.0
+  }
+ },
+ "gyro": {
+  "rko032_gyro_1": {
+   "passed": true,
+   "rmse_m": 0.227,
+   "p95_error_m": 0.58,
+   "diagnostic_coverage": 0.9946,
+   "missed_clouds": 12,
+   "missed_clouds_100_132_s": 8,
+   "max_output_gap_sec": 0.9,
+   "alignment_ms": {
+    "median": 40.9,
+    "p95": 127.4,
+    "max": 1054.8
+   },
+   "iterations_median": 3.0
+  },
+  "rko032_gyro_2": {
+   "passed": true,
+   "rmse_m": 0.231,
+   "p95_error_m": 0.592,
+   "diagnostic_coverage": 0.9995,
+   "missed_clouds": 1,
+   "missed_clouds_100_132_s": 1,
+   "max_output_gap_sec": 0.9,
+   "alignment_ms": {
+    "median": 37.9,
+    "p95": 111.6,
+    "max": 1008.7
+   },
+   "iterations_median": 3.0
+  },
+  "rko032_gyro_3": {
+   "passed": true,
+   "rmse_m": 0.227,
+   "p95_error_m": 0.536,
+   "diagnostic_coverage": 0.9973,
+   "missed_clouds": 6,
+   "missed_clouds_100_132_s": 6,
+   "max_output_gap_sec": 0.9,
+   "alignment_ms": {
+    "median": 38.8,
+    "p95": 114.1,
+    "max": 1033.5
+   },
+   "iterations_median": 3.0
+  }
+ }
+}
