@@ -668,6 +668,12 @@ if(BUILD_TESTING)
   add_test(NAME motion_duration_pair COMMAND test_motion_duration_pair)
   set_tests_properties(motion_duration_pair PROPERTIES TIMEOUT 30)
 
+  add_executable(test_gyro_pose_history_deskew test/test_gyro_pose_history_deskew.cpp)
+  target_link_libraries(test_gyro_pose_history_deskew
+    lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+  add_test(NAME gyro_pose_history_deskew COMMAND test_gyro_pose_history_deskew)
+  set_tests_properties(gyro_pose_history_deskew PROPERTIES TIMEOUT 30)
+
   add_executable(test_prediction_state_policy
     test/test_prediction_state_policy.cpp)
   target_include_directories(test_prediction_state_policy PRIVATE

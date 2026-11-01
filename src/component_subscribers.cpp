@@ -86,12 +86,14 @@ void PCLLocalization::initializePubSub()
     cloud_subscription_options);
 
   rclcpp::SubscriptionOptions imu_subscription_options;
-  if (use_imu_preintegration_ && !use_imu_) {
+  // The gyro history for imu_pose_history deskew needs the IMU samples of a sweep
+  // before its scan is prepared, so it must not queue behind long registrations.
+  if ((use_imu_preintegration_ || usesGyroPoseHistoryWithoutPreintegration()) && !use_imu_) {
     imu_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     imu_subscription_options.callback_group = imu_callback_group_;
     RCLCPP_INFO(
       get_logger(),
-      "IMU preintegration subscription uses a dedicated callback group");
+      "IMU subscription uses a dedicated callback group");
   }
   imu_sub_ = create_subscription<sensor_msgs::msg::Imu>(
     "imu", rclcpp::SensorDataQoS().keep_last(imu_queue_depth_),
@@ -595,12 +597,17 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
     std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
     const bool collect_preintegration_sample =
       use_imu_preintegration_ && !imu_preintegration_fallback_mode_;
+    // Without IMU preintegration, imu_pose_history deskew keeps only the gyro
+    // rotation history below; the preintegration queue and smoother stay unused.
+    const bool collect_gyro_pose_history_only = usesGyroPoseHistoryWithoutPreintegration();
+    const bool collect_imu_sample =
+      collect_preintegration_sample || collect_gyro_pose_history_only;
     if (collect_preintegration_sample) {
       ++imu_preintegration_received_sample_count_since_scan_;
     }
 
     if (
-      collect_preintegration_sample &&
+      collect_imu_sample &&
       imu_preintegration_use_base_frame_transform_ &&
       msg->header.frame_id != base_frame_id_) {
       try {
@@ -639,7 +646,7 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
     }
 
     if (
-      collect_preintegration_sample &&
+      collect_imu_sample &&
       preintegration_sample_ready &&
       (!preintegration_gyro.allFinite() || !preintegration_accel.allFinite()))
     {
@@ -656,11 +663,11 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
         preintegration_accel, imu_accel_scale_);
     }
 
-    if (collect_preintegration_sample && preintegration_sample_ready) {
+    if (collect_imu_sample && preintegration_sample_ready) {
       double stamp_sec = stamp_to_sec(msg->header.stamp);
       const double dt = last_imu_stamp_ > 0.0 ? stamp_sec - last_imu_stamp_ : 0.0;
 
-      if (imu_dual_queue_enabled_) {
+      if (collect_preintegration_sample && imu_dual_queue_enabled_) {
         if (!imu_dual_queue_.push(
             lidar_localization::TimestampedImuSample{
               stamp_sec, preintegration_gyro, preintegration_accel}))
@@ -672,7 +679,9 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
             imu_dual_queue_.trimTo(static_cast<std::size_t>(imu_queue_depth_));
         }
         // Legacy single-stream integration is retained as the A/B baseline.
-      } else if (imu_smoother_.isInitialized() && last_imu_stamp_ > 0.0) {
+      } else if (
+        collect_preintegration_sample && imu_smoother_.isInitialized() && last_imu_stamp_ > 0.0)
+      {
         imu_preintegration_last_dt_sec_ = dt;
         if (lidar_localization::isValidImuPreintegrationDt(dt)) {
           imu_smoother_.integrateImu(preintegration_gyro, preintegration_accel, dt);
@@ -688,16 +697,20 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
       }
 
       // Keep an optimization-correction-independent, rotation-only pose history.
-      // It is used by the experimental piecewise deskew mode. Translation remains
+      // It is used by the imu_pose_history deskew mode. Translation remains
       // zero here intentionally: integrating accelerometer translation without a
       // timestamped bias, gravity, and velocity state is less safe than omitting it.
+      // The step comes from the history's own last sample, which equals
+      // last_imu_stamp_ whenever preintegration feeds it too.
+      const double history_dt = continuous_time_imu_pose_history_.empty() ?
+        0.0 : stamp_sec - continuous_time_imu_pose_history_.back().stamp_sec;
       if (
-        !continuous_time_imu_pose_history_.empty() && last_imu_stamp_ > 0.0 &&
-        lidar_localization::isValidImuPreintegrationDt(dt)) {
+        !continuous_time_imu_pose_history_.empty() &&
+        lidar_localization::isValidImuPreintegrationDt(history_dt)) {
         const Eigen::Vector3d deskew_gyro =
           preintegration_gyro - imu_smoother_.gyro_bias_;
         const Eigen::Vector3f rotation_vector =
-          deskew_gyro.cast<float>() * static_cast<float>(dt);
+          deskew_gyro.cast<float>() * static_cast<float>(history_dt);
         const float angle = rotation_vector.norm();
         if (std::isfinite(angle) && angle > 1e-9f) {
           const Eigen::Quaternionf delta(
@@ -722,7 +735,10 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
       {
         continuous_time_imu_pose_history_.pop_front();
       }
-      last_imu_stamp_ = stamp_sec;
+      // The gyro history alone does not feed the preintegration stamps.
+      if (collect_preintegration_sample) {
+        last_imu_stamp_ = stamp_sec;
+      }
     }
   }
 

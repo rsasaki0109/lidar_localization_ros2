@@ -31,6 +31,10 @@ struct DeskewReadinessInput
   ScanTimeRangeStatus scan_time_status{ScanTimeRangeStatus::kNoTimeField};
   ImuPreintegrationDiagnosticStatus imu_status{
     ImuPreintegrationDiagnosticStatus::kDisabled};
+  // continuous_time_deskew_mode imu_pose_history without IMU preintegration: the
+  // deskew needs only the gyro rotation history, not the preintegration state.
+  bool gyro_pose_history_only{false};
+  bool gyro_pose_history_available{false};
 };
 
 struct DeskewReadinessDiagnostics
@@ -51,6 +55,11 @@ inline DeskewReadinessStatus classifyDeskewReadiness(
       return DeskewReadinessStatus::kScanTimeRangeTooLarge;
     case ScanTimeRangeStatus::kReady:
       break;
+  }
+
+  if (input.gyro_pose_history_only) {
+    return input.gyro_pose_history_available ?
+           DeskewReadinessStatus::kReady : DeskewReadinessStatus::kWaitingForImu;
   }
 
   switch (input.imu_status) {
