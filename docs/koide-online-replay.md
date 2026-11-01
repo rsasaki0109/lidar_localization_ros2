@@ -99,6 +99,49 @@ python3 tools/readme_media/initial_pose_from_tum.py \
 
 Ground truth supplies only that initial pose and evaluation; it is not an odometry input. Record `/pcl_pose` and `/alignment_status` before playing the bag. For the 150 m comparison, change only `local_map_radius` in the generated localizer YAML.
 
+## v1.5.0 release verification (2026-11-01)
+
+Two full `outdoor_hard_02b` replays at 1x with the unchanged 75 m profile passed on
+`main` at `eed5098`, the tree of the release. The workspace was built as in
+`AGENTS.md`, without a build type, for both this package and `ndt_omp_ros2`. Online
+RKO-LIO 0.3.2 was built as Release from the `rko_lio` commit that `lidar_slam_ros2`
+pins (`7e91814`). The setup was ROS 2 Jazzy in one 4-vCPU cloud container. It differs
+from the v1.3.0 run below (Humble, the RKO image), so compare the two runs with each
+other, not with v1.3.0.
+
+```bash
+ros2 run lidar_localization_ros2 run_koide_public_bag.py --data-dir koide-data \
+  --output koide-runs/run1 --rko-executable "$RKO_WS/install/rko_lio/lib/rko_lio/online_node"
+```
+
+| Metric | Run 1 | Run 2 | Demo acceptance |
+| --- | --- | --- | --- |
+| Position RMSE | 0.262 m | 0.254 m | <= 0.35 m |
+| Diagnostic cloud stamps | 2,171 / 2,209 (98.3%) | 2,156 / 2,209 (97.6%) | >= 97% |
+| Distinct GT-matched pose stamps / expected clouds | 2,165 / 2,209 (98.0%) | 2,150 / 2,209 (97.3%) | >= 95% |
+| Position error p95 | 0.670 m | 0.597 m | — |
+| Maximum output timestamp gap | 1.30 s | 1.40 s | — |
+| Alignment median / p95 | 44 / 176 ms | 46 / 176 ms | — |
+| Command / RKO / localizer / player exit codes | all 0 | all 0 | successful exit |
+
+RKO dropped 20 frames per run for too few ICP keypoints, as in v1.3.0. Diagnostic
+coverage is 1.7-2.4 points below v1.3.0's 100%, which leaves less margin over the 97%
+gate. These runs do not tell whether the setup or the code since v1.3.0 causes that.
+
+The same check, alternated with these runs, failed twice before the component compiled
+NDT_OMP itself (`39c9231`, same workspace and RKO). With `ndt_omp_ros2` unoptimized, the
+median alignment took 13-18 s instead of 44-46 ms. The localizer aligned only 12-13 of the
+2,209 clouds, at 1.8-1.9 m RMSE and 0.5-0.6% diagnostic coverage. Before v1.5.0, this
+check therefore needed `ndt_omp_ros2` built with `-DCMAKE_BUILD_TYPE=Release`.
+
+Machine-readable summaries and receipts of [run 1](validation/v1.5.0-koide-20261101/run1/summary.json)
+and [run 2](validation/v1.5.0-koide-20261101/run2/summary.json), and the
+[provenance](validation/v1.5.0-koide-20261101/provenance.json) record the result,
+configuration and executable hashes, and the comparison.
+[Download the logs, trajectories and receipts of all four runs](validation/v1.5.0-koide-20261101/evidence.tar.gz).
+Archive SHA-256: `833362887d8c361ab8027f78b212de4606373987eed05175deb20faac6a377fc`. It
+contains no bag or map files.
+
 ## v1.3.0 tag verification (2026-10-09)
 
 One full `outdoor_hard_02b` replay at 1x using the unchanged 75 m profile passed

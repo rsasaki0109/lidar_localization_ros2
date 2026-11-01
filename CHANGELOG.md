@@ -66,7 +66,10 @@
   0.23, 0.75 and 0.46 m (median of three runs, 4 cores). Building `ndt_omp_ros2` with
   `-DCMAKE_BUILD_TYPE=Release` gave the same result
   ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md#unoptimized-ndt_omp)).
-  The Istanbul NDT_OMP pose rates in the entries below match such a build.
+  The Istanbul NDT_OMP pose rates in the entries below match such a build. On Koide
+  `outdoor_hard_02b`, `run_koide_public_bag.py` failed with that build (12-13 of 2,209
+  clouds aligned) and now passes (0.254 and 0.262 m RMSE;
+  [docs/koide-online-replay.md](docs/koide-online-replay.md#v150-release-verification-2026-11-01)).
 - Log an error at map load when the full-map NDT voxel grid needs more cells than int32
   indexes: the target is then empty and NDT does not register (troubleshooting, *NDT
   Does Not Correct the Pose on a Large Map*). `param/istanbul_gtsam_smoother.yaml` now

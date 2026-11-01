@@ -1,0 +1,22 @@
+{
+  "poses": 2166,
+  "matched_poses": 2166,
+  "unique_matched_pose_stamps": 2165,
+  "rmse_m": 0.26184571039181737,
+  "p95_error_m": 0.6704102035982059,
+  "max_output_gap_sec": 1.300039291381836,
+  "diagnostic_clouds": 2171,
+  "expected_clouds": 2209,
+  "diagnostic_coverage": 0.9827976459936623,
+  "passed": true,
+  "source": "https://zenodo.org/records/10122133",
+  "sequence": "outdoor_hard_02b",
+  "full_sequence": true,
+  "rate": 1.0,
+  "thresholds": {
+    "rmse_m": 0.35,
+    "diagnostic_coverage": 0.97,
+    "matched_pose_fraction": 0.95
+  },
+  "note": "Map-frame position error without spatial alignment. Poses include odometry bridge predictions; diagnostic coverage is not NDT acceptance. One public ~5-minute sequence, not real-robot or multi-hour validation."
+}
