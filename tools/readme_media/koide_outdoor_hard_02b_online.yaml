@@ -14,7 +14,9 @@
     transform_epsilon: 0.01
     voxel_leaf_size: 0.5
     enable_scan_voxel_filter: true
-    scan_max_range: 100.0
+    # 0.2 % of the outdoor_hard_02b points lie beyond 60 m. Under local_map_radius
+    # minus local_map_update_distance (65 m), so the next crop is built in the background.
+    scan_max_range: 60.0
     scan_min_range: 1.0
     scan_period: 0.1
     use_pcd_map: true
@@ -48,6 +50,9 @@
     enable_local_map_crop: true
     local_map_radius: 75.0
     local_map_update_distance: 10.0
+    # Build the next crop while scans align against this one, until it is 15 m away
+    # (experiments/koide_online_coverage).
+    local_map_async_rebuild: true
     local_map_min_points: 100
     reject_above_score_threshold: true
     enable_borderline_seed_rejection_gate: true

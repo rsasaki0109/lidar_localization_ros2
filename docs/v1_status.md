@@ -45,18 +45,23 @@ for benchmark and regression commands.
 Latest release verification (`2026-11-01`):
 
 - release: `v1.5.0`, verified on `main` at `eed5098` (the release tree)
-- Koide `outdoor_hard_02b`: two full replays at 1x in ROS 2 Jazzy, unchanged 75 m profile,
-  built without a build type as in `AGENTS.md`
-- map-frame position RMSE: `0.262 m` and `0.254 m`; diagnostic coverage: `98.3%` and `97.6%`
-- distinct GT-matched pose stamps: `2,165` and `2,150 / 2,209` expected clouds
+- Koide `outdoor_hard_02b`: six full replays at 1x in ROS 2 Jazzy on 4 vCPUs, unchanged
+  75 m profile, built without a build type as in `AGENTS.md`
+- the first two, the release check, passed: `0.262 m` and `0.254 m` map-frame RMSE, `98.3%`
+  and `97.6%` diagnostic coverage
+- the other four passed twice and fell twice below the 97% coverage gate (`96.4%`,
+  `95.2%`); the v1.3.0 tag gave `97.0%` and `97.9%` on the same setup, so the gate has
+  1-2 points to spare there
 - the same check failed before v1.5.0 with that build (NDT_OMP unoptimized: 12-13 clouds
   aligned)
 - Istanbul, `param/istanbul_gtsam_smoother.yaml`, three windows: `0.23`, `0.75` and
   `0.46 m` horizontal RMSE at `8.9-10 Hz` (median of three runs)
 
 See [the v1.5.0 verification](koide-online-replay.md#v150-release-verification-2026-11-01).
-It is not one-to-one with v1.3.0 (Humble, a different RKO build), and its coverage
-margin over the 97% gate is thinner. It does not validate automatic initialization,
+It is not one-to-one with v1.3.0 (Humble, a different RKO build). After v1.5.0 the
+Koide profile ignores points beyond 60 m and builds the next local map in the
+background: five runs passed (`97.2-99.2%`, `0.235-0.239 m`;
+[experiments/koide_online_coverage](../experiments/koide_online_coverage/README.md)). It does not validate automatic initialization,
 recovery, physical hardware, or multi-hour operation.
 
 Previous release-tag verification (`2026-10-09`):
@@ -180,8 +185,9 @@ Open items after v1.5.0:
   Istanbul that is the second public dataset the backend decision gate asks for
 - re-measure timings recorded before v1.5.0 that may come from an unoptimized
   `ndt_omp_ros2` (for example the Koide NDT target build times in `troubleshooting.md`)
-- find why the v1.5.0 Koide diagnostic coverage is below v1.3.0's 100%: run the v1.3.0
-  tag on the same setup
+- find why NDT needs 10-31 iterations per scan 100-132 s into Koide `outdoor_hard_02b`,
+  where most clouds the online check misses lie; faster convergence there would give its
+  97% coverage gate real margin on 4 vCPUs
 - make Boreas usable as a `LiDAR + IMU + GT` benchmark
 
 Other work remains:

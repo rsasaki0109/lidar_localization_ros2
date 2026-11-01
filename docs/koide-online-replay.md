@@ -2,7 +2,7 @@
 
 Use this opt-in profile for the public [Hard Point Cloud Localization Dataset](https://zenodo.org/records/10122133) (Koide et al., CC BY 4.0), sequence `outdoor_hard_02b`, with its binary little-endian float32 `map_outdoor_hard.ply`. It runs online RKO-LIO and localization together at 1x.
 
-The localizer uses a 75 m local-map radius, reuses the target until movement reaches 10 m, and receives `/livox/points` with RELIABLE QoS and depth 10. IMU integration and twist prediction in the localizer are disabled; RKO supplies `odom -> livox_frame`, and the localizer estimates `map -> odom`. Pose output includes odometry bridge predictions through rejected map matches. Timer publication is disabled and Path history is capped at 2,000 poses.
+The localizer uses a 75 m local-map radius, ignores points beyond 60 m, builds the next target in the background once movement reaches 10 m (`local_map_async_rebuild`), and receives `/livox/points` with RELIABLE QoS and depth 10. IMU integration and twist prediction in the localizer are disabled; RKO supplies `odom -> livox_frame`, and the localizer estimates `map -> odom`. Pose output includes odometry bridge predictions through rejected map matches. Timer publication is disabled and Path history is capped at 2,000 poses.
 
 The radius is a dataset-specific choice: it changes which map points are available for registration. The conservative Nav2 preset and the offline GIF profile keep their existing radii. The localizer's relative-motion deskew is not applied with its IMU preintegration disabled; RKO performs its own deskew.
 
@@ -126,7 +126,20 @@ ros2 run lidar_localization_ros2 run_koide_public_bag.py --data-dir koide-data \
 
 RKO dropped 20 frames per run for too few ICP keypoints, as in v1.3.0. Diagnostic
 coverage is 1.7-2.4 points below v1.3.0's 100%, which leaves less margin over the 97%
-gate. These runs do not tell whether the setup or the code since v1.3.0 causes that.
+gate.
+
+Four more runs of the same build on the same setup, alternated with the v1.3.0 and
+profile runs of the experiment linked below, passed twice and failed twice: 96.4% and 95.2% coverage, at 0.252-0.275 m RMSE over all
+six runs. On this setup the v1.3.0 tag (with `ndt_omp_ros2` built as Release) gave 97.0%
+and 97.9%. The shortfall against v1.3.0's 100% comes from the setup, not from the code
+since v1.3.0, and on 4 vCPUs the gate has 1-2 points to spare. Most missed clouds lie
+100-132 s into the sequence, where NDT needs 10-31 iterations per scan and the local map
+is rebuilt in the scan callback.
+
+After v1.5.0 the profile ignores points beyond 60 m (`scan_max_range`, 0.2% of the
+points) and builds the next local map in the background. Five runs on the same setup
+passed, at 97.2-99.2% coverage and 0.235-0.239 m RMSE
+([experiments/koide_online_coverage](../experiments/koide_online_coverage/README.md)).
 
 The same check, alternated with these runs, failed twice before the component compiled
 NDT_OMP itself (`39c9231`, same workspace and RKO). With `ndt_omp_ros2` unoptimized, the

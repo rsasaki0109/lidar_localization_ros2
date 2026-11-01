@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- The online Koide profile (`tools/readme_media/koide_outdoor_hard_02b_online.yaml`, used
+  by `run_koide_public_bag.py`) ignores points beyond 60 m (`scan_max_range`, was 100 m;
+  0.2% of the points) and builds the next local map in the background
+  (`local_map_async_rebuild`). On a 4-vCPU Jazzy container, five runs passed at
+  0.235-0.239 m RMSE and 97.2-99.2% diagnostic coverage. With the old profile, six runs
+  gave 0.252-0.275 m and 95.2-99.1%, and two fell below the 97% gate
+  ([experiments/koide_online_coverage](experiments/koide_online_coverage/README.md)).
+  The v1.5.0 verification in `docs/koide-online-replay.md` now lists those six runs and
+  the v1.3.0 tag on the same setup (97.0% and 97.9%), not only the first two.
+
 ## 1.5.0 - 2026-11-01
 
 ### Added
