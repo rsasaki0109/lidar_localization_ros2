@@ -198,9 +198,6 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         "continuous_time_pose_history_duration_sec": getattr(
             args, "continuous_time_pose_history_duration_sec", 2.0
         ),
-        "continuous_time_pose_history_max_end_gap_sec": getattr(
-            args, "continuous_time_pose_history_max_end_gap_sec", 0.0
-        ),
         "enable_localizability_guard": getattr(
             args, "enable_localizability_guard", False
         ),

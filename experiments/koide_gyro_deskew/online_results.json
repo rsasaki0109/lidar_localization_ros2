@@ -91,6 +91,192 @@
     "max": 1033.5
    },
    "iterations_median": 3.0
+  },
+  "rko032_gyro_4": {
+   "passed": true,
+   "rmse_m": 0.232,
+   "p95_error_m": 0.586,
+   "diagnostic_coverage": 0.9982,
+   "missed_clouds": 4,
+   "missed_clouds_100_132_s": 3,
+   "max_output_gap_sec": 0.9,
+   "alignment_ms": {
+    "median": 38.7,
+    "p95": 116.2,
+    "max": 1134.6
+   },
+   "iterations_median": 3.0
+  },
+  "rko032_gyro_5": {
+   "passed": true,
+   "rmse_m": 0.222,
+   "p95_error_m": 0.538,
+   "diagnostic_coverage": 0.9946,
+   "missed_clouds": 12,
+   "missed_clouds_100_132_s": 8,
+   "max_output_gap_sec": 1.1,
+   "alignment_ms": {
+    "median": 40.3,
+    "p95": 124.5,
+    "max": 1414.0
+   },
+   "iterations_median": 3.0
+  },
+  "rko032_gyro_6": {
+   "passed": true,
+   "rmse_m": 0.222,
+   "p95_error_m": 0.527,
+   "diagnostic_coverage": 0.9973,
+   "missed_clouds": 6,
+   "missed_clouds_100_132_s": 6,
+   "max_output_gap_sec": 1.1,
+   "alignment_ms": {
+    "median": 40.4,
+    "p95": 121.1,
+    "max": 1050.1
+   },
+   "iterations_median": 3.0
+  }
+ },
+ "gyro_end_gap": {
+  "rko032_gaponly_1": {
+   "passed": true,
+   "rmse_m": 0.261,
+   "p95_error_m": 0.759,
+   "diagnostic_coverage": 0.9914,
+   "missed_clouds": 19,
+   "missed_clouds_100_132_s": 4,
+   "max_output_gap_sec": 0.9,
+   "alignment_ms": {
+    "median": 40.2,
+    "p95": 130.8,
+    "max": 1133.1
+   },
+   "iterations_median": 3.0
+  },
+  "rko032_gaponly_2": {
+   "passed": true,
+   "rmse_m": 0.265,
+   "p95_error_m": 0.795,
+   "diagnostic_coverage": 0.9964,
+   "missed_clouds": 8,
+   "missed_clouds_100_132_s": 3,
+   "max_output_gap_sec": 0.9,
+   "alignment_ms": {
+    "median": 37.0,
+    "p95": 124.9,
+    "max": 1088.6
+   },
+   "iterations_median": 3.0
+  },
+  "rko032_gaponly_3": {
+   "passed": true,
+   "rmse_m": 0.267,
+   "p95_error_m": 0.799,
+   "diagnostic_coverage": 0.9977,
+   "missed_clouds": 5,
+   "missed_clouds_100_132_s": 4,
+   "max_output_gap_sec": 0.9,
+   "alignment_ms": {
+    "median": 36.7,
+    "p95": 117.2,
+    "max": 1223.3
+   },
+   "iterations_median": 3.0
+  }
+ },
+ "gyro_ratio_2.5": {
+  "rko032_ratioonly_1": {
+   "passed": true,
+   "rmse_m": 0.221,
+   "p95_error_m": 0.513,
+   "diagnostic_coverage": 0.9932,
+   "missed_clouds": 15,
+   "missed_clouds_100_132_s": 14,
+   "max_output_gap_sec": 1.4,
+   "alignment_ms": {
+    "median": 40.1,
+    "p95": 112.7,
+    "max": 1396.5
+   },
+   "iterations_median": 3.0
+  },
+  "rko032_ratioonly_2": {
+   "passed": true,
+   "rmse_m": 0.228,
+   "p95_error_m": 0.574,
+   "diagnostic_coverage": 0.9986,
+   "missed_clouds": 3,
+   "missed_clouds_100_132_s": 2,
+   "max_output_gap_sec": 0.9,
+   "alignment_ms": {
+    "median": 38.2,
+    "p95": 115.6,
+    "max": 1040.2
+   },
+   "iterations_median": 3.0
+  },
+  "rko032_ratioonly_3": {
+   "passed": true,
+   "rmse_m": 0.256,
+   "p95_error_m": 0.661,
+   "diagnostic_coverage": 0.9973,
+   "missed_clouds": 6,
+   "missed_clouds_100_132_s": 3,
+   "max_output_gap_sec": 0.9,
+   "alignment_ms": {
+    "median": 38.1,
+    "p95": 110.4,
+    "max": 1258.9
+   },
+   "iterations_median": 3.0
+  }
+ },
+ "gyro_end_gap_ratio_2.5": {
+  "rko032_gyrofull_1": {
+   "passed": true,
+   "rmse_m": 0.264,
+   "p95_error_m": 0.781,
+   "diagnostic_coverage": 0.9991,
+   "missed_clouds": 2,
+   "missed_clouds_100_132_s": 1,
+   "max_output_gap_sec": 0.9,
+   "alignment_ms": {
+    "median": 38.0,
+    "p95": 113.8,
+    "max": 1062.3
+   },
+   "iterations_median": 3.0
+  },
+  "rko032_gyrofull_2": {
+   "passed": true,
+   "rmse_m": 0.263,
+   "p95_error_m": 0.793,
+   "diagnostic_coverage": 0.9919,
+   "missed_clouds": 18,
+   "missed_clouds_100_132_s": 11,
+   "max_output_gap_sec": 1.3,
+   "alignment_ms": {
+    "median": 40.6,
+    "p95": 130.8,
+    "max": 1560.1
+   },
+   "iterations_median": 3.0
+  },
+  "rko032_gyrofull_3": {
+   "passed": true,
+   "rmse_m": 0.267,
+   "p95_error_m": 0.805,
+   "diagnostic_coverage": 0.9955,
+   "missed_clouds": 10,
+   "missed_clouds_100_132_s": 1,
+   "max_output_gap_sec": 0.9,
+   "alignment_ms": {
+    "median": 40.1,
+    "p95": 120.6,
+    "max": 1037.7
+   },
+   "iterations_median": 3.0
   }
  }
 }

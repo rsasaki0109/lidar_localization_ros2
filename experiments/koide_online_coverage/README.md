@@ -70,12 +70,12 @@ Same build (v1.5.0), same RKO, alternated:
   0.025 m and the longest gap 0.5 s. With 3 and 5 runs, the coverage gain is not
   established, and the margin over the 97% gate stays 0.2-2.2 points on this machine.
 
-## Open
+## Open, since answered
 
-Why NDT needs 10-31 iterations from 104 to 130 s, where most clouds are missed. The
-seed comes from the RKO `odom` TF (`use_odom_tf_prediction`). Find whether that seed is
-off there, or whether the scans differ: the filtered point count doubles at 100 and
-108 s. A faster convergence there would give the gate real margin on 4 cores.
+Why NDT needs 10-31 iterations from 104 to 130 s, where most clouds are missed.
+[koide_gyro_deskew](../koide_gyro_deskew/README.md) found the cause. The sensor turns
+at 83 deg/s (median) there, and the profile did not deskew. The profile now deskews
+with the gyro.
 
 ## Rerun
 

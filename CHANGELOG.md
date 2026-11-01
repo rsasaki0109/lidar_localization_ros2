@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `continuous_time_deskew_mode: imu_pose_history` runs without `use_imu_preintegration`.
+  It only rotates points with a gyro-integrated history, but it used to wait for IMU
+  preintegration, which also moves the published pose to the IMU smoother backend. The
+  IMU callback now keeps that history on its own (in its own callback group), and the
+  seed and the published pose stay as they are. Other modes are unchanged.
+- The online Koide profile uses it. 100-132 s into `outdoor_hard_02b` the sensor
+  turns at 83 deg/s (median); undeskewed, a cloud taken at 150 deg/s or more needed 14
+  NDT iterations and ended 0.30 m off, gyro-deskewed 4 and 0.08 m (offline). Six online
+  runs scored 99.5-100% diagnostic coverage, 0.222-0.232 m RMSE and 112-127 ms
+  alignment p95, against 99.0-99.3%, 0.233-0.240 m and 139-156 ms for three runs
+  without it ([experiments/koide_gyro_deskew](experiments/koide_gyro_deskew/README.md)).
 - The online Koide profile (`tools/readme_media/koide_outdoor_hard_02b_online.yaml`, used
   by `run_koide_public_bag.py`) ignores points beyond 60 m (`scan_max_range`, was 100 m;
   0.2% of the points) and builds the next local map in the background

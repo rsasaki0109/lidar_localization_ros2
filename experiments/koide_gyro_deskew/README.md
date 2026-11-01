@@ -73,27 +73,40 @@ sequence, not the online replay.
 
 ## Online check
 
-The same build alternated `run_koide_public_bag.py` runs between two profiles. One is
-the profile on `main` (60 m range, background map rebuild). The other adds
+`run_koide_public_bag.py` runs alternated between the profile on `main` (60 m range,
+background map rebuild) and variants of it, all with the same build and RKO-LIO binary,
+on the setup of [koide_online_coverage](../koide_online_coverage/README.md). `gyro` adds
 `continuous_time_deskew_mode: imu_pose_history`, which with this change runs on the gyro
-alone. Same setup and RKO-LIO binary as in
-[koide_online_coverage](../koide_online_coverage/README.md). Median (range) of three
-runs each:
+alone. Median (range):
 
-| Profile | Failed | Coverage % | Missed clouds | RMSE m | Alignment p95 ms | Median iterations |
-| --- | --- | --- | --- | --- | --- | --- |
-| `main` | 0 | 99.0 (99.0-99.3) | 23 (15-23) | 0.234 (0.233-0.240) | 150 (139-156) | 4 |
-| + gyro deskew | 0 | **99.7** (99.5-100.0) | **6** (1-12) | **0.227** (0.227-0.231) | **114** (112-127) | 3 |
+| Profile | Runs | Failed | Coverage % | Missed clouds | RMSE m | p95 error m | Alignment p95 ms | Deskewed |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `main` | 3 | 0 | 99.0 (99.0-99.3) | 23 (15-23) | 0.234 (0.233-0.240) | 0.554 (0.548-0.597) | 150 (139-156) | 0% |
+| **`gyro`** | 6 | 0 | **99.7** (99.5-100.0) | **6** (1-12) | **0.227** (0.222-0.232) | 0.559 (0.527-0.592) | **119** (112-127) | 69% |
+| `gyro` + 10 ms end gap | 3 | 0 | 99.6 (99.1-99.8) | 8 (5-19) | 0.265 (0.261-0.267) | 0.795 (0.759-0.799) | 125 (117-131) | 83% |
+| `gyro` + ratio 2.5 | 3 | 0 | 99.7 (99.3-99.9) | 6 (3-15) | 0.228 (0.221-0.256) | 0.574 (0.513-0.661) | 113 (110-116) | 80% |
+| `gyro` + both | 3 | 0 | 99.6 (99.2-99.9) | 10 (2-18) | 0.264 (0.263-0.267) | 0.793 (0.781-0.805) | 121 (114-131) | 93% |
 
-- **Every gate metric improves**, and the three runs of each profile do not overlap in
-  coverage, RMSE or alignment p95. The seed still comes from the RKO `odom` TF, as
-  without the deskew, and the published pose stays the registration result.
-- **The deskew applied to 69% of the clouds.**
+- **`gyro` wins.** Coverage, RMSE and alignment p95 improve, with no overlap between
+  its six runs and the three `main` runs; the p95 error is unchanged. The seed still
+  comes from the RKO `odom` TF, and the published pose stays the registration result.
+  The `gyro` runs 4-6 ran on a build that also had the end gap tolerance below, left at
+  0; they match runs 1-3.
+- **It deskews 69% of the clouds.** The others:
   - 16% span more than `scan_period` x `scan_time_range_max_duration_ratio` (0.2 s),
-    most of them only just: median 0.201 s, up to 0.7 s. They hold two sweeps.
-  - 13-15% arrived before the IMU sample covering the sweep end
+    most only just: median 0.201 s, up to 0.7 s. They hold two sweeps.
+  - 13-15% arrive before the IMU sample covering the sweep end
     (`continuous_time_deskew_pose_history_ends_too_early`). In the bag's order that
     sample is at most 4.3 ms late (median 0.4 ms), less than one IMU period.
+- **Deskewing more clouds did not help.**
+  - An end gap tolerance let the history end up to 10 ms before the sweep end, with
+    later points holding the last rotation. It deskewed 83% of the clouds, but RMSE
+    rose to 0.261-0.267 m in all three runs, and p95 error to 0.76-0.80 m. The
+    tolerance is not kept.
+  - Raising `scan_time_range_max_duration_ratio` to 2.5 also deskews the two-sweep
+    clouds. Two runs matched `gyro`, one scored 0.256 m: not established.
+  - The loss comes 220-260 s into the sequence, where all variants are least accurate.
+    Why holding a few ms of rotation hurts is not established.
 - These `main` runs scored higher than the runs of
   [koide_online_coverage](../koide_online_coverage/README.md) (97.2-99.2%) on the same
   profile, in another hour of the same container. Compare profiles within one session.

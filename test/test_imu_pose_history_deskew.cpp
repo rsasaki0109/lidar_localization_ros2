@@ -83,46 +83,11 @@ void test_deskew_rejects_partial_coverage_without_mutating_cloud()
   assert(result.cloud[0].x == 4.0f);
 }
 
-void test_end_gap_tolerance_holds_the_last_pose()
-{
-  // The history ends 4 ms before the scan end: rejected without a tolerance,
-  // applied with 5 ms, and the late point takes the last sample's pose.
-  const std::vector<ll::TimestampedPose> history{
-    pose(10.0, 0.0f, 0.0f), pose(10.1, 1.0f, 0.0f), pose(10.196, 2.0f, 0.0f)};
-  auto coverage = ll::evaluatePoseHistoryCoverage(history, 10.0, 10.2);
-  assert(!coverage.full_coverage);
-  assert(coverage.status == ll::PoseHistoryDeskewStatus::kHistoryEndsTooEarly);
-  coverage = ll::evaluatePoseHistoryCoverage(history, 10.0, 10.2, 0.005);
-  assert(coverage.full_coverage);
-  assert(coverage.status == ll::PoseHistoryDeskewStatus::kReady);
-  assert(coverage.ratio > 0.97 && coverage.ratio < 0.99);
-  assert(!ll::evaluatePoseHistoryCoverage(history, 10.0, 10.2, 0.003).full_coverage);
-
-  pcl::PointCloud<pcl::PointXYZI> cloud;
-  cloud.resize(2);
-  for (auto & point : cloud) {
-    point.x = 1.0f;
-  }
-  const auto result = ll::deskewPointCloudWithPoseHistory(
-    cloud, {0.1, 0.2}, 10.0, 0.2, history, 0.0, 0.005);
-  assert(result.applied);
-  assert(result.deskewed_point_count == 2);
-  assert(result.clamped_time_count == 1);
-  assert(std::abs(result.cloud[0].x - 2.0f) < 1e-5f);
-  assert(std::abs(result.cloud[1].x - 3.0f) < 1e-5f);
-
-  const auto strict = ll::deskewPointCloudWithPoseHistory(
-    cloud, {0.1, 0.2}, 10.0, 0.2, history, 0.0);
-  assert(!strict.applied);
-  assert(strict.status == ll::PoseHistoryDeskewStatus::kHistoryEndsTooEarly);
-}
-
 int main()
 {
   test_coverage_requires_both_boundaries();
   test_piecewise_pose_interpolation();
   test_deskew_maps_each_point_to_reference_pose();
   test_deskew_rejects_partial_coverage_without_mutating_cloud();
-  test_end_gap_tolerance_holds_the_last_pose();
   return 0;
 }

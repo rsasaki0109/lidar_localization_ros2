@@ -185,9 +185,10 @@ Open items after v1.5.0:
   Istanbul that is the second public dataset the backend decision gate asks for
 - re-measure timings recorded before v1.5.0 that may come from an unoptimized
   `ndt_omp_ros2` (for example the Koide NDT target build times in `troubleshooting.md`)
-- find why NDT needs 10-31 iterations per scan 100-132 s into Koide `outdoor_hard_02b`,
-  where most clouds the online check misses lie; faster convergence there would give its
-  97% coverage gate real margin on 4 vCPUs
+- deskew the clouds the gyro deskew still skips on Koide `outdoor_hard_02b` (31%: two
+  sweeps in one cloud, or the sweep's last IMU sample not yet in); holding the last
+  rotation for up to 10 ms made RMSE worse
+  ([experiments/koide_gyro_deskew](../experiments/koide_gyro_deskew/README.md))
 - make Boreas usable as a `LiDAR + IMU + GT` benchmark
 
 Other work remains:

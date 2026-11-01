@@ -70,14 +70,10 @@ struct PoseHistoryCoverage
   double ratio{0.0};
 };
 
-// max_end_gap_sec: the history may end up to this long before the scan end; points
-// after its last sample then take that sample's pose. A sweep's last IMU sample
-// often arrives just after the cloud.
 inline PoseHistoryCoverage evaluatePoseHistoryCoverage(
   const std::vector<TimestampedPose> & history,
   double scan_start_sec,
-  double scan_end_sec,
-  double max_end_gap_sec = 0.0)
+  double scan_end_sec)
 {
   PoseHistoryCoverage result;
   if (history.empty()) {
@@ -110,17 +106,13 @@ inline PoseHistoryCoverage evaluatePoseHistoryCoverage(
     result.status = PoseHistoryDeskewStatus::kHistoryStartsTooLate;
     return result;
   }
-  const double end_gap_sec =
-    std::isfinite(max_end_gap_sec) ? std::max(0.0, max_end_gap_sec) : 0.0;
-  if (history.back().stamp_sec < scan_end_sec - end_gap_sec) {
+  if (history.back().stamp_sec < scan_end_sec) {
     result.status = PoseHistoryDeskewStatus::kHistoryEndsTooEarly;
     return result;
   }
   result.status = PoseHistoryDeskewStatus::kReady;
   result.full_coverage = true;
-  if (history.back().stamp_sec >= scan_end_sec) {
-    result.ratio = 1.0;
-  }
+  result.ratio = 1.0;
   return result;
 }
 
@@ -181,8 +173,6 @@ struct PoseHistoryDeskewResult
   double coverage_ratio{0.0};
   std::size_t deskewed_point_count{0};
   std::size_t skipped_invalid_time_count{0};
-  // Points after the history's last sample (within max_end_gap_sec).
-  std::size_t clamped_time_count{0};
 };
 
 inline PoseHistoryDeskewResult deskewPointCloudWithPoseHistory(
@@ -191,8 +181,7 @@ inline PoseHistoryDeskewResult deskewPointCloudWithPoseHistory(
   double scan_start_sec,
   double scan_duration_sec,
   const std::vector<TimestampedPose> & history,
-  double reference_relative_time_sec = 0.0,
-  double max_end_gap_sec = 0.0)
+  double reference_relative_time_sec = 0.0)
 {
   PoseHistoryDeskewResult result;
   result.cloud = input;
@@ -213,20 +202,16 @@ inline PoseHistoryDeskewResult deskewPointCloudWithPoseHistory(
   }
 
   const double scan_end_sec = scan_start_sec + scan_duration_sec;
-  const auto coverage =
-    evaluatePoseHistoryCoverage(history, scan_start_sec, scan_end_sec, max_end_gap_sec);
+  const auto coverage = evaluatePoseHistoryCoverage(history, scan_start_sec, scan_end_sec);
   result.coverage_ratio = coverage.ratio;
   if (!coverage.full_coverage) {
     result.status = coverage.status;
     return result;
   }
 
-  // Within max_end_gap_sec of the scan end, a stamp after the last sample takes it.
-  const double history_end_sec = history.back().stamp_sec;
   Eigen::Matrix4f reference_pose = Eigen::Matrix4f::Identity();
   if (!interpolatePoseHistory(
-      history, std::min(scan_start_sec + reference_relative_time_sec, history_end_sec),
-      &reference_pose))
+      history, scan_start_sec + reference_relative_time_sec, &reference_pose))
   {
     result.status = PoseHistoryDeskewStatus::kInvalidPose;
     return result;
@@ -237,11 +222,7 @@ inline PoseHistoryDeskewResult deskewPointCloudWithPoseHistory(
       ++result.skipped_invalid_time_count;
       continue;
     }
-    double point_stamp_sec = scan_start_sec + relative_times_sec[i];
-    if (point_stamp_sec > history_end_sec) {
-      point_stamp_sec = history_end_sec;
-      ++result.clamped_time_count;
-    }
+    const double point_stamp_sec = scan_start_sec + relative_times_sec[i];
     Eigen::Matrix4f point_pose = Eigen::Matrix4f::Identity();
     if (!interpolatePoseHistory(history, point_stamp_sec, &point_pose)) {
       result.status = PoseHistoryDeskewStatus::kInvalidPose;

@@ -340,7 +340,6 @@ public:
   std::string continuous_time_cloud_stamp_reference_{"start"};
   double continuous_time_deskew_reference_time_sec_{0.0};
   double continuous_time_pose_history_duration_sec_{2.0};
-  double continuous_time_pose_history_max_end_gap_sec_{0.0};
   double imu_prediction_correction_guard_translation_m_{2.0};
   double imu_prediction_correction_guard_yaw_deg_{10.0};
   int imu_prediction_correction_guard_warmup_accepts_{5};

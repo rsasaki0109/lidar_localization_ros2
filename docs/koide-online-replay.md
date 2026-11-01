@@ -2,9 +2,9 @@
 
 Use this opt-in profile for the public [Hard Point Cloud Localization Dataset](https://zenodo.org/records/10122133) (Koide et al., CC BY 4.0), sequence `outdoor_hard_02b`, with its binary little-endian float32 `map_outdoor_hard.ply`. It runs online RKO-LIO and localization together at 1x.
 
-The localizer uses a 75 m local-map radius, ignores points beyond 60 m, builds the next target in the background once movement reaches 10 m (`local_map_async_rebuild`), and receives `/livox/points` with RELIABLE QoS and depth 10. IMU integration and twist prediction in the localizer are disabled; RKO supplies `odom -> livox_frame`, and the localizer estimates `map -> odom`. Pose output includes odometry bridge predictions through rejected map matches. Timer publication is disabled and Path history is capped at 2,000 poses.
+The localizer uses a 75 m local-map radius, ignores points beyond 60 m, builds the next target in the background once movement reaches 10 m (`local_map_async_rebuild`), rotates each point with the gyro integrated over its sweep (`continuous_time_deskew_mode: imu_pose_history`), and receives `/livox/points` with RELIABLE QoS and depth 10. IMU preintegration and twist prediction in the localizer are disabled; RKO supplies `odom -> livox_frame`, and the localizer estimates `map -> odom`. Pose output includes odometry bridge predictions through rejected map matches. Timer publication is disabled and Path history is capped at 2,000 poses.
 
-The radius is a dataset-specific choice: it changes which map points are available for registration. The conservative Nav2 preset and the offline GIF profile keep their existing radii. The localizer's relative-motion deskew is not applied with its IMU preintegration disabled; RKO performs its own deskew.
+The radius is a dataset-specific choice: it changes which map points are available for registration. The conservative Nav2 preset and the offline GIF profile keep their existing radii. With its IMU preintegration disabled, the localizer deskews with the gyro alone (`imu_pose_history`); RKO deskews separately for its odometry.
 
 ## One-command check
 
