@@ -42,7 +42,24 @@ for benchmark and regression commands.
 
 ## Current Public Snapshot
 
-Latest release-tag verification (`2026-10-09`):
+Latest release verification (`2026-11-01`):
+
+- release: `v1.5.0`, verified on `main` at `eed5098` (the release tree)
+- Koide `outdoor_hard_02b`: two full replays at 1x in ROS 2 Jazzy, unchanged 75 m profile,
+  built without a build type as in `AGENTS.md`
+- map-frame position RMSE: `0.262 m` and `0.254 m`; diagnostic coverage: `98.3%` and `97.6%`
+- distinct GT-matched pose stamps: `2,165` and `2,150 / 2,209` expected clouds
+- the same check failed before v1.5.0 with that build (NDT_OMP unoptimized: 12-13 clouds
+  aligned)
+- Istanbul, `param/istanbul_gtsam_smoother.yaml`, three windows: `0.23`, `0.75` and
+  `0.46 m` horizontal RMSE at `8.9-10 Hz` (median of three runs)
+
+See [the v1.5.0 verification](koide-online-replay.md#v150-release-verification-2026-11-01).
+It is not one-to-one with v1.3.0 (Humble, a different RKO build), and its coverage
+margin over the 97% gate is thinner. It does not validate automatic initialization,
+recovery, physical hardware, or multi-hour operation.
+
+Previous release-tag verification (`2026-10-09`):
 
 - release: `v1.3.0`, commit `3878a7ad64a5ef4119942b559f05bf8868270477`
 - Koide `outdoor_hard_02b`: one full replay at 1x in ROS 2 Humble, unchanged 75 m profile
@@ -143,49 +160,29 @@ Outside the v1.1 MVP endpoint:
 
 ## Next Work
 
-The first development target is recovery after an odometry dropout. The
-[quickstart benchmark](benchmark.md#results) records a wrong reset 128 m away in one
-`outdoor_hard_02b` run. This is a different experiment from the tag verification
-above; its failure must not be inferred from the tag run's aggregate metrics.
+The previous first target, recovery after an odometry dropout, is paused. One
+[quickstart benchmark](benchmark.md#results) run of `outdoor_hard_02b` reset 128 m away
+after RKO-LIO dropped frames. The opt-in `segment_defer` confirmation
+(`--supervisor-odometry-confirmation-mode segment_defer`) passed 9 of 10 synthetic
+fixtures, but it did not win the replay of 2026-10-11:
 
-The current supervisor intentionally waives odometry confirmation after a dropout.
-That behavior improved `outdoor_kidnap_b` recovery, and
-`test_odometry_dropout_waives_confirmation` explicitly covers it. Simply removing
-the waiver is not an established fix.
+- the 128 m reset did not reproduce
+- on `outdoor_kidnap_b`, where RKO-LIO drops frames throughout, it recovered worse
 
-Before changing runtime defaults:
+`window_waiver` stays the default
+([experiments/odometry_dropout_confirmation](../experiments/odometry_dropout_confirmation/README.md#replay-result-2026-10-11-not-promoted)).
+A fix needs a confirmation that does not lean on intermittent odometry, and a replay
+that reproduces the reset.
 
-1. Capture a focused fixture with stale/interrupted odometry and a distinctive but
-   wrong global candidate, alongside a correct candidate after a covered-sensor carry.
-2. Compare a candidate confirmation policy in `experiments/` against the current
-   supervisor on the same fixtures. Do not extrapolate motion through a dropout or
-   assume the robot stayed stationary while covered.
-3. Replay both `outdoor_hard_02b` and `outdoor_kidnap_b` with the same map, odometry,
-   parameters and repeat count. Measure wrong resets, time to recover, time within
-   3 m, and reset count; include upstream frame drops in the evidence.
-4. Promote only a policy that reduces wrong resets without regressing covered-sensor
-   recovery, then run supervisor tests and release regression. Synthetic fixture
-   results alone are not public-replay validation.
+Open items after v1.5.0:
 
-Steps 1 and 2 are done in
-[experiments/odometry_dropout_confirmation](../experiments/odometry_dropout_confirmation/README.md),
-using synthetic fixtures only. The runtime waiver resets wrongly on 4 of 10 timelines.
-The leading candidate, `segment_defer`, has these rules:
-
-- pair answers only across gapless odometry
-- skip queries while the odometry is out
-
-It passes 9 of 10 timelines with no wrong reset. It costs one query cycle after a covered
-carry. It fails when odometry drops out between every two answers. It is now an opt-in
-(`--supervisor-odometry-confirmation-mode segment_defer`).
-
-Step 3, the replay (2026-10-11, three runs per mode, a 4-core machine), did not support
-promotion, so `window_waiver` stays the default:
-
-- `outdoor_hard_02b`: the 128 m reset did not reproduce in six runs, and neither mode reset.
-- `outdoor_kidnap_b`: RKO-LIO dropped 4-8 frames per second throughout, so odometry was
-  intermittent. `segment_defer` recovered worse there, with no fewer wrong jumps. See
-  [the replay result](../experiments/odometry_dropout_confirmation/README.md#replay-result-2026-10-11-not-promoted).
+- compare `NDT_OMP` with `SMALL_GICP` on Koide now that NDT_OMP runs optimized; with
+  Istanbul that is the second public dataset the backend decision gate asks for
+- re-measure timings recorded before v1.5.0 that may come from an unoptimized
+  `ndt_omp_ros2` (for example the Koide NDT target build times in `troubleshooting.md`)
+- find why the v1.5.0 Koide diagnostic coverage is below v1.3.0's 100%: run the v1.3.0
+  tag on the same setup
+- make Boreas usable as a `LiDAR + IMU + GT` benchmark
 
 Other work remains:
 

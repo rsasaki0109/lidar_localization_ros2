@@ -1,0 +1,31 @@
+{
+  "date": "2026-11-01",
+  "localizer_source_commit": "eed5098f5064b54bdfd21bc91fff353bf8e38ef0",
+  "localizer_build": "colcon build --symlink-install, no CMAKE_BUILD_TYPE (as in AGENTS.md); ndt_omp_ros2 also without a build type",
+  "localizer_sha256": "871dd666541a7af073b1c8da24963e2924a967ff27a6899ca71496c87cb56aa5",
+  "ndt_omp_source_commit": "63bf15b965b71d3a53db1757abe8e31b6114372a",
+  "rko_source": "https://github.com/rsasaki0109/rko_lio",
+  "rko_source_commit": "7e91814a8abbfce6641526e03667966fcad01d0f",
+  "rko_pinned_by": "lidar_slam_ros2 d13d9e7 (Thirdparty/rko_lio)",
+  "rko_version": "0.3.2",
+  "rko_build": "Release",
+  "rko_sha256": "0e9411f6c6f3436e2e6fd52865e0a0c9c9deb0b0d59ac87dc15bf91060db9f73",
+  "ros_distro": "jazzy",
+  "architecture": "x86_64",
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+  "cpu_count": 4,
+  "command": "ros2 run lidar_localization_ros2 run_koide_public_bag.py --data-dir /home/user/koide-data --output /home/user/koide-runs/rko032_after_N --rko-executable /home/user/rko_ws/install/rko_lio/lib/rko_lio/online_node",
+  "command_exit_code": 0,
+  "repeat_count": 2,
+  "rko_insufficient_icp_keypoint_drops": [20, 20],
+  "comparison": {
+    "description": "The same check with the localizer built from 39c9231 (before the in-package NDT_OMP build), same workspace layout, ndt_omp_ros2 without a build type, same RKO binary, alternated with the runs above.",
+    "localizer_sha256": "07fbd66c7600ed8dc9ee9307ad9f2baaf392cd076df6c391ae0f654ce46dff07",
+    "results": [
+      {"passed": false, "rmse_m": 1.916, "diagnostic_coverage": 0.006, "aligned_scans": 13, "median_alignment_sec": 17.6},
+      {"passed": false, "rmse_m": 1.821, "diagnostic_coverage": 0.005, "aligned_scans": 12, "median_alignment_sec": 12.9}
+    ]
+  },
+  "hardware_validation": false,
+  "notes": "Full public sequence at 1x with the unchanged 75 m profile, one cloud container. Not comparable one-to-one with v1.3.0: ROS 2 Jazzy instead of Humble, and RKO built from the rko_lio commit lidar_slam_ros2 pins now instead of the v1.3.0 image."
+}

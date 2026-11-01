@@ -2,18 +2,10 @@
 
 ## Unreleased
 
-- Fix `NDT_OMP` and `GICP_OMP` running unoptimized: `ndt_omp_ros2` sets no
-  `CMAKE_BUILD_TYPE`, so a plain `colcon build` (as in `AGENTS.md` and CI) compiled its
-  NDT and GICP code without optimization, and the localizer ran that code. The
-  component now compiles the `pcl::PointXYZI` instantiations itself
-  (`src/ndt_omp_instantiation.cpp`) with this package's flags, whatever build type
-  `ndt_omp_ros2` has. On the Istanbul windows with `param/istanbul_gtsam_smoother.yaml`,
-  NDT_OMP went from 3.1, 3.0 and 1.5 Hz to 8.9, 10.0 and 10.0 Hz (10 Hz scans; median
-  alignment 223-262 ms to 11-12 ms), and horizontal RMSE from 0.37, 0.88 and 0.47 m to
-  0.23, 0.75 and 0.46 m (median of three runs, 4 cores). Building `ndt_omp_ros2` with
-  `-DCMAKE_BUILD_TYPE=Release` gave the same result
-  ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md#unoptimized-ndt_omp)).
-  The Istanbul NDT_OMP pose rates in the entries below match such a build.
+## 1.5.0 - 2026-11-01
+
+### Added
+
 - `/alignment_status` reports `registration_iterations`: the iteration count of the
   selected registration attempt for `NDT`, `NDT_OMP`, `SMALL_GICP` and `SMALL_VGICP`
   (`-1` for the other backends), next to `alignment_time_sec`. A scan at or above
@@ -23,28 +15,6 @@
   (median, p95, max) and the iterations (median, p95, max, share at the cap).
   `istanbul_compare.py` prints them in a second table, and `record_pose.py` keeps
   `alignment_time_sec` and `registration_iterations` in `alignment.jsonl`.
-- The Jazzy CI job installs `ros-jazzy-small-gicp-vendor`, so it builds, tests and
-  lints the `SMALL_GICP` and `SMALL_VGICP` code (`test_local_map_async_rebuild` covers
-  them); the Humble job still builds without small_gicp.
-- CMake also looks for `small_gicp_vendor`, so on Jazzy `ros-jazzy-small-gicp-vendor`
-  from apt enables the `SMALL_GICP` and `SMALL_VGICP` backends without a local
-  small_gicp install (Humble has no such package); the configure log says when
-  small_gicp support is enabled.
-- Add `param/istanbul_small_gicp.yaml`: `istanbul_gtsam_smoother.yaml` with
-  `registration_method: SMALL_GICP`. On the three Istanbul windows it gave 0.26, 0.76 and
-  0.45 m horizontal RMSE at 8.0-9.5 Hz, against 0.26, 0.91 and 0.54 m at 1.3-3.1 Hz for the
-  NDT_OMP preset in the same session (`docs/benchmark.md`). That NDT_OMP ran unoptimized
-  (first entry); optimized, it gave 0.23, 0.75 and 0.46 m at 8.9-10 Hz.
-- `-O2 -g` is now added only when `CMAKE_BUILD_TYPE` is unset, so `Release` builds no
-  longer carry debug info. This lowers compiler memory use and binary size on small
-  boards. Builds without a build type are unchanged.
-- The Autoware Istanbul replay tools moved from `experiments/twist_smoother_slope` to
-  `tools/benchmark/istanbul_{prepare,replay,compare}.py`, and `docs/benchmark.md` now
-  describes the Istanbul benchmark (windows, GNSS reference and its pitfalls, latest
-  results). `docs/imu_estimation.md` marks the twist EKF experimental and recommends the
-  twist GTSAM smoother. `test/test_istanbul_benchmark_tools.py` covers them without ROS:
-  the GNSS reference cleanup, the window start in the header-stamp time base, the
-  initial pose and overrides, the scores and the comparison runs and summary.
 - Add `local_map_async_rebuild` (default `false`, every registration backend): with the
   local map crop, the next target is built on a twin registration object in the
   background while scans keep aligning against the cached one, which covers every scan
@@ -57,12 +27,54 @@
   the search tree, which the backends build in the first `align()`, are ready when the
   scan callback swaps the target in. On the same preset with SMALL_GICP the pose rate went
   from 7.1-7.9 to 8.0-9.5 Hz (10 Hz scans) at unchanged accuracy.
-- Fix the twist EKF (`use_twist_ekf`) pulling the state back at every NDT update: it
-  compared the NDT result, the pose at the scan stamp, with the state predicted up to
-  the latest twist. It now carries the result along its predicted trajectory from the
-  scan stamp to the state's time, and seeds NDT and publishes with the pose at the scan
-  stamp. On the Istanbul windows A and C the EKF went from 19 and 270 m to 0.25 and
-  0.54 m horizontal RMSE; window B still fails in z
+- Add `param/istanbul_small_gicp.yaml`: `istanbul_gtsam_smoother.yaml` with
+  `registration_method: SMALL_GICP`. On the three Istanbul windows it gave 0.26, 0.76 and
+  0.45 m horizontal RMSE at 8.0-9.5 Hz, against 0.26, 0.91 and 0.54 m at 1.3-3.1 Hz for the
+  NDT_OMP preset in the same session (`docs/benchmark.md`). That NDT_OMP ran unoptimized
+  (first entry); optimized, it gave 0.23, 0.75 and 0.46 m at 8.9-10 Hz.
+- CMake also looks for `small_gicp_vendor`, so on Jazzy `ros-jazzy-small-gicp-vendor`
+  from apt enables the `SMALL_GICP` and `SMALL_VGICP` backends without a local
+  small_gicp install (Humble has no such package); the configure log says when
+  small_gicp support is enabled.
+
+### Changed
+
+- `-O2 -g` is now added only when `CMAKE_BUILD_TYPE` is unset, so `Release` builds no
+  longer carry debug info. This lowers compiler memory use and binary size on small
+  boards. Builds without a build type are unchanged.
+- The Autoware Istanbul replay tools moved from `experiments/twist_smoother_slope` to
+  `tools/benchmark/istanbul_{prepare,replay,compare}.py`, and `docs/benchmark.md` now
+  describes the Istanbul benchmark (windows, GNSS reference and its pitfalls, latest
+  results). `docs/imu_estimation.md` marks the twist EKF experimental and recommends the
+  twist GTSAM smoother. `test/test_istanbul_benchmark_tools.py` covers them without ROS:
+  the GNSS reference cleanup, the window start in the header-stamp time base, the
+  initial pose and overrides, the scores and the comparison runs and summary.
+- The Jazzy CI job installs `ros-jazzy-small-gicp-vendor`, so it builds, tests and
+  lints the `SMALL_GICP` and `SMALL_VGICP` code (`test_local_map_async_rebuild` covers
+  them); the Humble job still builds without small_gicp.
+
+### Fixed
+
+- Fix `NDT_OMP` and `GICP_OMP` running unoptimized: `ndt_omp_ros2` sets no
+  `CMAKE_BUILD_TYPE`, so a plain `colcon build` (as in `AGENTS.md` and CI) compiled its
+  NDT and GICP code without optimization, and the localizer ran that code. The
+  component now compiles the `pcl::PointXYZI` instantiations itself
+  (`src/ndt_omp_instantiation.cpp`) with this package's flags, whatever build type
+  `ndt_omp_ros2` has. On the Istanbul windows with `param/istanbul_gtsam_smoother.yaml`,
+  NDT_OMP went from 3.1, 3.0 and 1.5 Hz to 8.9, 10.0 and 10.0 Hz (10 Hz scans; median
+  alignment 223-262 ms to 11-12 ms), and horizontal RMSE from 0.37, 0.88 and 0.47 m to
+  0.23, 0.75 and 0.46 m (median of three runs, 4 cores). Building `ndt_omp_ros2` with
+  `-DCMAKE_BUILD_TYPE=Release` gave the same result
+  ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md#unoptimized-ndt_omp)).
+  The Istanbul NDT_OMP pose rates in the entries below match such a build. On Koide
+  `outdoor_hard_02b`, `run_koide_public_bag.py` failed with that build (12-13 of 2,209
+  clouds aligned) and now passes (0.254 and 0.262 m RMSE;
+  [docs/koide-online-replay.md](docs/koide-online-replay.md#v150-release-verification-2026-11-01)).
+- Log an error at map load when the full-map NDT voxel grid needs more cells than int32
+  indexes: the target is then empty and NDT does not register (troubleshooting, *NDT
+  Does Not Correct the Pose on a Large Map*). `param/istanbul_gtsam_smoother.yaml` now
+  crops the map. On three windows of the Autoware Istanbul bag the preset went from
+  5.9, 20.1 and 51.1 m to 0.26, 1.11 and 0.51 m horizontal RMSE (median of three runs)
   ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md)).
 - Fix the twist GTSAM smoother (`use_gtsam_smoother`) dropping motion at every NDT
   update: it put the NDT pose, a measurement at the scan stamp, on a node built from all
@@ -71,12 +83,6 @@
   and seeds NDT at the scan stamp. The twist subscription queues 1000 messages (was 5),
   so twist received while a scan holds the state lock (a local map crop) is no longer
   dropped.
-- Log an error at map load when the full-map NDT voxel grid needs more cells than int32
-  indexes: the target is then empty and NDT does not register (troubleshooting, *NDT
-  Does Not Correct the Pose on a Large Map*). `param/istanbul_gtsam_smoother.yaml` now
-  crops the map. On three windows of the Autoware Istanbul bag the preset went from
-  5.9, 20.1 and 51.1 m to 0.26, 1.11 and 0.51 m horizontal RMSE (median of three runs)
-  ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md)).
 - The twist GTSAM smoother's NDT seed follows the slope: `predict()` takes the last NDT
   roll and pitch, only `cos(pitch)` of the forward speed is planar odometry, the rest
   moves the seed's z, and the yaw rate turns the heading at `cos(roll) / cos(pitch)`. On
@@ -86,6 +92,13 @@
   ([experiments/twist_smoother_slope](experiments/twist_smoother_slope/README.md)). The
   experiment keeps a replay harness for the bag, and `docs/dev/benchmarking.md` again has
   working Istanbul download steps.
+- Fix the twist EKF (`use_twist_ekf`) pulling the state back at every NDT update: it
+  compared the NDT result, the pose at the scan stamp, with the state predicted up to
+  the latest twist. It now carries the result along its predicted trajectory from the
+  scan stamp to the state's time, and seeds NDT and publishes with the pose at the scan
+  stamp. On the Istanbul windows A and C the EKF went from 19 and 270 m to 0.25 and
+  0.54 m horizontal RMSE; window B still fails in z
+  ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md)).
 
 ## 1.4.0 - 2026-10-27
 
