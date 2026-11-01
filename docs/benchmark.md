@@ -243,15 +243,22 @@ the preset is read from the checkout that holds the tools. Set `ROS2_CLI` and
 | B | 2820-2970 s | sustained 6-10 % grades |
 | C | 2300-2420 s | the fastest climb, 4-5 % at up to 21 m/s |
 
-Median horizontal RMSE of three runs on 2026-10-28 (4 vCPUs): 0.25, 0.87 and 0.50 m, at
-1.6-3.6 poses/s; how they were reached is in
+Median horizontal RMSE of three runs on 2026-11-01 (4 vCPUs): 0.23, 0.75 and 0.46 m, at
+8.9-10 poses/s (the scans arrive at 10 Hz; median alignment 11-12 ms); how they were
+reached is in
 [experiments/istanbul_ndt_tracking](../experiments/istanbul_ndt_tracking/README.md).
+Results before then (0.25, 0.87 and 0.50 m at 1.6-3.6 poses/s on 2026-10-28) ran an
+unoptimized NDT_OMP
+([Unoptimized ndt_omp](../experiments/istanbul_ndt_tracking/README.md#unoptimized-ndt_omp)).
+`score.json` and the `istanbul_compare.py` summary also report the alignment cost: the
+share of the window's scans that were aligned, the alignment time and the registration
+iterations.
 
 `param/istanbul_small_gicp.yaml` is the same preset with `registration_method:
 SMALL_GICP` (needs small_gicp, e.g. `ros-jazzy-small-gicp-vendor`; pass `--preset
-istanbul_small_gicp.yaml`). Later the same day it gave 0.26, 0.76 and 0.45 m at 8.0-9.5
-poses/s (the scans arrive at 10 Hz), against 0.26, 0.91 and 0.54 m at 1.3-3.1 poses/s
-for the NDT_OMP preset in that session.
+istanbul_small_gicp.yaml`). On 2026-10-28 it gave 0.26, 0.76 and 0.45 m at 8.0-9.5
+poses/s, about as the optimized NDT_OMP preset does now; the NDT_OMP preset it was
+compared with then (0.26, 0.91 and 0.54 m at 1.3-3.1 poses/s) ran unoptimized.
 
 What to keep in mind with this bag (`istanbul_prepare.py` and `istanbul_replay.py`
 handle the first three):

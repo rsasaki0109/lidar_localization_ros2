@@ -279,6 +279,73 @@ preset seeds NDT from the twist prediction, without the smoother.
 
 Measured 2026-10-28 on ROS 2 Jazzy, 4 cores.
 
+## Unoptimized ndt_omp
+
+The NDT_OMP pose rates above (1.3-3.6 Hz with 10 Hz scans) came from an unoptimized
+`ndt_omp_ros2`. Its CMakeLists sets no `CMAKE_BUILD_TYPE`, so `colcon build` without
+`--cmake-args -DCMAKE_BUILD_TYPE=Release`, the command in `AGENTS.md`, compiles
+`libndt_omp` without `-O`. The localizer includes only `pclomp/ndt_omp.h`, so it ran
+that library's NDT and GICP code; this package's own `-O2` did not reach it (the G2
+candidate scoring includes `ndt_omp_impl.hpp` and was not affected).
+
+`ndt_align_bench.cpp` calls the same `NormalDistributionsTransform<PointXYZI>` with the
+preset's NDT settings on one scan and the 150 m crop around it, from three seeds around
+the converged pose (median of 15 aligns, ms):
+
+| Scan (crop) | ndt_omp build | Threads | Converged seed | 0.3 m, 0.5 deg off | 1.0 m, 1 deg off | `setInputTarget` |
+| --- | --- | --- | --- | --- | --- | --- |
+| window A start, 1500 points (203k) | no build type | 1 | 204 | 932 | 2127 | 1907 |
+| | Release | 1 | 15 | 75 | 153 | 182 |
+| | no build type | 4 | 56 | 251 | 546 | 1847 |
+| | Release | 4 | 4 | 19 | 41 | 217 |
+| window C climb, 1271 points (118k) | no build type | 4 | 29 | 166 | 274 | 1047 |
+| | Release | 4 | 2 | 12 | 22 | 63 |
+
+The two builds took the same iterations (2, 13-15 and 25-31) to the same poses.
+
+The preset on the three windows, `main` as built by `AGENTS.md`, with `ndt_omp_ros2` built
+as Release, and with `src/ndt_omp_instantiation.cpp` (the component compiles the
+instantiations itself; `ndt_omp_ros2` again without a build type). Median of three runs
+(range):
+
+| Window | Variant | Pose rate | Alignment median | Alignment p95 | Horizontal RMSE m | z RMSE m | 3D p95 m |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| A | no build type | 3.1 Hz | 231 ms | 460 ms | 0.373 (0.270-0.510) | 0.315 (0.291-0.436) | 1.049 (0.785-1.877) |
+| A | Release | 8.9 Hz | 10.6 ms | 21 ms | 0.238 (0.224-0.280) | 0.346 (0.288-0.400) | 0.776 (0.650-0.968) |
+| A | **in-package** | 8.9 Hz | 10.8 ms | 23 ms | **0.230** (0.225-0.323) | 0.305 (0.290-0.333) | 0.690 (0.649-0.995) |
+| B | no build type | 3.0 Hz | 223 ms | 511 ms | 0.883 (0.870-0.944) | 0.606 (0.546-0.849) | 2.220 (2.195-2.444) |
+| B | Release | 10.0 Hz | 10.6 ms | 25 ms | 0.758 (0.753-0.764) | 0.545 (0.531-0.546) | 1.800 (1.725-1.833) |
+| B | **in-package** | 10.0 Hz | 11.0 ms | 25 ms | **0.752** (0.746-0.755) | 0.533 (0.523-0.563) | 1.727 (1.718-1.846) |
+| C | no build type | 1.5 Hz | 262 ms | 528 ms | 0.466 (0.442-0.754) | 0.362 (0.333-0.898) | 0.932 (0.929-3.104) |
+| C | Release | 10.0 Hz | 11.8 ms | 25 ms | 0.459 (0.457-0.459) | 0.331 (0.327-0.332) | 0.981 (0.979-0.997) |
+| C | **in-package** | 10.0 Hz | 12.0 ms | 27 ms | **0.459** (0.458-0.459) | 0.333 (0.327-0.334) | 0.982 (0.977-0.985) |
+
+- Both optimized builds align every scan of windows B and C. On window A every variant
+  lacks the first 0.3 s and the last 6 s of the window (a replay boundary, not dropped
+  scans), hence 8.9 Hz. The median iterations were 7-10 in every variant, and at most
+  2 % of the scans ran to `ndt_max_iterations`.
+- The unoptimized build gives the rates measured above for this preset (2.3-3.6 Hz on
+  windows A and B, 1.3-1.6 Hz on C). Optimized, NDT_OMP tracks as well as SMALL_GICP did
+  in *Background rebuild for the GICP backends* (0.26, 0.76 and 0.45 m at 8.0-9.5 Hz)
+  and at the same rate: SMALL_GICP's rate advantage there came from this build.
+- The timings in the sections above were measured with the unoptimized build. Their
+  comparisons within a section hold (both variants had it); the absolute NDT_OMP times
+  do not.
+
+Measured 2026-11-01 on ROS 2 Jazzy, 4 cores (load 0.6-1.1 when each comparison started).
+
+```bash
+# ndt_omp_ros2 built with and without -DCMAKE_BUILD_TYPE=Release, in WS_A and WS_B
+python3 experiments/istanbul_ndt_tracking/extract_scan.py "$ISTANBUL/localization_bag" \
+  /tmp/istanbul_fixture 20 /tmp/scan_20
+g++ -O2 -std=c++17 -fopenmp experiments/istanbul_ndt_tracking/ndt_align_bench.cpp \
+  -o /tmp/ndt_align_bench -I"$WS_A/install/ndt_omp_ros2/include" -I/usr/include/pcl-1.14 \
+  -I/usr/include/eigen3 "$WS_A/install/ndt_omp_ros2/lib/libndt_omp.a" -lpcl_io \
+  -lpcl_common -lpcl_kdtree -lpcl_search -lpcl_filters -lpcl_registration -lpcl_octree
+/tmp/ndt_align_bench "$ISTANBUL/map/pointcloud_map.pcd" /tmp/scan_20/scan.pcd \
+  /tmp/scan_20/pose.txt 4 15
+```
+
 ## Rerun
 
 ```bash

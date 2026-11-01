@@ -69,6 +69,7 @@ add_library(lidar_localization_component SHARED
   src/component_pose_publisher.cpp
   src/component_reinit_recovery.cpp
   src/component_diagnostics.cpp
+  src/ndt_omp_instantiation.cpp
 )
 target_link_libraries(lidar_localization_component Eigen3::Eigen)
 
