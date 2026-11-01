@@ -68,6 +68,10 @@
     use_odom_tf_prediction: true
     publish_bridge_pose_when_lost: true
     use_continuous_time_deskew: true
+    # Rotate each point with the gyro integrated over its sweep. Without IMU
+    # preintegration this needs only the IMU; the seed and pose stay as they are
+    # (experiments/koide_gyro_deskew).
+    continuous_time_deskew_mode: imu_pose_history
     path_max_poses: 2000
     point_timestamp_unit: auto
     enable_soft_odom_correction_gate: false

@@ -234,6 +234,12 @@ When enabled, the localizer requires ready per-point timing and a time vector
 aligned with the pre-voxel cloud. `relative_motion` additionally requires the
 IMU smoother. `imu_pose_history` maps `header stamp + point time` into a bounded
 rotation-only IMU history and applies only with full scan-interval coverage.
+
+`imu_pose_history` also runs without `use_imu_preintegration`. The IMU callback then
+keeps only the gyro history, in its own callback group, and the preintegration queue,
+smoother and pose backend stay off, so the seed and the published pose do not
+change. The gyro must be in the base frame, or set
+`imu_preintegration_use_base_frame_transform: true`.
 `lidar_constant_velocity` scales the last accepted LiDAR relative motion to the
 current scan span and rejects interval ratios above 1.5.
 

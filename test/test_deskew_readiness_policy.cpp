@@ -107,6 +107,38 @@ void test_imu_health_blockers_are_explicit()
          "deskew_imu_integration_window_too_large");
 }
 
+void test_gyro_pose_history_only_needs_no_preintegration()
+{
+  // imu_pose_history without IMU preintegration: ready with a gyro history,
+  // whatever the (disabled) preintegration status says.
+  const auto ready = ll::makeDeskewReadinessDiagnostics(
+    ll::DeskewReadinessInput{
+      ll::ScanTimeRangeStatus::kReady,
+      ll::ImuPreintegrationDiagnosticStatus::kDisabled,
+      true,
+      true});
+  assert(ready.ready);
+  assert(ready.status == ll::DeskewReadinessStatus::kReady);
+
+  const auto waiting = ll::makeDeskewReadinessDiagnostics(
+    ll::DeskewReadinessInput{
+      ll::ScanTimeRangeStatus::kReady,
+      ll::ImuPreintegrationDiagnosticStatus::kDisabled,
+      true,
+      false});
+  assert(!waiting.ready);
+  assert(waiting.status == ll::DeskewReadinessStatus::kWaitingForImu);
+
+  // Scan-time blockers still come first.
+  const auto too_long = ll::makeDeskewReadinessDiagnostics(
+    ll::DeskewReadinessInput{
+      ll::ScanTimeRangeStatus::kDurationTooLarge,
+      ll::ImuPreintegrationDiagnosticStatus::kDisabled,
+      true,
+      true});
+  assert(too_long.status == ll::DeskewReadinessStatus::kScanTimeRangeTooLarge);
+}
+
 int main()
 {
   test_ready_when_scan_time_and_imu_prediction_are_available();
@@ -115,5 +147,6 @@ int main()
   test_scan_time_invalid_and_too_large_are_distinct();
   test_imu_preintegration_disabled_blocks_ready_scan();
   test_imu_health_blockers_are_explicit();
+  test_gyro_pose_history_only_needs_no_preintegration();
   return 0;
 }

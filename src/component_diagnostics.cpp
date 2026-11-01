@@ -223,10 +223,18 @@ PCLLocalization::prepareAlignmentDiagnosticValuesInput(
   diagnostic_input.scan_time_duration_sec = latest_scan_time_duration_sec_;
   diagnostic_input.scan_time_valid_point_count = latest_scan_time_valid_point_count_;
   diagnostic_input.scan_time_invalid_point_count = latest_scan_time_invalid_point_count_;
+  const bool gyro_pose_history_only = usesGyroPoseHistoryWithoutPreintegration();
+  bool gyro_pose_history_available = false;
+  if (gyro_pose_history_only) {
+    std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
+    gyro_pose_history_available = !continuous_time_imu_pose_history_.empty();
+  }
   const auto deskew_readiness = lidar_localization::makeDeskewReadinessDiagnostics(
     lidar_localization::DeskewReadinessInput{
       latest_scan_time_status_,
-      imu_diagnostics.status});
+      imu_diagnostics.status,
+      gyro_pose_history_only,
+      gyro_pose_history_available});
   diagnostic_input.deskew_ready = deskew_readiness.ready;
   diagnostic_input.deskew_readiness_status =
     lidar_localization::deskewReadinessStatusMessage(deskew_readiness.status);

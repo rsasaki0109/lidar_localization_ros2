@@ -308,6 +308,12 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
   return prepared_scan;
 }
 
+bool PCLLocalization::usesGyroPoseHistoryWithoutPreintegration() const
+{
+  return use_continuous_time_deskew_ && !use_imu_preintegration_ &&
+         continuous_time_deskew_mode_ == "imu_pose_history";
+}
+
 bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
   PreparedScanCloud & prepared_scan,
   double scan_stamp_sec)
@@ -391,7 +397,7 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
       imu_samples_ready_for_deskew,
       prediction_finite,
       !use_pose_history && !use_lidar_motion,
-      !use_lidar_motion});
+      !use_lidar_motion && !usesGyroPoseHistoryWithoutPreintegration()});
   if (!decision.should_apply) {
     latest_continuous_time_deskew_status_ =
       lidar_localization::continuousTimeDeskewStatusMessage(decision.status);

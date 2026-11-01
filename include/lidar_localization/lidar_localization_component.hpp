@@ -584,6 +584,9 @@ public:
   PreparedScanCloud prepareScanForRegistration(
     const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg,
     double scan_stamp_sec);
+  // continuous_time_deskew_mode imu_pose_history with use_imu_preintegration off:
+  // the IMU callback keeps a gyro rotation history for the deskew on its own.
+  bool usesGyroPoseHistoryWithoutPreintegration() const;
   bool applyContinuousTimeDeskewIfEnabled(
     PreparedScanCloud & prepared_scan,
     double scan_stamp_sec);
