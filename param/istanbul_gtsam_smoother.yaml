@@ -40,8 +40,9 @@
     enable_local_map_crop: true
     local_map_radius: 150.0
     local_map_update_distance: 10.0
-    # Build the next crop's target in the background: 0.9 -> 5.2 Hz at 21 m/s, measured
-    # with an unoptimized ndt_omp (experiments/istanbul_ndt_tracking/README.md).
+    # Build the next crop's target in the background: 8.3 -> 10 Hz at 21 m/s, same
+    # accuracy (0.9 -> 5.2 Hz with an unoptimized ndt_omp;
+    # experiments/istanbul_ndt_tracking/README.md).
     local_map_async_rebuild: true
     reject_above_score_threshold: false
     enable_map_odom_tf: false

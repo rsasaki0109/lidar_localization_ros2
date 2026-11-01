@@ -22,6 +22,14 @@
   ([experiments/koide_online_coverage](experiments/koide_online_coverage/README.md)).
   The v1.5.0 verification in `docs/koide-online-replay.md` now lists those six runs and
   the v1.3.0 tag on the same setup (97.0% and 97.9%), not only the first two.
+- Re-measured the target build times quoted in `docs/troubleshooting.md` and
+  `param/istanbul_gtsam_smoother.yaml`, which came from the unoptimized NDT_OMP before
+  v1.5.0. A new NDT_OMP target takes 0.08-0.19 s for a 150 m Istanbul crop after the
+  crop (0.6-0.8 s was quoted) and 0.5 s for an 80 m Koide crop (4.6-4.9 s); GICP_OMP
+  takes 0.25-0.44 s (1-2 s). Without `local_map_async_rebuild` the Istanbul preset
+  keeps 8.3-8.7 Hz (0.9-2.9 Hz was quoted), with it 8.9-10 Hz, at the same accuracy
+  ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md#re-measured-with-the-optimized-build),
+  `target_build_bench.cpp`).
 
 ## 1.5.0 - 2026-11-01
 

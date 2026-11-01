@@ -142,7 +142,10 @@ default stays 0.01.
 - **Throughput.** Every 10 m the scan callback cropped the map (0.06 s) and built the
   NDT target of the 150 m crop (0.6-0.8 s, 141k points) before aligning, so the pose rate
   fell to 0.9-3 Hz while driving (0.9 Hz at 21 m/s in window C). Fixed since by
-  `local_map_async_rebuild` (*Background target rebuild* below).
+  `local_map_async_rebuild` (*Background target rebuild* below). These times came from
+  the unoptimized build; optimized, the target takes 0.05-0.14 s, and without the
+  background rebuild the preset keeps 8.3-8.7 Hz (*Re-measured with the optimized
+  build*).
 
 Measured 2026-10-27 on ROS 2 Jazzy, 4 cores; baseline = `971e29a`. This is a
 public-dataset replay, not a physical-robot test.
@@ -328,9 +331,10 @@ instantiations itself; `ndt_omp_ros2` again without a build type). Median of thr
   windows A and B, 1.3-1.6 Hz on C). Optimized, NDT_OMP tracks as well as SMALL_GICP did
   in *Background rebuild for the GICP backends* (0.26, 0.76 and 0.45 m at 8.0-9.5 Hz)
   and at the same rate: SMALL_GICP's rate advantage there came from this build.
-- The timings in the sections above were measured with the unoptimized build. Their
-  comparisons within a section hold (both variants had it); the absolute NDT_OMP times
-  do not.
+- The timings in the sections above were measured with the unoptimized build. The
+  direction of their comparisons holds (both variants had it); the absolute NDT_OMP and
+  GICP_OMP times and the size of the gains do not (*Re-measured with the optimized
+  build* below).
 
 Measured 2026-11-01 on ROS 2 Jazzy, 4 cores (load 0.6-1.1 when each comparison started).
 
@@ -344,6 +348,88 @@ g++ -O2 -std=c++17 -fopenmp experiments/istanbul_ndt_tracking/ndt_align_bench.cp
   -lpcl_common -lpcl_kdtree -lpcl_search -lpcl_filters -lpcl_registration -lpcl_octree
 /tmp/ndt_align_bench "$ISTANBUL/map/pointcloud_map.pcd" /tmp/scan_20/scan.pcd \
   /tmp/scan_20/pose.txt 4 15
+```
+
+## Re-measured with the optimized build
+
+The target build times and the background rebuild comparison above ran the unoptimized
+build. Re-measured on `main` at `16e315c`, where the component compiles NDT_OMP and
+GICP_OMP itself.
+
+**Target build.** `target_build_bench.cpp` does what the localizer does for a new
+target, with the preset's NDT and GICP settings and 4 threads:
+
+- the 2D crop;
+- `setInputTarget()`;
+- one `align()` of a 100-point probe, which builds what `pcl::Registration` sets up in
+  the first `align()`: the search tree over the target points, and for GICP_OMP the
+  target covariances.
+
+GICP_OMP gets the crop voxel-filtered: 0.2 m on Istanbul, which keeps every point
+(0.02-0.03 s), 0.5 m on Koide (253k and 233k points, 0.09-0.10 s). Its
+`setInputTarget()` takes no time. "No build type" links `libndt_omp` as `AGENTS.md`
+builds it; "in-package" adds `src/ndt_omp_instantiation.cpp`, as the component does.
+Median of five:
+
+| Crop | Points | Build | Crop | NDT_OMP `setInputTarget` | NDT_OMP first `align()` | GICP_OMP first `align()` |
+| --- | --- | --- | --- | --- | --- | --- |
+| Istanbul 150 m, window A start | 203k | no build type | 0.10 s | 1.95 s | 0.12 s | 3.55 s |
+| | | in-package | 0.09 s | **0.14 s** | 0.05 s | **0.44 s** |
+| Istanbul 150 m, window C climb | 118k | no build type | 0.10 s | 1.04 s | 0.07 s | 1.96 s |
+| | | in-package | 0.10 s | **0.05 s** | 0.03 s | **0.25 s** |
+| Koide outdoor 80 m | 753k | no build type | 0.02 s | 6.32 s | 0.29 s | 4.23 s |
+| | | in-package | 0.02 s | **0.27 s** | 0.23 s | **0.51 s** |
+| Koide outdoor 75 m | 695k | no build type | 0.02 s | 5.88 s | 0.28 s | 4.02 s |
+| | | in-package | 0.02 s | **0.24 s** | 0.21 s | **0.51 s** |
+
+The Koide crops are centred on the `outdoor_hard_02` GT pose with the most map points
+within 80 m (x -19.34, y -78.57).
+
+- **NDT_OMP builds its target 14-25 times faster, GICP_OMP 8 times.** A new 150 m
+  Istanbul target now takes 0.18-0.28 s with the crop, an 80 m Koide one 0.52 s.
+- **Half of the Koide NDT_OMP time is the search tree.** Skipping that tree cut the
+  first `align()` from 233 to 1.5 ms (80 m crop, three runs). NDT_OMP does not use it
+  to align, but `getFitnessScore()`, which the localizer reports, searches it.
+
+**Background rebuild.** The preset with `local_map_async_rebuild` on, as it ships, and
+off (`sync`), one build, alternated, median of three runs (range):
+
+| Window | Variant | Pose rate | Alignment p95 | Horizontal RMSE m | z RMSE m | 3D p95 m |
+| --- | --- | --- | --- | --- | --- | --- |
+| A | async | 8.9 Hz | 22 ms | 0.233 (0.224-0.320) | 0.351 (0.284-0.449) | 0.937 (0.646-1.036) |
+| A | sync | 8.3 Hz | 32 ms | 0.239 (0.232-0.289) | 0.334 (0.308-0.363) | 0.714 (0.695-0.984) |
+| B | async | 10.0 Hz | 24 ms | 0.766 (0.760-0.774) | 0.534 (0.533-0.541) | 1.756 (1.738-1.764) |
+| B | sync | 8.7 Hz | 50 ms | 0.773 (0.766-0.779) | 0.545 (0.538-0.556) | 1.795 (1.766-1.856) |
+| C | async | 10.0 Hz | 26 ms | 0.455 (0.454-0.457) | 0.330 (0.318-0.333) | 0.973 (0.943-0.984) |
+| C | sync | 8.3 Hz | 46 ms | 0.457 (0.452-0.458) | 0.333 (0.325-0.347) | 0.971 (0.963-0.981) |
+
+- **The background rebuild matters much less now.** Without it the preset keeps
+  8.3-8.7 Hz (0.9-2.9 Hz unoptimized in *Background target rebuild*). With it every
+  scan is aligned: window A lacks only its first 0.3 s and last 6 s, a replay boundary.
+- **Accuracy is the same within the run-to-run ranges.** Unoptimized, the preset without
+  it lost 0.04 m horizontal and 0.24 m z RMSE on window C.
+- The preset keeps it on, for 10 Hz at 21 m/s.
+
+Measured 2026-11-01 on ROS 2 Jazzy, 4 cores (load 0.8-1.6 when the benchmark and the
+replays started).
+
+```bash
+# WS built as in AGENTS.md (ndt_omp_ros2 without a build type)
+FLAGS="-O2 -std=c++17 -fopenmp -I$WS/install/ndt_omp_ros2/include -I/usr/include/pcl-1.14 \
+  -I/usr/include/eigen3"
+LIBS="$WS/install/ndt_omp_ros2/lib/libndt_omp.a -lpcl_io -lpcl_common -lpcl_kdtree \
+  -lpcl_search -lpcl_filters -lpcl_registration -lpcl_octree"
+g++ $FLAGS experiments/istanbul_ndt_tracking/target_build_bench.cpp \
+  src/ndt_omp_instantiation.cpp -o /tmp/target_build_bench $LIBS   # in-package
+g++ $FLAGS experiments/istanbul_ndt_tracking/target_build_bench.cpp \
+  -o /tmp/target_build_bench_no_build_type $LIBS
+/tmp/target_build_bench "$ISTANBUL/map/pointcloud_map.pcd" 66459.05 43619.96 150 0.2 5
+/tmp/target_build_bench "$ISTANBUL/map/pointcloud_map.pcd" 68988.40 49585.30 150 0.2 5
+/tmp/target_build_bench koide-data/map_outdoor_hard.ply -19.34 -78.57 80 0.5 5
+python3 tools/benchmark/istanbul_compare.py --base-ws "$WS" --cand-ws "$WS" \
+  --fixture /tmp/istanbul_fixture --bag "$ISTANBUL/localization_bag" \
+  --map "$ISTANBUL/map/pointcloud_map.pcd" --out /tmp/istanbul_async \
+  --cand-set local_map_async_rebuild=false
 ```
 
 ## Rerun

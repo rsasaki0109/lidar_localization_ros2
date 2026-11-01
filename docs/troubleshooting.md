@@ -260,20 +260,24 @@ compiled its NDT and GICP code without optimization, and the localizer ran that 
 on the Istanbul bag NDT_OMP took 220-260 ms per 1500-point scan instead of 11-12 ms
 (1.5-3.1 instead of 9-10 Hz). The localizer now compiles that code itself with its own
 flags; with an older version, rebuild `ndt_omp_ros2` with
-`-DCMAKE_BUILD_TYPE=Release`. Timings quoted below that were measured before this fix
-may include that slowdown.
+`-DCMAKE_BUILD_TYPE=Release`. The NDT_OMP and GICP_OMP timings below come from
+optimized builds unless marked as measured before v1.5.0.
 
 With `enable_local_map_crop: true` (and always for GICP/small_gicp backends) the
 target is cropped and handed to the registration backend on every scan, which rebuilds
 its search structure. GICP-family backends get the crop voxel-filtered with
-`voxel_leaf_size`; NDT gets it unfiltered, like the full map without a crop. On dense maps this can cost 0.1-0.25 s per
-scan, so `cloud_queue_depth: 1` drops scans and fast turns lose track.
+`voxel_leaf_size`; NDT gets it unfiltered, like the full map without a crop. For
+NDT_OMP (4 threads) a new target, crop included, takes 0.18-0.28 s for a 150 m crop of
+the Istanbul map and 0.5 s for an 80 m crop of the dense Koide outdoor map (750k
+points). Paid on every scan, that drops scans with `cloud_queue_depth: 1`, and fast turns
+lose track.
 
 - set `local_map_update_distance` (m, default `0` = re-crop every scan) to reuse the
   target until the crop center has moved that far, e.g. `5.0` for a `30`-`80` m radius.
   `nav2_ndt_urban.yaml` uses `10.0` with its `150` m radius; on the Koide
-  `outdoor_hard_02b` README setup with live RKO-LIO at 1.0x it raises the pose rate
-  from ~1 Hz to ~6.5 Hz (see `docs/readme-media.md`). With external odometry as the
+  `outdoor_hard_02b` README setup with live RKO-LIO at 1.0x it raised the pose rate
+  from ~1 Hz to ~6.5 Hz before v1.5.0 (see `docs/readme-media.md`; the build type of
+  those runs is not recorded). With external odometry as the
   seed (`use_odom_tf_prediction`), the odometry must keep its motion across dropped
   scans: an odometry that loses it makes every later seed miss, and at the higher rate
   the localization then follows the error instead of recovering between updates
@@ -282,13 +286,15 @@ scan, so `cloud_queue_depth: 1` drops scans and fast turns lose track.
   until the crop center has moved `local_map_radius - scan_max_range` (at least
   `local_map_update_distance`); only past that does a scan wait for a target around
   itself, so it helps only while `local_map_radius - scan_max_range` is larger than
-  `local_map_update_distance`. On the Istanbul map a 150 m crop took 0.6-0.8 s to
-  build for NDT_OMP, which held the pose rate to 0.9 Hz at 21 m/s without it; for the
-  GICP backends, which compute the target covariances in the first alignment, it took
-  0.2 s (SMALL_GICP), 0.3 s (SMALL_VGICP) and 1-2 s (GICP_OMP) after the crop. It is off
-  by default (measured on Istanbul only); turn it on for dense maps and fast motion. On
-  the dense Koide outdoor map an 80 m crop holds 670k points and its NDT target took
-  4.6-4.9 s to build on a 4-vCPU VM
+  `local_map_update_distance`. On the Istanbul map a 150 m crop takes 0.08-0.19 s to
+  build for NDT_OMP after the crop. At 21 m/s the Istanbul preset aligned 83% of the
+  scans without it (8.3 Hz) and all of them with it, at the same accuracy. For the GICP
+  backends, which compute the target covariances in the first alignment, it took 0.2 s
+  (SMALL_GICP), 0.3 s (SMALL_VGICP) and 0.25-0.44 s (GICP_OMP) after the crop. On the
+  dense Koide outdoor map an 80 m NDT_OMP target takes 0.5 s
+  ([experiments/istanbul_ndt_tracking](../experiments/istanbul_ndt_tracking/README.md#re-measured-with-the-optimized-build)).
+  It is off by default; the Istanbul preset and the online Koide profile turn it on.
+  Turn it on for dense maps and fast motion
 - or, when the full map fits in memory and its NDT voxel grid can be indexed (next
   section), disable the crop for NDT backends
 
@@ -355,7 +361,7 @@ How it works:
 4. The best one is proposed only if it is below `score_threshold` and no candidate that refined to a different place (more than 2 m away) fits within 1.2× of it.
 5. The proposal only seeds the next scan. It becomes the new `map -> odom` only if that scan passes the normal measurement gate. Otherwise it is discarded.
 
-Searches run inside the scan callback, so they run only during rejection streaks. On the Koide `outdoor_hard_02b` replay a search took 1.2 s on average (2.1 s at most), and the longest output gap while lost was 1.8 s (1.2–1.5 s with the feature off). The occupancy YAML must use an unrotated origin and a binary PGM image. Without an occupancy map or odometry bridge, the feature stays disabled and logs a warning.
+Searches run inside the scan callback, so they run only during rejection streaks. On the Koide `outdoor_hard_02b` replay before v1.5.0 (build type not recorded; the candidates are refined with the registration backend) a search took 1.2 s on average (2.1 s at most), and the longest output gap while lost was 1.8 s (1.2–1.5 s with the feature off). The occupancy YAML must use an unrotated origin and a binary PGM image. Without an occupancy map or odometry bridge, the feature stays disabled and logs a warning.
 
 Build the grid from the same 3D map:
 

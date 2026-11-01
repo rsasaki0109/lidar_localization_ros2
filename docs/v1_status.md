@@ -183,8 +183,9 @@ Open items after v1.5.0:
 
 - compare `NDT_OMP` with `SMALL_GICP` on Koide now that NDT_OMP runs optimized; with
   Istanbul that is the second public dataset the backend decision gate asks for
-- re-measure timings recorded before v1.5.0 that may come from an unoptimized
-  `ndt_omp_ros2` (for example the Koide NDT target build times in `troubleshooting.md`)
+- shorten the NDT_OMP target build on dense maps: half of the 0.5 s for an 80 m Koide
+  crop is the search tree over the target points, which only `getFitnessScore()` uses
+  ([experiments/istanbul_ndt_tracking](../experiments/istanbul_ndt_tracking/README.md#re-measured-with-the-optimized-build))
 - deskew the clouds the gyro deskew still skips on Koide `outdoor_hard_02b` (31%: two
   sweeps in one cloud, or the sweep's last IMU sample not yet in); holding the last
   rotation for up to 10 ms made RMSE worse
