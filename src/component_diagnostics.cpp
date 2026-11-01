@@ -23,7 +23,8 @@ void PCLLocalization::publishAlignmentStatusForAttempt(
     attempt.accepted_gap_sec,
     imu_prediction_active,
     registration_seed_source,
-    attempt.registration_localizability);
+    attempt.registration_localizability,
+    attempt.registration_iterations);
 }
 
 void PCLLocalization::publishAlignmentStatus(
@@ -41,7 +42,8 @@ void PCLLocalization::publishAlignmentStatus(
   double accepted_gap_sec,
   bool imu_prediction_active,
   const std::string & registration_seed_source,
-  const lidar_localization::RegistrationLocalizabilityMetrics & registration_localizability)
+  const lidar_localization::RegistrationLocalizabilityMetrics & registration_localizability,
+  int registration_iterations)
 {
   if (!status_pub_) {return;}
 
@@ -52,6 +54,7 @@ void PCLLocalization::publishAlignmentStatus(
     has_converged,
     fitness_score,
     alignment_time_sec,
+    registration_iterations,
     filtered_point_count,
     correction_translation_m,
     correction_yaw_deg,
@@ -86,6 +89,7 @@ lidar_localization::AlignmentStatusInput PCLLocalization::makeAlignmentStatusInp
       input.has_converged,
       input.fitness_score,
       input.alignment_time_sec,
+      input.registration_iterations,
       input.filtered_point_count,
       input.correction_translation_m,
       input.correction_yaw_deg,

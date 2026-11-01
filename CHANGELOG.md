@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `/alignment_status` reports `registration_iterations`: the iteration count of the
+  selected registration attempt for `NDT`, `NDT_OMP`, `SMALL_GICP` and `SMALL_VGICP`
+  (`-1` for the other backends), next to `alignment_time_sec`. A scan at or above
+  `ndt_max_iterations` ran to the cap instead of converging.
+- `tools/benchmark/istanbul_replay.py` scores the alignment cost into `score.json`
+  (`alignment`): the share of the window's scans that were aligned, the alignment time
+  (median, p95, max) and the iterations (median, p95, max, share at the cap).
+  `istanbul_compare.py` prints them in a second table, and `record_pose.py` keeps
+  `alignment_time_sec` and `registration_iterations` in `alignment.jsonl`.
 - The Jazzy CI job installs `ros-jazzy-small-gicp-vendor`, so it builds, tests and
   lints the `SMALL_GICP` and `SMALL_VGICP` code (`test_local_map_async_rebuild` covers
   them); the Humble job still builds without small_gicp.

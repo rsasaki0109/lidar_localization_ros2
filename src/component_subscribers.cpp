@@ -125,6 +125,23 @@ PCLLocalization::RegistrationObjects::get() const
   return nullptr;
 }
 
+int PCLLocalization::RegistrationObjects::finalIterationCount() const
+{
+  if (ndt_omp) {return ndt_omp->getFinalNumIteration();}
+  if (const auto * ndt =
+    dynamic_cast<const pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI> *>(
+      pcl.get()))
+  {
+    return ndt->getFinalNumIteration();
+  }
+#ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
+  if (small_gicp) {
+    return static_cast<int>(small_gicp->getRegistrationResult().iterations);
+  }
+#endif
+  return -1;
+}
+
 PCLLocalization::RegistrationObjects PCLLocalization::makeRegistrationObjects(
   lidar_localization::RegistrationBackend backend) const
 {

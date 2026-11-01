@@ -222,6 +222,8 @@ These keys are diagnostics only — they never change acceptance behavior.
 | `consecutive_rejected_updates` | high streak means seed or map is wrong |
 | `seed_translation_since_accept_m` | large drift since last accept → open-loop problem |
 | `filtered_point_count` | very low → scan preprocessing or crop issue |
+| `alignment_time_sec` | wall time of the registration call; at or above `diagnostics_overload_alignment_time_sec` the scan reads as `overload` |
+| `registration_iterations` | iterations of that call (`NDT`, `NDT_OMP`, `SMALL_GICP`, `SMALL_VGICP`; `-1` for the other backends); at or above `ndt_max_iterations` it ran to the cap instead of converging |
 | `reinitialization_requested` | `true` means node wants a new `/initialpose` |
 
 Watch live:

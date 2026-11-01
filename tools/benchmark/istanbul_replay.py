@@ -7,7 +7,9 @@ usage: istanbul_replay.py --ws WS --fixture DIR --bag BAG --map PCD --start SEC 
                           --out DIR [--preset FILE] [--set KEY=VALUE ...] [--domain N]
 
 FIXTURE is istanbul_prepare.py's output directory. The run directory gets params.yaml,
-node.log, est.tum (record_pose.py) and score.json.
+node.log, est.tum and alignment.jsonl (record_pose.py) and score.json. score.json has the
+pose errors and, under "alignment", the share of the window's scans that were aligned,
+the alignment wall time and the registration iterations.
 """
 
 import argparse
@@ -104,6 +106,13 @@ def run_window(args):
         play_sec = replay(args, out, env, node_log, recorder_log)
 
     score = evaluate(out / "est.tum", ref, t_start, t_start + args.duration)
+    score["alignment"] = evaluate_alignment(
+        out / "alignment.jsonl",
+        fixture / "time_map.txt",
+        t_start,
+        t_start + args.duration,
+        params["/**"]["ros__parameters"].get("ndt_max_iterations", 35),
+    )
     score.update(
         {
             "ws": str(args.ws),
@@ -253,6 +262,51 @@ def evaluate(est_path, ref, t0, t1):
         "yaw_deg": stats(dyaw),
         "final_trans3d_m": round(float(d3[-1]), 3),
     }
+
+
+def evaluate_alignment(alignment_path, time_map_path, t0, t1, max_iterations):
+    """How much registration the window cost, from the recorded /alignment_status:
+    the window's scans, how many were aligned (the rest were dropped while the
+    localizer was busy), the alignment wall time and the iteration count."""
+    result = {"scans": 0, "aligned_scans": 0}
+    if time_map_path.exists():
+        stamps = np.loadtxt(time_map_path, ndmin=2)[:, 1]
+        result["scans"] = int(np.count_nonzero((stamps >= t0) & (stamps <= t1)))
+    seconds, iterations = [], []
+    if alignment_path.exists():
+        for line in alignment_path.read_text().splitlines():
+            record = json.loads(line)
+            if not t0 <= record.get("stamp", -math.inf) <= t1:
+                continue
+            # A scan rejected before registration (for example an empty scan)
+            # reports 0 s: no alignment ran.
+            elapsed = float(record.get("alignment_time_sec", 0.0))
+            if elapsed <= 0.0:
+                continue
+            seconds.append(elapsed)
+            count = int(record.get("registration_iterations", -1))
+            if count >= 0:
+                iterations.append(count)
+    result["aligned_scans"] = len(seconds)
+    if result["scans"]:
+        result["aligned_share"] = round(len(seconds) / result["scans"], 3)
+    if seconds:
+        ms = 1000.0 * np.array(seconds)
+        result["align_ms"] = {
+            "median": round(float(np.median(ms)), 1),
+            "p95": round(float(np.percentile(ms, 95)), 1),
+            "max": round(float(np.max(ms)), 1),
+        }
+    if iterations:
+        counts = np.array(iterations)
+        result["iterations"] = {
+            "median": float(np.median(counts)),
+            "p95": float(np.percentile(counts, 95)),
+            "max": int(np.max(counts)),
+            # The backend stopped at ndt_max_iterations instead of converging.
+            "at_cap_share": round(float(np.mean(counts >= max_iterations)), 3),
+        }
+    return result
 
 
 if __name__ == "__main__":

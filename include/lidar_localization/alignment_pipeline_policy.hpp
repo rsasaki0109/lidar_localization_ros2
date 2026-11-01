@@ -22,6 +22,8 @@ struct AlignmentAttempt
   bool target_ready{false};
   bool has_converged{false};
   double alignment_time_sec{0.0};
+  // Final iteration count of the backend; -1 when it does not report one.
+  int registration_iterations{-1};
   double fitness_score{std::numeric_limits<double>::quiet_NaN()};
   Eigen::Matrix4f init_guess{Eigen::Matrix4f::Identity()};
   Eigen::Matrix4f final_transformation{Eigen::Matrix4f::Identity()};

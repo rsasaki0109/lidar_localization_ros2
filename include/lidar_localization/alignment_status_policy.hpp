@@ -22,6 +22,7 @@ struct AlignmentStatusInput
   bool has_converged{false};
   double fitness_score{0.0};
   double alignment_time_sec{0.0};
+  int registration_iterations{-1};
   std::size_t filtered_point_count{0};
   double correction_translation_m{NAN};
   double correction_yaw_deg{NAN};
@@ -50,6 +51,7 @@ struct AlignmentStatusObservation
   bool has_converged{false};
   double fitness_score{0.0};
   double alignment_time_sec{0.0};
+  int registration_iterations{-1};
   std::size_t filtered_point_count{0};
   double correction_translation_m{NAN};
   double correction_yaw_deg{NAN};
@@ -119,6 +121,7 @@ inline AlignmentStatusInput makeAlignmentStatusInput(
   input.has_converged = observation.has_converged;
   input.fitness_score = observation.fitness_score;
   input.alignment_time_sec = observation.alignment_time_sec;
+  input.registration_iterations = observation.registration_iterations;
   input.filtered_point_count = observation.filtered_point_count;
   input.correction_translation_m = observation.correction_translation_m;
   input.correction_yaw_deg = observation.correction_yaw_deg;
@@ -241,6 +244,7 @@ inline AlignmentDiagnosticValuesInput makeAlignmentStatusDiagnosticValuesInput(
   diagnostic_input.borderline_seed_gate_active =
     preparation.borderline_seed_gate_active;
   diagnostic_input.alignment_time_sec = status.alignment_time_sec;
+  diagnostic_input.registration_iterations = status.registration_iterations;
   diagnostic_input.filtered_point_count = status.filtered_point_count;
   diagnostic_input.correction_translation_m = status.correction_translation_m;
   diagnostic_input.correction_yaw_deg = status.correction_yaw_deg;

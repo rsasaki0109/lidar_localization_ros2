@@ -30,6 +30,14 @@ METRICS = (
     ("yaw_deg", "rmse"),
     ("trans3d_m", "p95"),
 )
+# score.json "alignment" values for the throughput table (istanbul_replay.py).
+COST_METRICS = (
+    ("aligned_share", None),
+    ("align_ms", "median"),
+    ("align_ms", "p95"),
+    ("iterations", "median"),
+    ("iterations", "at_cap_share"),
+)
 
 
 def run(args):
@@ -74,28 +82,61 @@ def run(args):
                 print(window, variant, repeat, "done", flush=True)
 
 
-def summarize(out):
-    print(
-        "| window | variant | runs | horizontal RMSE m | z RMSE m | yaw RMSE deg | 3D p95 m |"
+def _cell(values, digits=3):
+    return (
+        f"{statistics.median(values):.{digits}f} "
+        f"({min(values):.{digits}f}-{max(values):.{digits}f})"
     )
-    print("| --- | --- | --- | --- | --- | --- | --- |")
+
+
+def _scores(out):
     for window in WINDOWS:
         for variant in ("base", "cand"):
             scores = [
                 json.loads(p.read_text())
                 for p in sorted((Path(out) / window).glob(f"{variant}_*/score.json"))
             ]
-            if not scores:
-                continue
-            cells = []
-            for group, key in METRICS:
-                values = [s[group][key] for s in scores]
-                cells.append(
-                    f"{statistics.median(values):.3f} ({min(values):.3f}-{max(values):.3f})"
-                )
-            print(
-                f"| {window} | {variant} | {len(scores)} | " + " | ".join(cells) + " |"
+            if scores:
+                yield window, variant, scores
+
+
+def summarize(out):
+    print(
+        "| window | variant | runs | horizontal RMSE m | z RMSE m | yaw RMSE deg | 3D p95 m |"
+    )
+    print("| --- | --- | --- | --- | --- | --- | --- |")
+    for window, variant, scores in _scores(out):
+        cells = [_cell([s[group][key] for s in scores]) for group, key in METRICS]
+        print(f"| {window} | {variant} | {len(scores)} | " + " | ".join(cells) + " |")
+
+    # Runs recorded before istanbul_replay.py scored the alignment cost have no
+    # "alignment"; the table lists only the runs that do.
+    rows = []
+    for window, variant, scores in _scores(out):
+        costs = [s for s in scores if "alignment" in s]
+        if not costs:
+            continue
+        cells = [_cell([s.get("poses_per_sec", 0.0) for s in costs], 1)]
+        for group, key in COST_METRICS:
+            values = [
+                s["alignment"][group] if key is None else s["alignment"][group][key]
+                for s in costs
+                if group in s["alignment"]
+            ]
+            cells.append(
+                _cell(values, 1 if group == "align_ms" else 2) if values else "-"
             )
+        rows.append(
+            f"| {window} | {variant} | {len(costs)} | " + " | ".join(cells) + " |"
+        )
+    if rows:
+        print()
+        print(
+            "| window | variant | runs | pose rate Hz | aligned share | align ms median"
+            " | align ms p95 | iterations median | at iteration cap |"
+        )
+        print("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+        print("\n".join(rows))
 
 
 if __name__ == "__main__":
