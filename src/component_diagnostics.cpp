@@ -180,12 +180,12 @@ PCLLocalization::prepareAlignmentDiagnosticValuesInput(
       status_preparation,
       reinitialization_request,
       lidar_localization::AlignmentStatusDiagnosticRuntimeContext{
-        lidar_localization::recoverySupervisorStateName(recovery_supervisor_state_),
-        recovery_supervisor_action_,
-        recovery_supervisor_state_entered_stamp_sec_,
-        recovery_supervisor_transition_count_,
-        reinitialization_request_latched_,
-        reinitialization_request_latch_stamp_sec_}));
+        lidar_localization::recoverySupervisorStateName(recovery_supervisor_.state),
+        recovery_supervisor_.action,
+        recovery_supervisor_.entered_stamp_sec,
+        recovery_supervisor_.transition_count,
+        reinitialization_request_latch_.latched,
+        reinitialization_request_latch_.stamp_sec}));
   const auto imu_diagnostics = lidar_localization::makeImuPreintegrationDiagnostics(
     makeImuPreintegrationDiagnosticsInput(status_input));
   diagnostic_input.imu_preintegration_enabled = imu_diagnostics.enabled;

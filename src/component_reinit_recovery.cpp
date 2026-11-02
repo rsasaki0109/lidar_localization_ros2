@@ -8,23 +8,13 @@ PCLLocalization::applyReinitializationRequestLatch(
   const auto latch_result = lidar_localization::applyReinitializationRequestLatch(
     lidar_localization::ReinitializationRequestLatchInput{
       enable_reinitialization_request_latch_,
-      lidar_localization::ReinitializationRequestLatchState{
-        reinitialization_request_latched_,
-        reinitialization_request_latch_reason_,
-        reinitialization_request_latch_score_,
-        reinitialization_request_latch_stamp_sec_,
-        reinitialization_request_latch_consecutive_ok_samples_},
+      reinitialization_request_latch_,
       decision,
       stamp_to_sec(stamp),
       clear_sample,
       reinitialization_request_clear_ok_samples_});
 
-  reinitialization_request_latched_ = latch_result.state.latched;
-  reinitialization_request_latch_reason_ = latch_result.state.reason;
-  reinitialization_request_latch_score_ = latch_result.state.score;
-  reinitialization_request_latch_stamp_sec_ = latch_result.state.stamp_sec;
-  reinitialization_request_latch_consecutive_ok_samples_ =
-    latch_result.state.consecutive_clear_samples;
+  reinitialization_request_latch_ = latch_result.state;
   return latch_result.decision;
 }
 
@@ -36,11 +26,7 @@ void PCLLocalization::updateRecoverySupervisorState(
   const double stamp_sec = stamp_to_sec(stamp);
   const auto update = lidar_localization::updateRecoverySupervisorRuntimeState(
     lidar_localization::RecoverySupervisorStateUpdateInput{
-      lidar_localization::RecoverySupervisorRuntimeState{
-        recovery_supervisor_state_,
-        recovery_supervisor_action_,
-        recovery_supervisor_state_entered_stamp_sec_,
-        recovery_supervisor_transition_count_},
+      recovery_supervisor_,
       next_state,
       action,
       stamp_sec});
@@ -54,10 +40,7 @@ void PCLLocalization::updateRecoverySupervisorState(
       action.c_str());
   }
 
-  recovery_supervisor_state_ = update.state.state;
-  recovery_supervisor_action_ = update.state.action;
-  recovery_supervisor_state_entered_stamp_sec_ = update.state.entered_stamp_sec;
-  recovery_supervisor_transition_count_ = update.state.transition_count;
+  recovery_supervisor_ = update.state;
 }
 
 void PCLLocalization::publishReinitializationRequest(
@@ -73,9 +56,7 @@ void PCLLocalization::publishReinitializationRequest(
       publisher_ready,
       decision});
 
-  reinitialization_requested_ = output.state.requested;
-  reinitialization_request_reason_ = output.state.reason;
-  reinitialization_request_score_ = output.state.score;
+  reinitialization_request_ = output.state;
 
   if (!output.should_publish) {
     return;

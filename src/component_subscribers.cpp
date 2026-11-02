@@ -299,14 +299,11 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
       imu_prediction_correction_guard_warmup_accepts_, std::memory_order_release);
     resetImuPreintegrationSampleCounters();
   }
-  reinitialization_request_latched_ = false;
-  reinitialization_request_latch_reason_ = "not_requested";
-  reinitialization_request_latch_score_ = 0.0;
-  reinitialization_request_latch_stamp_sec_ = 0.0;
-  reinitialization_request_latch_consecutive_ok_samples_ = 0;
-  recovery_supervisor_state_ = RecoverySupervisorState::kTracking;
-  recovery_supervisor_action_ = "initial_pose_reset";
-  recovery_supervisor_state_entered_stamp_sec_ = stamp_to_sec(msg->header.stamp);
+  reinitialization_request_latch_ = {};
+  // The transition count carries across resets.
+  recovery_supervisor_.state = RecoverySupervisorState::kTracking;
+  recovery_supervisor_.action = "initial_pose_reset";
+  recovery_supervisor_.entered_stamp_sec = stamp_to_sec(msg->header.stamp);
   consecutive_crop_failures_ = 0;
   crop_failure_guard_active_ = false;
   last_crop_out_of_bounds_log_time_ = std::chrono::steady_clock::time_point{};

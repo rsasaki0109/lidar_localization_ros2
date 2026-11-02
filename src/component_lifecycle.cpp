@@ -505,18 +505,9 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
     latest_dual_queue_integrated_stamp_ = 0.0;
     resetImuPreintegrationSampleCounters();
   }
-  reinitialization_requested_ = false;
-  reinitialization_request_reason_ = "not_requested";
-  reinitialization_request_score_ = 0.0;
-  reinitialization_request_latched_ = false;
-  reinitialization_request_latch_reason_ = "not_requested";
-  reinitialization_request_latch_score_ = 0.0;
-  reinitialization_request_latch_stamp_sec_ = 0.0;
-  reinitialization_request_latch_consecutive_ok_samples_ = 0;
-  recovery_supervisor_state_ = RecoverySupervisorState::kTracking;
-  recovery_supervisor_action_ = "idle";
-  recovery_supervisor_state_entered_stamp_sec_ = 0.0;
-  recovery_supervisor_transition_count_ = 0;
+  reinitialization_request_ = {};
+  reinitialization_request_latch_ = {};
+  recovery_supervisor_ = {RecoverySupervisorState::kTracking, "idle", 0.0, 0};
   recent_source_clouds_.clear();
   // NOLINTBEGIN(clang-analyzer-cplusplus.NewDeleteLeaks): the target and full-map
   // clouds are intentionally leaked when leak_target_clouds_for_shutdown is set.
