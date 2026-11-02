@@ -60,7 +60,7 @@ int main(int argc, char ** argv)
   // The preintegration state is left alone.
   assert(node.last_imu_stamp_ == 0.0);
   assert(node.imu_dual_queue_.predictionSamples().empty());
-  assert(node.imu_preintegration_received_sample_count_since_scan_ == 0);
+  assert(node.imu_samples_since_scan_.received == 0);
 
   // A point taken 0.1 s after the sweep start at 10.1 s: the sensor has turned 9 deg
   // since, so in the start frame the point lies 9 deg further round.
