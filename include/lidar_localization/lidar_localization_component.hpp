@@ -364,13 +364,8 @@ public:
   mutable std::mutex imu_preintegration_mutex_;
   bool latest_imu_seed_has_new_samples_{false};
   bool latest_imu_seed_prediction_finite_{true};
-  std::size_t latest_imu_seed_received_sample_count_{0};
-  std::size_t latest_imu_seed_integrated_sample_count_{0};
-  std::size_t latest_imu_seed_skipped_sample_count_{0};
-  std::size_t latest_imu_seed_transform_failure_count_{0};
-  std::size_t latest_imu_seed_non_finite_sample_count_{0};
-  std::size_t latest_imu_seed_invalid_dt_count_{0};
-  double latest_imu_seed_last_dt_sec_{std::numeric_limits<double>::quiet_NaN()};
+  // The samples of the interval before the latest scan (imu_samples_since_scan_ at it).
+  lidar_localization::ImuSampleCounts latest_imu_seed_samples_;
   double latest_imu_seed_last_sample_age_sec_{std::numeric_limits<double>::quiet_NaN()};
   double latest_imu_seed_integration_window_sec_{0.0};
   Eigen::Matrix4f latest_imu_open_loop_prediction_{Eigen::Matrix4f::Identity()};
@@ -386,13 +381,7 @@ public:
   std::size_t latest_continuous_time_deskew_skipped_invalid_time_count_{0};
   std::size_t latest_continuous_time_deskew_clamped_time_count_{0};
   double latest_continuous_time_deskew_pose_history_coverage_ratio_{0.0};
-  std::size_t imu_preintegration_received_sample_count_since_scan_{0};
-  std::size_t imu_preintegration_integrated_sample_count_since_scan_{0};
-  std::size_t imu_preintegration_skipped_sample_count_since_scan_{0};
-  std::size_t imu_preintegration_transform_failure_count_since_scan_{0};
-  std::size_t imu_preintegration_non_finite_sample_count_since_scan_{0};
-  std::size_t imu_preintegration_invalid_dt_count_since_scan_{0};
-  double imu_preintegration_last_dt_sec_{std::numeric_limits<double>::quiet_NaN()};
+  lidar_localization::ImuSampleCounts imu_samples_since_scan_;
 
 #ifdef LIDAR_LOCALIZATION_HAVE_NAV2_BOND
   // Nav2 lifecycle manager bond

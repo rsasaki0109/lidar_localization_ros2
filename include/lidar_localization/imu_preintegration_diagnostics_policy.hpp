@@ -26,6 +26,19 @@ enum class ImuPreintegrationDiagnosticStatus
   kPredictionActive,
 };
 
+// The IMU samples of one scan interval: how many arrived, how many were integrated,
+// and why the rest were skipped.
+struct ImuSampleCounts
+{
+  std::size_t received{0};
+  std::size_t integrated{0};
+  std::size_t skipped{0};
+  std::size_t transform_failures{0};
+  std::size_t non_finite{0};
+  std::size_t invalid_dt{0};
+  double last_dt_sec{std::numeric_limits<double>::quiet_NaN()};
+};
+
 struct ImuPreintegrationDiagnosticsInput
 {
   bool enabled{false};

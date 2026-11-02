@@ -607,7 +607,7 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
     const bool collect_imu_sample =
       collect_preintegration_sample || collect_gyro_pose_history_only;
     if (collect_preintegration_sample) {
-      ++imu_preintegration_received_sample_count_since_scan_;
+      ++imu_samples_since_scan_.received;
     }
 
     if (
@@ -640,8 +640,8 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
           transformed_linear_acceleration.vector.z);
       } catch (tf2::TransformException & ex) {
         preintegration_sample_ready = false;
-        ++imu_preintegration_transform_failure_count_since_scan_;
-        ++imu_preintegration_skipped_sample_count_since_scan_;
+        ++imu_samples_since_scan_.transform_failures;
+        ++imu_samples_since_scan_.skipped;
         RCLCPP_WARN_THROTTLE(
           get_logger(), *get_clock(), 5000,
           "Failed to transform IMU preintegration sample from %s to %s: %s",
@@ -655,8 +655,8 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
       (!preintegration_gyro.allFinite() || !preintegration_accel.allFinite()))
     {
       preintegration_sample_ready = false;
-      ++imu_preintegration_non_finite_sample_count_since_scan_;
-      ++imu_preintegration_skipped_sample_count_since_scan_;
+      ++imu_samples_since_scan_.non_finite;
+      ++imu_samples_since_scan_.skipped;
       RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 5000,
         "Skipping non-finite IMU preintegration sample");
@@ -676,23 +676,23 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
             lidar_localization::TimestampedImuSample{
               stamp_sec, preintegration_gyro, preintegration_accel}))
         {
-          ++imu_preintegration_invalid_dt_count_since_scan_;
-          ++imu_preintegration_skipped_sample_count_since_scan_;
+          ++imu_samples_since_scan_.invalid_dt;
+          ++imu_samples_since_scan_.skipped;
         } else {
-          imu_preintegration_skipped_sample_count_since_scan_ +=
+          imu_samples_since_scan_.skipped +=
             imu_dual_queue_.trimTo(static_cast<std::size_t>(imu_queue_depth_));
         }
         // Legacy single-stream integration is retained as the A/B baseline.
       } else if (
         collect_preintegration_sample && imu_smoother_.isInitialized() && last_imu_stamp_ > 0.0)
       {
-        imu_preintegration_last_dt_sec_ = dt;
+        imu_samples_since_scan_.last_dt_sec = dt;
         if (lidar_localization::isValidImuPreintegrationDt(dt)) {
           imu_smoother_.integrateImu(preintegration_gyro, preintegration_accel, dt);
-          ++imu_preintegration_integrated_sample_count_since_scan_;
+          ++imu_samples_since_scan_.integrated;
         } else {
-          ++imu_preintegration_invalid_dt_count_since_scan_;
-          ++imu_preintegration_skipped_sample_count_since_scan_;
+          ++imu_samples_since_scan_.invalid_dt;
+          ++imu_samples_since_scan_.skipped;
           RCLCPP_WARN_THROTTLE(
             get_logger(), *get_clock(), 5000,
           "Skipping IMU preintegration sample with invalid dt %.6f sec",

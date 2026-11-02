@@ -30,12 +30,12 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       if (optimization_plan.complete_coverage) {
         for (const auto & interval : optimization_plan.intervals) {
           imu_smoother_.integrateImu(interval.gyro, interval.accel, interval.dt());
-          ++imu_preintegration_integrated_sample_count_since_scan_;
-          imu_preintegration_last_dt_sec_ = interval.dt();
+          ++imu_samples_since_scan_.integrated;
+          imu_samples_since_scan_.last_dt_sec = interval.dt();
         }
       } else {
         imu_smoother_.resetPendingIntegration();
-        imu_preintegration_skipped_sample_count_since_scan_ +=
+        imu_samples_since_scan_.skipped +=
           optimization_plan.skipped_gap_count;
       }
 

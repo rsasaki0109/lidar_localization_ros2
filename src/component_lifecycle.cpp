@@ -488,13 +488,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
     last_scan_stamp_for_imu_ = 0.0;
     latest_imu_seed_has_new_samples_ = false;
     latest_imu_seed_prediction_finite_ = true;
-    latest_imu_seed_received_sample_count_ = 0;
-    latest_imu_seed_integrated_sample_count_ = 0;
-    latest_imu_seed_skipped_sample_count_ = 0;
-    latest_imu_seed_transform_failure_count_ = 0;
-    latest_imu_seed_non_finite_sample_count_ = 0;
-    latest_imu_seed_invalid_dt_count_ = 0;
-    latest_imu_seed_last_dt_sec_ = std::numeric_limits<double>::quiet_NaN();
+    latest_imu_seed_samples_ = {};
     latest_imu_seed_last_sample_age_sec_ = std::numeric_limits<double>::quiet_NaN();
     latest_imu_seed_integration_window_sec_ = 0.0;
     latest_imu_open_loop_prediction_ = Eigen::Matrix4f::Identity();

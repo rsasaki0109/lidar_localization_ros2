@@ -548,30 +548,12 @@ void PCLLocalization::handleScanPreparationFailure(
 
 void PCLLocalization::resetImuPreintegrationSampleCounters()
 {
-  imu_preintegration_received_sample_count_since_scan_ = 0;
-  imu_preintegration_integrated_sample_count_since_scan_ = 0;
-  imu_preintegration_skipped_sample_count_since_scan_ = 0;
-  imu_preintegration_transform_failure_count_since_scan_ = 0;
-  imu_preintegration_non_finite_sample_count_since_scan_ = 0;
-  imu_preintegration_invalid_dt_count_since_scan_ = 0;
-  imu_preintegration_last_dt_sec_ = std::numeric_limits<double>::quiet_NaN();
+  imu_samples_since_scan_ = {};
 }
 
 void PCLLocalization::snapshotImuPreintegrationSampleCountersForScan()
 {
-  latest_imu_seed_received_sample_count_ =
-    imu_preintegration_received_sample_count_since_scan_;
-  latest_imu_seed_integrated_sample_count_ =
-    imu_preintegration_integrated_sample_count_since_scan_;
-  latest_imu_seed_skipped_sample_count_ =
-    imu_preintegration_skipped_sample_count_since_scan_;
-  latest_imu_seed_transform_failure_count_ =
-    imu_preintegration_transform_failure_count_since_scan_;
-  latest_imu_seed_non_finite_sample_count_ =
-    imu_preintegration_non_finite_sample_count_since_scan_;
-  latest_imu_seed_invalid_dt_count_ =
-    imu_preintegration_invalid_dt_count_since_scan_;
-  latest_imu_seed_last_dt_sec_ = imu_preintegration_last_dt_sec_;
+  latest_imu_seed_samples_ = imu_samples_since_scan_;
   resetImuPreintegrationSampleCounters();
 }
 
