@@ -61,6 +61,10 @@ same directory.
 `relocalization_attempt_common.py` is a shared helper module installed the same
 way: it owns the `relocalization_attempts.csv` fieldname contract used by the
 candidate generators and the runtime global-localization engine.
+`koide_public_bag.py` (the Koide dataset and its scoring) and `replay_session.py`
+(the control node, child processes and `/pcl_pose` and `/alignment_status` records
+of a replay check) are installed the same way for `run_koide_public_bag.py`;
+`tools/benchmark/boreas_replay.py` imports `replay_session.py` from the checkout.
 
 `experiments/glim_prior_map_localizer/` holds the remaining C++ experiment sources.
 They are discardable and only promoted into `src/`/`include/` after a shared
