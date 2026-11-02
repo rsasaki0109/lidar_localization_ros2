@@ -520,8 +520,10 @@ public:
   double pose_publish_frequency_;
   bool enable_timer_publishing_{false};
 
-  // imu
+  // The use_imu deskew. The IMU callback can run beside the cloud callback (it has its
+  // own callback group with preintegration or the gyro history), so both lock this.
   LidarUndistortion lidar_undistortion_;
+  std::mutex lidar_undistortion_mutex_;
 
   lidar_localization::ScanTimeRangeStatus latest_scan_time_status_{
     lidar_localization::ScanTimeRangeStatus::kNoTimeField};

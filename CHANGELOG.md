@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- With `use_imu` and `use_imu_preintegration` both on (the config generator's
+  `--imu-mode both` and `--enable-imu`), the IMU callback now has its own callback
+  group, as it has with the preintegration alone. It used to share the cloud
+  callback's, so the samples waited behind each registration and arrived in bursts
+  after the scan had used a stale window. On the first 120 s of Boreas, one run got a
+  median of 0 new samples per scan and another reported too long an integration
+  window on 374 of 466 scans; a scan now gets 22-23 samples (median). The legacy
+  deskew state takes a new lock (`test/test_imu_callback_group.cpp`). The run still
+  fails, because of the legacy deskew:
+  `use_imu` alone scores 1.7 m with 6% of the scans accepted, where the preset scores
+  0.132 m. It integrates the accelerometer without removing gravity. The
+  preintegration alone scores 0.120-0.122 m with 81-82% of the scans processed
+  ([docs/imu_estimation.md](docs/imu_estimation.md#validation-state-honest-limits)).
 - Eight experiment-only parameter sets are removed and no longer installed:
   - the six `param/nav2_ndt_urban_*` derivatives (`borderline_only`,
     `recovery_retry_from_last_pose`, its `_r3` and `_r3_gap1_seed15` variants,
