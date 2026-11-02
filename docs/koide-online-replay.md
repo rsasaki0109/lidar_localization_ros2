@@ -54,7 +54,7 @@ difference in it made most of a 0.17 m RMSE gap between two configurations
 `summary.json` therefore also reports `rmse_on_map_m`, the RMSE of the poses outside
 that window, and `rmse_off_map_m`, inside it; the check prints the first next to the
 RMSE. They are not gated. To compare configurations, compare `rmse_on_map_m` as well:
-the online profile on `main` scored 0.176-0.180 m there in 10 runs, against 0.222-0.232 m
+the online profile on `main` scored 0.176-0.183 m there in 11 runs, against 0.222-0.232 m
 overall.
 
 Useful options:
