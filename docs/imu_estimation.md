@@ -402,15 +402,22 @@ accuracy.
   | Setting | RMSE m | Max error m | Scans accepted |
   | --- | --- | --- | --- |
   | the preset, no IMU | 0.132 | 0.41 | 100% |
-  | `use_imu_preintegration: true` | 0.120, 0.122 | 0.36, 0.61 | 82%, 81% |
+  | `use_imu_preintegration: true` | **0.127** (both runs) | 0.36 | 100%, 99% |
+  | the same, dense smoother solve | 0.120, 0.122 | 0.36, 0.61 | 82%, 81% |
   | `use_imu: true` (the legacy deskew) | 1.70 | 4.9 | 6% |
   | both, before the callback group fix | 1.89, 2.21 | 4.5, 5.6 | 21%, 6% |
   | both, with it | 1.33, 3.53 | 17, 31 | 64%, 68% |
 
   - **The preintegration alone helps a little.** It seeds almost every scan, and its
-    RMSE is 0.01 m lower. It also costs time: the smoother
-    optimizes on every accepted scan, and the node skips about one scan in five,
-    more towards the end of the window.
+    RMSE is 0.005 m lower than without the IMU.
+  - **It used to cost one scan in five.** The smoother solved its normal equations
+    densely: a (9n + 6)-square matrix for a window of n = 50 poses, up to 10 times per
+    accepted scan, 87-96 ms per update once the window was full (synthetic drive,
+    one core). It is block tridiagonal plus the bias rows, so it is now assembled
+    sparse and factored with the ordering computed once per update: 13 ms, with the
+    same final pose to 1e-9 m. The node now processes every scan; the dense runs
+    scored 0.120-0.122 m over the 81-82% of scans they processed
+    ([experiments/imu_smoother_solve](../experiments/imu_smoother_solve/README.md)).
   - **The legacy `use_imu` deskew breaks the clouds.** It integrates the
     accelerometer without removing gravity, times each point from its azimuth
     relative to the first point of the cloud (meaningless after a voxel filter), and
