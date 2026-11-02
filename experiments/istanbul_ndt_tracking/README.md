@@ -478,6 +478,20 @@ alternated, median of three runs (range):
   tree in its `align()`; now none does.
 - **Accuracy is the same within the ranges.**
 
+**Koide online check.** `run_koide_public_bag.py` with the online profile and
+`local_map_async_rebuild: false`, the same RKO-LIO binary, `main` against this change,
+three runs each (one change run aborted at start on a busy ROS domain and was run last),
+scored with `experiments/koide_backend_comparison/summarize_runs.py`, median (range):
+
+| Variant | Failed | Coverage % | Missed clouds | Alignment p95 | Max output gap | RMSE m |
+| --- | --- | --- | --- | --- | --- | --- |
+| main | 0 | 99.2 (98.6-99.7) | 17 (6-32) | 144 ms (128-148) | 1.3 s (0.9-1.4) | 0.232 (0.226-0.235) |
+| **change** | 0 | **99.7** (99.7-99.8) | **6** (4-7) | **114 ms** (113-119) | **0.9 s** (0.9-0.9) | 0.231 (0.230-0.232) |
+
+The alignment p95 ranges do not overlap, and the change ran with no output gap over
+0.9 s. The best `main` run reached the change's coverage, so that gain is small. The
+RMSE outside the off-map stretch is 0.179 against 0.180 m.
+
 Measured 2026-11-02 on ROS 2 Jazzy, 4 cores.
 
 ## Rerun
