@@ -47,9 +47,19 @@
   second public dataset after Istanbul. SMALL_GICP failed all five runs (88-93%
   diagnostic coverage, 0.32-0.41 m RMSE), NDT_OMP passed all four (99.6-100%,
   0.227-0.232 m). On the map SMALL_GICP aligned faster (22 against 38 ms median). Off the
-  map it slowed down (its slowest scans took 1-8 s), and its odometry-carried pose
-  drifted further. `NDT_OMP` stays the default
+  map it slowed down (its slowest scans took 1-8 s) and missed clouds. `NDT_OMP` stays
+  the default
   ([experiments/koide_backend_comparison](experiments/koide_backend_comparison/README.md)).
+- The RMSE of the online Koide check rests largely on one scan. From 163 to 259 s the
+  sensor is off the map and the odometry carries the pose from the last accepted scan,
+  so the tilt of that scan sets the error there. `anchor_difference.py` finds that the
+  SMALL_GICP runs carry the NDT_OMP trajectory under an anchor tilted 0.47 deg further
+  (0.05 m residual), and SMALL_GICP's anchor is not the worse one. Outside the stretch
+  the backends score 0.192 and 0.177 m. Re-scored that way, the gyro deskew scores
+  0.177 against 0.193 m. The 10 ms end gap tolerance, dropped for its RMSE, lost only in
+  the stretch and ties in the map (0.175 m). Deskewing the remaining 31% of the
+  clouds is not pursued
+  ([experiments/koide_gyro_deskew](experiments/koide_gyro_deskew/README.md#re-scored-outside-the-off-map-stretch)).
 
 ## 1.5.0 - 2026-11-01
 

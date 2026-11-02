@@ -181,14 +181,11 @@ that reproduces the reset.
 
 Open items after v1.5.0:
 
-- find why, off the Koide `outdoor_hard_02b` map, the odometry-carried pose drifts
-  further after SMALL_GICP than after NDT_OMP (1.40 against 0.77 m of height error);
-  SMALL_GICP failed that check, and NDT_OMP stays the default
-  ([experiments/koide_backend_comparison](../experiments/koide_backend_comparison/README.md))
-- deskew the clouds the gyro deskew still skips on Koide `outdoor_hard_02b` (31%: two
-  sweeps in one cloud, or the sweep's last IMU sample not yet in); holding the last
-  rotation for up to 10 ms made RMSE worse
-  ([experiments/koide_gyro_deskew](../experiments/koide_gyro_deskew/README.md))
+- score the Koide `outdoor_hard_02b` check outside its off-map stretch too. From 163
+  to 259 s the odometry carries the pose from the last accepted scan, and the tilt of
+  that one scan sets the error there: a 0.47 deg difference made most of the 0.17 m
+  RMSE gap between NDT_OMP and SMALL_GICP
+  ([experiments/koide_backend_comparison](../experiments/koide_backend_comparison/README.md#why-the-carried-pose-drifts-further))
 - make Boreas usable as a `LiDAR + IMU + GT` benchmark
 
 Other work remains:

@@ -50,23 +50,46 @@ RKO-LIO odometry from the last accepted pose. The stretch is the same in all nin
 - **Coverage is lost off the map.** With no map to fit, SMALL_GICP needs more
   iterations. Its slowest scans take 1-8 s, most of them at the iteration cap, and
   90-93% of its missed clouds fall in the stretch.
-- **RMSE is lost off the map too.** The odometry-carried pose sinks 1.40 m below GT
-  there, against 0.77 m with NDT_OMP. The drift repeats to within 0.05 m across runs
-  of a backend, and 2 threads leave it unchanged. So it does not come from load on the
-  shared cores. SMALL_GICP leaves the map with a pitch error of -0.14 to -0.15 deg,
-  against +0.08 to +0.10 deg for NDT_OMP (median over the last 8 s, two runs each).
-  That would tilt the carried trajectory, but it is not established as the cause.
+- **RMSE is lost off the map too, but not to a worse pose.** The odometry-carried pose
+  sinks 1.40 m below GT there, against 0.77 m with NDT_OMP. The odometry is the same:
+  the two backends hand it different anchors (*Why the carried pose drifts further*).
 - **On the map SMALL_GICP is faster but less accurate.** Its alignment is 22 instead of
   38 ms (median, 67 instead of 114 ms p95), at 0.192 instead of 0.177 m RMSE. In the
   first 20 s it holds a pitch error of +0.27 deg, against +0.01 deg for NDT_OMP.
 - **Two threads lose more clouds** (244 instead of 181) and leave the drift as it is.
 
+## Why the carried pose drifts further
+
+Off the map the published pose is the `map -> odom` of the last accepted scan
+(163.3 s) times the RKO-LIO `odom` pose. `anchor_difference.py` pairs the poses of two
+runs by stamp over the stretch and finds the one rigid transform that maps one
+trajectory onto the other:
+
+| Runs | Anchor change roll / pitch / yaw deg | Gap max m | Residual median / max m |
+| --- | --- | --- | --- |
+| NDT_OMP -> SMALL_GICP (runs 1, 2, 3) | 0.08-0.10 / -0.45 to -0.46 / -0.01 to -0.03 | 0.79-0.85 | 0.007-0.024 / 0.033-0.053 |
+| NDT_OMP run 1 -> run 3 | -0.02 / -0.02 / -0.01 | 0.06 | 0.007 / 0.038 |
+| SMALL_GICP run 1 -> run 3 | -0.03 / -0.01 / 0.01 | 0.07 | 0.021 / 0.052 |
+
+- **The odometry is the same.** One anchor change of 0.47 deg of tilt takes the
+  SMALL_GICP trajectory to the NDT_OMP one within 0.05 m over 88 s. Neither CPU load
+  nor the backend changes what RKO-LIO reports.
+- **The anchor of SMALL_GICP is not the worse one.** The last accepted scan is off by
+  pitch +0.26 deg and roll -0.21 deg with NDT_OMP, pitch -0.01 deg and roll +0.18 deg with
+  SMALL_GICP (GT body frame). The odometry itself sinks over the stretch, and
+  NDT_OMP's pitch error happens to cancel part of that.
+- **So the RMSE of this check rests on the tilt of one scan.** The stretch holds a
+  third of the poses. The 0.47 deg anchor change there makes most of the 0.17 m RMSE
+  gap between the backends; outside the stretch they differ by 0.015 m. Compare
+  variants on the RMSE outside the stretch as well; `summarize_runs.py` reports it.
+
 ## Decision
 
 On Koide, SMALL_GICP fails the gate's condition that RMSE and coverage are not
-materially worse, on both counts: 88-93% coverage and 0.32-0.41 m RMSE, and no run
-passes the check. The Istanbul result alone does not justify a backend change. NDT_OMP stays the default,
-and `param/istanbul_small_gicp.yaml` stays a dataset-specific comparison.
+materially worse. Its coverage is 88-93% and no run passes the check. Its RMSE outside
+the stretch is 0.192 against 0.177 m. Its RMSE within the stretch says nothing about
+the backend. The Istanbul result alone does not justify a backend change. NDT_OMP stays
+the default, and `param/istanbul_small_gicp.yaml` stays a dataset-specific comparison.
 
 `results.json` holds the per-run numbers (`summarize_runs.py`).
 
