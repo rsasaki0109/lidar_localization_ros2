@@ -299,7 +299,9 @@ def main():
     parser.add_argument(
         "--map-spacing", type=float, default=2.0, help="m travelled between map scans"
     )
-    parser.add_argument("--map-leaf", type=float, default=0.2)
+    # 0.3 m keeps over 6 points (the NDT minimum) on 1 m of surface; 0.2 m doubles
+    # the map and the time to build a target.
+    parser.add_argument("--map-leaf", type=float, default=0.3)
     parser.add_argument("--map-max-range", type=float, default=80.0)
     parser.add_argument("--scan-leaf", type=float, default=0.25)
     parser.add_argument("--jobs", type=int, default=8)

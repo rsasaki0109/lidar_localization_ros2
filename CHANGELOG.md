@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Boreas is a usable `LiDAR + IMU + GT` benchmark
+  ([docs/benchmark.md](docs/benchmark.md#boreas-vehicle-preset-replay)).
+  `tools/benchmark/boreas_prepare.py` builds a fixture from `s3://boreas`: a window of
+  one sequence as a bag of lidar and raw IMU in the lidar frame, a map of another
+  day's scans at their ground-truth poses, and the reference.
+  `tools/benchmark/boreas_replay.py` replays it through a preset and scores it. On the
+  first 120 s of `boreas-2021-09-02-11-42`, `param/boreas_ndt_velodyne.yaml` scores
+  0.132 m RMSE, max 0.41 m, with every scan accepted (three identical runs). As it was,
+  the preset scored 53 m with 1% of the scans accepted.
+  - The old runs failed for three reasons outside the localizer. The removed converter
+    used the wrong ground-truth rotation convention. The ~1 MB clouds dropped on the
+    best-effort sensor QoS. A 300 m local map was rebuilt on every scan.
+  - The preset now subscribes to `/velodyne_points` as reliable. It reuses a 100 m
+    crop for 10 m and builds the next one in the background, uses a 60 m scan range
+    and a queue of 10, and takes no twist (the old one was post-processed ground
+    truth).
 - The online Koide check (`run_koide_public_bag.py`) reports the RMSE on and off the
   map in `summary.json` (`rmse_on_map_m`, `rmse_off_map_m`, `off_map_window_sec`) and
   prints the first next to the RMSE. From 163.3 to 259.0 s after the first expected
