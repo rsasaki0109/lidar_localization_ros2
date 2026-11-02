@@ -497,6 +497,9 @@ public:
   bool viz_downsample_{false};
   double viz_voxel_leaf_size_{0.5};
   bool predict_pose_from_previous_delta_{true};
+  // The previous delta is rescaled to the time since the predicted pose, up to this
+  // many seconds (<= 0: one delta per scan).
+  double previous_delta_max_extrapolation_sec_{1.0};
   bool enable_localizability_guard_{false};
   bool enable_registration_localizability_diagnostics_{false};
   double localizability_min_xy_eigen_ratio_{0.05};
@@ -660,6 +663,8 @@ public:
   void resetPredictionState(const Eigen::Matrix4f & pose_matrix, double stamp_sec);
   void updatePredictionState(const Eigen::Matrix4f & accepted_pose_matrix, double stamp_sec);
   void advancePredictionWithoutMeasurement(double stamp_sec);
+  // The previous-delta motion for a scan at stamp_sec (previousDeltaMotionAt).
+  Eigen::Matrix4f previousDeltaMotionAt(double stamp_sec) const;
   void updatePredictionFromRejectedMeasurement(
     const Eigen::Matrix4f & rejected_pose_matrix,
     double stamp_sec);

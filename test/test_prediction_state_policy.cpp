@@ -195,6 +195,65 @@ void test_twist_dropout_and_return_keep_a_single_time_anchor()
   assert(near(next_delta_seed(0, 3), 0.4f));
 }
 
+// The component stores the accepted pose at its own time (no extrapolation) and
+// seeds the next scan with predicted_pose_matrix * previousDeltaMotionAt(...).
+void test_previous_delta_motion_scales_with_elapsed_time()
+{
+  auto state = ll::resetPredictionState(pose_x(0.0f), 10.0);
+  // 1 m in 0.1 s.
+  state = ll::updatePredictionStateFromAcceptedMeasurement(state, pose_x(1.0f), 10.1, false);
+  const double duration = 0.1;
+
+  // The next scan on time: one delta.
+  assert(near(ll::previousDeltaMotionAt(state, duration, 10.2, 1.0)(0, 3), 1.0f));
+  // Six scans dropped: 0.7 s, seven deltas, where one delta per scan gave 1 m.
+  assert(near(ll::previousDeltaMotionAt(state, duration, 10.8, 1.0)(0, 3), 7.0f));
+  // Extrapolated for at most max_extrapolation_sec.
+  assert(near(ll::previousDeltaMotionAt(state, duration, 12.0, 1.0)(0, 3), 10.0f));
+  // The seed of the first scan after the gap, and the advance when it is rejected.
+  const Eigen::Matrix4f seed =
+    state.predicted_pose_matrix * ll::previousDeltaMotionAt(state, duration, 10.8, 1.0);
+  assert(near(seed(0, 3), 8.0f));
+  const auto advanced = ll::advancePredictionWithoutMeasurement(
+    state, 10.8, ll::PredictionAdvanceMode::kPreviousDelta, Eigen::Matrix4f::Identity(),
+    ll::previousDeltaMotionAt(state, duration, 10.8, 1.0));
+  assert(near(advanced.predicted_pose_matrix(0, 3), 8.0f));
+  assert(advanced.predicted_pose_time_sec == 10.8);
+
+  // After the gap the delta spans 0.7 s: the next scan, 0.1 s later, gets a seventh
+  // of it instead of all of it.
+  state = ll::updatePredictionStateFromAcceptedMeasurement(state, pose_x(8.0f), 10.8, false);
+  assert(near(ll::previousDeltaMotionAt(state, 0.7, 10.9, 1.0)(0, 3), 1.0f));
+
+  // No usable duration, time anchor or limit: the stored motion, as before.
+  assert(near(ll::previousDeltaMotionAt(state, 0.0, 11.5, 1.0)(0, 3), 7.0f));
+  assert(near(ll::previousDeltaMotionAt(state, 0.7, 11.5, 0.0)(0, 3), 7.0f));
+  assert(near(ll::previousDeltaMotionAt(state, 0.7, 10.8, 1.0)(0, 3), 7.0f));
+  auto unanchored = state;
+  unanchored.predicted_pose_time_sec = 0.0;
+  assert(near(ll::previousDeltaMotionAt(unanchored, 0.7, 11.5, 1.0)(0, 3), 7.0f));
+}
+
+void test_previous_delta_rotation_scales_about_its_axis()
+{
+  auto state = ll::resetPredictionState(Eigen::Matrix4f::Identity(), 10.0);
+  Eigen::Matrix4f turned = Eigen::Matrix4f::Identity();
+  turned.block<3, 3>(0, 0) =
+    Eigen::AngleAxisf(0.02f, Eigen::Vector3f::UnitZ()).toRotationMatrix();
+  turned(0, 3) = 0.5f;
+  state = ll::updatePredictionStateFromAcceptedMeasurement(state, turned, 10.1, false);
+  const Eigen::Matrix4f motion = ll::previousDeltaMotionAt(state, 0.1, 10.6, 1.0);
+  const Eigen::AngleAxisf rotation(Eigen::Matrix3f(motion.block<3, 3>(0, 0)));
+  assert(std::abs(rotation.angle() - 0.1f) < 1.0e-5f);
+  assert(std::abs(rotation.axis().z() - 1.0f) < 1.0e-5f);
+  assert(near(motion(0, 3), 2.5f));
+  // No motion stays no motion.
+  auto still = ll::resetPredictionState(Eigen::Matrix4f::Identity(), 10.0);
+  still = ll::updatePredictionStateFromAcceptedMeasurement(
+    still, Eigen::Matrix4f::Identity(), 10.1, false);
+  assert(ll::previousDeltaMotionAt(still, 0.1, 10.9, 1.0).isApprox(Eigen::Matrix4f::Identity()));
+}
+
 int main()
 {
   test_rejections_without_prediction_enable_retry_and_preserve_motion();
@@ -207,5 +266,7 @@ int main()
   test_choose_prediction_advance_mode();
   test_advance_prediction_without_measurement();
   test_rejected_measurement_updates_prediction_only();
+  test_previous_delta_motion_scales_with_elapsed_time();
+  test_previous_delta_rotation_scales_about_its_axis();
   return 0;
 }

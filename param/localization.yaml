@@ -58,6 +58,9 @@
       reinitialization_trigger_fitness_explosion_threshold: 1000.0
       enable_debug: true
       predict_pose_from_previous_delta: true
+      # Rescale the previous delta to the time since the last pose, up to this many
+      # seconds, so dropped scans do not leave the seed behind (<= 0: one delta per scan).
+      previous_delta_max_extrapolation_sec: 1.0
       reject_above_score_threshold: true
       publish_tf: true
       enable_map_odom_tf: false

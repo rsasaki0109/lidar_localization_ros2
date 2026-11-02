@@ -1,7 +1,10 @@
 #ifndef LIDAR_LOCALIZATION_PREDICTION_STATE_POLICY_HPP_
 #define LIDAR_LOCALIZATION_PREDICTION_STATE_POLICY_HPP_
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <optional>
 
 #include <Eigen/Geometry>
 
@@ -73,6 +76,38 @@ inline PredictionStateSnapshot updatePredictionStateFromAcceptedMeasurement(
   return next;
 }
 
+// The previous-delta motion for a scan at stamp_sec. The last accepted motion took
+// motion_duration_sec; it is rescaled to the time since the predicted pose, at most
+// max_extrapolation_sec. Applying one delta per scan whatever the time lags after
+// dropped scans: on Boreas a 0.6 s gap at 9.5 m/s left the seed 5 m behind, and NDT
+// locked 4 m back along the road. It also overshoots after a gap, when the delta spans
+// the gap and the next scan follows 0.1 s later. Without a usable duration, time anchor
+// or limit (max_extrapolation_sec <= 0) it is the stored motion, one delta per scan.
+inline Eigen::Matrix4f previousDeltaMotionAt(
+  const PredictionStateSnapshot & state,
+  double motion_duration_sec,
+  double stamp_sec,
+  double max_extrapolation_sec)
+{
+  const Eigen::Matrix4f & motion = state.last_relative_motion_matrix;
+  const double elapsed_sec = stamp_sec - state.predicted_pose_time_sec;
+  if (!std::isfinite(motion_duration_sec) || motion_duration_sec <= 0.0 ||
+    !std::isfinite(max_extrapolation_sec) || max_extrapolation_sec <= 0.0 ||
+    state.predicted_pose_time_sec <= 0.0 || !std::isfinite(elapsed_sec) ||
+    elapsed_sec <= 0.0 || !motion.allFinite())
+  {
+    return motion;
+  }
+  const double scale = std::min(elapsed_sec, max_extrapolation_sec) / motion_duration_sec;
+  Eigen::Matrix4f scaled = Eigen::Matrix4f::Identity();
+  scaled.block<3, 1>(0, 3) = motion.block<3, 1>(0, 3) * static_cast<float>(scale);
+  // Rotation by scale times the angle of the motion, about its axis.
+  Eigen::AngleAxisf rotation(Eigen::Matrix3f(motion.block<3, 3>(0, 0)));
+  rotation.angle() *= static_cast<float>(scale);
+  scaled.block<3, 3>(0, 0) = rotation.toRotationMatrix();
+  return scaled;
+}
+
 inline PredictionAdvanceMode choosePredictionAdvanceMode(
   bool have_last_accepted_pose,
   bool use_twist_prediction,
@@ -91,11 +126,14 @@ inline PredictionAdvanceMode choosePredictionAdvanceMode(
   return PredictionAdvanceMode::kNone;
 }
 
+// previous_delta_motion: the motion to apply in kPreviousDelta mode (previousDeltaMotionAt);
+// without it, the stored motion.
 inline PredictionStateSnapshot advancePredictionWithoutMeasurement(
   const PredictionStateSnapshot & current,
   double stamp_sec,
   PredictionAdvanceMode mode,
-  const Eigen::Matrix4f & twist_predicted_pose_matrix = Eigen::Matrix4f::Identity())
+  const Eigen::Matrix4f & twist_predicted_pose_matrix = Eigen::Matrix4f::Identity(),
+  const std::optional<Eigen::Matrix4f> & previous_delta_motion = std::nullopt)
 {
   if (!current.have_last_accepted_pose) {
     return current;
@@ -105,8 +143,8 @@ inline PredictionStateSnapshot advancePredictionWithoutMeasurement(
   if (mode == PredictionAdvanceMode::kTwistPrediction) {
     next.predicted_pose_matrix = twist_predicted_pose_matrix;
   } else if (mode == PredictionAdvanceMode::kPreviousDelta) {
-    next.predicted_pose_matrix =
-      current.predicted_pose_matrix * current.last_relative_motion_matrix;
+    next.predicted_pose_matrix = current.predicted_pose_matrix *
+      previous_delta_motion.value_or(current.last_relative_motion_matrix);
   }
   // A held pose keeps its time anchor, but this scan still counts as rejected.
   if (mode != PredictionAdvanceMode::kNone) {

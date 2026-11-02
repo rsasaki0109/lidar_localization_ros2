@@ -185,7 +185,8 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
           latest_horizontal_localizability_.eigenvalue_ratio,
           localizability_min_xy_eigen_ratio_);
       } else {
-        selected_seed.init_guess = predicted_pose_matrix_ * last_relative_motion_matrix_;
+        selected_seed.init_guess =
+          predicted_pose_matrix_ * previousDeltaMotionAt(scan_stamp_sec);
       }
       break;
     case lidar_localization::RegistrationSeedSource::kLocalizabilityGuard:

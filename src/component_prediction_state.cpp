@@ -132,8 +132,18 @@ void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
     make_prediction_state_snapshot(*this),
     stamp_sec,
     advance_mode,
-    twist_predicted_pose_matrix);
+    twist_predicted_pose_matrix,
+    previousDeltaMotionAt(stamp_sec));
   apply_prediction_state(*this, state);
+}
+
+Eigen::Matrix4f PCLLocalization::previousDeltaMotionAt(double stamp_sec) const
+{
+  return lidar_localization::previousDeltaMotionAt(
+    make_prediction_state_snapshot(*this),
+    last_relative_motion_duration_sec_,
+    stamp_sec,
+    previous_delta_max_extrapolation_sec_);
 }
 
 void PCLLocalization::updatePredictionFromRejectedMeasurement(
