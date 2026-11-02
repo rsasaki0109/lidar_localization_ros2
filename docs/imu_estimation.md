@@ -162,12 +162,13 @@ needed. In the params file:
     use_imu_preintegration: true
 ```
 
-Keep `use_imu: false`. It turns on the legacy deskew, which integrates the
-accelerometer without removing gravity and broke every Boreas run it was on (see
-[Validation state](#validation-state-honest-limits)); `continuous_time_deskew` replaces
-it. The first-bringup config generator exposes the choice as
-`--imu-mode preintegration`, `--imu-mode legacy`, or `--imu-mode both`; `--enable-imu`
-means `both`.
+Keep `use_imu: false`. It turns on the legacy deskew, which is deprecated: it
+integrates the accelerometer without removing gravity and broke every Boreas run it was
+on (see [Validation state](#validation-state-honest-limits)), and the node warns when it
+is on. `continuous_time_deskew` replaces it. In the first-bringup config generator,
+`--imu-mode preintegration`, `--enable-imu` and `--imu-mode both` all enable the
+preintegration only (the last two used to add the legacy deskew, and now say so);
+`--imu-mode legacy` still writes `use_imu: true`, with a warning.
 
 The MID-360 launch (`mid360_legged_localization.launch.py`) already wires
 `imu_topic:=/livox/imu` as a worked example. When

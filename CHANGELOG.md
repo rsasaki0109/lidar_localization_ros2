@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- The legacy `use_imu` deskew is deprecated. It integrates the accelerometer without
+  removing gravity, times each point from its azimuth relative to the first point of
+  the cloud, and needs an IMU orientation; on the first 120 s of Boreas it scored 1.7 m
+  with 6% of the scans accepted, where the preset scores 0.132 m. The node warns when
+  `use_imu` is on. The config generator's `--enable-imu` and `--imu-mode both` now
+  enable only the IMU preintegration and print a note; they used to add the legacy
+  deskew. `--imu-mode legacy` still writes `use_imu: true`, with a warning. No preset
+  turned it on.
 - With `use_imu` and `use_imu_preintegration` both on (the config generator's
   `--imu-mode both` and `--enable-imu`), the IMU callback now has its own callback
   group, as it has with the preintegration alone. It used to share the cloud

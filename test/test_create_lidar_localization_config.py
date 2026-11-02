@@ -388,11 +388,34 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
             "requires IMU preintegration", config_tool.validate_args(tool_args)
         )
 
-    def test_enable_imu_compatibility_alias_enables_both_paths(self):
-        params = config_tool.make_params(args(enable_imu=True))
+    def test_enable_imu_and_both_enable_only_the_preintegration(self):
+        # The legacy use_imu deskew integrates gravity; it is deprecated.
+        for tool_args, flag in (
+            (args(enable_imu=True), "--enable-imu"),
+            (args(imu_mode="both"), "--imu-mode both"),
+        ):
+            params = config_tool.make_params(tool_args)
+            self.assertFalse(params["use_imu"])
+            self.assertTrue(params["use_imu_preintegration"])
+            self.assertIn(
+                "use_imu_preintegration:=true",
+                config_tool.launch_command(tool_args, Path("/tmp/generated.yaml")),
+            )
+            (warning,) = config_tool.imu_mode_warnings(tool_args)
+            self.assertIn(flag, warning)
+            self.assertIn("deprecated", warning)
+
+    def test_legacy_imu_mode_still_works_with_a_warning(self):
+        tool_args = args(imu_mode="legacy")
+        params = config_tool.make_params(tool_args)
 
         self.assertTrue(params["use_imu"])
-        self.assertTrue(params["use_imu_preintegration"])
+        self.assertFalse(params["use_imu_preintegration"])
+        (warning,) = config_tool.imu_mode_warnings(tool_args)
+        self.assertIn("integrates", warning)
+        self.assertEqual(
+            config_tool.imu_mode_warnings(args(imu_mode="preintegration")), []
+        )
 
     def test_render_quotes_paths_and_uses_yaml_booleans(self):
         rendered = config_tool.render_ros_params(
