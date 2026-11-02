@@ -17,7 +17,8 @@
     voxel_leaf_size: 1.5
     enable_scan_voxel_filter: true
     # Leaves local_map_radius - scan_max_range = 40 m to build the next crop in the
-    # background; at 80 m a scan waited 0.6 s at 9.5 m/s and the seed fell 5 m behind.
+    # background. At 80 m scans wait for it now and then: 0.139 against 0.132 m RMSE
+    # with the time-scaled seed, 0.93 m with one delta per scan.
     scan_max_range: 60.0
     scan_min_range: 1.0
     scan_period: 0.1
