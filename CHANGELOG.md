@@ -30,6 +30,13 @@
   keeps 8.3-8.7 Hz (0.9-2.9 Hz was quoted), with it 8.9-10 Hz, at the same accuracy
   ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md#re-measured-with-the-optimized-build),
   `target_build_bench.cpp`).
+- Compared `NDT_OMP` and `SMALL_GICP` on the online Koide `outdoor_hard_02b` check, the
+  second public dataset after Istanbul. SMALL_GICP failed all five runs (88-93%
+  diagnostic coverage, 0.32-0.41 m RMSE), NDT_OMP passed all four (99.6-100%,
+  0.227-0.232 m). On the map SMALL_GICP aligned faster (22 against 38 ms median). Off the
+  map it slowed down (its slowest scans took 1-8 s), and its odometry-carried pose
+  drifted further. `NDT_OMP` stays the default
+  ([experiments/koide_backend_comparison](experiments/koide_backend_comparison/README.md)).
 
 ## 1.5.0 - 2026-11-01
 

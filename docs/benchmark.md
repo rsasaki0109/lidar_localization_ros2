@@ -258,7 +258,11 @@ iterations.
 SMALL_GICP` (needs small_gicp, e.g. `ros-jazzy-small-gicp-vendor`; pass `--preset
 istanbul_small_gicp.yaml`). On 2026-10-28 it gave 0.26, 0.76 and 0.45 m at 8.0-9.5
 poses/s, about as the optimized NDT_OMP preset does now; the NDT_OMP preset it was
-compared with then (0.26, 0.91 and 0.54 m at 1.3-3.1 poses/s) ran unoptimized.
+compared with then (0.26, 0.91 and 0.54 m at 1.3-3.1 poses/s) ran unoptimized. On the
+online Koide `outdoor_hard_02b` check, SMALL_GICP failed all five runs (88-93%
+coverage, 0.32-0.41 m RMSE) where NDT_OMP passed all four. It slows down off the map
+and drifts further while odometry carries the pose there, so NDT_OMP stays the default
+([experiments/koide_backend_comparison](../experiments/koide_backend_comparison/README.md)).
 
 What to keep in mind with this bag (`istanbul_prepare.py` and `istanbul_replay.py`
 handle the first three):
