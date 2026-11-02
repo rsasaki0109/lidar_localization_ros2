@@ -313,7 +313,7 @@ bool PCLLocalization::loadMapFromPath(const std::string & path, bool reject_empt
     }
   }
 
-  map_recieved_ = true;
+  map_received_ = true;
   return true;
 }
 
@@ -451,7 +451,7 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   }
   scan_twist_.reset();
   path_ptr_.reset();
-  corrent_pose_with_cov_stamped_ptr_.reset();
+  current_pose_with_cov_stamped_ptr_.reset();
 
   initial_map_pub_.reset();
   path_pub_.reset();
@@ -549,6 +549,6 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   crop_failure_guard_active_ = false;
   last_crop_out_of_bounds_log_time_ = std::chrono::steady_clock::time_point{};
   last_crop_failure_streak_log_time_ = std::chrono::steady_clock::time_point{};
-  map_recieved_ = false;
-  initialpose_recieved_ = false;
+  map_received_ = false;
+  initialpose_received_ = false;
 }

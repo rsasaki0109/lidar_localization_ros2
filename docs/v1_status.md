@@ -144,13 +144,10 @@ v1.1 is closed around one public endpoint:
 > validated dry-run `/initialpose` command artifact derived from NDT_OMP-scored route-grid candidates,
 > with `published_count=0` in the default benchmark path
 
-Starter manifests:
-
-- `param/benchmark/v1_1_boreas_localizer_only.example.yaml` — health / candidate scaffolding only
-- `param/benchmark/v1_1_boreas_dry_run_endpoint.example.yaml` — full no-publish MVP chain
-
-Smoke check (the script was removed with the offline tooling in 6825f05; run it from
-`git checkout 6825f05^`):
+The starter manifests (`param/benchmark/v1_1_boreas_localizer_only.example.yaml` for
+health and candidate scaffolding, `v1_1_boreas_dry_run_endpoint.example.yaml` for the
+full no-publish chain) and the smoke check went with the offline tooling in 6825f05;
+run them from `git checkout 6825f05^`:
 
 ```bash
 source scripts/setup_local_env.sh

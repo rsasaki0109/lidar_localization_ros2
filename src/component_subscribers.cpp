@@ -254,7 +254,7 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
       global_frame_id_,
       msg->header.frame_id,
       msg->pose.pose,
-      map_recieved_});
+      map_received_});
   if (!admission.accepted) {
     if (
       admission.status ==
@@ -284,10 +284,10 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   has_odom_tf_constraint_anchor_pose_ = false;
   odom_bridge_transform_history_.clear();
   has_last_odom_bridge_source_advance_node_stamp_ = false;
-  initialpose_recieved_ = true;
+  initialpose_received_ = true;
   last_initial_pose_stamp_sec_ = stamp_to_sec(msg->header.stamp);
   callback_state_coordinator_.advanceInitialPoseGeneration();
-  corrent_pose_with_cov_stamped_ptr_ = msg;
+  current_pose_with_cov_stamped_ptr_ = msg;
   {
     std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
     imu_preintegration_fallback_mode_ = false;
@@ -374,8 +374,8 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
       RCLCPP_INFO(get_logger(), "IMU preintegration smoother initialized from initial pose");
     }
   }
-  pose_pub_->publish(*corrent_pose_with_cov_stamped_ptr_);
-  if (publishPoseTransform(msg->header.stamp, corrent_pose_with_cov_stamped_ptr_->pose.pose)) {
+  pose_pub_->publish(*current_pose_with_cov_stamped_ptr_);
+  if (publishPoseTransform(msg->header.stamp, current_pose_with_cov_stamped_ptr_->pose.pose)) {
     if (!publish_tf_) {
       RCLCPP_INFO(get_logger(), "TF broadcast disabled (publish_tf: false)");
     } else if (enable_map_odom_tf_) {
@@ -467,7 +467,7 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
   // The map topic replaces the whole registration target.
   discardLocalMapRebuild();
   local_map_target_cached_ = false;
-  map_recieved_ = true;
+  map_received_ = true;
   RCLCPP_INFO(get_logger(), "mapReceived end");
 }
 
@@ -482,11 +482,11 @@ void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr
   const auto admission = lidar_localization::decideOdomAdmission(
     lidar_localization::OdomAdmissionInput{
       use_odom_,
-      initialpose_recieved_,
-      static_cast<bool>(corrent_pose_with_cov_stamped_ptr_),
+      initialpose_received_,
+      static_cast<bool>(current_pose_with_cov_stamped_ptr_),
       dt_odom,
-      corrent_pose_with_cov_stamped_ptr_
-        ? lidar_localization::isPoseFinite(corrent_pose_with_cov_stamped_ptr_->pose.pose)
+      current_pose_with_cov_stamped_ptr_
+        ? lidar_localization::isPoseFinite(current_pose_with_cov_stamped_ptr_->pose.pose)
         : false,
       1.0});
   if (!admission.accepted) {
@@ -519,7 +519,7 @@ void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr
   RCLCPP_DEBUG(get_logger(), "odomReceived");
 
   const geometry_msgs::msg::Pose previous_pose =
-    corrent_pose_with_cov_stamped_ptr_->pose.pose;
+    current_pose_with_cov_stamped_ptr_->pose.pose;
 
   const auto & twist = msg->twist.twist;
   const auto integration = lidar_localization::integrateOdomTwist(
@@ -530,14 +530,14 @@ void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr
     Eigen::Vector3d(twist.angular.x, twist.angular.y, twist.angular.z),
     dt_odom);
 
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.x += integration.delta_position.x();
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.y += integration.delta_position.y();
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z += integration.delta_position.z();
-  corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation =
+  current_pose_with_cov_stamped_ptr_->pose.pose.position.x += integration.delta_position.x();
+  current_pose_with_cov_stamped_ptr_->pose.pose.position.y += integration.delta_position.y();
+  current_pose_with_cov_stamped_ptr_->pose.pose.position.z += integration.delta_position.z();
+  current_pose_with_cov_stamped_ptr_->pose.pose.orientation =
     tf2::toMsg(integration.orientation);
 
-  if (!lidar_localization::isPoseFinite(corrent_pose_with_cov_stamped_ptr_->pose.pose)) {
-    corrent_pose_with_cov_stamped_ptr_->pose.pose = previous_pose;
+  if (!lidar_localization::isPoseFinite(current_pose_with_cov_stamped_ptr_->pose.pose)) {
+    current_pose_with_cov_stamped_ptr_->pose.pose = previous_pose;
     RCLCPP_WARN_THROTTLE(
       get_logger(), *get_clock(), 5000,
       "odom integration produced non-finite pose; keeping previous pose");

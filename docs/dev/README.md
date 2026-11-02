@@ -2,7 +2,9 @@
 
 Plans, roadmaps and experiment records kept for maintainers. They describe how the
 package got where it is and refer to tools that no longer exist: most went with the
-offline Python tooling in 6825f05 and still run from `git checkout 6825f05^`. For using
+offline Python tooling in 6825f05 and still run from `git checkout 6825f05^`. That
+checkout also has the run manifests and comparison specs in `param/benchmark/` that
+these notes cite; they were removed later, unused. For using
 the package, start at the [top-level README](../../README.md); the current benchmark is
 [benchmark.md](../benchmark.md).
 

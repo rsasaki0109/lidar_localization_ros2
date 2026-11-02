@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `param/benchmark/` is removed and no longer installed. Its 123 run manifests and
+  comparison specs were inputs to the offline runners removed in 6825f05, and nothing
+  has read them since; `git checkout 6825f05^` has both. The route-crop recovery
+  example from one of them is now in
+  [docs/global_localization.md](docs/global_localization.md#route-crop-candidates-opt-in-wp3).
+- Three misspelled members are renamed: `corrent_pose_with_cov_stamped_ptr_`,
+  `map_recieved_` and `initialpose_recieved_` are now `current_…` and `…_received_`.
+  No topic, parameter or diagnostic key changes.
 - The previous-delta seed is scaled to the time since the last pose, at most
   `previous_delta_max_extrapolation_sec` (new, default 1.0 s; 0 restores one delta per
   scan). It used to advance the last pose by one inter-scan motion whatever time had

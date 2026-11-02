@@ -100,9 +100,26 @@ Reference CSV format matches `make_route_grid_relocalization_attempts.py` (colum
 `stamp_sec`, `position_x/y/z`, `orientation_x/y/z/w`). Generate from a mapping run
 with `tum_trajectory_to_pose_reference_csv_for_rosbag2.py`. Key parameters:
 `route_time_radius_sec`, `route_min_spacing_m`, `route_max_poses`, and the
-`*_offsets_*` lists. See `param/benchmark/koide_g3_recovery_route_crop.yaml` and
-`global_localization_recovery.launch.py` launch args `g2_candidate_source`,
-`g2_reference_csv`, etc.
+`*_offsets_*` lists. `global_localization_recovery.launch.py` passes them on as
+`g2_candidate_source`, `g2_reference_csv` and `g2_route_*`. The Koide `outdoor_hard_01a`
+recovery used:
+
+```bash
+ros2 launch lidar_localization_ros2 global_localization_recovery.launch.py \
+  cloud_topic:=/livox/points imu_topic:=/livox/imu \
+  map_path:=/path/to/map_outdoor_hard.ply \
+  localization_param_dir:=/path/to/koide_outdoor.yaml \
+  g2_candidate_source:=route_crop \
+  g2_reference_csv:=/path/to/outdoor_hard_01a/reference.csv \
+  g2_enable_registration_scoring:=true \
+  base_frame_id:=livox_frame lidar_frame_id:=livox_frame \
+  publish_lidar_tf:=false use_imu_preintegration:=true use_sim_time:=true \
+  supervisor_reset_default_z_m:=-11.046818 supervisor_prefer_reset_default_z_m:=true
+```
+
+Keep `supervisor_enable_seed_motion_compensation` at its default, `false`, here. A
+route-crop query takes 10-20 s, and extrapolating the seed over that latency moved it
+tens of metres on a moving bag.
 
 ## G3: guarded automatic reinitialization
 
