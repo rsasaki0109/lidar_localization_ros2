@@ -432,14 +432,17 @@ bool PCLLocalization::setInputTargetForPose(const Eigen::Matrix4f & center_pose_
     filtered_local_map->size(),
     crop_request.min_points,
     filter_target);
+  const bool ndt_target = lidar_localization::usesNdtVoxelGrid(registration_method_);
   if (target_selection.target_cloud ==
     lidar_localization::LocalMapTargetCloud::kFilteredLocalMap)
   {
-    registration_->setInputTarget(filtered_local_map);
+    lidar_localization::setRegistrationTarget<pcl::PointXYZI>(
+      *registration_, filtered_local_map, ndt_target);
     lidar_localization::keepRegistrationCloudAlive(
       recent_target_clouds_, filtered_local_map, registration_target_cloud_keep_alive_count_);
   } else {
-    registration_->setInputTarget(local_map);
+    lidar_localization::setRegistrationTarget<pcl::PointXYZI>(
+      *registration_, local_map, ndt_target);
     lidar_localization::keepRegistrationCloudAlive(
       recent_target_clouds_, local_map, registration_target_cloud_keep_alive_count_);
   }
@@ -463,6 +466,7 @@ void PCLLocalization::startLocalMapRebuild(float center_x, float center_y)
     [full_map = full_map_cloud_ptr_, objects = spare_registration_objects_,
     radius = local_map_radius_, min_points = local_map_min_points_,
     filter_target = lidar_localization::usesFilteredTarget(registration_method_),
+    ndt_target = lidar_localization::usesNdtVoxelGrid(registration_method_),
     leaf = voxel_leaf_size_, center_x, center_y]() {
       LocalMapRebuild rebuild;
       rebuild.center_x = center_x;
@@ -487,7 +491,8 @@ void PCLLocalization::startLocalMapRebuild(float center_x, float center_y)
         lidar_localization::LocalMapTargetCloud::kFilteredLocalMap ?
         filtered_local_map : local_map;
       auto * registration = objects.get();
-      registration->setInputTarget(rebuild.target);
+      lidar_localization::setRegistrationTarget<pcl::PointXYZI>(
+        *registration, rebuild.target, ndt_target);
       rebuild.warm_up_source = sampleWarmUpSource(*rebuild.target);
       registration->setInputSource(rebuild.warm_up_source);
       pcl::PointCloud<pcl::PointXYZI> output;

@@ -448,13 +448,17 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
       new pcl::PointCloud<pcl::PointXYZI>());
     voxel_grid_filter_.setInputCloud(map_cloud_ptr);
     voxel_grid_filter_.filter(*filtered_cloud_ptr);
-    registration_->setInputTarget(filtered_cloud_ptr);
+    lidar_localization::setRegistrationTarget<pcl::PointXYZI>(
+      *registration_, filtered_cloud_ptr,
+      lidar_localization::usesNdtVoxelGrid(registration_method_));
     lidar_localization::keepRegistrationCloudAlive(
       recent_target_clouds_, filtered_cloud_ptr, registration_target_cloud_keep_alive_count_);
     warmUpRegistrationTarget(filtered_cloud_ptr);
 
   } else {
-    registration_->setInputTarget(map_cloud_ptr);
+    lidar_localization::setRegistrationTarget<pcl::PointXYZI>(
+      *registration_, map_cloud_ptr,
+      lidar_localization::usesNdtVoxelGrid(registration_method_));
     lidar_localization::keepRegistrationCloudAlive(
       recent_target_clouds_, map_cloud_ptr, registration_target_cloud_keep_alive_count_);
     warmUpRegistrationTarget(map_cloud_ptr);

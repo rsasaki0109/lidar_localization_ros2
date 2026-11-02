@@ -1,9 +1,11 @@
 // Time what the localizer does when it builds a new local-map target: crop the map
 // to a 2D radius (cropLocalMapByRadius), hand it to NDT_OMP (setInputTarget) and
 // align a ~100-point probe once, which builds the target search tree that
-// pcl::Registration sets up in the first align() (warmUpRegistrationTarget). The
-// same for GICP_OMP on the crop voxel-filtered with LEAF, where the first align()
-// also computes the target covariances. Median over REPEATS, in ms.
+// pcl::Registration sets up in the first align() (warmUpRegistrationTarget). NDT_OMP
+// once with a plain setInputTarget() and once with setNdtTargetWithSearchTree(),
+// which builds that tree alongside, as the localizer sets NDT targets. The same for
+// GICP_OMP on the crop voxel-filtered with LEAF, where the first align() also
+// computes the target covariances. Median over REPEATS, in ms.
 //
 // usage: target_build_bench MAP.{pcd,ply} X Y RADIUS LEAF REPEATS
 #include <pcl/filters/voxel_grid.h>
@@ -12,6 +14,8 @@
 #include <pcl/point_types.h>
 #include <pclomp/gicp_omp.h>
 #include <pclomp/ndt_omp.h>
+
+#include "lidar_localization/registration_target_search_tree.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -67,6 +71,7 @@ int main(int argc, char ** argv)
   }
 
   std::vector<double> crop_ms, ndt_target_ms, ndt_first_align_ms;
+  std::vector<double> alongside_target_ms, alongside_first_align_ms;
   std::vector<double> voxel_ms, gicp_target_ms, gicp_first_align_ms;
   std::size_t crop_points = 0;
   std::size_t filtered_points = 0;
@@ -88,12 +93,15 @@ int main(int argc, char ** argv)
 
     Cloud out;
     // The NDT_OMP settings of param/istanbul_gtsam_smoother.yaml and the Koide profile.
+    const auto configure = [](pclomp::NormalDistributionsTransform<Point, Point> & ndt) {
+        ndt.setResolution(1.0);
+        ndt.setStepSize(0.1);
+        ndt.setTransformationEpsilon(0.01);
+        ndt.setMaximumIterations(35);
+        ndt.setNumThreads(4);
+      };
     pclomp::NormalDistributionsTransform<Point, Point> ndt;
-    ndt.setResolution(1.0);
-    ndt.setStepSize(0.1);
-    ndt.setTransformationEpsilon(0.01);
-    ndt.setMaximumIterations(35);
-    ndt.setNumThreads(4);
+    configure(ndt);
     start = Clock::now();
     ndt.setInputTarget(crop);
     ndt_target_ms.push_back(elapsed_ms(start));
@@ -101,6 +109,16 @@ int main(int argc, char ** argv)
     start = Clock::now();
     ndt.align(out, Eigen::Matrix4f::Identity());
     ndt_first_align_ms.push_back(elapsed_ms(start));
+
+    pclomp::NormalDistributionsTransform<Point, Point> alongside;
+    configure(alongside);
+    start = Clock::now();
+    lidar_localization::setNdtTargetWithSearchTree<Point>(alongside, crop);
+    alongside_target_ms.push_back(elapsed_ms(start));
+    alongside.setInputSource(probe_of(*crop));
+    start = Clock::now();
+    alongside.align(out, Eigen::Matrix4f::Identity());
+    alongside_first_align_ms.push_back(elapsed_ms(start));
 
     start = Clock::now();
     Cloud::Ptr filtered(new Cloud);
@@ -127,6 +145,9 @@ int main(int argc, char ** argv)
   std::cout << "crop_points=" << crop_points << " crop_ms=" << median(crop_ms)
             << "\nNDT_OMP setInputTarget_ms=" << median(ndt_target_ms)
             << " first_align_ms=" << median(ndt_first_align_ms)
+            << "\nNDT_OMP, tree alongside: setNdtTargetWithSearchTree_ms="
+            << median(alongside_target_ms)
+            << " first_align_ms=" << median(alongside_first_align_ms)
             << "\nvoxel_leaf=" << leaf << " filtered_points=" << filtered_points
             << " voxel_ms=" << median(voxel_ms)
             << "\nGICP_OMP setInputTarget_ms=" << median(gicp_target_ms)
