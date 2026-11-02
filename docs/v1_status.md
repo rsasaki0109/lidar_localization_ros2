@@ -185,9 +185,6 @@ Open items after v1.5.0:
   further after SMALL_GICP than after NDT_OMP (1.40 against 0.77 m of height error);
   SMALL_GICP failed that check, and NDT_OMP stays the default
   ([experiments/koide_backend_comparison](../experiments/koide_backend_comparison/README.md))
-- shorten the NDT_OMP target build on dense maps: half of the 0.5 s for an 80 m Koide
-  crop is the search tree over the target points, which only `getFitnessScore()` uses
-  ([experiments/istanbul_ndt_tracking](../experiments/istanbul_ndt_tracking/README.md#re-measured-with-the-optimized-build))
 - deskew the clouds the gyro deskew still skips on Koide `outdoor_hard_02b` (31%: two
   sweeps in one cloud, or the sweep's last IMU sample not yet in); holding the last
   rotation for up to 10 ms made RMSE worse

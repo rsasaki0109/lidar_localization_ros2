@@ -389,7 +389,9 @@ within 80 m (x -19.34, y -78.57).
   Istanbul target now takes 0.18-0.28 s with the crop, an 80 m Koide one 0.52 s.
 - **Half of the Koide NDT_OMP time is the search tree.** Skipping that tree cut the
   first `align()` from 233 to 1.5 ms (80 m crop, three runs). NDT_OMP does not use it
-  to align, but `getFitnessScore()`, which the localizer reports, searches it.
+  to align, but `getFitnessScore()`, which the localizer reports, searches it. The
+  localizer now builds it alongside the voxel grid (*Search tree alongside the voxel
+  grid* below).
 
 **Background rebuild.** The preset with `local_map_async_rebuild` on, as it ships, and
 off (`sync`), one build, alternated, median of three runs (range):
@@ -415,8 +417,8 @@ replays started).
 
 ```bash
 # WS built as in AGENTS.md (ndt_omp_ros2 without a build type)
-FLAGS="-O2 -std=c++17 -fopenmp -I$WS/install/ndt_omp_ros2/include -I/usr/include/pcl-1.14 \
-  -I/usr/include/eigen3"
+FLAGS="-O2 -std=c++17 -fopenmp -Iinclude -I$WS/install/ndt_omp_ros2/include \
+  -I/usr/include/pcl-1.14 -I/usr/include/eigen3"
 LIBS="$WS/install/ndt_omp_ros2/lib/libndt_omp.a -lpcl_io -lpcl_common -lpcl_kdtree \
   -lpcl_search -lpcl_filters -lpcl_registration -lpcl_octree"
 g++ $FLAGS experiments/istanbul_ndt_tracking/target_build_bench.cpp \
@@ -431,6 +433,52 @@ python3 tools/benchmark/istanbul_compare.py --base-ws "$WS" --cand-ws "$WS" \
   --map "$ISTANBUL/map/pointcloud_map.pcd" --out /tmp/istanbul_async \
   --cand-set local_map_async_rebuild=false
 ```
+
+## Search tree alongside the voxel grid
+
+`pcl::Registration` builds its search tree over the target points in the first
+`align()` after `setInputTarget()`. NDT aligns with its voxel grid, which
+`setInputTarget()` builds, and uses the tree only for `getFitnessScore()`. Yet the
+two builds ran one after the other. `setNdtTargetWithSearchTree()`
+(`include/lidar_localization/registration_target_search_tree.hpp`) builds the tree on
+another thread while `setInputTarget()` runs and hands it over. The localizer sets
+every NDT and NDT_OMP target through it: the local map crop, the background rebuild,
+the full map at load, the map topic. The fitness score and the alignment do not
+change (`test_registration_target_search_tree`).
+
+**Target build.** `target_build_bench.cpp`, median of five, in-package build, the
+target set plus the first `align()`:
+
+| Crop | Points | `setInputTarget` + first `align()` | Tree alongside + first `align()` |
+| --- | --- | --- | --- |
+| Istanbul 150 m, window A start | 203k | 141 + 49 = 190 ms | 147 + 5 = **152 ms** |
+| Istanbul 150 m, window C climb | 118k | 64 + 27 = 91 ms | 62 + 3 = **65 ms** |
+| Koide outdoor 80 m | 753k | 275 + 243 = 518 ms | 298 + 2 = **300 ms** |
+| Koide outdoor 75 m | 695k | 246 + 207 = 453 ms | 270 + 2 = **271 ms** |
+
+Built alongside, the tree adds at most 24 ms to the voxel grid, where it used to add
+27-243 ms after it: the target is ready 20-42% sooner.
+
+**Replay.** The preset with `local_map_async_rebuild: false`, so that the scan
+callback waits for each new target. `main` at `9c9edd7` against this change,
+alternated, median of three runs (range):
+
+| Window | Variant | Pose rate | Alignment p95 | Horizontal RMSE m | z RMSE m | 3D p95 m |
+| --- | --- | --- | --- | --- | --- | --- |
+| A | main | 8.2 Hz (8.1-8.2) | 34 ms | 0.235 (0.232-0.302) | 0.300 (0.287-0.333) | 0.654 (0.631-0.954) |
+| A | **change** | **8.4 Hz** (8.3-8.4) | **21 ms** | 0.234 (0.231-0.260) | 0.282 (0.276-0.402) | 0.660 (0.626-0.932) |
+| B | main | 8.6 Hz (8.5-8.7) | 50 ms | 0.758 (0.752-0.765) | 0.561 (0.543-0.606) | 1.861 (1.807-1.929) |
+| B | **change** | **8.9 Hz** (8.9-9.0) | **23 ms** | 0.759 (0.757-0.763) | 0.547 (0.543-0.551) | 1.766 (1.763-1.776) |
+| C | main | 8.2 Hz (8.0-8.2) | 47 ms | 0.453 (0.449-0.455) | 0.330 (0.326-0.349) | 0.957 (0.952-0.994) |
+| C | **change** | **8.8 Hz** (8.5-8.8) | **22 ms** | 0.455 (0.449-0.459) | 0.341 (0.326-0.345) | 0.991 (0.960-1.010) |
+
+- **More scans aligned without the background rebuild.** The pose rate rose by 0.2-0.6
+  Hz, with no overlap between the ranges.
+- **The alignment p95 halved.** In `main` the first scan after a new target built the
+  tree in its `align()`; now none does.
+- **Accuracy is the same within the ranges.**
+
+Measured 2026-11-02 on ROS 2 Jazzy, 4 cores.
 
 ## Rerun
 

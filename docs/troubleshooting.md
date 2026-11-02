@@ -267,8 +267,8 @@ With `enable_local_map_crop: true` (and always for GICP/small_gicp backends) the
 target is cropped and handed to the registration backend on every scan, which rebuilds
 its search structure. GICP-family backends get the crop voxel-filtered with
 `voxel_leaf_size`; NDT gets it unfiltered, like the full map without a crop. For
-NDT_OMP (4 threads) a new target, crop included, takes 0.18-0.28 s for a 150 m crop of
-the Istanbul map and 0.5 s for an 80 m crop of the dense Koide outdoor map (750k
+NDT_OMP (4 threads) a new target, crop included, takes 0.16-0.24 s for a 150 m crop of
+the Istanbul map and 0.3 s for an 80 m crop of the dense Koide outdoor map (750k
 points). Paid on every scan, that drops scans with `cloud_queue_depth: 1`, and fast turns
 lose track.
 
@@ -286,13 +286,13 @@ lose track.
   until the crop center has moved `local_map_radius - scan_max_range` (at least
   `local_map_update_distance`); only past that does a scan wait for a target around
   itself, so it helps only while `local_map_radius - scan_max_range` is larger than
-  `local_map_update_distance`. On the Istanbul map a 150 m crop takes 0.08-0.19 s to
-  build for NDT_OMP after the crop. At 21 m/s the Istanbul preset aligned 83% of the
-  scans without it (8.3 Hz) and all of them with it, at the same accuracy. For the GICP
+  `local_map_update_distance`. On the Istanbul map a 150 m crop takes 0.07-0.15 s to
+  build for NDT_OMP after the crop. At 21 m/s the Istanbul preset aligned 88% of the
+  scans without it (8.8 Hz) and all of them with it, at the same accuracy. For the GICP
   backends, which compute the target covariances in the first alignment, it took 0.2 s
   (SMALL_GICP), 0.3 s (SMALL_VGICP) and 0.25-0.44 s (GICP_OMP) after the crop. On the
-  dense Koide outdoor map an 80 m NDT_OMP target takes 0.5 s
-  ([experiments/istanbul_ndt_tracking](../experiments/istanbul_ndt_tracking/README.md#re-measured-with-the-optimized-build)).
+  dense Koide outdoor map an 80 m NDT_OMP target takes 0.3 s
+  ([experiments/istanbul_ndt_tracking](../experiments/istanbul_ndt_tracking/README.md#search-tree-alongside-the-voxel-grid)).
   It is off by default; the Istanbul preset and the online Koide profile turn it on.
   Turn it on for dense maps and fast motion
 - or, when the full map fits in memory and its NDT voxel grid can be indexed (next
