@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- The IMU preintegration smoother solves its normal equations sparsely. The matrix is
+  block tridiagonal over the window plus the bias rows; it was factored densely, up to
+  10 times per accepted scan. Once the 50-pose window was full an update took 87-96 ms
+  (synthetic drive, one core), so with an NDT alignment on top a 10 Hz node skipped
+  scans: 18-19% of the first 120 s of Boreas. Assembled sparse, with the ordering
+  computed once per update, it takes 13 ms and gives the same final pose to 1e-9 m. Boreas
+  with `use_imu_preintegration` now processes every scan and scores 0.127 m (two
+  runs; 0.132 m without the IMU)
+  ([experiments/imu_smoother_solve](experiments/imu_smoother_solve/README.md)).
 - With `use_imu` and `use_imu_preintegration` both on (the config generator's
   `--imu-mode both` and `--enable-imu`), the IMU callback now has its own callback
   group, as it has with the preintegration alone. It used to share the cloud
