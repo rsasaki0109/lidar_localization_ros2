@@ -6,7 +6,7 @@ usage: summarize_runs.py DATA_DIR LABEL=RUN_DIR [LABEL=RUN_DIR ...] [--json OUT]
 
 DATA_DIR is the run_koide_public_bag.py data directory (koide-data). A cloud is
 expected from 4 s after the bag start, as the check counts it. The poses are matched
-to the GT pose with the nearest stamp within 60 ms, as in the check.
+to the GT pose with the nearest stamp within 0.15 s, as in the check.
 """
 
 import argparse
@@ -19,7 +19,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 import koide_public_bag as data_tool
 
-MATCH_SEC = 0.06
+MATCH_SEC = 0.15
 
 
 def errors(estimate, reference):
