@@ -261,6 +261,8 @@ void PCLLocalization::initializeParameters()
   get_parameter("viz_downsample", viz_downsample_);
   get_parameter("viz_voxel_leaf_size", viz_voxel_leaf_size_);
   get_parameter("predict_pose_from_previous_delta", predict_pose_from_previous_delta_);
+  get_parameter(
+    "previous_delta_max_extrapolation_sec", previous_delta_max_extrapolation_sec_);
   get_parameter("enable_local_map_crop", enable_local_map_crop_);
   get_parameter("local_map_radius", local_map_radius_);
   get_parameter("local_map_update_distance", local_map_update_distance_);
@@ -642,6 +644,9 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(),"enable_debug: %d", enable_debug_);
   RCLCPP_INFO(
     get_logger(), "predict_pose_from_previous_delta: %d", predict_pose_from_previous_delta_);
+  RCLCPP_INFO(
+    get_logger(), "previous_delta_max_extrapolation_sec: %lf",
+    previous_delta_max_extrapolation_sec_);
   RCLCPP_INFO(get_logger(), "enable_local_map_crop: %d", enable_local_map_crop_);
   RCLCPP_INFO(get_logger(), "local_map_radius: %lf", local_map_radius_);
   RCLCPP_INFO(

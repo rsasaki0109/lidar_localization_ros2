@@ -83,6 +83,7 @@ void PCLLocalization::resetPredictionState(const Eigen::Matrix4f & pose_matrix, 
   const auto state = lidar_localization::resetPredictionState(pose_matrix, stamp_sec);
   apply_prediction_state(*this, state);
   last_relative_motion_duration_sec_ = 0.0;
+  last_relative_motion_spans_scans_ = false;
   accepted_updates_since_reset_ = 0;
   settled_accepts_since_reset_ = 0;
 }
@@ -92,9 +93,15 @@ void PCLLocalization::updatePredictionState(
   double stamp_sec)
 {
   // Keep the duration paired with the held motion across rejected updates.
+  const bool updates_motion = have_last_accepted_pose_ && consecutive_rejected_updates_ == 0;
   const double accepted_interval_sec =
-    have_last_accepted_pose_ && consecutive_rejected_updates_ == 0 ?
-    stamp_sec - last_accepted_pose_time_sec_ : 0.0;
+    updates_motion ? stamp_sec - last_accepted_pose_time_sec_ : 0.0;
+  if (updates_motion) {
+    // The duration is only kept for a positive interval; without one the motion and
+    // its duration would not pair.
+    last_relative_motion_spans_scans_ = accepted_updates_since_reset_ > 0 &&
+      std::isfinite(accepted_interval_sec) && accepted_interval_sec > 0.0;
+  }
   // Store the pose at its timestamp in every prediction mode. Extrapolating
   // here makes a later switch to twist integrate the same interval twice.
   const auto state = lidar_localization::updatePredictionStateFromAcceptedMeasurement(
@@ -132,8 +139,21 @@ void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
     make_prediction_state_snapshot(*this),
     stamp_sec,
     advance_mode,
-    twist_predicted_pose_matrix);
+    twist_predicted_pose_matrix,
+    previousDeltaMotionAt(stamp_sec));
   apply_prediction_state(*this, state);
+}
+
+Eigen::Matrix4f PCLLocalization::previousDeltaMotionAt(double stamp_sec) const
+{
+  if (!last_relative_motion_spans_scans_) {
+    return last_relative_motion_matrix_;
+  }
+  return lidar_localization::previousDeltaMotionAt(
+    make_prediction_state_snapshot(*this),
+    last_relative_motion_duration_sec_,
+    stamp_sec,
+    previous_delta_max_extrapolation_sec_);
 }
 
 void PCLLocalization::updatePredictionFromRejectedMeasurement(

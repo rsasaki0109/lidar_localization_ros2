@@ -341,7 +341,11 @@ What to keep in mind with this dataset (`boreas_prepare.py` handles the first th
   attitude.
 - **The ~1 MB clouds need a reliable subscription.** With the best-effort sensor QoS,
   38 of 97 scans arrived (`qos_overrides` in the preset).
-- **Gaps cost the most.** The seed advances the last pose by one scan's motion. After
-  a 0.6 s gap at 9.5 m/s it was 5 m behind, and NDT locked 4 m back along the road.
-  The preset reuses each 100 m target for 10 m and builds the next one in the
+- **Gaps used to cost the most.** The seed advanced the last pose by one scan's
+  motion. After a 0.6 s gap at 9.5 m/s it was 5 m behind, and NDT locked 4 m back
+  along the road. It is now scaled to the time since the last pose
+  (`previous_delta_max_extrapolation_sec`). With 0.6 s dropped every 10 s the window
+  scores 0.132 m, as without gaps, against 0.8-6.3 m before
+  ([experiments/previous_delta_time_scaling](../experiments/previous_delta_time_scaling/README.md)).
+  The preset still reuses each 100 m target for 10 m and builds the next one in the
   background, with a 60 m scan range, so a scan does not wait for one.

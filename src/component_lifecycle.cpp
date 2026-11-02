@@ -89,6 +89,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declareImuPreintegrationParameters();
   declare_parameter("enable_debug", false);
   declare_parameter("predict_pose_from_previous_delta", true);
+  declare_parameter("previous_delta_max_extrapolation_sec", 1.0);
   declare_parameter("enable_local_map_crop", false);
   declare_parameter("local_map_radius", 150.0);
   declare_parameter("local_map_min_points", 100);

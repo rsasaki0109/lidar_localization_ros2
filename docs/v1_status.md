@@ -181,10 +181,6 @@ that reproduces the reset.
 
 Open items after v1.5.0:
 
-- scale the previous-delta seed by the time since the last scan: after a gap it lags
-  by the motion of the dropped scans. On Boreas a 0.6 s gap at 9.5 m/s left it 5 m
-  behind, and NDT locked 4 m back along the road at a passing fitness
-  ([benchmark.md](benchmark.md#boreas-vehicle-preset-replay))
 - extend the Boreas replay beyond its first 120 s (the bag takes about 1.4 MB per
   scan), and compare the IMU-seeded configurations on it
 

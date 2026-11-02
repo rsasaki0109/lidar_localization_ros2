@@ -218,12 +218,12 @@ old runs fail:
 - **A target build on every scan.** With a 300 m crop and no
   `local_map_update_distance`, the replay aligned one scan every 1-3 s.
 
-With those fixed the first 120 s track at about 0.13 m RMSE. One limit of the
-localizer remains: the previous-delta seed advances the last pose by one scan's
-motion whatever time has passed. After a 0.6 s gap at 9.5 m/s it fell 5 m behind, and
-NDT locked 4 m back along the road at a passing fitness. The preset avoids the gaps
-(see `param/boreas_ndt_velodyne.yaml`); the seed itself is an open item in
-`docs/v1_status.md`.
+With those fixed the first 120 s track at about 0.13 m RMSE. The replay also exposed a
+limit of the localizer. The previous-delta seed advanced the last pose by one scan's
+motion whatever time had passed. After a 0.6 s gap at 9.5 m/s it fell 5 m behind, and
+NDT locked 4 m back along the road at a passing fitness. The seed is now scaled to the
+time since the last pose
+([experiments/previous_delta_time_scaling](../../experiments/previous_delta_time_scaling/README.md)).
 
 ### Root-cause analysis (2026-06-14, code-level; data run still pending)
 
