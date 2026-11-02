@@ -35,7 +35,7 @@ int main(int argc, char ** argv)
   node.continuous_time_deskew_reference_time_sec_ = 0.0;
   for (int rejects : {0, 1, 10}) {
     node.resetPredictionState(pose(0), 10.0);
-    assert(node.last_relative_motion_duration_sec_ == 0.0);
+    assert(node.prediction_state_.last_relative_motion_duration_sec == 0.0);
     node.updatePredictionState(pose(.1f), 10.1);
     check_deskew(node);
     for (int k = 0; k < rejects; ++k) {
@@ -43,12 +43,12 @@ int main(int argc, char ** argv)
     }
     node.updatePredictionState(pose(.2f + .1f * rejects), 10.2 + .1 * rejects);
     check_deskew(node);
-    assert(std::abs(node.last_relative_motion_duration_sec_ - .1) < 1e-9);
+    assert(std::abs(node.prediction_state_.last_relative_motion_duration_sec - .1) < 1e-9);
     node.updatePredictionState(pose(.3f + .1f * rejects), 10.3 + .1 * rejects);
     check_deskew(node);
   }
   node.resetPredictionState(pose(5), 30.0);
-  assert(node.last_relative_motion_duration_sec_ == 0.0);
-  assert(node.last_relative_motion_matrix_.isIdentity());
+  assert(node.prediction_state_.last_relative_motion_duration_sec == 0.0);
+  assert(node.prediction_state_.last_relative_motion_matrix.isIdentity());
   rclcpp::shutdown();
 }

@@ -339,7 +339,7 @@ void PCLLocalization::publishBridgePoseAsRejectedOutput(
   // stays silent (only an accepted match calls publishCurrentPose), so the
   // benchmark's coverage/RMSE would see a gap for the whole dropout even
   // though the odom bridge has a perfectly good estimate. This intentionally
-  // never touches current_pose_with_cov_stamped_ptr_, predicted_pose_matrix_,
+  // never touches current_pose_with_cov_stamped_ptr_, prediction_state_.predicted_pose_matrix,
   // or any other internal belief -- publishPoseMessage is a bare topic
   // publish, so the next scan's seed/prediction is unaffected either way.
   if (!publish_bridge_pose_when_lost_) {

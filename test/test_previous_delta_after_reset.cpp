@@ -33,24 +33,24 @@ int main(int argc, char ** argv)
   // An initial pose stamped 10 ms before the first scan, 0.3 m off.
   node.resetPredictionState(pose_x(0.0f), 10.0);
   node.updatePredictionState(pose_x(0.3f), 10.01);
-  assert(!node.last_relative_motion_spans_scans_);
+  assert(!node.prediction_state_.last_relative_motion_spans_scans);
   // The next scan, 0.1 s on: the correction once, not ten times.
   assert(near(node.previousDeltaMotionAt(10.11)(0, 3), 0.3f));
 
   // Two scans 0.1 s apart: 0.1 m of motion, rescaled to the time since.
   node.updatePredictionState(pose_x(0.4f), 10.11);
-  assert(node.last_relative_motion_spans_scans_);
+  assert(node.prediction_state_.last_relative_motion_spans_scans);
   assert(near(node.previousDeltaMotionAt(10.21)(0, 3), 0.1f));
   assert(near(node.previousDeltaMotionAt(10.81)(0, 3), 0.7f));
 
   // A rejected scan advances by the rescaled motion too.
-  node.consecutive_rejected_updates_ = 0;
+  node.prediction_state_.consecutive_rejected_updates = 0;
   node.advancePredictionWithoutMeasurement(10.51);
-  assert(near(node.predicted_pose_matrix_(0, 3), 0.8f));
+  assert(near(node.prediction_state_.predicted_pose_matrix(0, 3), 0.8f));
 
   // A new reset starts over.
   node.resetPredictionState(pose_x(5.0f), 20.0);
-  assert(!node.last_relative_motion_spans_scans_);
+  assert(!node.prediction_state_.last_relative_motion_spans_scans);
   node.updatePredictionState(pose_x(5.2f), 20.001);
   assert(near(node.previousDeltaMotionAt(20.101)(0, 3), 0.2f));
 

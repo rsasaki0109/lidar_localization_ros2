@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <optional>
 
 #include <Eigen/Geometry>
@@ -18,7 +19,8 @@ enum class PredictionAdvanceMode
   kPreviousDelta,
 };
 
-struct PredictionStateSnapshot
+// The pose the next scan is predicted from, and the motion it is advanced by.
+struct PredictionState
 {
   bool have_last_accepted_pose{false};
   Eigen::Matrix4f last_accepted_pose_matrix{Eigen::Matrix4f::Identity()};
@@ -27,13 +29,21 @@ struct PredictionStateSnapshot
   std::size_t consecutive_rejected_updates{0};
   double last_accepted_pose_time_sec{0.0};
   double predicted_pose_time_sec{0.0};
+  // The time last_relative_motion_matrix took. It stays paired with the motion
+  // across rejected updates.
+  double last_relative_motion_duration_sec{0.0};
+  // Whether last_relative_motion_matrix runs from one scan pose to the next. After a
+  // reset it runs from the reset pose (an initial pose, say) to the first scan: a
+  // correction over an arbitrary interval, which must not be rescaled.
+  bool last_relative_motion_spans_scans{false};
+  std::size_t accepted_updates_since_reset{0};
 };
 
-inline PredictionStateSnapshot resetPredictionState(
+inline PredictionState resetPredictionState(
   const Eigen::Matrix4f & pose_matrix,
   double stamp_sec)
 {
-  PredictionStateSnapshot state;
+  PredictionState state;
   state.have_last_accepted_pose = true;
   state.last_accepted_pose_matrix = pose_matrix;
   state.predicted_pose_matrix = pose_matrix;
@@ -49,20 +59,29 @@ inline PredictionStateSnapshot resetPredictionState(
 // previous-delta mode.  Twist prediction integrates its own motion from the
 // stored prediction, so it must start from the accepted pose itself or the
 // inter-scan motion is counted twice.
-inline PredictionStateSnapshot updatePredictionStateFromAcceptedMeasurement(
-  const PredictionStateSnapshot & current,
+inline PredictionState updatePredictionStateFromAcceptedMeasurement(
+  const PredictionState & current,
   const Eigen::Matrix4f & accepted_pose_matrix,
   double stamp_sec,
   bool extrapolate_previous_delta = true)
 {
   if (!current.have_last_accepted_pose) {
-    return resetPredictionState(accepted_pose_matrix, stamp_sec);
+    PredictionState next = resetPredictionState(accepted_pose_matrix, stamp_sec);
+    next.accepted_updates_since_reset = 1;
+    return next;
   }
 
-  PredictionStateSnapshot next = current;
+  PredictionState next = current;
   if (current.consecutive_rejected_updates == 0) {
     next.last_relative_motion_matrix =
       current.last_accepted_pose_matrix.inverse() * accepted_pose_matrix;
+    // Without a positive interval the motion and a duration would not pair.
+    const double interval_sec = stamp_sec - current.last_accepted_pose_time_sec;
+    const bool timed = std::isfinite(interval_sec) && interval_sec > 0.0;
+    if (timed) {
+      next.last_relative_motion_duration_sec = interval_sec;
+    }
+    next.last_relative_motion_spans_scans = current.accepted_updates_since_reset > 0 && timed;
   }
 
   next.last_accepted_pose_matrix = accepted_pose_matrix;
@@ -73,25 +92,30 @@ inline PredictionStateSnapshot updatePredictionStateFromAcceptedMeasurement(
   next.consecutive_rejected_updates = 0;
   next.last_accepted_pose_time_sec = stamp_sec;
   next.predicted_pose_time_sec = stamp_sec;
+  if (next.accepted_updates_since_reset < std::numeric_limits<std::size_t>::max()) {
+    ++next.accepted_updates_since_reset;
+  }
   return next;
 }
 
-// The previous-delta motion for a scan at stamp_sec. The last accepted motion took
-// motion_duration_sec; it is rescaled to the time since the predicted pose, at most
+// The previous-delta motion for a scan at stamp_sec. A motion between two scan poses
+// is rescaled from the time it took to the time since the predicted pose, at most
 // max_extrapolation_sec. Applying one delta per scan whatever the time lags after
 // dropped scans: on Boreas a 0.6 s gap at 9.5 m/s left the seed 5 m behind, and NDT
 // locked 4 m back along the road. It also overshoots after a gap, when the delta spans
 // the gap and the next scan follows 0.1 s later. Without a usable duration, time anchor
-// or limit (max_extrapolation_sec <= 0) it is the stored motion, one delta per scan.
+// or limit (max_extrapolation_sec <= 0) it is the stored motion, one delta per scan;
+// so is the first motion after a reset (last_relative_motion_spans_scans).
 inline Eigen::Matrix4f previousDeltaMotionAt(
-  const PredictionStateSnapshot & state,
-  double motion_duration_sec,
+  const PredictionState & state,
   double stamp_sec,
   double max_extrapolation_sec)
 {
   const Eigen::Matrix4f & motion = state.last_relative_motion_matrix;
+  const double motion_duration_sec = state.last_relative_motion_duration_sec;
   const double elapsed_sec = stamp_sec - state.predicted_pose_time_sec;
-  if (!std::isfinite(motion_duration_sec) || motion_duration_sec <= 0.0 ||
+  if (!state.last_relative_motion_spans_scans ||
+    !std::isfinite(motion_duration_sec) || motion_duration_sec <= 0.0 ||
     !std::isfinite(max_extrapolation_sec) || max_extrapolation_sec <= 0.0 ||
     state.predicted_pose_time_sec <= 0.0 || !std::isfinite(elapsed_sec) ||
     elapsed_sec <= 0.0 || !motion.allFinite())
@@ -128,8 +152,8 @@ inline PredictionAdvanceMode choosePredictionAdvanceMode(
 
 // previous_delta_motion: the motion to apply in kPreviousDelta mode (previousDeltaMotionAt);
 // without it, the stored motion.
-inline PredictionStateSnapshot advancePredictionWithoutMeasurement(
-  const PredictionStateSnapshot & current,
+inline PredictionState advancePredictionWithoutMeasurement(
+  const PredictionState & current,
   double stamp_sec,
   PredictionAdvanceMode mode,
   const Eigen::Matrix4f & twist_predicted_pose_matrix = Eigen::Matrix4f::Identity(),
@@ -139,7 +163,7 @@ inline PredictionStateSnapshot advancePredictionWithoutMeasurement(
     return current;
   }
 
-  PredictionStateSnapshot next = current;
+  PredictionState next = current;
   if (mode == PredictionAdvanceMode::kTwistPrediction) {
     next.predicted_pose_matrix = twist_predicted_pose_matrix;
   } else if (mode == PredictionAdvanceMode::kPreviousDelta) {
@@ -154,8 +178,8 @@ inline PredictionStateSnapshot advancePredictionWithoutMeasurement(
   return next;
 }
 
-inline PredictionStateSnapshot updatePredictionFromRejectedMeasurement(
-  const PredictionStateSnapshot & current,
+inline PredictionState updatePredictionFromRejectedMeasurement(
+  const PredictionState & current,
   const Eigen::Matrix4f & rejected_pose_matrix,
   double stamp_sec)
 {
@@ -163,7 +187,7 @@ inline PredictionStateSnapshot updatePredictionFromRejectedMeasurement(
     return current;
   }
 
-  PredictionStateSnapshot next = current;
+  PredictionState next = current;
   next.predicted_pose_matrix = rejected_pose_matrix;
   next.predicted_pose_time_sec = stamp_sec;
   ++next.consecutive_rejected_updates;

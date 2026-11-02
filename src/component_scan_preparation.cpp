@@ -35,7 +35,7 @@ bool PCLLocalization::admitScanMessage(
       elapsed_since_last_process_sec,
       consecutive_crop_failures_,
       crop_failure_guard_active_,
-      have_last_accepted_pose_});
+      prediction_state_.have_last_accepted_pose});
 
   if (admission.should_warn_null_scan) {
     RCLCPP_WARN(get_logger(), "Received null point cloud message");
@@ -58,8 +58,8 @@ bool PCLLocalization::admitScanMessage(
     if (admission.should_activate_crop_failure_guard) {
       crop_failure_guard_active_ = true;
       if (admission.should_reset_prediction_to_last_accepted_pose) {
-        predicted_pose_matrix_ = last_accepted_pose_matrix_;
-        predicted_pose_time_sec_ = current_scan_stamp_sec;
+        prediction_state_.predicted_pose_matrix = prediction_state_.last_accepted_pose_matrix;
+        prediction_state_.predicted_pose_time_sec = current_scan_stamp_sec;
       }
     }
     if (admission.should_log_crop_failure_guard_activation) {
@@ -356,7 +356,7 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
     imu_samples_ready_for_deskew = use_pose_history ?
       !continuous_time_imu_pose_history_.empty() :
       (use_lidar_motion ?
-      last_relative_motion_duration_sec_ > 0.0 :
+      prediction_state_.last_relative_motion_duration_sec > 0.0 :
       has_new_imu_samples && !imu_window_too_large);
     if (use_pose_history) {
       pose_history.assign(
@@ -367,9 +367,9 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
           return std::isfinite(sample.stamp_sec) && sample.pose.allFinite();
         });
     } else if (use_lidar_motion) {
-      prediction_finite = last_relative_motion_matrix_.allFinite() &&
-        std::isfinite(last_relative_motion_duration_sec_) &&
-        last_relative_motion_duration_sec_ > 0.0;
+      prediction_finite = prediction_state_.last_relative_motion_matrix.allFinite() &&
+        std::isfinite(prediction_state_.last_relative_motion_duration_sec) &&
+        prediction_state_.last_relative_motion_duration_sec > 0.0;
     } else if (
       use_imu_preintegration_ &&
       !imu_preintegration_fallback_mode &&
@@ -406,14 +406,14 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
 
   if (use_lidar_motion) {
     const double motion_scale =
-      latest_scan_time_duration_sec_ / last_relative_motion_duration_sec_;
+      latest_scan_time_duration_sec_ / prediction_state_.last_relative_motion_duration_sec;
     if (!std::isfinite(motion_scale) || motion_scale <= 0.0 || motion_scale > 1.5) {
       latest_continuous_time_deskew_status_ =
         "continuous_time_deskew_lidar_motion_interval_mismatch";
       return false;
     }
     const Eigen::Matrix4f scan_motion = lidar_localization::scaleRelativeMotion(
-      last_relative_motion_matrix_, motion_scale);
+      prediction_state_.last_relative_motion_matrix, motion_scale);
     auto deskew_result = lidar_localization::deskewPointCloudWithRelativeMotion(
       *prepared_scan.cloud,
       prepared_scan.relative_times_sec,

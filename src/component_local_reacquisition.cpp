@@ -29,7 +29,7 @@ void PCLLocalization::maybeRunLocalReacquisition(
       selected_seed.source == lidar_localization::RegistrationSeedSource::kOdomTfPrediction,
       local_reacquisition_map_.has_value(),
       pending_reacquisition_map_to_odom_.has_value(),
-      consecutive_rejected_updates_,
+      prediction_state_.consecutive_rejected_updates,
       scans_since_local_reacquisition_attempt_});
   if (!should_attempt || scan_seeded_from_reacquisition_ || !source_cloud ||
     !has_last_good_map_to_odom_)
@@ -116,5 +116,5 @@ void PCLLocalization::maybeRunLocalReacquisition(
     "after %zu rejections; confirming on the next scan",
     proposal(0, 3), proposal(1, 3), refined[decision.index].fitness,
     std::hypot(proposal(0, 3) - bridged(0, 3), proposal(1, 3) - bridged(1, 3)),
-    consecutive_rejected_updates_);
+    prediction_state_.consecutive_rejected_updates);
 }

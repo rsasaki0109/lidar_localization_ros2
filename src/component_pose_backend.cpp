@@ -204,9 +204,9 @@ void PCLLocalization::resetImuPreintegrationSmootherToObservation(
   double stamp_sec)
 {
   Eigen::Vector3d initial_velocity = Eigen::Vector3d::Zero();
-  if (imu_dual_queue_enabled_ && have_last_accepted_pose_) {
+  if (imu_dual_queue_enabled_ && prediction_state_.have_last_accepted_pose) {
     const auto estimate = lidar_localization::estimateImuInitialVelocity(
-      last_accepted_pose_matrix_, last_accepted_pose_time_sec_,
+      prediction_state_.last_accepted_pose_matrix, prediction_state_.last_accepted_pose_time_sec,
       observation.pose_matrix, stamp_sec);
     if (estimate.usable) {
       initial_velocity = estimate.velocity;
