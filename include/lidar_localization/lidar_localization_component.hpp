@@ -87,6 +87,9 @@
 #include "lidar_localization/registration_observation_policy.hpp"
 #include "lidar_localization/registration_seed_policy.hpp"
 #include "lidar_localization/recovery_supervisor.hpp"
+#include "lidar_localization/recovery_supervisor_state_policy.hpp"
+#include "lidar_localization/reinitialization_latch_policy.hpp"
+#include "lidar_localization/reinitialization_request_output_policy.hpp"
 #include "lidar_localization/scan_preprocessing_policy.hpp"
 
 #ifdef LIDAR_LOCALIZATION_HAVE_NAV2_BOND
@@ -542,23 +545,17 @@ public:
   std::optional<lidar_localization::TimestampedTwist> scan_twist_;
   // Read by the dedicated IMU callback without taking the callback-state lock.
   std::atomic<bool> shutting_down_{false};
-  bool reinitialization_requested_{false};
-  std::string reinitialization_request_reason_{"not_requested"};
-  double reinitialization_request_score_{0.0};
+  // The last /reinitialization_requested output.
+  lidar_localization::ReinitializationRequestOutputState reinitialization_request_;
   bool enable_reinitialization_request_latch_{true};
   int reinitialization_request_clear_ok_samples_{5};
   double reinitialization_request_clear_max_fitness_{1.0};
   double reinitialization_request_clear_max_correction_translation_m_{0.5};
-  bool reinitialization_request_latched_{false};
-  std::string reinitialization_request_latch_reason_{"not_requested"};
-  double reinitialization_request_latch_score_{0.0};
-  double reinitialization_request_latch_stamp_sec_{0.0};
-  int reinitialization_request_latch_consecutive_ok_samples_{0};
+  lidar_localization::ReinitializationRequestLatchState reinitialization_request_latch_;
 
-  RecoverySupervisorState recovery_supervisor_state_{RecoverySupervisorState::kTracking};
-  std::string recovery_supervisor_action_{"idle"};
-  double recovery_supervisor_state_entered_stamp_sec_{0.0};
-  std::size_t recovery_supervisor_transition_count_{0};
+  // Starts (and is reset) as tracking with the action "idle".
+  lidar_localization::RecoverySupervisorRuntimeState recovery_supervisor_{
+    RecoverySupervisorState::kTracking, "idle", 0.0, 0};
 
   rclcpp::TimerBase::SharedPtr pose_publish_timer_;
 
