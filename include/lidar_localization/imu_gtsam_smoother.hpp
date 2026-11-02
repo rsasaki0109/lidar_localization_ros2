@@ -7,7 +7,9 @@
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
+#include <Eigen/Sparse>
 #include <deque>
+#include <vector>
 #include <iostream>
 
 /// Sliding-window Gauss-Newton optimizer with IMU preintegration and 6DOF NDT priors.
@@ -300,15 +302,36 @@ private:
     const int total_dim = POSE_DIM * n + BIAS_DIM;
     const int bias_offset = POSE_DIM * n;
 
+    // H is block tridiagonal over the window plus the bias rows and columns, so it is
+    // assembled sparse and factored in time linear in the window. The dense LDLT of
+    // the full (9n + 6)^2 matrix took ~87 ms per update at the 50-pose window (10
+    // iterations), so the node skipped scans.
+    std::vector<Eigen::Triplet<double>> triplets;
+    triplets.reserve(static_cast<std::size_t>(n) * (4 * 81 + 4 * 54 + 36 + 81 + 9) + 64);
+    const auto add_block = [&triplets](int row, int col, const auto & block) {
+      for (int r = 0; r < block.rows(); ++r) {
+        for (int c = 0; c < block.cols(); ++c) {
+          triplets.emplace_back(row + r, col + c, block(r, c));
+        }
+      }
+    };
+    const auto add_diagonal = [&triplets](int index, double value) {
+      triplets.emplace_back(index, index, value);
+    };
+
+    // Every iteration has the same factors, so the same sparsity pattern: order it once.
+    Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
+    Eigen::Index analyzed_non_zeros = -1;
+
     for (int iter = 0; iter < 10; ++iter) {
-      Eigen::MatrixXd H = Eigen::MatrixXd::Zero(total_dim, total_dim);
+      triplets.clear();
       Eigen::VectorXd b = Eigen::VectorXd::Zero(total_dim);
 
       // --- 1. Anchor prior on first pose ---
       double anchor_w = 1e6;
       for (int k = 0; k < 3; ++k) {
-        H(k, k) += anchor_w;
-        H(6 + k, 6 + k) += anchor_w;
+        add_diagonal(k, anchor_w);
+        add_diagonal(6 + k, anchor_w);
       }
 
       // Velocity is only weakly observed when an interval has too little IMU
@@ -317,7 +340,7 @@ private:
       for (int i = 0; i < n; ++i) {
         const int idx = i * POSE_DIM;
         for (int k = 3; k < 6; ++k) {
-          H(idx + k, idx + k) += velocity_prior_w;
+          add_diagonal(idx + k, velocity_prior_w);
         }
       }
 
@@ -390,21 +413,25 @@ private:
 
         // Accumulate H and b
         // H += J^T * info * J
-        H.block<9, 9>(idx_i, idx_i) += Ji.transpose() * info * Ji;
-        H.block<9, 9>(idx_i, idx_j) += Ji.transpose() * info * Jj;
-        H.block<9, 9>(idx_j, idx_i) += Jj.transpose() * info * Ji;
-        H.block<9, 9>(idx_j, idx_j) += Jj.transpose() * info * Jj;
+        using Block9 = Eigen::Matrix<double, 9, 9>;
+        using Block96 = Eigen::Matrix<double, 9, 6>;
+        using Block69 = Eigen::Matrix<double, 6, 9>;
+        add_block(idx_i, idx_i, Block9(Ji.transpose() * info * Ji));
+        add_block(idx_i, idx_j, Block9(Ji.transpose() * info * Jj));
+        add_block(idx_j, idx_i, Block9(Jj.transpose() * info * Ji));
+        add_block(idx_j, idx_j, Block9(Jj.transpose() * info * Jj));
 
         // Bias blocks
         Eigen::Matrix<double, 9, 6> Jb;
         Jb.block<9, 3>(0, 0) = Jbg;
         Jb.block<9, 3>(0, 3) = Jba;
 
-        H.block(idx_i, bias_offset, 9, 6) += Ji.transpose() * info * Jb;
-        H.block(bias_offset, idx_i, 6, 9) += Jb.transpose() * info * Ji;
-        H.block(idx_j, bias_offset, 9, 6) += Jj.transpose() * info * Jb;
-        H.block(bias_offset, idx_j, 6, 9) += Jb.transpose() * info * Jj;
-        H.block<6, 6>(bias_offset, bias_offset) += Jb.transpose() * info * Jb;
+        add_block(idx_i, bias_offset, Block96(Ji.transpose() * info * Jb));
+        add_block(bias_offset, idx_i, Block69(Jb.transpose() * info * Ji));
+        add_block(idx_j, bias_offset, Block96(Jj.transpose() * info * Jb));
+        add_block(bias_offset, idx_j, Block69(Jb.transpose() * info * Jj));
+        add_block(
+          bias_offset, bias_offset, Eigen::Matrix<double, 6, 6>(Jb.transpose() * info * Jb));
 
         // b += J^T * info * r
         b.segment<9>(idx_i) += Ji.transpose() * info * r;
@@ -455,7 +482,7 @@ private:
 
         int idx = i * POSE_DIM;
         Eigen::Matrix<double, 6, 6> w_info = w * info_ndt;
-        H.block<9, 9>(idx, idx) += J_ndt.transpose() * w_info * J_ndt;
+        add_block(idx, idx, Eigen::Matrix<double, 9, 9>(J_ndt.transpose() * w_info * J_ndt));
         b.segment<9>(idx) += J_ndt.transpose() * w_info * r_ndt;
       }
 
@@ -478,17 +505,31 @@ private:
         double info_bg = 1.0 / gyro_bias_variance;
         double info_ba = 1.0 / accel_bias_variance;
         for (int k = 0; k < 3; ++k) {
-          H(bias_offset + k, bias_offset + k) += info_bg;
+          add_diagonal(bias_offset + k, info_bg);
           b(bias_offset + k) += info_bg * gyro_bias_(k);
         }
         for (int k = 0; k < 3; ++k) {
-          H(bias_offset + 3 + k, bias_offset + 3 + k) += info_ba;
+          add_diagonal(bias_offset + 3 + k, info_ba);
           b(bias_offset + 3 + k) += info_ba * accel_bias_(k);
         }
       }
 
       // --- Solve ---
-      Eigen::VectorXd delta = H.ldlt().solve(-b);
+      Eigen::SparseMatrix<double> H(total_dim, total_dim);
+      H.setFromTriplets(triplets.begin(), triplets.end());
+      if (H.nonZeros() != analyzed_non_zeros) {
+        solver.analyzePattern(H);
+        analyzed_non_zeros = H.nonZeros();
+      }
+      solver.factorize(H);
+      Eigen::VectorXd delta;
+      if (solver.info() == Eigen::Success) {
+        delta = solver.solve(-b);
+      }
+      // The dense LDLT pivots; keep it for a matrix the sparse one cannot factor.
+      if (solver.info() != Eigen::Success || !delta.allFinite()) {
+        delta = Eigen::MatrixXd(H).ldlt().solve(-b);
+      }
 
       // Apply pose updates
       for (int i = 0; i < n; ++i) {

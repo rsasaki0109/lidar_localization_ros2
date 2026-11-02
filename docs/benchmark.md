@@ -350,8 +350,9 @@ What to keep in mind with this dataset (`boreas_prepare.py` handles the first th
   The preset still reuses each 100 m target for 10 m and builds the next one in the
   background, with a 60 m scan range, so a scan does not wait for one.
 - **The IMU preintegration helps a little; the legacy `use_imu` deskew breaks the
-  run.** With `--set use_imu_preintegration=true` the window scores 0.120 and
-  0.122 m, but the smoother costs time and about one scan in five is skipped. With
+  run.** With `--set use_imu_preintegration=true` the window scores 0.127 m (twice),
+  with every scan processed; before the smoother's solve went sparse it skipped one
+  scan in five. With
   `use_imu: true` it scores 1.7 m, with 6% of the scans accepted: that deskew
   integrates gravity. With both, the IMU callback used to wait behind every
   registration; it now has its own callback group
