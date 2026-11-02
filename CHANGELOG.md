@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- The legacy `use_imu` deskew is deprecated. It integrates the accelerometer without
+  removing gravity, times each point from its azimuth relative to the first point of
+  the cloud, and needs an IMU orientation; on the first 120 s of Boreas it scored 1.7 m
+  with 6% of the scans accepted, where the preset scores 0.132 m. The node warns when
+  `use_imu` is on. The config generator's `--enable-imu` and `--imu-mode both` now
+  enable only the IMU preintegration and print a note; they used to add the legacy
+  deskew. `--imu-mode legacy` still writes `use_imu: true`, with a warning. No preset
+  turned it on.
 - The IMU preintegration smoother solves its normal equations sparsely. The matrix is
   block tridiagonal over the window plus the bias rows; it was factored densely, up to
   10 times per accepted scan. Once the 50-pose window was full an update took 87-96 ms
@@ -11,8 +19,8 @@
   with `use_imu_preintegration` now processes every scan and scores 0.127 m (two
   runs; 0.132 m without the IMU)
   ([experiments/imu_smoother_solve](experiments/imu_smoother_solve/README.md)).
-- With `use_imu` and `use_imu_preintegration` both on (the config generator's
-  `--imu-mode both` and `--enable-imu`), the IMU callback now has its own callback
+- With `use_imu` and `use_imu_preintegration` both on (what the config generator's
+  `--imu-mode both` and `--enable-imu` used to write), the IMU callback now has its own callback
   group, as it has with the preintegration alone. It used to share the cloud
   callback's, so the samples waited behind each registration and arrived in bursts
   after the scan had used a stale window. On the first 120 s of Boreas, one run got a

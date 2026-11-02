@@ -107,17 +107,40 @@ def _arg_or_profile(args: argparse.Namespace, key: str) -> object:
     return PROFILE_DEFAULTS[args.profile][key]
 
 
+# The legacy deskew (use_imu) integrates the accelerometer without removing gravity; on
+# Boreas it broke the run (docs/imu_estimation.md). --enable-imu and --imu-mode both
+# therefore enable the preintegration only, and only --imu-mode legacy writes use_imu.
+LEGACY_IMU_WARNING = (
+    "--imu-mode legacy enables the deprecated use_imu deskew, which integrates the "
+    "accelerometer without removing gravity; prefer --imu-mode preintegration."
+)
+BOTH_IMU_NOTE = (
+    "{flag} now enables only the IMU preintegration: the legacy use_imu deskew is "
+    "deprecated (--imu-mode legacy still enables it, on its own)."
+)
+
+
 def effective_imu_mode(args: argparse.Namespace) -> str:
-    if args.enable_imu:
-        return "both"
+    if args.enable_imu or args.imu_mode == "both":
+        return "preintegration"
     if args.imu_mode != "profile":
         return args.imu_mode
     return str(PROFILE_DEFAULTS[args.profile]["imu_mode"])
 
 
+def imu_mode_warnings(args: argparse.Namespace) -> list[str]:
+    if args.enable_imu:
+        return [BOTH_IMU_NOTE.format(flag="--enable-imu")]
+    if args.imu_mode == "both":
+        return [BOTH_IMU_NOTE.format(flag="--imu-mode both")]
+    if effective_imu_mode(args) == "legacy":
+        return [LEGACY_IMU_WARNING]
+    return []
+
+
 def use_imu_preintegration_base_frame_transform(args: argparse.Namespace) -> bool:
     mode = effective_imu_mode(args)
-    if mode not in {"preintegration", "both"}:
+    if mode != "preintegration":
         return False
     return bool(
         PROFILE_DEFAULTS[args.profile]["imu_preintegration_use_base_frame_transform"]
@@ -130,7 +153,7 @@ def use_continuous_time_deskew(args: argparse.Namespace) -> bool:
         return bool(configured)
     # Profiles with IMU preintegration already have the required motion source.
     # No-IMU profiles remain usable and can opt in after selecting an IMU mode.
-    return effective_imu_mode(args) in {"preintegration", "both"}
+    return effective_imu_mode(args) == "preintegration"
 
 
 def continuous_time_deskew_requires_imu(args: argparse.Namespace) -> bool:
@@ -182,8 +205,8 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         "use_twist_prediction": _arg_or_profile(args, "use_twist_prediction"),
         "twist_prediction_use_angular_velocity": False,
         "max_twist_prediction_dt": _arg_or_profile(args, "max_twist_prediction_dt"),
-        "use_imu": imu_mode in {"legacy", "both"},
-        "use_imu_preintegration": imu_mode in {"preintegration", "both"},
+        "use_imu": imu_mode == "legacy",
+        "use_imu_preintegration": imu_mode == "preintegration",
         "imu_preintegration_use_base_frame_transform": use_imu_preintegration_base_frame_transform(
             args
         ),
@@ -376,7 +399,7 @@ def launch_command(args: argparse.Namespace, output_path: Path) -> str:
         extras.append(f"imu_frame_id:={imu_frame}")
     extras.extend(
         [
-            f"use_imu_preintegration:={str(effective_imu_mode(args) in {'preintegration', 'both'}).lower()}",
+            f"use_imu_preintegration:={str(effective_imu_mode(args) == 'preintegration').lower()}",
             (
                 "imu_preintegration_use_base_frame_transform:="
                 f"{str(use_imu_preintegration_base_frame_transform(args)).lower()}"
@@ -515,14 +538,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default="profile",
         help=(
             "IMU usage in the generated YAML. profile uses the selected profile default; "
-            "preintegration enables only the guarded IMU preintegration path; legacy enables "
-            "the older use_imu path; both enables both paths."
+            "preintegration enables the guarded IMU preintegration path; legacy enables the "
+            "deprecated use_imu deskew, which integrates gravity; both is kept for "
+            "compatibility and now means preintegration."
         ),
     )
     parser.add_argument(
         "--enable-imu",
         action="store_true",
-        help="Compatibility alias for --imu-mode both.",
+        help="Compatibility alias for --imu-mode preintegration (it used to mean both).",
     )
     parser.add_argument(
         "--enable-continuous-time-deskew",
@@ -615,7 +639,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     output_path.write_text(render_ros_params(make_params(args)), encoding="utf-8")
     resolved_output = output_path.resolve()
     print(f"Wrote {resolved_output}")
-    warnings = map_path_warnings(args.map_path)
+    warnings = map_path_warnings(args.map_path) + imu_mode_warnings(args)
     if warnings:
         print()
         print("Warnings:")
