@@ -202,7 +202,34 @@ Done when:
 - RMSE is in a range where backend and IMU comparisons are meaningful
 - Boreas earns a defined role in the regression or benchmark suite
 
+### Resolved on data (2026-11-02)
+
+`tools/benchmark/boreas_prepare.py` and `boreas_replay.py` rebuild the fixture from
+`s3://boreas` and replay it; [benchmark.md](../benchmark.md#boreas-vehicle-preset-replay)
+has the commands and results. Three faults, none of them in the localizer, made the
+old runs fail:
+
+- **Ground-truth orientation.** `lidar_poses.csv` rotations are
+  `(Rz(heading) Ry(pitch) Rx(roll))^T`. The removed converter used the active
+  `Rz Ry Rx`. Two scans 3 s apart overlap at 0.06 with it and at 0.54 with the right
+  convention, so the GT-aligned map and the reference were wrong.
+- **Dropped scans.** The ~1 MB Velodyne clouds lose fragments on the best-effort sensor
+  QoS: 38 of 97 scans arrived.
+- **A target build on every scan.** With a 300 m crop and no
+  `local_map_update_distance`, the replay aligned one scan every 1-3 s.
+
+With those fixed the first 120 s track at about 0.13 m RMSE. One limit of the
+localizer remains: the previous-delta seed advances the last pose by one scan's
+motion whatever time has passed. After a 0.6 s gap at 9.5 m/s it fell 5 m behind, and
+NDT locked 4 m back along the road at a passing fitness. The preset avoids the gaps
+(see `param/boreas_ndt_velodyne.yaml`); the seed itself is an open item in
+`docs/v1_status.md`.
+
 ### Root-cause analysis (2026-06-14, code-level; data run still pending)
+
+Superseded by *Resolved on data* above: the crop and coverage hypotheses below were
+never tested on data, and the divergence they explain came from the faults listed
+there.
 
 Read the crop path end to end to narrow step 1 before spending an idle-machine run.
 Findings, all from the shipped code and `param/boreas_ndt_velodyne.yaml`:

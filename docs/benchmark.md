@@ -283,3 +283,65 @@ handle the first three):
   `base_link`) and `/localization/twist_estimator/twist_with_covariance`, which matches
   the GNSS-derived speed and yaw rate within 0.05 m/s and 0.002 rad/s. Grades reach
   9.6 % where GNSS is accurate (z from -65 to +177 m over the route).
+
+## Boreas (vehicle, preset replay)
+
+A third preset replay, with LiDAR, IMU and ground truth: the
+[Boreas dataset](https://www.boreas.utias.utoronto.ca/) (Burnett et al., 2023), read
+from the public bucket `s3://boreas`. A car drives the same Toronto route on many
+days. One sequence is the localization run, and the map is built from another day's
+scans at their ground-truth poses. Like Istanbul it starts from the ground-truth pose
+and does not go through the quickstart. The published `/pcl_pose` is matched to the
+ground-truth lidar pose with the same stamp, without alignment.
+
+```bash
+# the first 120 s of boreas-2021-09-02-11-42, a map from boreas-2020-11-26-13-58
+# (~11 min, 1.7 GB; scans are downloaded and voxel-downsampled on the way)
+python3 tools/benchmark/boreas_prepare.py /tmp/boreas_fixture --duration 120
+python3 tools/benchmark/boreas_replay.py /tmp/boreas_fixture /tmp/boreas_run --ws WS
+```
+
+`boreas_prepare.py` writes the bag, `map.ply` and `reference.tum`:
+
+- **The bag** holds `/velodyne_points`, voxel-downsampled to 0.25 m, and `/imu/data` at
+  200 Hz. The IMU comes from `applanix/imu_raw.csv`, which keeps gravity, rotated
+  into the lidar frame.
+- **The map** holds the other run's scans within 60 m of the window's path, every 2 m,
+  at their ground-truth poses, thinned to 0.3 m.
+- **The fixture has no twist.** The post-processed ground-truth velocity is not a
+  runtime input.
+
+`boreas_replay.py` runs `param/boreas_ndt_velodyne.yaml` with the fixture's map, the
+first ground-truth pose, and `base_frame_id: velodyne`. `--set KEY=VALUE` overrides a
+preset parameter. It writes `summary.json` with the RMSE, its horizontal and z parts,
+p95 and max error, the RMSE per 20 s, and the share of scans aligned and accepted.
+
+The window covers parking-lot maneuvers, including a U-turn of 208° in 10 s, then city
+streets at up to 9.7 m/s. On 2026-11-02, with 4 vCPUs:
+
+| Preset | Runs | RMSE m | Horizontal / z RMSE m | p95 / max error m | Scans accepted |
+| --- | --- | --- | --- | --- | --- |
+| `boreas_ndt_velodyne.yaml` | 3 | **0.132** (all three) | 0.126 / 0.041 | 0.24 / 0.41 | **100%** |
+| the same before this change | 1 | 53.2 | 53.2 / 0.65 | 92.9 / 95.9 | 1% |
+
+The RMSE per 20 s stays between 0.07 and 0.17 m. The three runs are identical, because
+every scan is aligned.
+
+What to keep in mind with this dataset (`boreas_prepare.py` handles the first three):
+
+- **The ground-truth rotation is `(Rz(heading) Ry(pitch) Rx(roll))^T`.** With the active
+  `Rz Ry Rx` of the removed converter, two scans 3 s apart overlap at 0.06 instead of
+  0.54, and a map built from them is wrong.
+- **The point `time` field is seconds from the scan stamp** (−0.052 to +0.052 s), which
+  is mid-sweep, not microseconds.
+- **`imu.csv` is post-processed and has gravity removed.** `imu_raw.csv` keeps it, in the
+  Applanix frame turned by 180° about (1, −1, 0)/√2. In the lidar frame its yaw rate
+  follows the ground-truth heading rate with correlation 1.0. Parked, it reads
+  (0.094, 0.323, 9.794) m/s² against (0.092, 0.327, 9.801) from the ground-truth
+  attitude.
+- **The ~1 MB clouds need a reliable subscription.** With the best-effort sensor QoS,
+  38 of 97 scans arrived (`qos_overrides` in the preset).
+- **Gaps cost the most.** The seed advances the last pose by one scan's motion. After
+  a 0.6 s gap at 9.5 m/s it was 5 m behind, and NDT locked 4 m back along the road.
+  The preset reuses each 100 m target for 10 m and builds the next one in the
+  background, with a 60 m scan range, so a scan does not wait for one.

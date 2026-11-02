@@ -3,6 +3,10 @@
 > **Note:** this is a development record. Most scripts, tests and experiment
 > directories it names were removed with the offline tooling in 6825f05; run them
 > from `git checkout 6825f05^`. The current benchmark is [benchmark.md](../benchmark.md).
+> The converter below built ground-truth orientations with the wrong rotation
+> convention, and fed post-processed GT velocity as `/vehicle/twist`. The Boreas
+> fixture is now built by `tools/benchmark/boreas_prepare.py`
+> ([benchmark.md](../benchmark.md#boreas-vehicle-preset-replay)).
 
 ## Goal
 
