@@ -186,9 +186,6 @@ Open items after v1.5.0:
   that one scan sets the error there: a 0.47 deg difference made most of the 0.17 m
   RMSE gap between NDT_OMP and SMALL_GICP
   ([experiments/koide_backend_comparison](../experiments/koide_backend_comparison/README.md#why-the-carried-pose-drifts-further))
-- shorten the NDT_OMP target build on dense maps: half of the 0.5 s for an 80 m Koide
-  crop is the search tree over the target points, which only `getFitnessScore()` uses
-  ([experiments/istanbul_ndt_tracking](../experiments/istanbul_ndt_tracking/README.md#re-measured-with-the-optimized-build))
 - make Boreas usable as a `LiDAR + IMU + GT` benchmark
 
 Other work remains:

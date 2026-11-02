@@ -303,7 +303,9 @@ bool PCLLocalization::loadMapFromPath(const std::string & path, bool reject_empt
   } else {
     full_map_cloud_ptr_.reset();
     if (target_setup.set_full_map_as_registration_target && registration_) {
-      registration_->setInputTarget(map_cloud_ptr);
+      lidar_localization::setRegistrationTarget<pcl::PointXYZI>(
+        *registration_, map_cloud_ptr,
+        lidar_localization::usesNdtVoxelGrid(registration_method_));
       lidar_localization::keepRegistrationCloudAlive(
         recent_target_clouds_, map_cloud_ptr, registration_target_cloud_keep_alive_count_);
       warmUpRegistrationTarget(map_cloud_ptr);

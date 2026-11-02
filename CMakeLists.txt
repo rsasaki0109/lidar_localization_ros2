@@ -649,6 +649,13 @@ if(BUILD_TESTING)
   add_test(NAME local_map_async_rebuild COMMAND test_local_map_async_rebuild)
   set_tests_properties(local_map_async_rebuild PROPERTIES TIMEOUT 120)
 
+  add_executable(test_registration_target_search_tree
+    test/test_registration_target_search_tree.cpp)
+  target_link_libraries(test_registration_target_search_tree
+    lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+  add_test(NAME registration_target_search_tree COMMAND test_registration_target_search_tree)
+  set_tests_properties(registration_target_search_tree PROPERTIES TIMEOUT 60)
+
   add_executable(test_causal_twist_history test/test_causal_twist_history.cpp)
   target_include_directories(test_causal_twist_history PRIVATE include)
   target_link_libraries(test_causal_twist_history Eigen3::Eigen)

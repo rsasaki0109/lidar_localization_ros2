@@ -36,6 +36,7 @@
 #include "lidar_localization/reinitialization_latch_policy.hpp"
 #include "lidar_localization/reinitialization_request_output_policy.hpp"
 #include "lidar_localization/registration_cloud_keep_alive_policy.hpp"
+#include "lidar_localization/registration_target_search_tree.hpp"
 #include "lidar_localization/registration_backend_policy.hpp"
 #include "lidar_localization/registration_observation_policy.hpp"
 #include "lidar_localization/prediction_state_policy.hpp"

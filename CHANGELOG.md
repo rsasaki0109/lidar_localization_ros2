@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- NDT and NDT_OMP targets are ready sooner. `pcl::Registration` builds a search tree
+  over the target points in the first `align()` after `setInputTarget()`. NDT aligns
+  with its voxel grid and uses that tree only for `getFitnessScore()`, but the two
+  builds ran one after the other. The localizer now builds the tree on another thread
+  while `setInputTarget()` builds the voxel grid. This covers every NDT target: the
+  local map crop, the background rebuild, the full map at load, the map topic. The
+  alignment and the fitness score do not change. A new target plus its first alignment
+  takes 300 instead of 518 ms for an 80 m crop of the dense Koide outdoor map, and
+  65-152 instead of 91-190 ms for 150 m Istanbul crops. With
+  `local_map_async_rebuild: false`, the alignment p95 fell from 34-50 to 21-23 ms on
+  Istanbul (8.4-8.9 instead of 8.2-8.6 Hz). It fell from 144 to 114 ms on the online
+  Koide check (99.7% against 99.2% coverage)
+  ([experiments/istanbul_ndt_tracking](experiments/istanbul_ndt_tracking/README.md#search-tree-alongside-the-voxel-grid)).
 - `continuous_time_deskew_mode: imu_pose_history` runs without `use_imu_preintegration`.
   It only rotates points with a gyro-integrated history, but it used to wait for IMU
   preintegration, which also moves the published pose to the IMU smoother backend. The
