@@ -44,6 +44,8 @@ IMU = "/imu/data"
 FRAME = "velodyne"
 # imu_raw.csv axes in the Applanix frame (see the module docstring).
 RAW_TO_APPLANIX = np.array([[0, -1, 0], [-1, 0, 0], [0, 0, -1]], dtype=float)
+# Map scans transformed and merged at a time (build_map).
+MAP_BATCH_SCANS = 100
 
 
 def fetch(url, attempts=5):
@@ -182,9 +184,15 @@ def build_map(cache, sequence, path_xy, radius, spacing, leaf, max_range, jobs):
         xyz = points[:, :3] @ rotation(row[7], row[8], row[9]).T + row[1:4]
         return np.column_stack([xyz, points[:, 3]])
 
+    # Merged batch by batch: a voxel keeps its first point in scan order either way,
+    # so the map is the same, but memory stays near the size of the map. Holding every
+    # scan first took 14 GB for a 600 s window, and the process was killed.
+    merged = np.zeros((0, 4))
     with ThreadPoolExecutor(jobs) as pool:
-        clouds = list(pool.map(transformed, selected))
-    return voxel_first(np.concatenate(clouds), leaf), len(selected)
+        for start in range(0, len(selected), MAP_BATCH_SCANS):
+            batch = pool.map(transformed, selected[start : start + MAP_BATCH_SCANS])
+            merged = voxel_first(np.concatenate([merged, *batch]), leaf)
+    return merged, len(selected)
 
 
 def write_bag(path, rows, keys, leaf, jobs, imu):
