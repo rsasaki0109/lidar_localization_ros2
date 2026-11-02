@@ -19,6 +19,13 @@ at 0, it is the stored motion: one delta per scan, the old behavior.
 It also stops an overshoot. After a gap, the stored motion spans the gap, and the old
 seed applied all of it to the next scan 0.1 s later.
 
+Only a motion between two scan poses is rescaled. After a reset, the first stored
+motion runs from the reset pose (an initial pose, say) to the first scan. That is a
+correction over an arbitrary interval, so it is applied once, as before. A first
+version rescaled it too, and failed the Docker smoke test: the quickstart's initial
+pose came milliseconds before the first scan, the correction was multiplied many
+times, and the pose left the map (`test/test_previous_delta_after_reset.cpp`).
+
 ## Boreas
 
 `tools/benchmark/boreas_replay.py` on the first 120 s of `boreas-2021-09-02-11-42`, one
@@ -32,16 +39,19 @@ build. The old behavior is the same build with
 
 | Fixture | Seed | Runs | RMSE m | Max error m | Scans accepted |
 | --- | --- | --- | --- | --- | --- |
-| scans dropped | one delta per scan | 2 | 5.83, 6.34 | 39.3, 60.5 | 75%, 77% |
-| scans dropped | **scaled to the time** | 2 | **0.132**, 0.132 | **0.41**, 0.41 | 94%, 94% |
+| scans dropped | one delta per scan | 3 | 0.83, 5.83, 6.34 | 6.7, 39.3, 60.5 | 89%, 75%, 77% |
+| scans dropped | **scaled to the time** | 3 | **0.132** (all three) | **0.41** | 94% |
 | 80 m range | one delta per scan | 1 | 0.929 | 23.5 | 97% |
-| 80 m range | **scaled to the time** | 1 | **0.139** | **0.39** | 98% |
+| 80 m range | **scaled to the time** | 2 | **0.139** (both) | **0.39** | 98%, 100% |
 | as prepared | one delta per scan | 1 | 0.132 | 0.41 | 100% |
-| as prepared | scaled to the time | 1 | 0.132 | 0.41 | 100% |
+| as prepared | scaled to the time | 2 | 0.132 (both) | 0.41 | 100% |
 
 - **The track holds across the gaps.** With 0.6 s missing every 10 s it scores what
   it scores with no scan missing (0.132 m), and every scan that arrives is accepted
-  (1092 of the 1158 arrive).
+  (1092 of the 1158 arrive). One delta per scan fails in every run, to a varying
+  degree (0.83-6.34 m).
+- The last run of each kind ran on the build with the reset fix above; the numbers
+  of the new seed did not change.
 - **Nothing changes without gaps.** The scale is the ratio of two scan intervals,
   about 1.
 - **The preset keeps its 60 m range.** At 80 m, scans still wait for the local map,

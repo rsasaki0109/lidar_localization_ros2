@@ -500,6 +500,10 @@ public:
   // The previous delta is rescaled to the time since the predicted pose, up to this
   // many seconds (<= 0: one delta per scan).
   double previous_delta_max_extrapolation_sec_{1.0};
+  // last_relative_motion_matrix_ runs from one scan pose to the next. False after a
+  // reset, when it runs from the reset pose (an initial pose, say) to the first scan:
+  // a correction over an arbitrary interval, which must not be rescaled.
+  bool last_relative_motion_spans_scans_{false};
   bool enable_localizability_guard_{false};
   bool enable_registration_localizability_diagnostics_{false};
   double localizability_min_xy_eigen_ratio_{0.05};

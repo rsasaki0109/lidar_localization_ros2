@@ -8,9 +8,10 @@
   passed. So it lagged after dropped scans: on Boreas a 0.6 s gap at 9.5 m/s left it
   5 m behind, and NDT locked 4 m back along the road. It also overshot on the scan
   after a gap. On the first 120 s of Boreas with 0.6 s dropped every 10 s, the preset
-  scores 0.132 m RMSE (max 0.41 m), as without gaps, against 5.8-6.3 m (max 39-60 m).
+  scores 0.132 m RMSE (max 0.41 m), as without gaps, against 0.8-6.3 m (max 7-60 m).
   With an 80 m scan range, where scans wait for the local map, it scores 0.139 m
-  against 0.93 m. Without gaps nothing changes
+  against 0.93 m. Without gaps nothing changes. The first motion after a reset, from an
+  initial pose to the first scan, is applied once and not rescaled
   ([experiments/previous_delta_time_scaling](experiments/previous_delta_time_scaling/README.md)).
 - Boreas is a usable `LiDAR + IMU + GT` benchmark
   ([docs/benchmark.md](docs/benchmark.md#boreas-vehicle-preset-replay)).

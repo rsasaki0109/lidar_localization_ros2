@@ -681,6 +681,12 @@ if(BUILD_TESTING)
   add_test(NAME gyro_pose_history_deskew COMMAND test_gyro_pose_history_deskew)
   set_tests_properties(gyro_pose_history_deskew PROPERTIES TIMEOUT 30)
 
+  add_executable(test_previous_delta_after_reset test/test_previous_delta_after_reset.cpp)
+  target_link_libraries(test_previous_delta_after_reset
+    lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+  add_test(NAME previous_delta_after_reset COMMAND test_previous_delta_after_reset)
+  set_tests_properties(previous_delta_after_reset PROPERTIES TIMEOUT 30)
+
   add_executable(test_prediction_state_policy
     test/test_prediction_state_policy.cpp)
   target_include_directories(test_prediction_state_policy PRIVATE
