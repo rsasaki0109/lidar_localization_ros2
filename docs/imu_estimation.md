@@ -162,9 +162,12 @@ needed. In the params file:
     use_imu_preintegration: true
 ```
 
-Set `use_imu: true` only when you also want the legacy IMU correction path. The
-first-bringup config generator exposes this as `--imu-mode preintegration`,
-`--imu-mode legacy`, or `--imu-mode both`.
+Keep `use_imu: false`. It turns on the legacy deskew, which integrates the
+accelerometer without removing gravity and broke every Boreas run it was on (see
+[Validation state](#validation-state-honest-limits)); `continuous_time_deskew` replaces
+it. The first-bringup config generator exposes the choice as
+`--imu-mode preintegration`, `--imu-mode legacy`, or `--imu-mode both`; `--enable-imu`
+means `both`.
 
 The MID-360 launch (`mid360_legged_localization.launch.py`) already wires
 `imu_topic:=/livox/imu` as a worked example. When
@@ -392,21 +395,44 @@ accuracy.
   smoke / throughput check in the release suite. These are *pipeline safety* and
   short-window health gates, **not** final backend rankings (see
   [competitive_roadmap.md](dev/competitive_roadmap.md)).
-- A controlled public **LiDAR + IMU + GT** accuracy run is still open. The
-  [Boreas replay](benchmark.md#boreas-vehicle-preset-replay) now has all three, but
-  its preset runs without the IMU, and no IMU run has been measured on it yet. Until
-  one is, the IMU estimator is offered as a working, math-verified, guarded option,
-  **not** as a general accuracy improvement over pure NDT. Do not cite it as an
-  accuracy claim without a controlled run.
+- **Boreas, the first controlled LiDAR + IMU + GT run**, on the first 120 s of the
+  [Boreas replay](benchmark.md#boreas-vehicle-preset-replay) (2026-11-02, one build,
+  runs not deterministic):
+
+  | Setting | RMSE m | Max error m | Scans accepted |
+  | --- | --- | --- | --- |
+  | the preset, no IMU | 0.132 | 0.41 | 100% |
+  | `use_imu_preintegration: true` | 0.120, 0.122 | 0.36, 0.61 | 82%, 81% |
+  | `use_imu: true` (the legacy deskew) | 1.70 | 4.9 | 6% |
+  | both, before the callback group fix | 1.89, 2.21 | 4.5, 5.6 | 21%, 6% |
+  | both, with it | 1.33, 3.53 | 17, 31 | 64%, 68% |
+
+  - **The preintegration alone helps a little.** It seeds almost every scan, and its
+    RMSE is 0.01 m lower. It also costs time: the smoother
+    optimizes on every accepted scan, and the node skips about one scan in five,
+    more towards the end of the window.
+  - **The legacy `use_imu` deskew breaks the clouds.** It integrates the
+    accelerometer without removing gravity, times each point from its azimuth
+    relative to the first point of the cloud (meaningless after a voxel filter), and
+    needs an IMU orientation (Boreas has none). Use `continuous_time_deskew` instead.
+  - **With both on, the preintegration used to starve.** The IMU callback shared the
+    cloud callback's group, so samples waited behind each registration and arrived
+    in bursts: a median of 0 new samples per scan in one run, too long an integration
+    window on 374 of 466 scans in another, against 22-23 samples now. The callback
+    group is fixed
+    (`test/test_imu_callback_group.cpp`); the legacy deskew still fails the run.
+
+  Until a second dataset agrees, the IMU estimator is offered as a working,
+  math-verified, guarded option, **not** as a general accuracy improvement over pure
+  NDT.
 
 ### A/B runs to make
 
-- **Boreas**: `tools/benchmark/boreas_replay.py` with
-  `--set use_imu=true --set use_imu_preintegration=true` against the preset as it is.
 - **Koide `outdoor_hard_01a`**: the bag carries `/livox/imu` (75947 samples over
   380 s) and ground truth. The two manifests prepared for it differ only in
   `use_imu_preintegration`; they and their runner, `benchmark_from_manifest`, are at
   `git checkout 6825f05^` (`param/benchmark/*_full380_ndt_omp_imu_{off,on}.yaml`).
+- **Boreas beyond 120 s**, with `--set use_imu_preintegration=true` (not `use_imu`).
 
 Judge them the Phase 1 way (docs/dev/phase1_koide_backend_comparison.md): a lower
 translation RMSE alone is a trap on a hard sequence, because an estimator can look

@@ -644,6 +644,12 @@ if(BUILD_TESTING)
   add_test(NAME twist_subscription_lifecycle COMMAND test_twist_subscription_lifecycle)
   set_tests_properties(twist_subscription_lifecycle PROPERTIES TIMEOUT 30)
 
+  add_executable(test_imu_callback_group test/test_imu_callback_group.cpp)
+  target_link_libraries(test_imu_callback_group
+    lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+  add_test(NAME imu_callback_group COMMAND test_imu_callback_group)
+  set_tests_properties(imu_callback_group PROPERTIES TIMEOUT 30)
+
   add_executable(test_local_map_async_rebuild test/test_local_map_async_rebuild.cpp)
   target_link_libraries(test_local_map_async_rebuild
     lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})

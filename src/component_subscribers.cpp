@@ -86,9 +86,13 @@ void PCLLocalization::initializePubSub()
     cloud_subscription_options);
 
   rclcpp::SubscriptionOptions imu_subscription_options;
-  // The gyro history for imu_pose_history deskew needs the IMU samples of a sweep
-  // before its scan is prepared, so it must not queue behind long registrations.
-  if ((use_imu_preintegration_ || usesGyroPoseHistoryWithoutPreintegration()) && !use_imu_) {
+  // The preintegration and the gyro history for imu_pose_history deskew need the IMU
+  // samples of a sweep before its scan is prepared, so they must not queue behind long
+  // registrations. With use_imu as well, they used to share the cloud callback's group:
+  // on Boreas the samples then arrived in bursts after the scan had used a stale
+  // window, and the pose left the road within 10 s. The use_imu deskew state has its
+  // own lock instead (lidar_undistortion_mutex_).
+  if (use_imu_preintegration_ || usesGyroPoseHistoryWithoutPreintegration()) {
     imu_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     imu_subscription_options.callback_group = imu_callback_group_;
     RCLCPP_INFO(
@@ -796,6 +800,7 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
   double imu_time = msg->header.stamp.sec +
     msg->header.stamp.nanosec * 1e-9;
 
+  std::lock_guard<std::mutex> undistortion_lock(lidar_undistortion_mutex_);
   lidar_undistortion_.getImu(angular_velo, acc, quat, imu_time);
 
 }

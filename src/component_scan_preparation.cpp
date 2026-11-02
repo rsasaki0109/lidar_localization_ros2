@@ -252,6 +252,7 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
     }
 
     if (use_imu_) {
+      std::lock_guard<std::mutex> undistortion_lock(lidar_undistortion_mutex_);
       lidar_undistortion_.adjustDistortion(cloud_ptr, scan_stamp_sec);
     }
 
