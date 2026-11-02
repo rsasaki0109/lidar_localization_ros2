@@ -19,6 +19,13 @@ FILES = {
 POINTS = "/livox/points"
 IMU = "/livox/imu"
 G = 9.80665
+# Seconds after the first expected cloud in which the localizer cannot register: the
+# map has no point within 2.4-8.2 m of the trajectory from 179 to 232 s and too few
+# around it, and no configuration tested accepted a scan from 163.3 to 259.0 s (27
+# runs: NDT_OMP, SMALL_GICP and deskew variants). The odometry carries the pose from
+# the last accepted scan there, so its error follows that one scan's tilt
+# (experiments/koide_backend_comparison).
+OFF_MAP_SEC = (163.3, 259.0)
 
 
 def checksum(path: Path, algorithm="md5") -> str:
@@ -234,6 +241,13 @@ def evaluate(poses, reference, expected_stamps, diagnostic_stamps) -> dict:
         raise ValueError("no poses match ground truth within 0.15 s")
     errors = np.linalg.norm(rows[matched, 1:4] - gt[index[matched], 1:4], axis=1)
     coverage = len(set(diagnostic_stamps) & set(expected_stamps)) / len(expected_stamps)
+    # Reported, not gated: the error on and off the map (OFF_MAP_SEC).
+    since_first = rows[matched, 0] - min(expected_stamps) * 1e-9
+    off_map = (since_first >= OFF_MAP_SEC[0]) & (since_first <= OFF_MAP_SEC[1])
+
+    def rmse_or_none(values):
+        return float(np.sqrt(np.mean(values**2))) if len(values) else None
+
     result = {
         "poses": len(rows),
         "matched_poses": int(matched.sum()),
@@ -244,6 +258,10 @@ def evaluate(poses, reference, expected_stamps, diagnostic_stamps) -> dict:
         "diagnostic_clouds": len(set(diagnostic_stamps) & set(expected_stamps)),
         "expected_clouds": len(expected_stamps),
         "diagnostic_coverage": coverage,
+        "off_map_window_sec": list(OFF_MAP_SEC),
+        "off_map_matched_poses": int(off_map.sum()),
+        "rmse_on_map_m": rmse_or_none(errors[~off_map]),
+        "rmse_off_map_m": rmse_or_none(errors[off_map]),
     }
     result["passed"] = (
         math.isfinite(result["rmse_m"])

@@ -394,8 +394,12 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
                     json.dumps(result, indent=2, allow_nan=False) + "\n"
                 )
                 receipt["status"] = "passed" if result["passed"] else "failed"
+                on_map = result["rmse_on_map_m"]
+                on_map_text = (
+                    f" (on the map {on_map:.3f} m)" if on_map is not None else ""
+                )
                 print(
-                    f"{'PASS' if result['passed'] else 'FAIL'}: RMSE {result['rmse_m']:.3f} m; diagnostic coverage {result['diagnostic_coverage']:.1%}; results: {output}",
+                    f"{'PASS' if result['passed'] else 'FAIL'}: RMSE {result['rmse_m']:.3f} m{on_map_text}; diagnostic coverage {result['diagnostic_coverage']:.1%}; results: {output}",
                     flush=True,
                 )
                 return 0 if result["passed"] else 1

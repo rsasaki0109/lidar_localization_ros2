@@ -181,11 +181,6 @@ that reproduces the reset.
 
 Open items after v1.5.0:
 
-- score the Koide `outdoor_hard_02b` check outside its off-map stretch too. From 163
-  to 259 s the odometry carries the pose from the last accepted scan, and the tilt of
-  that one scan sets the error there: a 0.47 deg difference made most of the 0.17 m
-  RMSE gap between NDT_OMP and SMALL_GICP
-  ([experiments/koide_backend_comparison](../experiments/koide_backend_comparison/README.md#why-the-carried-pose-drifts-further))
 - make Boreas usable as a `LiDAR + IMU + GT` benchmark
 
 Other work remains:
