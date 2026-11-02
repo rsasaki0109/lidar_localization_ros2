@@ -26,6 +26,7 @@ usage: boreas_prepare.py OUT_DIR [--loc-seq SEQ] [--start S] [--duration S] [--m
 """
 
 import argparse
+import http.client
 import json
 import math
 import re
@@ -50,7 +51,9 @@ def fetch(url, attempts=5):
         try:
             with urllib.request.urlopen(url, timeout=120) as response:
                 return response.read()
-        except OSError:
+        # A transfer cut off mid-body raises http.client.IncompleteRead, an
+        # HTTPException and not an OSError; it ended a 600 s preparation.
+        except (OSError, http.client.HTTPException):
             if attempt == attempts - 1:
                 raise
             time.sleep(2**attempt)

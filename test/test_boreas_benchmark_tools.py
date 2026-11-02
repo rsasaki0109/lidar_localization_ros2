@@ -2,6 +2,7 @@
 """The Boreas fixture and replay tools without ROS or downloads: the ground-truth
 rotation convention, voxel thinning, the PLY map and scoring."""
 
+import http.client
 import math
 import sys
 from pathlib import Path
@@ -103,3 +104,27 @@ def test_score_without_poses():
     result = replay.score([], reference, scans=10, diagnostics=set(), accepted=0)
     assert result["poses"] == 0
     assert "rmse_m" not in result
+
+
+def test_fetch_retries_a_transfer_cut_off_mid_body(monkeypatch):
+    calls = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return False
+
+        def read(self):
+            calls.append("read")
+            if len(calls) == 1:
+                raise http.client.IncompleteRead(b"partial", 100)
+            return b"whole body"
+
+    monkeypatch.setattr(
+        prepare.urllib.request, "urlopen", lambda url, timeout: Response()
+    )
+    monkeypatch.setattr(prepare.time, "sleep", lambda seconds: None)
+    assert prepare.fetch("https://example.invalid/key") == b"whole body"
+    assert len(calls) == 2
