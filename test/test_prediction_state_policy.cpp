@@ -35,7 +35,7 @@ void test_reset_prediction_state()
 
 void test_accepted_measurement_initializes_when_empty()
 {
-  ll::PredictionStateSnapshot empty;
+  ll::PredictionState empty;
   const auto state =
     ll::updatePredictionStateFromAcceptedMeasurement(empty, pose_x(2.0f), 5.0);
 
@@ -123,7 +123,7 @@ void test_rejected_measurement_updates_prediction_only()
   assert(updated.predicted_pose_time_sec == 2.0);
   assert(updated.consecutive_rejected_updates == 1);
 
-  ll::PredictionStateSnapshot empty;
+  ll::PredictionState empty;
   const auto unchanged = ll::updatePredictionFromRejectedMeasurement(empty, pose_x(9.0f), 3.0);
   assert(!unchanged.have_last_accepted_pose);
   assert(near(unchanged.predicted_pose_matrix(0, 3), 0.0f));
@@ -164,7 +164,7 @@ void test_rejections_without_prediction_enable_retry_and_preserve_motion()
   assert(near(state.last_relative_motion_matrix(0, 3), 0.1f));
   assert(near(state.predicted_pose_matrix(0, 3), 0.5f));
 
-  const ll::PredictionStateSnapshot empty;
+  const ll::PredictionState empty;
   const auto unchanged = ll::advancePredictionWithoutMeasurement(
     empty, 10.0, ll::PredictionAdvanceMode::kNone);
   assert(!unchanged.have_last_accepted_pose);
@@ -200,49 +200,84 @@ void test_twist_dropout_and_return_keep_a_single_time_anchor()
 void test_previous_delta_motion_scales_with_elapsed_time()
 {
   auto state = ll::resetPredictionState(pose_x(0.0f), 10.0);
-  // 1 m in 0.1 s.
+  // The first scan, at the reset pose. Its motion runs from the reset pose.
+  state = ll::updatePredictionStateFromAcceptedMeasurement(state, pose_x(0.0f), 10.0, false);
+  assert(!state.last_relative_motion_spans_scans);
+  // 1 m in 0.1 s, from one scan to the next.
   state = ll::updatePredictionStateFromAcceptedMeasurement(state, pose_x(1.0f), 10.1, false);
-  const double duration = 0.1;
+  assert(state.last_relative_motion_spans_scans);
+  assert(std::abs(state.last_relative_motion_duration_sec - 0.1) < 1.0e-9);
 
   // The next scan on time: one delta.
-  assert(near(ll::previousDeltaMotionAt(state, duration, 10.2, 1.0)(0, 3), 1.0f));
+  assert(near(ll::previousDeltaMotionAt(state, 10.2, 1.0)(0, 3), 1.0f));
   // Six scans dropped: 0.7 s, seven deltas, where one delta per scan gave 1 m.
-  assert(near(ll::previousDeltaMotionAt(state, duration, 10.8, 1.0)(0, 3), 7.0f));
+  assert(near(ll::previousDeltaMotionAt(state, 10.8, 1.0)(0, 3), 7.0f));
   // Extrapolated for at most max_extrapolation_sec.
-  assert(near(ll::previousDeltaMotionAt(state, duration, 12.0, 1.0)(0, 3), 10.0f));
+  assert(near(ll::previousDeltaMotionAt(state, 12.0, 1.0)(0, 3), 10.0f));
   // The seed of the first scan after the gap, and the advance when it is rejected.
   const Eigen::Matrix4f seed =
-    state.predicted_pose_matrix * ll::previousDeltaMotionAt(state, duration, 10.8, 1.0);
+    state.predicted_pose_matrix * ll::previousDeltaMotionAt(state, 10.8, 1.0);
   assert(near(seed(0, 3), 8.0f));
   const auto advanced = ll::advancePredictionWithoutMeasurement(
     state, 10.8, ll::PredictionAdvanceMode::kPreviousDelta, Eigen::Matrix4f::Identity(),
-    ll::previousDeltaMotionAt(state, duration, 10.8, 1.0));
+    ll::previousDeltaMotionAt(state, 10.8, 1.0));
   assert(near(advanced.predicted_pose_matrix(0, 3), 8.0f));
   assert(advanced.predicted_pose_time_sec == 10.8);
 
   // After the gap the delta spans 0.7 s: the next scan, 0.1 s later, gets a seventh
   // of it instead of all of it.
   state = ll::updatePredictionStateFromAcceptedMeasurement(state, pose_x(8.0f), 10.8, false);
-  assert(near(ll::previousDeltaMotionAt(state, 0.7, 10.9, 1.0)(0, 3), 1.0f));
+  assert(std::abs(state.last_relative_motion_duration_sec - 0.7) < 1.0e-9);
+  assert(near(ll::previousDeltaMotionAt(state, 10.9, 1.0)(0, 3), 1.0f));
 
   // No usable duration, time anchor or limit: the stored motion, as before.
-  assert(near(ll::previousDeltaMotionAt(state, 0.0, 11.5, 1.0)(0, 3), 7.0f));
-  assert(near(ll::previousDeltaMotionAt(state, 0.7, 11.5, 0.0)(0, 3), 7.0f));
-  assert(near(ll::previousDeltaMotionAt(state, 0.7, 10.8, 1.0)(0, 3), 7.0f));
+  assert(near(ll::previousDeltaMotionAt(state, 11.5, 0.0)(0, 3), 7.0f));
+  assert(near(ll::previousDeltaMotionAt(state, 10.8, 1.0)(0, 3), 7.0f));
+  auto untimed = state;
+  untimed.last_relative_motion_duration_sec = 0.0;
+  assert(near(ll::previousDeltaMotionAt(untimed, 11.5, 1.0)(0, 3), 7.0f));
   auto unanchored = state;
   unanchored.predicted_pose_time_sec = 0.0;
-  assert(near(ll::previousDeltaMotionAt(unanchored, 0.7, 11.5, 1.0)(0, 3), 7.0f));
+  assert(near(ll::previousDeltaMotionAt(unanchored, 11.5, 1.0)(0, 3), 7.0f));
+}
+
+// After a reset the first motion is the correction from the reset pose to the first
+// scan, over an arbitrary interval: it is applied once, not rescaled.
+void test_first_motion_after_reset_is_not_rescaled()
+{
+  // An initial pose 10 ms before the first scan, 0.3 m off.
+  auto state = ll::resetPredictionState(pose_x(0.0f), 10.0);
+  state = ll::updatePredictionStateFromAcceptedMeasurement(state, pose_x(0.3f), 10.01, false);
+  assert(!state.last_relative_motion_spans_scans);
+  assert(state.accepted_updates_since_reset == 1);
+  assert(near(ll::previousDeltaMotionAt(state, 10.11, 1.0)(0, 3), 0.3f));
+
+  // A rejected scan keeps the motion and its duration paired.
+  state = ll::updatePredictionStateFromAcceptedMeasurement(state, pose_x(0.4f), 10.11, false);
+  assert(state.last_relative_motion_spans_scans);
+  state = ll::updatePredictionFromRejectedMeasurement(state, pose_x(0.6f), 10.21);
+  state = ll::updatePredictionStateFromAcceptedMeasurement(state, pose_x(0.7f), 10.31, false);
+  assert(near(state.last_relative_motion_matrix(0, 3), 0.1f));
+  assert(std::abs(state.last_relative_motion_duration_sec - 0.1) < 1.0e-9);
+
+  // A new reset starts over.
+  state = ll::resetPredictionState(pose_x(5.0f), 20.0);
+  assert(!state.last_relative_motion_spans_scans);
+  assert(state.accepted_updates_since_reset == 0);
+  assert(state.last_relative_motion_duration_sec == 0.0);
 }
 
 void test_previous_delta_rotation_scales_about_its_axis()
 {
   auto state = ll::resetPredictionState(Eigen::Matrix4f::Identity(), 10.0);
+  state = ll::updatePredictionStateFromAcceptedMeasurement(
+    state, Eigen::Matrix4f::Identity(), 10.0, false);
   Eigen::Matrix4f turned = Eigen::Matrix4f::Identity();
   turned.block<3, 3>(0, 0) =
     Eigen::AngleAxisf(0.02f, Eigen::Vector3f::UnitZ()).toRotationMatrix();
   turned(0, 3) = 0.5f;
   state = ll::updatePredictionStateFromAcceptedMeasurement(state, turned, 10.1, false);
-  const Eigen::Matrix4f motion = ll::previousDeltaMotionAt(state, 0.1, 10.6, 1.0);
+  const Eigen::Matrix4f motion = ll::previousDeltaMotionAt(state, 10.6, 1.0);
   const Eigen::AngleAxisf rotation(Eigen::Matrix3f(motion.block<3, 3>(0, 0)));
   assert(std::abs(rotation.angle() - 0.1f) < 1.0e-5f);
   assert(std::abs(rotation.axis().z() - 1.0f) < 1.0e-5f);
@@ -250,8 +285,10 @@ void test_previous_delta_rotation_scales_about_its_axis()
   // No motion stays no motion.
   auto still = ll::resetPredictionState(Eigen::Matrix4f::Identity(), 10.0);
   still = ll::updatePredictionStateFromAcceptedMeasurement(
+    still, Eigen::Matrix4f::Identity(), 10.0, false);
+  still = ll::updatePredictionStateFromAcceptedMeasurement(
     still, Eigen::Matrix4f::Identity(), 10.1, false);
-  assert(ll::previousDeltaMotionAt(still, 0.1, 10.9, 1.0).isApprox(Eigen::Matrix4f::Identity()));
+  assert(ll::previousDeltaMotionAt(still, 10.9, 1.0).isApprox(Eigen::Matrix4f::Identity()));
 }
 
 int main()
@@ -267,6 +304,7 @@ int main()
   test_advance_prediction_without_measurement();
   test_rejected_measurement_updates_prediction_only();
   test_previous_delta_motion_scales_with_elapsed_time();
+  test_first_motion_after_reset_is_not_rescaled();
   test_previous_delta_rotation_scales_about_its_axis();
   return 0;
 }

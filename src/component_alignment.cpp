@@ -149,7 +149,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       use_twist_ekf_,
       twist_ekf_.isInitialized(),
       use_twist_prediction_,
-      have_last_accepted_pose_,
+      prediction_state_.have_last_accepted_pose,
       static_cast<bool>(scan_twist_),
       predict_pose_from_previous_delta_,
       use_odom_tf_prediction_,
@@ -171,8 +171,8 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       break;
     case lidar_localization::RegistrationSeedSource::kTwistPrediction: {
       const double dt = lidar_localization::clampPredictionDt(
-        scan_stamp_sec, predicted_pose_time_sec_, max_twist_prediction_dt_);
-      selected_seed.init_guess = applyTwistPrediction(predicted_pose_matrix_, dt);
+        scan_stamp_sec, prediction_state_.predicted_pose_time_sec, max_twist_prediction_dt_);
+      selected_seed.init_guess = applyTwistPrediction(prediction_state_.predicted_pose_matrix, dt);
       break;
     }
     case lidar_localization::RegistrationSeedSource::kPreviousDelta:
@@ -186,7 +186,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
           localizability_min_xy_eigen_ratio_);
       } else {
         selected_seed.init_guess =
-          predicted_pose_matrix_ * previousDeltaMotionAt(scan_stamp_sec);
+          prediction_state_.predicted_pose_matrix * previousDeltaMotionAt(scan_stamp_sec);
       }
       break;
     case lidar_localization::RegistrationSeedSource::kLocalizabilityGuard:
@@ -605,11 +605,11 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   }
 
   const auto seed_metrics = lidar_localization::computeAlignmentSeedMetrics(
-    have_last_accepted_pose_,
-    last_accepted_pose_matrix_,
+    prediction_state_.have_last_accepted_pose,
+    prediction_state_.last_accepted_pose_matrix,
     attempt_init_guess,
     scan_stamp_sec,
-    last_accepted_pose_time_sec_);
+    prediction_state_.last_accepted_pose_time_sec);
   attempt.seed_translation_since_accept_m = seed_metrics.translation_since_accept_m;
   attempt.seed_yaw_since_accept_deg = seed_metrics.yaw_since_accept_deg;
   attempt.accepted_gap_sec = seed_metrics.accepted_gap_sec;
@@ -657,17 +657,17 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
   return lidar_localization::runAlignmentPipeline(
     primary_attempt,
     lidar_localization::AlignmentPipelineInput{
-      have_last_accepted_pose_,
-      consecutive_rejected_updates_,
+      prediction_state_.have_last_accepted_pose,
+      prediction_state_.consecutive_rejected_updates,
       scan_stamp_sec,
-      last_accepted_pose_time_sec_,
+      prediction_state_.last_accepted_pose_time_sec,
       recoveryRetryFromLastPoseParams(),
       force_retry_from_last_pose,
       "imu_prediction_correction_guard_rejected"},
     [&]() {
       return runAlignmentAttempt(
-        last_accepted_pose_matrix_, last_accepted_pose_matrix_, scan_stamp_sec,
-        state_lock, seed_generation);
+        prediction_state_.last_accepted_pose_matrix, prediction_state_.last_accepted_pose_matrix,
+        scan_stamp_sec, state_lock, seed_generation);
     },
     [this, seed_source](const lidar_localization::AlignmentAttempt & attempt) {
       return evaluateMeasurementGateForAttempt(attempt, seed_source);
@@ -684,7 +684,7 @@ lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurement
     attempt.seed_translation_since_accept_m,
     attempt.correction_translation_m,
     attempt.correction_yaw_deg,
-    consecutive_rejected_updates_,
+    prediction_state_.consecutive_rejected_updates,
     use_odom_tf_prediction_ && has_last_good_map_to_odom_,
     settled_accepts_since_reset_);
   last_gated_correction_translation_m_ = attempt.correction_translation_m;
@@ -709,7 +709,8 @@ void PCLLocalization::applySoftOdomCorrectionGate(
   const auto & attempt = result.selected_attempt;
   const auto input = lidar_localization::makeMeasurementGateInput(
     attempt.fitness_score, attempt.accepted_gap_sec, attempt.seed_translation_since_accept_m,
-    attempt.correction_translation_m, attempt.correction_yaw_deg, consecutive_rejected_updates_,
+    attempt.correction_translation_m, attempt.correction_yaw_deg,
+    prediction_state_.consecutive_rejected_updates,
     use_odom_tf_prediction_ && has_last_good_map_to_odom_, settled_accepts_since_reset_);
   lidar_localization::applySoftOdomCorrectionGate(
     result, measurementGateParams(), input, enable_soft_odom_correction_gate_);
@@ -730,7 +731,7 @@ void PCLLocalization::logAlignmentPipelineRecovery(
   RCLCPP_INFO(
     get_logger(),
     "Recovery retry from last pose succeeded after %zu rejects: fitness=%.6f",
-    consecutive_rejected_updates_,
+    prediction_state_.consecutive_rejected_updates,
     pipeline_result.selected_attempt.fitness_score);
 }
 

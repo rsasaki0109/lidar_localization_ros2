@@ -35,7 +35,7 @@ void exercise(bool early_tf, int invalid)
   if (invalid == 1) {reset->header.frame_id = "wrong_frame";}
   if (invalid == 2) {reset->pose.pose.position.x = std::numeric_limits<double>::quiet_NaN();}
   node.initialPoseReceived(reset);
-  assert(node.last_accepted_pose_matrix_(0, 3) == (invalid ? 1 : 10));
+  assert(node.prediction_state_.last_accepted_pose_matrix(0, 3) == (invalid ? 1 : 10));
   assert(node.has_last_good_map_to_odom_ == (invalid || early_tf));
   assert(node.has_odom_tf_constraint_anchor_pose_ == (invalid || early_tf));
   assert(node.odom_bridge_transform_history_.empty() == !invalid);

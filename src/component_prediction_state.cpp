@@ -1,36 +1,5 @@
 #include "component_internal.hpp"
 
-namespace
-{
-
-lidar_localization::PredictionStateSnapshot make_prediction_state_snapshot(
-  const PCLLocalization & component)
-{
-  return {
-    component.have_last_accepted_pose_,
-    component.last_accepted_pose_matrix_,
-    component.predicted_pose_matrix_,
-    component.last_relative_motion_matrix_,
-    component.consecutive_rejected_updates_,
-    component.last_accepted_pose_time_sec_,
-    component.predicted_pose_time_sec_};
-}
-
-void apply_prediction_state(
-  PCLLocalization & component,
-  const lidar_localization::PredictionStateSnapshot & state)
-{
-  component.have_last_accepted_pose_ = state.have_last_accepted_pose;
-  component.last_accepted_pose_matrix_ = state.last_accepted_pose_matrix;
-  component.predicted_pose_matrix_ = state.predicted_pose_matrix;
-  component.last_relative_motion_matrix_ = state.last_relative_motion_matrix;
-  component.consecutive_rejected_updates_ = state.consecutive_rejected_updates;
-  component.last_accepted_pose_time_sec_ = state.last_accepted_pose_time_sec;
-  component.predicted_pose_time_sec_ = state.predicted_pose_time_sec;
-}
-
-}  // namespace
-
 Eigen::Matrix4f PCLLocalization::currentPoseMatrix() const
 {
   if (!current_pose_with_cov_stamped_ptr_) {
@@ -80,11 +49,7 @@ Eigen::Matrix4f PCLLocalization::applyTwistPrediction(
 
 void PCLLocalization::resetPredictionState(const Eigen::Matrix4f & pose_matrix, double stamp_sec)
 {
-  const auto state = lidar_localization::resetPredictionState(pose_matrix, stamp_sec);
-  apply_prediction_state(*this, state);
-  last_relative_motion_duration_sec_ = 0.0;
-  last_relative_motion_spans_scans_ = false;
-  accepted_updates_since_reset_ = 0;
+  prediction_state_ = lidar_localization::resetPredictionState(pose_matrix, stamp_sec);
   settled_accepts_since_reset_ = 0;
 }
 
@@ -92,77 +57,45 @@ void PCLLocalization::updatePredictionState(
   const Eigen::Matrix4f & accepted_pose_matrix,
   double stamp_sec)
 {
-  // Keep the duration paired with the held motion across rejected updates.
-  const bool updates_motion = have_last_accepted_pose_ && consecutive_rejected_updates_ == 0;
-  const double accepted_interval_sec =
-    updates_motion ? stamp_sec - last_accepted_pose_time_sec_ : 0.0;
-  if (updates_motion) {
-    // The duration is only kept for a positive interval; without one the motion and
-    // its duration would not pair.
-    last_relative_motion_spans_scans_ = accepted_updates_since_reset_ > 0 &&
-      std::isfinite(accepted_interval_sec) && accepted_interval_sec > 0.0;
-  }
   // Store the pose at its timestamp in every prediction mode. Extrapolating
   // here makes a later switch to twist integrate the same interval twice.
-  const auto state = lidar_localization::updatePredictionStateFromAcceptedMeasurement(
-    make_prediction_state_snapshot(*this),
-    accepted_pose_matrix,
-    stamp_sec,
-    false);
-  apply_prediction_state(*this, state);
-  if (std::isfinite(accepted_interval_sec) && accepted_interval_sec > 0.0) {
-    last_relative_motion_duration_sec_ = accepted_interval_sec;
-  }
-  if (accepted_updates_since_reset_ < std::numeric_limits<std::size_t>::max()) {
-    ++accepted_updates_since_reset_;
-  }
+  prediction_state_ = lidar_localization::updatePredictionStateFromAcceptedMeasurement(
+    prediction_state_, accepted_pose_matrix, stamp_sec, false);
   settled_accepts_since_reset_ = lidar_localization::nextSettledAccepts(
     settled_accepts_since_reset_, measurementGateParams(),
     last_gated_correction_translation_m_, last_gated_correction_yaw_deg_,
-    accepted_updates_since_reset_ == 1);
+    prediction_state_.accepted_updates_since_reset == 1);
 }
 
 void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
 {
   const auto advance_mode = lidar_localization::choosePredictionAdvanceMode(
-    have_last_accepted_pose_,
+    prediction_state_.have_last_accepted_pose,
     use_twist_prediction_,
     static_cast<bool>(scan_twist_),
     predict_pose_from_previous_delta_);
   Eigen::Matrix4f twist_predicted_pose_matrix = Eigen::Matrix4f::Identity();
   if (advance_mode == lidar_localization::PredictionAdvanceMode::kTwistPrediction) {
     const double dt = lidar_localization::clampPredictionDt(
-      stamp_sec, predicted_pose_time_sec_, max_twist_prediction_dt_);
-    twist_predicted_pose_matrix = applyTwistPrediction(predicted_pose_matrix_, dt);
+      stamp_sec, prediction_state_.predicted_pose_time_sec, max_twist_prediction_dt_);
+    twist_predicted_pose_matrix =
+      applyTwistPrediction(prediction_state_.predicted_pose_matrix, dt);
   }
-  const auto state = lidar_localization::advancePredictionWithoutMeasurement(
-    make_prediction_state_snapshot(*this),
-    stamp_sec,
-    advance_mode,
-    twist_predicted_pose_matrix,
+  prediction_state_ = lidar_localization::advancePredictionWithoutMeasurement(
+    prediction_state_, stamp_sec, advance_mode, twist_predicted_pose_matrix,
     previousDeltaMotionAt(stamp_sec));
-  apply_prediction_state(*this, state);
 }
 
 Eigen::Matrix4f PCLLocalization::previousDeltaMotionAt(double stamp_sec) const
 {
-  if (!last_relative_motion_spans_scans_) {
-    return last_relative_motion_matrix_;
-  }
   return lidar_localization::previousDeltaMotionAt(
-    make_prediction_state_snapshot(*this),
-    last_relative_motion_duration_sec_,
-    stamp_sec,
-    previous_delta_max_extrapolation_sec_);
+    prediction_state_, stamp_sec, previous_delta_max_extrapolation_sec_);
 }
 
 void PCLLocalization::updatePredictionFromRejectedMeasurement(
   const Eigen::Matrix4f & rejected_pose_matrix,
   double stamp_sec)
 {
-  const auto state = lidar_localization::updatePredictionFromRejectedMeasurement(
-    make_prediction_state_snapshot(*this),
-    rejected_pose_matrix,
-    stamp_sec);
-  apply_prediction_state(*this, state);
+  prediction_state_ = lidar_localization::updatePredictionFromRejectedMeasurement(
+    prediction_state_, rejected_pose_matrix, stamp_sec);
 }

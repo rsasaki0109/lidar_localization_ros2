@@ -106,18 +106,18 @@ lidar_localization::AlignmentStatusRuntimeContext
 PCLLocalization::makeAlignmentStatusRuntimeContext(double stamp_sec) const
 {
   const auto fallback_seed_metrics = lidar_localization::computeAlignmentSeedMetrics(
-    have_last_accepted_pose_,
-    last_accepted_pose_matrix_,
-    predicted_pose_matrix_,
+    prediction_state_.have_last_accepted_pose,
+    prediction_state_.last_accepted_pose_matrix,
+    prediction_state_.predicted_pose_matrix,
     stamp_sec,
-    last_accepted_pose_time_sec_);
+    prediction_state_.last_accepted_pose_time_sec);
 
   return lidar_localization::AlignmentStatusRuntimeContext{
     registration_method_,
-    consecutive_rejected_updates_,
-    have_last_accepted_pose_,
+    prediction_state_.consecutive_rejected_updates,
+    prediction_state_.have_last_accepted_pose,
     stamp_sec,
-    last_accepted_pose_time_sec_,
+    prediction_state_.last_accepted_pose_time_sec,
     fallback_seed_metrics.translation_since_accept_m,
     map_received_,
     initialpose_received_,

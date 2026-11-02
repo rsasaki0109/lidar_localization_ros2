@@ -81,6 +81,7 @@
 #include "lidar_localization/pose_backend_selection_policy.hpp"
 #include "lidar_localization/pose_publish_policy.hpp"
 #include "lidar_localization/point_field_read.hpp"
+#include "lidar_localization/prediction_state_policy.hpp"
 #include "lidar_localization/registration_backend_policy.hpp"
 #include "lidar_localization/registration_cloud_keep_alive_policy.hpp"
 #include "lidar_localization/registration_observation_policy.hpp"
@@ -500,10 +501,6 @@ public:
   // The previous delta is rescaled to the time since the predicted pose, up to this
   // many seconds (<= 0: one delta per scan).
   double previous_delta_max_extrapolation_sec_{1.0};
-  // last_relative_motion_matrix_ runs from one scan pose to the next. False after a
-  // reset, when it runs from the reset pose (an initial pose, say) to the first scan:
-  // a correction over an arbitrary interval, which must not be rescaled.
-  bool last_relative_motion_spans_scans_{false};
   bool enable_localizability_guard_{false};
   bool enable_registration_localizability_diagnostics_{false};
   double localizability_min_xy_eigen_ratio_{0.05};
@@ -539,21 +536,13 @@ public:
   TwistGtsamSmoother gtsam_smoother_;
   float last_ndt_roll_{0.0f};
   float last_ndt_pitch_{0.0f};
-  bool have_last_accepted_pose_{false};
-  Eigen::Matrix4f last_accepted_pose_matrix_{Eigen::Matrix4f::Identity()};
-  Eigen::Matrix4f predicted_pose_matrix_{Eigen::Matrix4f::Identity()};
-  Eigen::Matrix4f last_relative_motion_matrix_{Eigen::Matrix4f::Identity()};
-  double last_relative_motion_duration_sec_{0.0};
-  std::size_t accepted_updates_since_reset_{0};
+  lidar_localization::PredictionState prediction_state_;
   // Seed correction guard warmup: consecutive small-correction accepts since
   // the last reset or odometry gap, and the correction of the last gated scan.
   std::size_t settled_accepts_since_reset_{0};
   double last_gated_correction_translation_m_{std::numeric_limits<double>::infinity()};
   double last_gated_correction_yaw_deg_{std::numeric_limits<double>::infinity()};
   double last_odom_seed_stamp_sec_{std::numeric_limits<double>::quiet_NaN()};
-  std::size_t consecutive_rejected_updates_{0};
-  double last_accepted_pose_time_sec_{0.0};
-  double predicted_pose_time_sec_{0.0};
   // Lock order: localization state (when needed), then short twist history lock.
   std::mutex twist_history_mutex_;
   std::uint64_t twist_subscription_generation_{0};
