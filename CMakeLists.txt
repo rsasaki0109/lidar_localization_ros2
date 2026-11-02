@@ -205,6 +205,7 @@ install(PROGRAMS
 install(FILES
   scripts/relocalization_attempt_common.py
   scripts/koide_public_bag.py
+  scripts/replay_session.py
   DESTINATION lib/${PROJECT_NAME})
 
 install(FILES

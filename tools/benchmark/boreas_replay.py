@@ -13,10 +13,8 @@ usage: boreas_replay.py FIXTURE_DIR OUT_DIR --ws WS [--preset YAML] [--set KEY=V
 """
 
 import argparse
-import contextlib
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -29,10 +27,6 @@ sys.path.insert(0, str(REPO / "scripts"))
 POINTS = "/velodyne_points"
 IMU = "/imu/data"
 MATCH_SEC = 0.05
-
-
-def stamp_ns(stamp):
-    return stamp.sec * 10**9 + stamp.nanosec
 
 
 def score(poses, reference, scans, diagnostics, accepted):
@@ -100,15 +94,15 @@ def main():
     parser.add_argument("--ros-domain-id", type=int, default=87)
     args = parser.parse_args()
 
-    import rclpy
-    from diagnostic_msgs.msg import DiagnosticArray
-    from geometry_msgs.msg import PoseWithCovarianceStamped
-    from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+    from replay_session import (
+        ReplaySession,
+        apply_overrides,
+        initial_pose_parameters,
+    )
     from start_lifecycle_node import activate
 
     reference = np.loadtxt(args.fixture / "reference.tum")
     scans = len(reference)
-    first = reference[0]
     args.out.mkdir(parents=True, exist_ok=False)
 
     config = yaml.safe_load(args.preset.read_text())
@@ -126,19 +120,10 @@ def main():
             # The ~1 MB clouds lose fragments on the best-effort sensor QoS: with it only
             # 38 of 97 scans of the 10 s window arrived.
             f"qos_overrides.{POINTS}.subscription.reliability": "reliable",
-            "set_initial_pose": True,
-            "initial_pose_x": float(first[1]),
-            "initial_pose_y": float(first[2]),
-            "initial_pose_z": float(first[3]),
-            "initial_pose_qx": float(first[4]),
-            "initial_pose_qy": float(first[5]),
-            "initial_pose_qz": float(first[6]),
-            "initial_pose_qw": float(first[7]),
         }
+        | initial_pose_parameters(reference[0, 1:8])
     )
-    for item in args.set:
-        key, value = item.split("=", 1)
-        params[key] = yaml.safe_load(value)
+    apply_overrides(params, args.set)
     config_path = args.out / "localizer.yaml"
     config_path.write_text(yaml.safe_dump(config))
 
@@ -146,143 +131,59 @@ def main():
         args.ws
         / "install/lidar_localization_ros2/lib/lidar_localization_ros2/lidar_localization_node"
     )
-    environment = os.environ.copy()
-    environment["ROS_DOMAIN_ID"] = str(args.ros_domain_id)
-    environment["ROS_LOG_DIR"] = str(args.out / "ros-logs")
-    os.environ.update({k: environment[k] for k in ("ROS_DOMAIN_ID", "ROS_LOG_DIR")})
+    os.environ["ROS_DOMAIN_ID"] = str(args.ros_domain_id)
+    os.environ["ROS_LOG_DIR"] = str(args.out / "ros-logs")
+    accepted = [0]
 
-    poses, diagnostics, accepted = [], set(), [0]
-    processes = []
-    rclpy.init(args=[])
-    node = rclpy.create_node(f"boreas_replay_{os.getpid()}")
-    try:
-        deadline = time.monotonic() + 1.5
-        while time.monotonic() < deadline:
-            rclpy.spin_once(node, timeout_sec=0.1)
-        if set(node.get_node_names()) - {node.get_name()}:
-            raise SystemExit(
-                "ROS domain is already in use; pass another --ros-domain-id"
-            )
-        with contextlib.ExitStack() as stack:
-            tum = stack.enter_context((args.out / "estimate.tum").open("w"))
-            diagnostic_log = stack.enter_context(
-                (args.out / "alignment.jsonl").open("w")
-            )
+    def count_accepted(values):
+        if values.get("recovery_action", "").startswith("accept"):
+            accepted[0] += 1
 
-            def pose_received(message):
-                p, q = message.pose.pose.position, message.pose.pose.orientation
-                values = [
-                    stamp_ns(message.header.stamp) * 1e-9,
-                    p.x,
-                    p.y,
-                    p.z,
-                    q.x,
-                    q.y,
-                    q.z,
-                    q.w,
-                ]
-                poses.append(values)
-                tum.write(" ".join(f"{v:.9f}" for v in values) + "\n")
-
-            def diagnostic_received(message):
-                diagnostics.add(stamp_ns(message.header.stamp))
-                for entry in message.status:
-                    values = {v.key: v.value for v in entry.values}
-                    if values.get("recovery_action", "").startswith("accept"):
-                        accepted[0] += 1
-                    diagnostic_log.write(
-                        json.dumps(
-                            {
-                                "stamp_ns": stamp_ns(message.header.stamp),
-                                "message": entry.message,
-                                "values": values,
-                            }
-                        )
-                        + "\n"
-                    )
-
-            reliable_latched = QoSProfile(
-                depth=1000,
-                reliability=ReliabilityPolicy.RELIABLE,
-                durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            )
-            node.create_subscription(
-                PoseWithCovarianceStamped, "/pcl_pose", pose_received, reliable_latched
-            )
-            node.create_subscription(
-                DiagnosticArray,
-                "/alignment_status",
-                diagnostic_received,
-                reliable_latched,
-            )
-
-            def spawn(command, name):
-                log = stack.enter_context((args.out / f"{name}.log").open("w"))
-                process = subprocess.Popen(
-                    command,
-                    env=environment,
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True,
-                )
-                processes.append(process)
-                return process
-
-            localizer_process = spawn(
-                [
-                    str(localizer),
-                    "--ros-args",
-                    "--params-file",
-                    str(config_path),
-                    "-r",
-                    f"cloud:={POINTS}",
-                    "-r",
-                    f"imu:={IMU}",
-                ],
-                "localizer",
-            )
-            activate(node, "/lidar_localization", 180.0)
-            deadline = time.monotonic() + 30
-            while not node.get_subscriptions_info_by_topic(POINTS):
-                if localizer_process.poll() is not None or time.monotonic() > deadline:
-                    raise SystemExit("localizer did not subscribe; see localizer.log")
-                rclpy.spin_once(node, timeout_sec=0.1)
-            deadline = time.monotonic() + 2
-            while time.monotonic() < deadline:
-                rclpy.spin_once(node, timeout_sec=0.1)
-            print(f"Replaying {scans} scans at {args.rate}x", flush=True)
-            player = spawn(
-                [
-                    "ros2",
-                    "bag",
-                    "play",
-                    str(args.fixture / "bag"),
-                    "--clock",
-                    "--rate",
-                    str(args.rate),
-                    "--topics",
-                    POINTS,
-                    IMU,
-                ],
-                "player",
-            )
-            while player.poll() is None:
-                if localizer_process.poll() is not None:
-                    raise SystemExit("localizer exited; see localizer.log")
-                rclpy.spin_once(node, timeout_sec=0.05)
-            deadline = time.monotonic() + 10
-            while time.monotonic() < deadline:
-                rclpy.spin_once(node, timeout_sec=0.05)
-    finally:
-        for process in processes:
-            if process.poll() is None:
-                with contextlib.suppress(ProcessLookupError):
-                    os.killpg(process.pid, 2)
-        for process in processes:
-            with contextlib.suppress(subprocess.TimeoutExpired):
-                process.wait(timeout=10)
-        node.destroy_node()
-        rclpy.shutdown()
+    with ReplaySession(args.out, os.environ.copy(), "boreas_replay") as session:
+        session.require_free_domain()
+        session.record(on_status=count_accepted)
+        session.spawn(
+            [
+                str(localizer),
+                "--ros-args",
+                "--params-file",
+                str(config_path),
+                "-r",
+                f"cloud:={POINTS}",
+                "-r",
+                f"imu:={IMU}",
+            ],
+            "localizer",
+        )
+        activate(session.node, "/lidar_localization", 180.0)
+        deadline = time.monotonic() + 30
+        while not session.node.get_subscriptions_info_by_topic(POINTS):
+            session.require_running("localizer")
+            if time.monotonic() > deadline:
+                raise RuntimeError("localizer did not subscribe; see localizer.log")
+            session.spin_for(0.1)
+        session.spin_for(2.0)
+        print(f"Replaying {scans} scans at {args.rate}x", flush=True)
+        player = session.spawn(
+            [
+                "ros2",
+                "bag",
+                "play",
+                str(args.fixture / "bag"),
+                "--clock",
+                "--rate",
+                str(args.rate),
+                "--topics",
+                POINTS,
+                IMU,
+            ],
+            "player",
+        )
+        while player.poll() is None:
+            session.require_running("localizer")
+            session.spin_for(0.05)
+        session.spin_for(10.0)
+    poses, diagnostics = session.poses, session.diagnostic_stamps
 
     result = score(poses, reference, scans, diagnostics, accepted[0])
     result.update(
