@@ -327,6 +327,23 @@ streets at up to 9.7 m/s. On 2026-11-02, with 4 vCPUs:
 The RMSE per 20 s stays between 0.07 and 0.17 m. The three runs are identical, because
 every scan is aligned.
 
+Over the first 600 s (`--duration 600`: 4.3 km, 5786 scans, a map of 20.9 M points from
+3189 scans; 11 GB, about an hour to prepare), on 2026-11-02:
+
+| Setting | Runs | RMSE m | Horizontal / z RMSE m | p95 / max error m | Scans processed |
+| --- | --- | --- | --- | --- | --- |
+| `boreas_ndt_velodyne.yaml` | 2 | **0.105** (both) | 0.097 / 0.042 | 0.20 / 0.41 | 99.9%, 100% |
+| with `use_imu_preintegration: true` | 2 | **0.098**, 0.099 | 0.089-0.090 / 0.042 | 0.18 / 0.39 | 98.8%, 99.3% |
+
+- **The preset holds over the longer window.** The RMSE per 20 s stays between 0.05 and
+  0.17 m. The first 120 s, with the parking-lot maneuvers, hold the worst bins
+  (0.07-0.17 m); after them no bin exceeds 0.15 m, so the whole scores lower than its
+  start.
+- **The IMU preintegration helps here too.** It lowers the RMSE in 27 of the 30 bins,
+  only horizontally, and seeds all but 6 of the scans. It still leaves 0.7-1.2% of the
+  scans unprocessed, the cost of its smoother.
+- **These runs are not identical.** One preset run lost 6 scans; the RMSE is the same.
+
 What to keep in mind with this dataset (`boreas_prepare.py` handles the first three):
 
 - **The ground-truth rotation is `(Rz(heading) Ry(pitch) Rx(roll))^T`.** With the active
