@@ -1,7 +1,7 @@
 # Parameter files
 
-This directory contains runtime presets and reproducible benchmark inputs. Files
-stay at their existing paths for launch-file and downstream compatibility.
+This directory contains runtime and dataset presets. Files stay at their existing
+paths for launch-file and downstream compatibility.
 
 ## Start here
 
@@ -31,19 +31,16 @@ both `nav2_ndt_urban.yaml` and `nav2_humble_pointcloud.yaml`.
 Dataset presets are not universal defaults. Replace placeholder map paths and
 verify frames, topics, initial pose, sensor units, and timing before use.
 
-## Experimental Nav2 derivatives
+## Experiment presets
 
-These files preserve named experiment inputs and are not recommended defaults:
+One-off experiment inputs are not kept here. Pass the overrides to a replay instead
+(`--set KEY=VALUE` in `tools/benchmark/boreas_replay.py` and `istanbul_replay.py`),
+and promote a winner into a preset only after repeat validation.
 
-- `nav2_ndt_urban_borderline_only.yaml`
-- `nav2_ndt_urban_recovery_retry_from_last_pose.yaml`
-- `nav2_ndt_urban_recovery_retry_from_last_pose_r3.yaml`
-- `nav2_ndt_urban_recovery_retry_from_last_pose_r3_gap1_seed15.yaml`
-- `nav2_ndt_urban_rejected_seed_update.yaml`
-- `nav2_ndt_urban_rejected_seed_update_r1.yaml`
-
-New one-off comparisons belong under [`benchmark/`](benchmark/) instead of the
-top level. Promote a winner only after repeat validation.
+The six `nav2_ndt_urban_*` derivatives and the external odometry configurations in
+`odometry/` (FAST-LIO, KISS-ICP, GLIM) were removed unused; `git checkout 7af1287`
+has them. The recovery retry that won those Istanbul comparisons (3 rejections,
+gap <= 1 s, seed <= 15 m) is in `public_istanbul_60s_benchmark.yaml`.
 
 ## Editing conventions
 
@@ -61,9 +58,3 @@ Every top-level preset starts with `Preset` and `Status` comments. Explicit
 values should describe an intentional override; inherited node defaults need
 not be copied into every file. Avoid YAML anchors and merge keys because ROS 2
 parameter parser behavior differs across distributions.
-
-## Benchmark inputs
-
-[`benchmark/`](benchmark/) contains immutable comparison inputs, run manifests,
-and result-comparison specifications. See its README before adding a file.
-

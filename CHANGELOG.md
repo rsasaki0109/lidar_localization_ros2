@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Eight experiment-only parameter sets are removed and no longer installed:
+  - the six `param/nav2_ndt_urban_*` derivatives (`borderline_only`,
+    `recovery_retry_from_last_pose`, its `_r3` and `_r3_gap1_seed15` variants,
+    `rejected_seed_update` and its `_r1` variant);
+  - `param/odometry/`, the FAST-LIO, KISS-ICP and GLIM configurations for Koide
+    outdoor.
+
+  Nothing in the package read them; the scripts that did went in 6825f05. Each
+  derivative is `nav2_ndt_urban.yaml` with three to six overrides, and the recovery
+  retry that won their comparison is in `param/public_istanbul_60s_benchmark.yaml`.
+  `git checkout 7af1287` has all eight. A launch that passes one of them by path
+  needs `nav2_ndt_urban.yaml` and the overrides instead.
 - `param/benchmark/` is removed and no longer installed. Its 123 run manifests and
   comparison specs were inputs to the offline runners removed in 6825f05, and nothing
   has read them since; `git checkout 6825f05^` has both. The route-crop recovery
