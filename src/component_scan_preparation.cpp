@@ -10,7 +10,7 @@ bool PCLLocalization::admitScanMessage(
 
   const bool is_shutting_down = shutting_down_.load(std::memory_order_acquire);
   const bool timing_relevant =
-    !is_shutting_down && static_cast<bool>(msg) && map_recieved_ && initialpose_recieved_;
+    !is_shutting_down && static_cast<bool>(msg) && map_received_ && initialpose_received_;
   rclcpp::Time now;
   bool has_last_process_time = false;
   double elapsed_since_last_process_sec = 0.0;
@@ -26,8 +26,8 @@ bool PCLLocalization::admitScanMessage(
     lidar_localization::ScanAdmissionInput{
       is_shutting_down,
       static_cast<bool>(msg),
-      map_recieved_,
-      initialpose_recieved_,
+      map_received_,
+      initialpose_received_,
       current_scan_stamp_sec,
       last_initial_pose_stamp_sec_,
       min_scan_interval_sec_,

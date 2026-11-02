@@ -119,8 +119,8 @@ PCLLocalization::makeAlignmentStatusRuntimeContext(double stamp_sec) const
     stamp_sec,
     last_accepted_pose_time_sec_,
     fallback_seed_metrics.translation_since_accept_m,
-    map_recieved_,
-    initialpose_recieved_,
+    map_received_,
+    initialpose_received_,
     measurementGateParams(),
     reinitializationTriggerParams(),
     failure_taxonomy_params_};

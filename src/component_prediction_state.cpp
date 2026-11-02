@@ -33,12 +33,12 @@ void apply_prediction_state(
 
 Eigen::Matrix4f PCLLocalization::currentPoseMatrix() const
 {
-  if (!corrent_pose_with_cov_stamped_ptr_) {
+  if (!current_pose_with_cov_stamped_ptr_) {
     return Eigen::Matrix4f::Identity();
   }
 
   Eigen::Affine3d affine;
-  tf2::fromMsg(corrent_pose_with_cov_stamped_ptr_->pose.pose, affine);
+  tf2::fromMsg(current_pose_with_cov_stamped_ptr_->pose.pose, affine);
   return affine.matrix().cast<float>();
 }
 

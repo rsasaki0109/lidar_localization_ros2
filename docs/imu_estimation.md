@@ -392,39 +392,26 @@ accuracy.
   smoke / throughput check in the release suite. These are *pipeline safety* and
   short-window health gates, **not** final backend rankings (see
   [competitive_roadmap.md](dev/competitive_roadmap.md)).
-- A longer controlled public **LiDAR + IMU + GT** accuracy benchmark is still
-  open. Until that lands, the IMU estimator is offered as a working,
-  math-verified, guarded option, **not** as a general accuracy improvement over
-  pure NDT. Do not cite it as an accuracy claim without a controlled run.
+- A controlled public **LiDAR + IMU + GT** accuracy run is still open. The
+  [Boreas replay](benchmark.md#boreas-vehicle-preset-replay) now has all three, but
+  its preset runs without the IMU, and no IMU run has been measured on it yet. Until
+  one is, the IMU estimator is offered as a working, math-verified, guarded option,
+  **not** as a general accuracy improvement over pure NDT. Do not cite it as an
+  accuracy claim without a controlled run.
 
-### Turnkey A/B benchmark (idle-ready)
+### A/B runs to make
 
-A controlled Koide A/B is committed and ready to run the moment the machine is
-quiet (timing/accuracy on this shared box is only trustworthy at load < ~5):
+- **Boreas**: `tools/benchmark/boreas_replay.py` with
+  `--set use_imu=true --set use_imu_preintegration=true` against the preset as it is.
+- **Koide `outdoor_hard_01a`**: the bag carries `/livox/imu` (75947 samples over
+  380 s) and ground truth. The two manifests prepared for it differ only in
+  `use_imu_preintegration`; they and their runner, `benchmark_from_manifest`, are at
+  `git checkout 6825f05^` (`param/benchmark/*_full380_ndt_omp_imu_{off,on}.yaml`).
 
-- `param/benchmark/koide_hard_localization_outdoor_hard_01a_full380_ndt_omp_imu_off.yaml`
-- `param/benchmark/koide_hard_localization_outdoor_hard_01a_full380_ndt_omp_imu_on.yaml`
-
-Both are the Phase 1 NDT_OMP winner config on the real `outdoor_hard_01a` bag
-(which carries `/livox/imu`, 75947 samples over 380 s, plus GT); they differ
-**only** in `use_imu_preintegration` (and `output_dir` / `ros_domain_id`), so any
-metric delta is attributable to the Forster preintegration smoother. Run both
-back-to-back and compare (`benchmark_from_manifest` was removed in 6825f05; run it
-from `git checkout 6825f05^`):
-
-```bash
-ros2 run lidar_localization_ros2 benchmark_from_manifest --manifest \
-  param/benchmark/koide_hard_localization_outdoor_hard_01a_full380_ndt_omp_imu_off.yaml
-ros2 run lidar_localization_ros2 benchmark_from_manifest --manifest \
-  param/benchmark/koide_hard_localization_outdoor_hard_01a_full380_ndt_omp_imu_on.yaml
-```
-
-**Read the metrics the Phase 1 way** (docs/dev/phase1_koide_backend_comparison.md): a
-lower translation RMSE alone is a trap on this hard sequence — an estimator can
-look better while tracking far fewer poses. Judge on **ok-rate, longest lost
-window, and pose count first**, then RMSE among the survivors. Only after this
-run lands may the preintegration path be described as an accuracy win (or not)
-on Koide; until then the limits above stand.
+Judge them the Phase 1 way (docs/dev/phase1_koide_backend_comparison.md): a lower
+translation RMSE alone is a trap on a hard sequence, because an estimator can look
+better while tracking far fewer poses. Compare the share of scans accepted, the longest
+lost window and the pose count first, then the RMSE.
 
 ## Related docs
 

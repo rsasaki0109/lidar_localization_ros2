@@ -3,9 +3,9 @@ void PCLLocalization::setCurrentPoseFromMatrix(
   const Eigen::Matrix4f & pose_matrix,
   const builtin_interfaces::msg::Time & stamp)
 {
-  corrent_pose_with_cov_stamped_ptr_->header.stamp = stamp;
-  corrent_pose_with_cov_stamped_ptr_->header.frame_id = global_frame_id_;
-  corrent_pose_with_cov_stamped_ptr_->pose.pose =
+  current_pose_with_cov_stamped_ptr_->header.stamp = stamp;
+  current_pose_with_cov_stamped_ptr_->header.frame_id = global_frame_id_;
+  current_pose_with_cov_stamped_ptr_->pose.pose =
     lidar_localization::poseFromMatrix(pose_matrix);
 }
 
@@ -16,7 +16,7 @@ void PCLLocalization::publishCurrentPose(
 {
   if (
     shutting_down_.load(std::memory_order_acquire) ||
-    !pose_pub_ || !corrent_pose_with_cov_stamped_ptr_)
+    !pose_pub_ || !current_pose_with_cov_stamped_ptr_)
   {
     return;
   }
@@ -37,14 +37,14 @@ void PCLLocalization::publishCurrentPose(
     broadcastTransform(frozen);
     return;
   }
-  publishPoseMessage(*corrent_pose_with_cov_stamped_ptr_);
+  publishPoseMessage(*current_pose_with_cov_stamped_ptr_);
   if (!publishPoseTransform(
-      stamp, corrent_pose_with_cov_stamped_ptr_->pose.pose, freeze_as_last_good))
+      stamp, current_pose_with_cov_stamped_ptr_->pose.pose, freeze_as_last_good))
   {
     return;
   }
 
-  appendCurrentPoseToPath(stamp, corrent_pose_with_cov_stamped_ptr_->pose.pose);
+  appendCurrentPoseToPath(stamp, current_pose_with_cov_stamped_ptr_->pose.pose);
   publishPathMessage();
 }
 
@@ -339,7 +339,7 @@ void PCLLocalization::publishBridgePoseAsRejectedOutput(
   // stays silent (only an accepted match calls publishCurrentPose), so the
   // benchmark's coverage/RMSE would see a gap for the whole dropout even
   // though the odom bridge has a perfectly good estimate. This intentionally
-  // never touches corrent_pose_with_cov_stamped_ptr_, predicted_pose_matrix_,
+  // never touches current_pose_with_cov_stamped_ptr_, predicted_pose_matrix_,
   // or any other internal belief -- publishPoseMessage is a bare topic
   // publish, so the next scan's seed/prediction is unaffected either way.
   if (!publish_bridge_pose_when_lost_) {
@@ -365,7 +365,7 @@ void PCLLocalization::publishBridgePoseAsRejectedOutput(
 void PCLLocalization::fillPoseCovariance(double fitness_score)
 {
   if (use_twist_ekf_ && twist_ekf_.isInitialized()) {
-    corrent_pose_with_cov_stamped_ptr_->pose.covariance =
+    current_pose_with_cov_stamped_ptr_->pose.covariance =
       use_error_floor_covariance_ ?
       lidar_localization::makeEkfErrorFloorPoseCovariance(
       twist_ekf_.covariance(), error_floor_covariance_params_, fitness_score) :
@@ -373,7 +373,7 @@ void PCLLocalization::fillPoseCovariance(double fitness_score)
     return;
   }
 
-  corrent_pose_with_cov_stamped_ptr_->pose.covariance =
+  current_pose_with_cov_stamped_ptr_->pose.covariance =
     use_error_floor_covariance_ ?
     lidar_localization::makeErrorFloorPoseCovariance(
     error_floor_covariance_params_, fitness_score) :
@@ -389,11 +389,11 @@ void PCLLocalization::timerPublishPose()
   {
     return;
   }
-  if (!corrent_pose_with_cov_stamped_ptr_) {return;}
+  if (!current_pose_with_cov_stamped_ptr_) {return;}
   builtin_interfaces::msg::Time publish_stamp = now();
   geometry_msgs::msg::PoseWithCovarianceStamped pose_copy =
     lidar_localization::stampPoseWithCovariance(
-    *corrent_pose_with_cov_stamped_ptr_, publish_stamp);
+    *current_pose_with_cov_stamped_ptr_, publish_stamp);
 
   // A scan-driven bridge alone cannot guarantee an output-rate contract when
   // the upstream registered cloud pauses.  In the opt-in bridge mode, compose

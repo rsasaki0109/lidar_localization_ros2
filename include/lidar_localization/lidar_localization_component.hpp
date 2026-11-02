@@ -290,15 +290,15 @@ public:
   // dedicated group so a reset can interrupt long registration. Every access
   // shared with that group is protected by callback_state_coordinator_.
   lidar_localization::CallbackStateCoordinator callback_state_coordinator_;
-  geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr corrent_pose_with_cov_stamped_ptr_;
+  geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr current_pose_with_cov_stamped_ptr_;
   nav_msgs::msg::Path::SharedPtr path_ptr_;
   std::size_t path_max_poses_{lidar_localization::kDefaultPathMaxPoses};
   lidar_localization::PointTimestampUnit point_timestamp_unit_{lidar_localization::PointTimestampUnit::kAuto};
   std::string point_timestamp_unit_name_{"auto"};
   bool enable_soft_odom_correction_gate_{false};
 
-  bool map_recieved_{false};
-  bool initialpose_recieved_{false};
+  bool map_received_{false};
+  bool initialpose_received_{false};
   double last_initial_pose_stamp_sec_{-1.0};
   pcl::PointCloud<pcl::PointXYZI>::Ptr full_map_cloud_ptr_;
   pcl::PointXYZI map_min_pt_{};
@@ -485,7 +485,7 @@ public:
   // benchmark's coverage/RMSE source) otherwise goes silent (only accepted
   // matches call publishCurrentPose). When set, publish the odom bridge pose
   // on /pcl_pose for rejected scans too -- output only, never touches the
-  // estimator's own internal belief (corrent_pose_with_cov_stamped_ptr_,
+  // estimator's own internal belief (current_pose_with_cov_stamped_ptr_,
   // prediction state, etc.), so it cannot change what the next scan seeds
   // from. Off by default.
   bool publish_bridge_pose_when_lost_{false};

@@ -805,7 +805,7 @@ bool PCLLocalization::applyAcceptedAlignmentPipelineResult(
       lidar_localization::rotationDeltaDeg(
         pipeline_result.selected_attempt.init_guess,
         pipeline_result.selected_attempt.final_transformation));
-  } else if (corrent_pose_with_cov_stamped_ptr_) {
+  } else if (current_pose_with_cov_stamped_ptr_) {
     // Timer publication still needs an accepted map->odom anchor before it
     // can compose the live odom bridge.  publishCurrentPose normally creates
     // that anchor, so skipping it in timer mode must skip only the pose/path
@@ -818,7 +818,7 @@ bool PCLLocalization::applyAcceptedAlignmentPipelineResult(
         pipeline_result.selected_attempt.init_guess,
         pipeline_result.selected_attempt.final_transformation));
     publishPoseTransform(
-      stamp, corrent_pose_with_cov_stamped_ptr_->pose.pose, freeze_as_last_good);
+      stamp, current_pose_with_cov_stamped_ptr_->pose.pose, freeze_as_last_good);
   }
   return true;
 }
