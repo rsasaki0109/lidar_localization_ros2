@@ -43,6 +43,14 @@ GT-matched pose timestamps at >= 95% of that cloud count. GT matching uses the s
 0.15 s tolerance as the comparison below, without spatial alignment. These are demo
 acceptance criteria for this sequence, not a complete release-regression suite.
 
+From 163 to 259 s after the first expected cloud the sensor is off the map. The
+localizer accepts no scan there, and the odometry carries the pose from the last
+accepted one. That scan's tilt sets the error over a third of the poses: a 0.47 deg
+difference in it made most of a 0.17 m RMSE gap between two configurations. To
+compare configurations, also compare the RMSE outside that stretch;
+`experiments/koide_backend_comparison/summarize_runs.py` reports both
+([experiments/koide_backend_comparison](../experiments/koide_backend_comparison/README.md#why-the-carried-pose-drifts-further)).
+
 Useful options:
 
 ```bash

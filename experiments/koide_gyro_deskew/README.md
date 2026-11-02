@@ -98,20 +98,49 @@ alone. Median (range):
   - 13-15% arrive before the IMU sample covering the sweep end
     (`continuous_time_deskew_pose_history_ends_too_early`). In the bag's order that
     sample is at most 4.3 ms late (median 0.4 ms), less than one IMU period.
-- **Deskewing more clouds did not help.**
+- **Deskewing more clouds neither helped nor hurt.**
   - An end gap tolerance let the history end up to 10 ms before the sweep end, with
-    later points holding the last rotation. It deskewed 83% of the clouds, but RMSE
-    rose to 0.261-0.267 m in all three runs, and p95 error to 0.76-0.80 m. The
-    tolerance is not kept.
+    later points holding the last rotation. It deskewed 83% of the clouds. RMSE rose
+    to 0.261-0.267 m in all three runs, and p95 error to 0.76-0.80 m, but only off the
+    map. Outside the off-map stretch it scored 0.174-0.175 m against 0.176-0.180 m
+    (*Re-scored outside the off-map stretch*). A 0.002 m gain is not worth the code,
+    so the tolerance is not kept.
   - Raising `scan_time_range_max_duration_ratio` to 2.5 also deskews the two-sweep
     clouds. Two runs matched `gyro`, one scored 0.256 m: not established.
-  - The loss comes 220-260 s into the sequence, where all variants are least accurate.
-    Why holding a few ms of rotation hurts is not established.
 - These `main` runs scored higher than the runs of
   [koide_online_coverage](../koide_online_coverage/README.md) (97.2-99.2%) on the same
   profile, in another hour of the same container. Compare profiles within one session.
 
 `online_results.json` holds the per-run numbers (`summarize_runs.py`).
+
+### Re-scored outside the off-map stretch
+
+From 163 to 259 s after the first expected cloud the sensor is off the map. No
+variant accepts a scan there, and the odometry carries the pose from the last
+accepted scan. The error there depends on the tilt of that one scan
+([koide_backend_comparison](../koide_backend_comparison/README.md#why-the-carried-pose-drifts-further)).
+The same runs, scored with `experiments/koide_backend_comparison/summarize_runs.py`
+(2026-11-02), median (range):
+
+| Profile | Runs | RMSE m | RMSE outside the stretch m | Max error in the stretch m (z) |
+| --- | --- | --- | --- | --- |
+| `main` | 3 | 0.234 (0.233-0.240) | 0.193 (0.192-0.193) | 0.75 (-0.71) |
+| **`gyro`** | 6 | 0.227 (0.222-0.232) | **0.177** (0.176-0.180) | 0.81 (-0.77) |
+| `gyro` + 10 ms end gap | 3 | 0.265 (0.261-0.267) | 0.175 (0.174-0.175) | 1.02 (-1.00) |
+| `gyro` + ratio 2.5 | 3 | 0.228 (0.221-0.256) | 0.178 (0.175-0.206) | 0.78 (-0.74) |
+| `gyro` + both | 3 | 0.264 (0.263-0.267) | 0.174 (0.174-0.176) | 1.02 (-1.00) |
+
+- **The gyro deskew gain is larger than the RMSE showed.** Outside the stretch it
+  scored 0.177 against 0.193 m (0.227 against 0.234 m overall).
+- **The end gap tolerance lost only off the map.** There its trajectory is the
+  `gyro` one with the anchor tilted by 0.15-0.17 deg of pitch
+  (`experiments/koide_backend_comparison/anchor_difference.py`, two runs, 0.006-0.007 m
+  median residual).
+- **Deskewing the remaining 31% is not worth more code here.** Deskewing up to 93% of
+  the clouds changed the RMSE outside the stretch by at most 0.003 m, and the coverage
+  by at most 0.1 point.
+
+`online_results_by_stretch.json` holds the per-run numbers.
 
 ## Rerun
 
