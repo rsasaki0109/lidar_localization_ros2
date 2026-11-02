@@ -31,7 +31,8 @@ starts playback, supplies the nearest GT pose once at +4 s, drains pending resul
 stops its processes, and writes:
 
 - `summary.json`: map-frame position RMSE, matched pose count, diagnostic coverage,
-  and `passed`.
+  and `passed`. Also the RMSE on and off the map (`rmse_on_map_m`, `rmse_off_map_m`),
+  described below.
 - `estimate.tum`: the observed pose trajectory, including odometry bridge poses.
 - `receipt.json`: dataset, replay settings, executable hashes and exit codes.
 - `localizer.yaml`, `localizer.log`, `rko.log`, `player.log`, `alignment.jsonl`:
@@ -43,13 +44,18 @@ GT-matched pose timestamps at >= 95% of that cloud count. GT matching uses the s
 0.15 s tolerance as the comparison below, without spatial alignment. These are demo
 acceptance criteria for this sequence, not a complete release-regression suite.
 
-From 163 to 259 s after the first expected cloud the sensor is off the map. The
-localizer accepts no scan there, and the odometry carries the pose from the last
-accepted one. That scan's tilt sets the error over a third of the poses: a 0.47 deg
-difference in it made most of a 0.17 m RMSE gap between two configurations. To
-compare configurations, also compare the RMSE outside that stretch;
-`experiments/koide_backend_comparison/summarize_runs.py` reports both
+From 163.3 to 259.0 s after the first expected cloud (`off_map_window_sec`) the
+localizer cannot register. From 179 to 232 s the map has no point within 2.4-8.2 m of
+the trajectory, and around that span too few points to register. No configuration tested
+accepted a scan there, in 27 runs. The odometry carries the pose from the last
+accepted scan, so that scan's tilt sets the error over a third of the poses: a 0.47 deg
+difference in it made most of a 0.17 m RMSE gap between two configurations
 ([experiments/koide_backend_comparison](../experiments/koide_backend_comparison/README.md#why-the-carried-pose-drifts-further)).
+`summary.json` therefore also reports `rmse_on_map_m`, the RMSE of the poses outside
+that window, and `rmse_off_map_m`, inside it; the check prints the first next to the
+RMSE. They are not gated. To compare configurations, compare `rmse_on_map_m` as well:
+the online profile on `main` scored 0.176-0.180 m there in 10 runs, against 0.222-0.232 m
+overall.
 
 Useful options:
 

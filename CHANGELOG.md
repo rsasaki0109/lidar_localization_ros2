@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- The online Koide check (`run_koide_public_bag.py`) reports the RMSE on and off the
+  map in `summary.json` (`rmse_on_map_m`, `rmse_off_map_m`, `off_map_window_sec`) and
+  prints the first next to the RMSE. From 163.3 to 259.0 s after the first expected
+  cloud no configuration registers: the map has no point within 2.4-8.2 m of the
+  trajectory from 179 to 232 s. There the error follows the tilt of the last accepted
+  scan, so the overall RMSE does not compare configurations well. The gate is unchanged.
+  The online profile on `main` scored 0.176-0.180 m on the map in 10 runs, against
+  0.222-0.232 m overall.
 - NDT and NDT_OMP targets are ready sooner. `pcl::Registration` builds a search tree
   over the target points in the first `align()` after `setInputTarget()`. NDT aligns
   with its voxel grid and uses that tree only for `getFitnessScore()`, but the two

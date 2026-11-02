@@ -105,6 +105,33 @@ class TestKoidePublicBag(unittest.TestCase):
         self.assertEqual(result["diagnostic_coverage"], 0.2)
         self.assertFalse(result["passed"])
 
+    def test_off_map_error_is_reported_apart_but_still_gated(self):
+        # One pose per second for 300 s, from the first expected cloud at 10 s.
+        stamps = np.arange(10.0, 310.0)
+        gt = np.array([[t, 0, 0, 0, 0, 0, 0, 1] for t in stamps])
+        poses = gt.copy()
+        poses[:, 1] = 0.1
+        since_first = stamps - 10.0
+        off_map = (since_first >= MODULE.OFF_MAP_SEC[0]) & (
+            since_first <= MODULE.OFF_MAP_SEC[1]
+        )
+        poses[off_map, 1] = 1.0
+        expected = [int(t * 1e9) for t in stamps]
+        result = MODULE.evaluate(poses, gt, expected, expected)
+        self.assertEqual(result["off_map_matched_poses"], int(off_map.sum()))
+        self.assertAlmostEqual(result["rmse_on_map_m"], 0.1)
+        self.assertAlmostEqual(result["rmse_off_map_m"], 1.0)
+        # The gate still scores every pose: 96 of 300 at 1 m fail it.
+        self.assertGreater(result["rmse_m"], 0.35)
+        self.assertFalse(result["passed"])
+
+    def test_off_map_rmse_is_none_without_poses_there(self):
+        gt = np.array([[float(t), 0, 0, 0, 0, 0, 0, 1] for t in range(10)])
+        result = MODULE.evaluate(gt, gt, range(10), range(10))
+        self.assertIsNone(result["rmse_off_map_m"])
+        self.assertEqual(result["rmse_on_map_m"], 0.0)
+        self.assertEqual(result["off_map_matched_poses"], 0)
+
     def test_duplicate_or_nonfinite_poses_cannot_pass(self):
         gt = np.array([[float(t), 0, 0, 0, 0, 0, 0, 1] for t in range(10)])
         poses = np.repeat(gt[:2], 5, axis=0)
