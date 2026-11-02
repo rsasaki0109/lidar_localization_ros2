@@ -83,6 +83,37 @@ trajectory onto the other:
   gap between the backends; outside the stretch they differ by 0.015 m. Compare
   variants on the RMSE outside the stretch as well; `summarize_runs.py` reports it.
 
+## Would a better anchor help?
+
+No: on this sequence a more accurate anchor makes the carried pose worse.
+`anchor_tilt.py` takes five NDT_OMP runs on `main` (2026-11-02, 0.309-0.352 m off the
+map). It replaces the last accepted scan's tilt error with the mean of the last N
+accepted scans, or with none, by turning the off-map poses about the anchor position.
+
+| Anchor tilt error | Roll / pitch deg | Off-map RMSE m |
+| --- | --- | --- |
+| the last accepted scan's, as run | -0.39 / +0.17 to +0.18 | 0.309-0.352 |
+| mean of the last 5 accepted scans | -0.12 to -0.14 / +0.11 to +0.15 | 0.424-0.531 |
+| mean of the last 10 | -0.05 to 0.00 / +0.11 to +0.14 | 0.508-0.590 |
+| mean of the last 30 | -0.06 to -0.01 / +0.10 to +0.12 | 0.518-0.589 |
+| none | 0 / 0 | 0.613-0.709 |
+
+- **The anchor is the same in every run.** The last accepted scan is always the one at
+  163.0 s, and its tilt error is the same within 0.01 deg. The spread of the off-map
+  RMSE between runs comes from the online RKO-LIO odometry, which is not
+  deterministic.
+- **That scan's roll error is an outlier.** Scan to scan, roll varies by 0.20-0.25 deg
+  (standard deviation over the last 30) and pitch by 0.12-0.14 deg. The last scan's
+  -0.39 deg roll is 1.4-1.8 standard deviations from the mean of the last 30.
+- **But it cancels part of the odometry's own sink.** Averaging it away, or removing
+  the tilt error altogether, raises the off-map RMSE by 0.1-0.4 m. The same holds for
+  levelling `map -> odom` (`level_map_to_odom`), which on `outdoor_hard_02b` raised the
+  RMSE from 0.26 to 0.35 m ([troubleshooting](../../docs/troubleshooting.md)).
+- **So the off-map RMSE of this check measures the odometry, and luck in the anchor.**
+  Nothing the localizer does with the anchor improves it here, and a change that
+  makes it better should not be read as a better anchor. Compare variants on the map
+  (`rmse_on_map_m`).
+
 ## Decision
 
 On Koide, SMALL_GICP fails the gate's condition that RMSE and coverage are not
@@ -107,4 +138,6 @@ ros2 run lidar_localization_ros2 run_koide_public_bag.py --download --data-dir k
 # koide-runs/sgicp_1, and alternate.
 python3 experiments/koide_backend_comparison/summarize_runs.py koide-data \
   NDT_OMP=koide-runs/ndt_1 SMALL_GICP=koide-runs/sgicp_1 --json results.json
+# the anchor tilt (any number of runs)
+python3 experiments/koide_backend_comparison/anchor_tilt.py koide-data koide-runs/ndt_1
 ```
