@@ -198,8 +198,6 @@ Open items after v1.7.0:
   far from the IMU prediction. Neither saves the track; the stretch needs odometry
   ([experiments/koide_imu_ab](../experiments/koide_imu_ab/README.md#neither-guard-change-saves-the-track)).
   With RKO-LIO odometry the sequence is tracked.
-- **Release ndt_omp_ros2 0.2.0 to the buildfarm.** The speedups in this release live
-  there; a binary install of ndt_omp_ros2 0.1.0 works, only slower.
 - **Remove the deprecated legacy `use_imu` deskew in a later release.**
 
 Other work remains:
