@@ -473,6 +473,13 @@ accuracy.
   Boreas never trips that guard. Neither keeping the velocity on a reset nor rejecting
   such measurements saves the track there; that stretch needs odometry.
 
+  With RKO-LIO odometry, as in the online 02b check, both arms track every on-map
+  stretch of 01a: 0.17 m for the first 105 s, and back to 0.12-0.36 m after the path
+  leaves the map (185-305 s). The preintegration then helps only in the hard stretch
+  at 105-185 s, where 19% of the scans are accepted: 0.71 against 0.88-0.95 m. The
+  on-map RMSE is 0.57 against 0.64-0.67 m
+  ([experiments/koide_imu_ab](../experiments/koide_imu_ab/README.md#with-odometry)).
+
   So the preintegration helps on both datasets: a little accuracy on Boreas,
   robustness on Koide. It is offered as a working, math-verified, guarded option. It is
   **not** a general accuracy improvement over pure NDT.

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Koide `outdoor_hard_01a` online with RKO-LIO odometry, as the 02b check runs
+  (`experiments/koide_imu_ab/online.py`, two runs each).
+  - **Odometry carries the sequence:** both arms hold 0.17 m for the first 105 s, where
+    the localizer alone lost the track at 35-111 s.
+  - **Recovery:** they get through the hard stretch, and return to 0.12-0.36 m after
+    the path leaves the map at 185-305 s.
+  - **The preintegration:** with odometry it lowers only the hard stretch at
+    105-185 s, from 0.88-0.95 to 0.71 m. The on-map RMSE goes from 0.64-0.67 to
+    0.57 m, with the same acceptance and coverage.
 - `param/boreas_ndt_velodyne.yaml` sets `use_continuous_time_deskew: false`.
   - **What it saved:** with `use_imu_preintegration` on, the default `relative_motion`
     deskew ran on about 45 000 points a scan. That was the 3-4 ms longer scan
