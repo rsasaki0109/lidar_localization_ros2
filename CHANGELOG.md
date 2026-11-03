@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `/alignment_status` reports the IMU preintegration smoother's state after each
+  scan's update. The new keys are `imu_gyro_bias_{x,y,z}_rad_s`,
+  `imu_accel_bias_{x,y,z}_m_s2` and `imu_velocity_{x,y,z}_m_s`, and they read `nan`
+  while the smoother is off or uninitialized.
+  - **Koide `outdoor_hard_01a`:** they show that the IMU runs are lost by resets, not
+    by the biases (0.7-1.0°/s gyro, 0.07 m/s²).
+  - **The resets:** from 107 s on, NDT accepts poses on degraded scans that are up to
+    16° off. The divergence guard takes them as right and resets the smoother to them,
+    zeroing the biases and giving it 3.8 m/s where the ground truth moves at 1.1 m/s.
+  - **Boreas** never trips that guard
+    ([experiments/koide_imu_ab](experiments/koide_imu_ab/README.md#the-smoother-is-reset-to-wrong-measurements)).
+
 ## 1.6.0 - 2026-11-03
 
 ### Added
