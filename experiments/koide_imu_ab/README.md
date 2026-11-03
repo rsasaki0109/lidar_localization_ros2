@@ -141,6 +141,42 @@ registration for most of 106.4-111 s: two cloud gaps, an IMU gap and a blocked s
 with turns of 8-29° across the gaps, and nothing else to bridge them. The online check of `outdoor_hard_02b`
 gets through such stretches with odometry, and 01a would need that too.
 
+## With odometry
+
+`online.py` replays the sequence the way the online `outdoor_hard_02b` check does:
+- RKO-LIO odometry seeds every scan.
+- The localizer runs the 02b online profile, with gyro deskew and the background map
+  rebuild.
+- There is one ground-truth initial pose at bag + 4 s, and the bag plays at 1x.
+- The only change between the arms is `use_imu_preintegration`; two runs each.
+
+The odometry seed comes before the IMU prediction. So here the preintegration only adds
+the smoother backend and its guard.
+
+**The 01a path leaves the map.** From about 185 s to 305 s no map point lies within
+30 m of the ground truth, and no scan can register. This is the same kind of stretch
+as 163-259 s on 02b.
+
+| Stretch | RMSE, preintegration off | RMSE, on | Scans accepted |
+| --- | --- | --- | --- |
+| 0-105 s | 0.172 m (both) | 0.172 m (both) | 100% |
+| 105-185 s, on the map, hard | 0.884 m, 0.950 m | **0.707 m** (both) | 19% |
+| 185-305 s, off the map | 6.52 m | 6.52 m | 0% |
+| from 305 s | 0.732-0.733 m | 0.732 m | 92-100% from 320 s |
+| **on the map, overall** | 0.643 m, 0.674 m | **0.565 m** (both) | |
+| all poses | 3.636 m | 3.627-3.628 m | 100% diagnostic coverage |
+
+- **Odometry is what carries 01a.** Alone the localizer lost the track at 35-49 s, or
+  111 s with the IMU. With odometry both arms hold 0.17 m for the first 105 s.
+- **They get through the hard stretch.** Only 19% of the scans are accepted there, so
+  odometry bridges between them.
+- **They recover on the map again.** Odometry drifts up to 9.9 m off the map, and the
+  error falls back to 0.12-0.36 m once the scans register again, from 320 s.
+- **The preintegration then helps only in the hard stretch.** It brings 105-185 s down
+  from 0.88-0.95 m to 0.71 m and the on-map RMSE from 0.64-0.67 m to 0.57 m. It
+  changes neither the acceptance nor the coverage, and off the map, where odometry
+  alone carries the pose, it does nothing.
+
 ## Rerun
 
 ```bash
@@ -149,5 +185,9 @@ gets through such stretches with odometry, and 01a would need that too.
 for imu in false true; do
   python3 experiments/koide_imu_ab/replay.py DATA_DIR outdoor_hard_01a \
     /tmp/koide_imu_$imu --ws "$WS" --set use_imu_preintegration=$imu
+  # With RKO-LIO odometry (rko_lio 0.3.2, as in the online 02b check):
+  python3 experiments/koide_imu_ab/online.py DATA_DIR outdoor_hard_01a \
+    /tmp/koide_online_$imu --ws "$WS" --rko "$RKO_WS/install/rko_lio/lib/rko_lio/online_node" \
+    --set use_imu_preintegration=$imu
 done
 ```
