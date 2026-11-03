@@ -421,6 +421,9 @@ accuracy.
     same final pose to 1e-9 m. The node now processes every scan; the dense runs
     scored 0.120-0.122 m over the 81-82% of scans they processed
     ([experiments/imu_smoother_solve](../experiments/imu_smoother_solve/README.md)).
+    The anchor on the first pose of the window had no residual, so Gauss-Newton never
+    met its stopping limit and ran all ten iterations. With the residual it stops after
+    about three, and an update on Boreas takes 5 ms instead of 9 ms.
   - **The legacy `use_imu` deskew breaks the clouds.** It integrates the
     accelerometer without removing gravity, times each point from its azimuth
     relative to the first point of the cloud (meaningless after a voxel filter), and
@@ -436,8 +439,9 @@ accuracy.
   preintegration 0.098 and 0.099 m (max 0.39 against 0.41 m), with 98.8-99.3% of the
   scans processed ([benchmark.md](benchmark.md#boreas-vehicle-preset-replay)). The
   cloud queue dropped the rest. Those runs shared the CPU with a download, and in the
-  dense stretches the preintegration puts the node up to 0.9 s behind real time even
-  without that, against 0.23 s without the IMU, on 4 vCPUs.
+  dense stretches the preintegration put the node up to 0.9 s behind real time even
+  without that, against 0.23 s without the IMU, on 4 vCPUs. With the smoother's anchor
+  fixed it is 0.56-0.68 s.
 
 - **Koide `outdoor_hard_01a`, the second dataset** (handheld MID-360, its own IMU, the
   localizer alone without odometry, two runs each;

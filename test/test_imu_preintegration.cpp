@@ -17,8 +17,10 @@
 
 #include <Eigen/Eigenvalues>
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <random>
 #include <vector>
 
 namespace {
@@ -440,6 +442,33 @@ void test_reset_pending_integration_prevents_duplicate_repropagation()
 
 }  // namespace
 
+// Before the anchor carried its residual, the first pose crept a little each iteration,
+// the step never fell below the stopping limit and every update ran all ten.
+void test_smoother_converges_in_a_few_iterations_with_a_full_window()
+{
+  ImuGtsamSmoother smoother;
+  smoother.initialize(0, 0, 0, 0, 0, 0, 10.0, 0, 0, 0.0);
+  std::mt19937 rng(1);
+  std::normal_distribution<double> noise(0.0, 0.02);
+  int max_iterations_with_full_window = 0;
+  double t = 0.0;
+  for (int scan = 1; scan <= 80; ++scan) {
+    for (int k = 0; k < 20; ++k) {
+      smoother.integrateImu(Eigen::Vector3d(0, 0, 0), Eigen::Vector3d(0, 0, 9.81), 0.005);
+    }
+    t += 0.1;
+    assert(smoother.update(10.0 * t + noise(rng), noise(rng), noise(rng), 0, 0, 0, 0.5, t));
+    assert(smoother.lastIterationCount() >= 1);
+    if (scan > smoother.params_.window_size) {
+      max_iterations_with_full_window =
+        std::max(max_iterations_with_full_window, smoother.lastIterationCount());
+    }
+  }
+  assert(max_iterations_with_full_window <= 3);
+  const Eigen::Matrix4f pose = smoother.poseMatrix();
+  assert(std::abs(pose(0, 3) - 80.0) < 0.1);
+}
+
 int main()
 {
   test_reset_is_identity();
@@ -459,5 +488,6 @@ int main()
   test_smoother_estimates_nonzero_initial_velocity_from_pose_updates();
   test_smoother_state_transfer_preserves_velocity_and_bias_for_repropagation();
   test_reset_pending_integration_prevents_duplicate_repropagation();
+  test_smoother_converges_in_a_few_iterations_with_a_full_window();
   return 0;
 }

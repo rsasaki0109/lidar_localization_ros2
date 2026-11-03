@@ -37,6 +37,34 @@ The preset without the IMU scores 0.132 m with every scan processed, and is
 byte-identical before and after (it does not run the smoother). Measured 2026-11-02 on
 ROS 2 Jazzy, 4 vCPUs; a public-dataset replay, not a physical-robot test.
 
+## The anchor never let it converge
+
+Even sparse, an update on Boreas took 9.4 ms on average, 12-14 ms in the dense
+stretches. Counted, most updates ran all ten Gauss-Newton iterations:
+- **The cause:** the prior that holds the first pose of the window had its weight
+  (1e6) on the diagonal, but no residual. Nothing pulled the first pose back, so the
+  other factors moved it by about 3e-5 every iteration.
+- **The effect:** the squared step fell from about 1e-3 to a floor of 1e-10 to 1e-9 on
+  the synthetic drive, and higher on Boreas. It never reached the 1e-10 at which the
+  loop stops.
+- **The fix:** the anchor now carries its residual against the first pose as the
+  update found it. The squared step then falls 5e-4, 7e-11, 1e-16.
+
+| Build | Synthetic, scans 51-120 median / max | Boreas GN iterations, mean | Boreas update, mean (84-116 s) |
+| --- | --- | --- | --- |
+| before | 10.0-21.7 ms / 14.8-23.7 ms | 6.5 (9 in 84-116 s) | 9.4 ms (12-14 ms) |
+| **anchor with its residual** | **3.6-3.7 ms / 6.2-8.2 ms** | **3.3** (3.4-5.1) | **5.1-5.3 ms** (5.4-8.0 ms) |
+
+- **The result barely moves.** The synthetic final pose moves by 4e-5 m. Two Boreas runs
+  score 0.127 m with every scan processed, as before.
+- **The node falls less far behind.** Over the first 120 s its pose lags `/clock` by
+  0.25-0.41 s at p95 and 0.56-0.68 s at most, against 0.46-0.70 s and 0.75-0.92 s.
+  Without the IMU it is 0.12 and 0.23 s.
+- **Under load it still drops scans.** With two cores kept busy, 1091 of 1158 scans
+  remain, against 1084.
+- **The test:** `test_smoother_converges_in_a_few_iterations_with_a_full_window` fails
+  without the residual.
+
 ## Rerun
 
 ```bash
