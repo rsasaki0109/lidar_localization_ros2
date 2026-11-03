@@ -21,6 +21,7 @@ public:
   static constexpr int POSE_DIM = 9;
   // Gauss-Newton stops once the squared step is below this (see optimize()).
   static constexpr double kConvergedStepSquaredNorm = 1e-8;
+  int last_iterations_ = 0;  // profiling only
   static constexpr int BIAS_DIM = 6;
 
   // --- Configuration ---
@@ -550,6 +551,7 @@ private:
       // stays there, so the old 1e-10 limit never stopped the loop: every update ran
       // all ten iterations. Stopping at 1e-8 (a 1e-4 step) costs 2 iterations on
       // Boreas-like data and moves the final pose by about 3e-5 m.
+      last_iterations_ = iter + 1;
       if (delta.squaredNorm() < kConvergedStepSquaredNorm) break;
     }
   }

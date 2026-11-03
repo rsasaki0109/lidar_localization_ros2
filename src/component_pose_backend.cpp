@@ -11,7 +11,7 @@ std::FILE * backendProfileFile()
       const char * path = std::getenv("LL_PROFILE_BACKEND_CSV");
       if (!path) {return nullptr;}
       std::FILE * f = std::fopen(path, "w");
-      if (f) {std::fprintf(f, "stamp,smoother_ms,backend_ms,pose_only\n");}
+      if (f) {std::fprintf(f, "stamp,smoother_ms,backend_ms,pose_only,iterations\n");}
       return f;
     }();
   return file;
@@ -386,9 +386,10 @@ PCLLocalization::updateImuPreintegrationBackend(
   last_scan_stamp_for_imu_ = stamp_sec;
   if (std::FILE * f = backendProfileFile()) {
     std::fprintf(
-      f, "%.6f,%.3f,%.3f,%d\n", stamp_sec, smoother_ms,
+      f, "%.6f,%.3f,%.3f,%d,%d\n", stamp_sec, smoother_ms,
       std::chrono::duration<double, std::milli>(
-        std::chrono::steady_clock::now() - backend_start).count(), pose_only ? 1 : 0);
+        std::chrono::steady_clock::now() - backend_start).count(), pose_only ? 1 : 0,
+      imu_smoother_.last_iterations_);
     std::fflush(f);
   }
   return update;
