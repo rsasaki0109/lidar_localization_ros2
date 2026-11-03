@@ -2,10 +2,30 @@
 
 ## Unreleased
 
+## 1.7.0 - 2026-11-03
+
+### Added
+
+- `/alignment_status` reports the IMU preintegration smoother's state after each
+  scan's update. The new keys are `imu_gyro_bias_{x,y,z}_rad_s`,
+  `imu_accel_bias_{x,y,z}_m_s2` and `imu_velocity_{x,y,z}_m_s`, and they read `nan`
+  while the smoother is off or uninitialized.
+  - **Koide `outdoor_hard_01a`:** they show that the IMU runs are lost by resets, not
+    by the biases (0.7-1.0°/s gyro, 0.07 m/s²).
+  - **The resets:** from 107 s on, NDT accepts poses on degraded scans that are up to
+    16° off. The divergence guard takes them as right and resets the smoother to them,
+    zeroing the biases and giving it 3.8 m/s where the ground truth moves at 1.1 m/s.
+  - **Boreas** never trips that guard
+    ([experiments/koide_imu_ab](experiments/koide_imu_ab/README.md#the-smoother-is-reset-to-wrong-measurements)).
+
+
+### Changed
+
 - NDT_OMP aligns about a third faster in the node, with the same result
-  ([ndt_omp_ros2 #15](https://github.com/rsasaki0109/ndt_omp_ros2/pull/15)). CI and the
-  Docker image build ndt_omp_ros2's `humble` branch, so they get it. A workspace with
-  its own checkout of ndt_omp_ros2 needs to pull it.
+  ([ndt_omp_ros2 #15](https://github.com/rsasaki0109/ndt_omp_ros2/pull/15), released in
+  ndt_omp_ros2 0.2.0). CI and the Docker image build ndt_omp_ros2's `humble` branch, so
+  they get it; a workspace with its own checkout needs to pull it, and a binary install
+  needs 0.2.0. With an older ndt_omp_ros2 the node works as before, only slower.
   - **What was slow:** in every derivative pass, each thread added its sums into its own
     entry of shared vectors, for every point. Those entries share cache lines, so the
     threads kept invalidating each other's caches. The voxel lookups also went through a
@@ -21,6 +41,12 @@
   - **On its own**, on 154 dense Boreas scans, `align()` takes 14 ms instead of 27.5 ms
     on 8 threads, and 12 ms instead of 33.6 ms on 4
     ([experiments/ndt_alignment_cost](experiments/ndt_alignment_cost/README.md#inside-align-false-sharing)).
+- GICP_OMP (`registration_method: GICP_OMP`) aligns faster, with the same result
+  ([ndt_omp_ros2 #16](https://github.com/rsasaki0109/ndt_omp_ros2/pull/16), in 0.2.0).
+  Its cost and gradient had the same false sharing, and its correspondence search
+  took slots from a shared atomic counter. On 154 dense Boreas scans against a 100 m
+  crop thinned to 0.5 m, an alignment takes 10.9-11.6 ms instead of 17.9-19.5 ms on
+  4 threads, with bit-identical transforms. No preset uses it.
 - The fitness score of every registration attempt is computed on the registration
   threads (`include/lidar_localization/registration_fitness.hpp`).
   - **Why:** PCL's `getFitnessScore()` runs one nearest-neighbour search per scan
@@ -34,15 +60,6 @@
     to 0.6 m off, where the preset ends up to 0.3 m off. They are not adopted
     ([experiments/ndt_alignment_cost](experiments/ndt_alignment_cost/README.md)).
   - **Test:** `test_registration_fitness`
-- Koide `outdoor_hard_01a` online with RKO-LIO odometry, as the 02b check runs
-  (`experiments/koide_imu_ab/online.py`, two runs each).
-  - **Odometry carries the sequence:** both arms hold 0.17 m for the first 105 s, where
-    the localizer alone lost the track at 35-111 s.
-  - **Recovery:** they get through the hard stretch, and return to 0.12-0.36 m after
-    the path leaves the map at 185-305 s.
-  - **The preintegration:** with odometry it lowers only the hard stretch at
-    105-185 s, from 0.88-0.95 to 0.71 m. The on-map RMSE goes from 0.64-0.67 to
-    0.57 m, with the same acceptance and coverage.
 - `param/boreas_ndt_velodyne.yaml` sets `use_continuous_time_deskew: false`.
   - **What it saved:** with `use_imu_preintegration` on, the default `relative_motion`
     deskew ran on about 45 000 points a scan. That was the 3-4 ms longer scan
@@ -54,6 +71,9 @@
     about 52 ms before a driver would. The gyro `imu_pose_history` deskew therefore
     cannot run on it. Timings on the same container drift between sessions
     ([docs/benchmark.md](docs/benchmark.md#boreas-vehicle-preset-replay)).
+
+### Fixed
+
 - The IMU preintegration smoother converges.
   - **The bug:** the prior that holds the first pose of its window had its weight on
     the diagonal but no residual. The other factors moved that pose a little every
@@ -65,12 +85,34 @@
   - **Boreas:** the RMSE is unchanged at 0.127 m. The node's lag behind real time is
     0.25-0.59 s at p95 and 0.56-0.83 s at most in three runs, against 0.46-0.70 and
     0.75-0.92 s before: about as much as it varies from run to run.
+  - **Test:** `test_smoother_converges_in_a_few_iterations_with_a_full_window`
+    ([experiments/imu_smoother_solve](experiments/imu_smoother_solve/README.md#the-anchor-never-let-it-converge)).
+
+### Validation
+
+- The release check: two full Koide `outdoor_hard_02b` replays at 1x passed on `main`
+  at `6b1e693`, built without a build type, with ndt_omp_ros2 at `24c5df3`.
+  - **Accuracy:** 0.233 m RMSE in both (0.181 m on the map), against 0.232 m for
+    v1.6.0.
+  - **Coverage:** 100.0% diagnostic coverage in both.
+  - **Alignment:** 17 ms at the median and 45-46 ms at p95, against 36 and 106-112 ms.
+    This ran on a slower host CPU (2.10 GHz against 2.80 GHz) in the same 4-vCPU
+    container type
+    ([docs/koide-online-replay.md](docs/koide-online-replay.md#v170-release-verification-2026-11-03),
+    `docs/validation/v1.7.0-koide-20261103`).
+- Koide `outdoor_hard_01a` online with RKO-LIO odometry, as the 02b check runs
+  (`experiments/koide_imu_ab/online.py`, two runs each).
+  - **Odometry carries the sequence:** both arms hold 0.17 m for the first 105 s, where
+    the localizer alone lost the track at 35-111 s.
+  - **Recovery:** they get through the hard stretch, and return to 0.12-0.36 m after
+    the path leaves the map at 185-305 s.
+  - **The preintegration:** with odometry it lowers only the hard stretch at
+    105-185 s, from 0.88-0.95 to 0.71 m. The on-map RMSE goes from 0.64-0.67 to
+    0.57 m, with the same acceptance and coverage.
 - `ndt_num_threads: 8` stays in the Boreas preset. With 4 threads on 4 vCPUs the
   alignment takes 1-2 ms longer. With two cores kept busy, 36-43 more of the 1158
   scans drop
   ([docs/benchmark.md](docs/benchmark.md#boreas-vehicle-preset-replay)).
-  - **Test:** `test_smoother_converges_in_a_few_iterations_with_a_full_window`
-    ([experiments/imu_smoother_solve](experiments/imu_smoother_solve/README.md#the-anchor-never-let-it-converge)).
 - Two changes to the IMU smoother's divergence guard were tried on Koide
   `outdoor_hard_01a` and are not kept.
   - **Keeping the smoother's velocity and biases on a reset:** the track is lost at
@@ -80,17 +122,6 @@
     threshold too, and after a second a wrong pose is accepted.
   - **Boreas** trips neither guard
     ([experiments/koide_imu_ab](experiments/koide_imu_ab/README.md#neither-guard-change-saves-the-track)).
-- `/alignment_status` reports the IMU preintegration smoother's state after each
-  scan's update. The new keys are `imu_gyro_bias_{x,y,z}_rad_s`,
-  `imu_accel_bias_{x,y,z}_m_s2` and `imu_velocity_{x,y,z}_m_s`, and they read `nan`
-  while the smoother is off or uninitialized.
-  - **Koide `outdoor_hard_01a`:** they show that the IMU runs are lost by resets, not
-    by the biases (0.7-1.0°/s gyro, 0.07 m/s²).
-  - **The resets:** from 107 s on, NDT accepts poses on degraded scans that are up to
-    16° off. The divergence guard takes them as right and resets the smoother to them,
-    zeroing the biases and giving it 3.8 m/s where the ground truth moves at 1.1 m/s.
-  - **Boreas** never trips that guard
-    ([experiments/koide_imu_ab](experiments/koide_imu_ab/README.md#the-smoother-is-reset-to-wrong-measurements)).
 
 ## 1.6.0 - 2026-11-03
 
