@@ -1,4 +1,22 @@
 #include "component_internal.hpp"
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+namespace
+{
+// Local profiling only (experiments/preint-profile).
+std::FILE * backendProfileFile()
+{
+  static std::FILE * file = []() -> std::FILE * {
+      const char * path = std::getenv("LL_PROFILE_BACKEND_CSV");
+      if (!path) {return nullptr;}
+      std::FILE * f = std::fopen(path, "w");
+      if (f) {std::fprintf(f, "stamp,smoother_ms,backend_ms,pose_only\n");}
+      return f;
+    }();
+  return file;
+}
+}  // namespace
 bool PCLLocalization::applyRegistrationPoseBackend(
   const lidar_localization::RegistrationObservation & observation,
   const lidar_localization::AlignmentAttempt & attempt,
@@ -226,6 +244,9 @@ PCLLocalization::updateImuPreintegrationBackend(
   bool imu_prediction_ready)
 {
   std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
+  const auto backend_start = std::chrono::steady_clock::now();
+  double smoother_ms = 0.0;
+  bool pose_only = false;
   initializeImuPreintegrationSmootherIfNeeded(observation, stamp_sec);
 
   if (imu_seed_consistency_gate_enabled_) {
@@ -288,6 +309,8 @@ PCLLocalization::updateImuPreintegrationBackend(
   }
 
   if (update.state.should_update_smoother) {
+    const auto smoother_start = std::chrono::steady_clock::now();
+    pose_only = imu_dual_queue_enabled_ && !latest_imu_open_loop_prediction_available_;
     if (imu_dual_queue_enabled_ && !latest_imu_open_loop_prediction_available_) {
       update.updated = imu_smoother_.updatePoseOnly(
         observation.x, observation.y, observation.z,
@@ -299,6 +322,8 @@ PCLLocalization::updateImuPreintegrationBackend(
         observation.roll, observation.pitch, observation.yaw,
         attempt.fitness_score, stamp_sec);
     }
+    smoother_ms = std::chrono::duration<double, std::milli>(
+      std::chrono::steady_clock::now() - smoother_start).count();
 
     update.pose = imu_smoother_.poseMatrix();
     if (update.pose.allFinite()) {
@@ -359,6 +384,13 @@ PCLLocalization::updateImuPreintegrationBackend(
     latest_dual_queue_integrated_stamp_ = stamp_sec;
   }
   last_scan_stamp_for_imu_ = stamp_sec;
+  if (std::FILE * f = backendProfileFile()) {
+    std::fprintf(
+      f, "%.6f,%.3f,%.3f,%d\n", stamp_sec, smoother_ms,
+      std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - backend_start).count(), pose_only ? 1 : 0);
+    std::fflush(f);
+  }
   return update;
 }
 
