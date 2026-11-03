@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Two changes to the IMU smoother's divergence guard were tried on Koide
+  `outdoor_hard_01a` and are not kept.
+  - **Keeping the smoother's velocity and biases on a reset:** the track is lost at
+    107.0 s and 110.8 s, as before.
+  - **Rejecting a measurement 2 m or 10° from the IMU prediction:** the track is lost
+    earlier, and the error reaches 14-52 m. The scans that follow fail the score
+    threshold too, and after a second a wrong pose is accepted.
+  - **Boreas** trips neither guard
+    ([experiments/koide_imu_ab](experiments/koide_imu_ab/README.md#neither-guard-change-saves-the-track)).
 - `/alignment_status` reports the IMU preintegration smoother's state after each
   scan's update. The new keys are `imu_gyro_bias_{x,y,z}_rad_s`,
   `imu_accel_bias_{x,y,z}_m_s2` and `imu_velocity_{x,y,z}_m_s`, and they read `nan`
