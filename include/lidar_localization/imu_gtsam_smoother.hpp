@@ -19,8 +19,6 @@ class ImuGtsamSmoother
 {
 public:
   static constexpr int POSE_DIM = 9;
-  // Gauss-Newton stops once the squared step is below this (see optimize()).
-  static constexpr double kConvergedStepSquaredNorm = 1e-8;
   int last_iterations_ = 0;  // profiling only
   static constexpr int BIAS_DIM = 6;
 
@@ -326,6 +324,8 @@ private:
     Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
     Eigen::Index analyzed_non_zeros = -1;
 
+    const Eigen::Vector3d anchor_position = poses_[0].position;
+    const Eigen::Matrix3d anchor_rotation = poses_[0].R;
     for (int iter = 0; iter < 10; ++iter) {
       triplets.clear();
       Eigen::VectorXd b = Eigen::VectorXd::Zero(total_dim);
@@ -336,6 +336,8 @@ private:
         add_diagonal(k, anchor_w);
         add_diagonal(6 + k, anchor_w);
       }
+      b.segment<3>(0) += anchor_w * (poses_[0].position - anchor_position);
+      b.segment<3>(6) += anchor_w * so3::Log(anchor_rotation.transpose() * poses_[0].R);
 
       // Velocity is only weakly observed when an interval has too little IMU
       // data to form a stable factor. Keep those dimensions numerically tame.
@@ -547,12 +549,8 @@ private:
       gyro_bias_ += delta.segment<3>(bias_offset);
       accel_bias_ += delta.segment<3>(bias_offset + 3);
 
-      // The step falls from about 1e-3 to a floor near 1e-9 after one iteration and
-      // stays there, so the old 1e-10 limit never stopped the loop: every update ran
-      // all ten iterations. Stopping at 1e-8 (a 1e-4 step) costs 2 iterations on
-      // Boreas-like data and moves the final pose by about 3e-5 m.
       last_iterations_ = iter + 1;
-      if (delta.squaredNorm() < kConvergedStepSquaredNorm) break;
+      if (delta.squaredNorm() < 1e-10) break;
     }
   }
 };
