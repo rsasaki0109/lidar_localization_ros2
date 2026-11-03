@@ -318,11 +318,26 @@ PCLLocalization::updateImuPreintegrationBackend(
         update.smoother_measurement_rotation_delta_deg});
   }
 
-  if (
-    (imu_dual_queue_enabled_ &&
-     (update.state.state_reset || !update.updated)) ||
-    (!imu_dual_queue_enabled_ && !update.state.fallback_mode))
-  {
+  if (imu_dual_queue_enabled_ && (update.state.state_reset || !update.updated)) {
+    // Move the smoother onto the measurement, but keep its velocity and biases. The
+    // guard cannot tell which side is wrong, and a velocity re-estimated from the last
+    // two poses inherits the error of a bad measurement: on Koide outdoor_hard_01a a
+    // pose 16 deg off gave 3.8 m/s where the sensor moved at 1.1 m/s.
+    const Eigen::Vector3d velocity = imu_smoother_.velocity();
+    const Eigen::Vector3d gyro_bias = imu_smoother_.gyroBias();
+    const Eigen::Vector3d accel_bias = imu_smoother_.accelBias();
+    if (
+      imu_smoother_.isInitialized() && velocity.allFinite() &&
+      gyro_bias.allFinite() && accel_bias.allFinite())
+    {
+      imu_smoother_.initializeState(
+        Eigen::Vector3d(observation.x, observation.y, observation.z),
+        so3::eulerToRotation(observation.roll, observation.pitch, observation.yaw),
+        velocity, gyro_bias, accel_bias, stamp_sec);
+    } else {
+      resetImuPreintegrationSmootherToObservation(observation, stamp_sec);
+    }
+  } else if (!imu_dual_queue_enabled_ && !update.state.fallback_mode) {
     resetImuPreintegrationSmootherToObservation(observation, stamp_sec);
   }
   imu_preintegration_fallback_mode_ = update.state.fallback_mode;
