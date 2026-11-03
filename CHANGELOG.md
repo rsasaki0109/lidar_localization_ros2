@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- The fitness score of every registration attempt is computed on the registration
+  threads (`include/lidar_localization/registration_fitness.hpp`).
+  - **Why:** PCL's `getFitnessScore()` runs one nearest-neighbour search per scan
+    point, one after another, after `align()` and outside `alignment_time_sec`. On
+    Boreas that took 6.5-7 ms a scan, a fifth of the alignment again.
+  - **Now:** it takes 2 ms on 4-8 threads. The searches are the same, and they are
+    summed in point order as in PCL, so the score is bit-identical. None of 154
+    Boreas scans differ, and the Boreas preset's 120 s trajectory is byte-identical.
+  - **Cheaper NDT settings:** DIRECT1 neighbours and a looser epsilon cut the
+    alignment by half or more, but converge less. From a seed 0.5 m off they end up
+    to 0.6 m off, where the preset ends up to 0.3 m off. They are not adopted
+    ([experiments/ndt_alignment_cost](experiments/ndt_alignment_cost/README.md)).
+  - **Test:** `test_registration_fitness`
 - Koide `outdoor_hard_01a` online with RKO-LIO odometry, as the 02b check runs
   (`experiments/koide_imu_ab/online.py`, two runs each).
   - **Odometry carries the sequence:** both arms hold 0.17 m for the first 105 s, where
