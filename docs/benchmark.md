@@ -347,8 +347,11 @@ Over the first 600 s (`--duration 600`: 4.3 km, 5786 scans, a map of 20.9 M poin
     104-116 s, where 4600-4900 points remain after filtering against 2700 elsewhere.
   - **Without the IMU** the node keeps up there on 4 vCPUs: over the first 120 s its
     pose lags `/clock` by 0.12 s at p95 and 0.23 s at most.
-  - **With it** the lag is 0.46-0.70 s at p95 and 0.75-0.92 s at most, close to the
-    10-scan `cloud_queue_depth` (about 1 s). Four such runs lost no scan.
+  - **With it** the lag was 0.46-0.70 s at p95 and 0.75-0.92 s at most, close to the
+    10-scan `cloud_queue_depth` (about 1 s). Four such runs lost no scan. Since the
+    smoother's anchor carries its residual, an update takes about half the time and
+    the lag is 0.25-0.41 s and 0.56-0.68 s
+    ([experiments/imu_smoother_solve](../experiments/imu_smoother_solve/README.md#the-anchor-never-let-it-converge)).
   - **With two cores kept busy** the lag reaches 1.3 s, and the queue drops the oldest
     scans: 74 of 1158 with the IMU, 15 without.
   - **Not the transport:** a second subscriber with the same QoS received every cloud.

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- The IMU preintegration smoother converges.
+  - **The bug:** the prior that holds the first pose of its window had its weight on
+    the diagonal but no residual. The other factors moved that pose a little every
+    Gauss-Newton iteration, so the step never fell below the stopping limit, and most
+    updates on Boreas ran all ten iterations.
+  - **The fix:** the anchor now pulls the first pose back to where the update found
+    it. Updates stop after about three iterations, and take 5 ms on Boreas instead
+    of 9 ms (12-14 ms in the dense stretches).
+  - **Boreas:** the RMSE is unchanged at 0.127 m. The node's lag behind real time
+    falls to 0.25-0.41 s at p95 and 0.56-0.68 s at most, from 0.46-0.70 and
+    0.75-0.92 s.
+  - **Test:** `test_smoother_converges_in_a_few_iterations_with_a_full_window`
+    ([experiments/imu_smoother_solve](experiments/imu_smoother_solve/README.md#the-anchor-never-let-it-converge)).
 - Two changes to the IMU smoother's divergence guard were tried on Koide
   `outdoor_hard_01a` and are not kept.
   - **Keeping the smoother's velocity and biases on a reset:** the track is lost at
