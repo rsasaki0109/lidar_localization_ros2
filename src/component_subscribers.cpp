@@ -2,6 +2,50 @@
 #include <pcl/registration/gicp.h>
 #include <pcl/registration/ndt.h>
 #include <rclcpp/qos_overriding_options.hpp>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+
+namespace
+{
+// Local profiling only (experiments/preint-profile): LL_PROFILE_CSV=path writes the
+// wall time of each stage of every scan callback.
+using ProfileClock = std::chrono::steady_clock;
+std::FILE * profileFile()
+{
+  static std::FILE * file = []() -> std::FILE * {
+      const char * path = std::getenv("LL_PROFILE_CSV");
+      if (!path) {return nullptr;}
+      std::FILE * f = std::fopen(path, "w");
+      if (f) {std::fprintf(f, "stamp,wait_ms,admit_ms,prepare_ms,seed_ms,align_ms,backend_ms,total_ms\n");}
+      return f;
+    }();
+  return file;
+}
+struct ScanProfileRow
+{
+  ProfileClock::time_point entry{ProfileClock::now()};
+  ProfileClock::time_point locked{entry}, admitted{entry}, prepared{entry}, seeded{entry},
+  aligned{entry};
+  double stamp{0.0};
+  bool reached_align{false};
+  static double ms(ProfileClock::time_point a, ProfileClock::time_point b)
+  {
+    return std::chrono::duration<double, std::milli>(b - a).count();
+  }
+  ~ScanProfileRow()
+  {
+    std::FILE * f = profileFile();
+    if (!f || !reached_align) {return;}
+    const auto end = ProfileClock::now();
+    std::fprintf(
+      f, "%.6f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n", stamp, ms(entry, locked),
+      ms(locked, admitted), ms(admitted, prepared), ms(prepared, seeded), ms(seeded, aligned),
+      ms(aligned, end), ms(entry, end));
+    std::fflush(f);
+  }
+};
+}  // namespace
 void PCLLocalization::initializePubSub()
 {
   RCLCPP_INFO(get_logger(), "initializePubSub");
@@ -804,12 +848,16 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
 
 void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
 {
+  ScanProfileRow profile;
   auto state_lock = callback_state_coordinator_.lockState();
+  profile.locked = ProfileClock::now();
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
   double scan_stamp_sec = 0.0;
   if (!admitScanMessage(msg, &scan_stamp_sec)) {
     return;
   }
+  profile.admitted = ProfileClock::now();
+  profile.stamp = scan_stamp_sec;
   // Select by source time, then copy before alignment releases the state lock. Keep the
   // seed and rejected advance on the same observation; receive fresh data for
   // the next scan without changing this scan's prediction halfway through.
@@ -831,6 +879,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   const std::size_t filtered_point_count = prepared_scan.filtered_point_count;
   const pcl::PointCloud<pcl::PointXYZI>::Ptr tmp_ptr = prepared_scan.cloud;
   setRegistrationSourceCloud(tmp_ptr);
+  profile.prepared = ProfileClock::now();
 
   const std::uint64_t seed_generation =
     callback_state_coordinator_.initialPoseGeneration();
@@ -841,6 +890,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     lidar_localization::registrationSeedSourceName(selected_seed.source);
   Eigen::Matrix4f init_guess =
     refineSeedWithNdtInitializer(tmp_ptr, selected_seed.init_guess);
+  profile.seeded = ProfileClock::now();
   auto pipeline_result = runAlignmentPipelineForScan(
     init_guess,
     scan_stamp_sec,
@@ -848,6 +898,8 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     imu_prediction_ready,
     state_lock,
     seed_generation);
+  profile.aligned = ProfileClock::now();
+  profile.reached_align = true;
 
   if (
     shutting_down_.load(std::memory_order_acquire) ||
