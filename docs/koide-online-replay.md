@@ -113,6 +113,53 @@ python3 tools/readme_media/initial_pose_from_tum.py \
 
 Ground truth supplies only that initial pose and evaluation; it is not an odometry input. Record `/pcl_pose` and `/alignment_status` before playing the bag. For the 150 m comparison, change only `local_map_radius` in the generated localizer YAML.
 
+## v1.6.0 release verification (2026-11-03)
+
+Two full `outdoor_hard_02b` replays at 1x passed on the release tree: `release/v1.6.0`
+at `a3f0076`, which is `main` at `b1692d5` plus the version bump.
+
+- **Build:** both this package and `ndt_omp_ros2` were built as in `AGENTS.md`, without
+  a build type.
+- **Setup:** the same as for v1.5.0. ROS 2 Jazzy in one 4-vCPU cloud container, with
+  the same RKO-LIO 0.3.2 binary (`7e91814`, Release).
+- **Profile:** the current one (`koide_outdoor_hard_02b_online.yaml`). Since v1.5.0 it
+  ignores points beyond 60 m, builds the next local map in the background (#262) and
+  deskews with the gyro (#263).
+
+```bash
+ros2 run lidar_localization_ros2 run_koide_public_bag.py --data-dir koide-data \
+  --output koide-runs/run1 --rko-executable "$RKO_WS/install/rko_lio/lib/rko_lio/online_node"
+```
+
+| Metric | Run 1 | Run 2 | Demo acceptance |
+| --- | --- | --- | --- |
+| Position RMSE | 0.232 m | 0.232 m | <= 0.35 m |
+| on / off the map (163.3-259.0 s) | 0.178 / 0.321 m | 0.178 / 0.320 m | — |
+| Diagnostic cloud stamps | 2,205 / 2,209 (99.8%) | 2,208 / 2,209 (100.0%) | >= 97% |
+| Distinct GT-matched pose stamps / expected clouds | 2,198 / 2,209 (99.5%) | 2,201 / 2,209 (99.6%) | >= 95% |
+| Position error p95 | 0.602 m | 0.583 m | — |
+| Maximum output timestamp gap | 0.90 s | 0.90 s | — |
+| Alignment median / p95 | 36 / 112 ms | 36 / 106 ms | — |
+| Command / RKO / localizer / player exit codes | all 0 | all 0 | successful exit |
+
+RKO dropped 20 frames per run for too few ICP keypoints, as before. Against the v1.5.0
+check on this setup:
+- **RMSE:** 0.232 m against 0.254-0.262 m.
+- **Diagnostic coverage:** 99.8-100% against 97.6-98.3%, so the 97% gate now has about
+  3 points to spare.
+
+The profile changes account for these gains
+([experiments/koide_online_coverage](../experiments/koide_online_coverage/README.md),
+[experiments/koide_gyro_deskew](../experiments/koide_gyro_deskew/README.md)).
+
+Machine-readable summaries and receipts of [run 1](validation/v1.6.0-koide-20261103/run1/summary.json)
+and [run 2](validation/v1.6.0-koide-20261103/run2/summary.json), and the
+[provenance](validation/v1.6.0-koide-20261103/provenance.json) record the result,
+configuration and executable hashes.
+[Download the logs, trajectories and receipts of both runs](validation/v1.6.0-koide-20261103/evidence.tar.gz).
+Archive SHA-256: `33d19da80be37aa33dfe19dab740ee50d23ca326ec245923b5572f15fee6218e`. It
+contains no bag or map files.
+
 ## v1.5.0 release verification (2026-11-01)
 
 Two full `outdoor_hard_02b` replays at 1x with the unchanged 75 m profile passed on

@@ -1,0 +1,51 @@
+{
+  "date": "2026-11-03",
+  "localizer_source_commit": "a3f0076",
+  "localizer_source_note": "release/v1.6.0: main at b1692d5 plus the version bump in package.xml and CMakeLists.txt (the version is not compiled in)",
+  "localizer_build": "colcon build --symlink-install --packages-up-to lidar_localization_ros2, no CMAKE_BUILD_TYPE (as in AGENTS.md); ndt_omp_ros2 also without a build type",
+  "localizer_sha256": "35c66aa3ed1e88a6faf3b0978d8dbd35967d923e63a1cad9e9035b1c69023ef5",
+  "ndt_omp_source_commit": "63bf15b965b71d3a53db1757abe8e31b6114372a",
+  "rko_source": "https://github.com/rsasaki0109/rko_lio",
+  "rko_source_commit": "7e91814a8abbfce6641526e03667966fcad01d0f",
+  "rko_pinned_by": "lidar_slam_ros2 d13d9e7 (Thirdparty/rko_lio)",
+  "rko_version": "0.3.2",
+  "rko_build": "Release",
+  "rko_sha256": "0e9411f6c6f3436e2e6fd52865e0a0c9c9deb0b0d59ac87dc15bf91060db9f73",
+  "profile": "tools/readme_media/koide_outdoor_hard_02b_online.yaml: NDT_OMP, 75 m local map built in the background, 60 m scan range, gyro-only imu_pose_history deskew",
+  "ros_distro": "jazzy",
+  "architecture": "x86_64",
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+  "cpu_count": 4,
+  "command": "ros2 run lidar_localization_ros2 run_koide_public_bag.py --data-dir /home/user/koide-data --output /home/user/koide-runs/v160_N --rko-executable /home/user/rko_ws/install/rko_lio/lib/rko_lio/online_node",
+  "command_exit_code": 0,
+  "repeat_count": 2,
+  "rko_insufficient_icp_keypoint_drops": [
+    20,
+    20
+  ],
+  "alignment_ms": {
+    "median": [
+      36,
+      36
+    ],
+    "p95": [
+      112,
+      106
+    ]
+  },
+  "previous_release": {
+    "version": "v1.5.0",
+    "evidence": "docs/validation/v1.5.0-koide-20261101",
+    "rmse_m": [
+      0.262,
+      0.254
+    ],
+    "diagnostic_coverage": [
+      0.983,
+      0.976
+    ],
+    "note": "the v1.5.0 profile: 100 m scan range, local map rebuilt in the scan callback, relative_motion deskew instead of the gyro-only imu_pose_history"
+  },
+  "hardware_validation": false,
+  "notes": "Full public sequence at 1x, one cloud container, the same setup as the v1.5.0 check (ROS 2 Jazzy, 4 vCPUs, the same RKO binary). The profile differs from v1.5.0's (#262, #263)."
+}
