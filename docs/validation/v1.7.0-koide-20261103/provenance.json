@@ -1,0 +1,63 @@
+{
+  "date": "2026-11-03",
+  "localizer_source_commit": "6b1e693",
+  "localizer_source_note": "main at 6b1e693; release/v1.7.0 adds only the version bump in package.xml and CMakeLists.txt and these docs (the version is not compiled in)",
+  "localizer_build": "colcon build --symlink-install --packages-up-to lidar_localization_ros2, no CMAKE_BUILD_TYPE (as in AGENTS.md), MAKEFLAGS=-j2; ndt_omp_ros2 also without a build type (it now defaults to Release)",
+  "localizer_sha256": "55809220e3edd6ec9e905da679c1a314f229a7fde84383e028f8a6aa677ff85f",
+  "ndt_omp_source_commit": "24c5df3ba4de3032b80728350089b457cf58a739",
+  "ndt_omp_source_note": "humble at 24c5df3, with #15 and #16; the 0.2.0 release (#17) adds only the version bump and the changelog date",
+  "rko_source": "https://github.com/rsasaki0109/rko_lio",
+  "rko_source_commit": "7e91814a8abbfce6641526e03667966fcad01d0f",
+  "rko_pinned_by": "lidar_slam_ros2 d13d9e7 (Thirdparty/rko_lio)",
+  "rko_version": "0.3.2",
+  "rko_build": "Release",
+  "rko_sha256": "0e9411f6c6f3436e2e6fd52865e0a0c9c9deb0b0d59ac87dc15bf91060db9f73",
+  "profile": "tools/readme_media/koide_outdoor_hard_02b_online.yaml: NDT_OMP, 75 m local map built in the background, 60 m scan range, gyro-only imu_pose_history deskew",
+  "ros_distro": "jazzy",
+  "architecture": "x86_64",
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "cpu_count": 4,
+  "command": "ros2 run lidar_localization_ros2 run_koide_public_bag.py --data-dir /home/user/koide-data --output /home/user/koide-runs/v170_N --rko-executable /home/user/rko_ws/install/rko_lio/lib/rko_lio/online_node",
+  "command_exit_code": 0,
+  "repeat_count": 2,
+  "rko_insufficient_icp_keypoint_drops": [
+    20,
+    20
+  ],
+  "alignment_ms": {
+    "median": [
+      17,
+      17
+    ],
+    "p95": [
+      45,
+      46
+    ]
+  },
+  "previous_release": {
+    "version": "v1.6.0",
+    "evidence": "docs/validation/v1.6.0-koide-20261103",
+    "rmse_m": [
+      0.232,
+      0.232
+    ],
+    "diagnostic_coverage": [
+      0.998,
+      1.0
+    ],
+    "alignment_ms": {
+      "median": [
+        36,
+        36
+      ],
+      "p95": [
+        112,
+        106
+      ]
+    },
+    "note": "the same profile, RKO binary and container type; ndt_omp_ros2 at 63bf15b, before #15 and #16",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.80GHz"
+  },
+  "hardware_validation": false,
+  "notes": "Full public sequence at 1x, one cloud container, the same setup and profile as the v1.6.0 check (ROS 2 Jazzy, 4 vCPUs, the same RKO binary, identical configuration hashes), but on a different host CPU (2.10 GHz against 2.80 GHz), so the alignment times are not a like-for-like comparison. The first attempt to build the release workspace with MAKEFLAGS=-j3 was killed for memory (15 GB, no swap) and was rebuilt with -j2 before either run."
+}

@@ -113,6 +113,47 @@ python3 tools/readme_media/initial_pose_from_tum.py \
 
 Ground truth supplies only that initial pose and evaluation; it is not an odometry input. Record `/pcl_pose` and `/alignment_status` before playing the bag. For the 150 m comparison, change only `local_map_radius` in the generated localizer YAML.
 
+## v1.7.0 release verification (2026-11-03)
+
+Two full `outdoor_hard_02b` replays at 1x passed on `main` at `6b1e693`. The release
+branch adds only the version bump, which is not compiled in, and these docs.
+
+- **Build:** both this package and `ndt_omp_ros2` were built as in `AGENTS.md`, without
+  a build type. `ndt_omp_ros2` was at `24c5df3`, with the NDT and GICP speedups that
+  0.2.0 releases.
+- **Setup:** the same as for v1.6.0. ROS 2 Jazzy in one 4-vCPU cloud container, the same
+  RKO-LIO 0.3.2 binary (`7e91814`, Release), and the same profile
+  (`koide_outdoor_hard_02b_online.yaml`), with identical configuration hashes.
+- **The host CPU changed:** 2.10 GHz, against 2.80 GHz for v1.6.0, so the alignment
+  times below are not a like-for-like comparison.
+
+| Metric | Run 1 | Run 2 | Demo acceptance |
+| --- | --- | --- | --- |
+| Position RMSE | 0.233 m | 0.233 m | <= 0.35 m |
+| on / off the map (163.3-259.0 s) | 0.181 / 0.320 m | 0.181 / 0.319 m | — |
+| Diagnostic cloud stamps | 2,209 / 2,209 (100.0%) | 2,209 / 2,209 (100.0%) | >= 97% |
+| Distinct GT-matched pose stamps / expected clouds | 2,202 / 2,209 (99.7%) | 2,202 / 2,209 (99.7%) | >= 95% |
+| Position error p95 | 0.587 m | 0.584 m | — |
+| Maximum output timestamp gap | 0.90 s | 0.90 s | — |
+| Alignment median / p95 | 17 / 45 ms | 17 / 46 ms | — |
+| Command / RKO / localizer / player exit codes | all 0 | all 0 | successful exit |
+
+RKO dropped 20 frames per run for too few ICP keypoints, as before. Against the v1.6.0
+check:
+
+- **Accuracy:** the same, 0.233 m against 0.232 m.
+- **Coverage:** every cloud got a diagnostic in both runs, against 99.8-100%.
+- **Alignment:** it took half the time at the median and well under half at p95, 17
+  and 45-46 ms against 36 and 106-112 ms, on the slower CPU. The NDT_OMP fix
+  (ndt_omp_ros2 #15) and the parallel fitness score (#293) account for it.
+
+Machine-readable summaries and receipts of [run 1](validation/v1.7.0-koide-20261103/run1/summary.json)
+and [run 2](validation/v1.7.0-koide-20261103/run2/summary.json), and the
+[provenance](validation/v1.7.0-koide-20261103/provenance.json) record the result,
+configuration and executable hashes.
+[Download the logs, trajectories and receipts of both runs](validation/v1.7.0-koide-20261103/evidence.tar.gz).
+Archive SHA-256: `43bef1b95a89f80acba06d7b193cc21b2373a0e80025b8194cf7ee5ea86ad6b5`. It contains no bag or map files.
+
 ## v1.6.0 release verification (2026-11-03)
 
 Two full `outdoor_hard_02b` replays at 1x passed on the release tree: `release/v1.6.0`
