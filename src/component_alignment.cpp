@@ -720,6 +720,50 @@ void PCLLocalization::applySoftOdomCorrectionGate(
   }
 }
 
+void PCLLocalization::applyImuPredictionDisagreementGate(
+  lidar_localization::AlignmentPipelineResult & result)
+{
+  if (
+    !reject_measurement_far_from_imu_prediction_ || !result.should_continue ||
+    result.gate_result.reject_measurement)
+  {
+    return;
+  }
+  Eigen::Matrix4f prediction = Eigen::Matrix4f::Identity();
+  {
+    std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
+    if (!latest_imu_open_loop_prediction_available_) {
+      return;
+    }
+    prediction = latest_imu_open_loop_prediction_;
+  }
+  const Eigen::Matrix4f & measurement = result.selected_attempt.final_transformation;
+  if (!prediction.allFinite() || !measurement.allFinite()) {
+    return;
+  }
+  // The thresholds of the smoother's divergence guard. Past them that guard resets the
+  // smoother onto the measurement; this rejects the measurement instead, while the
+  // IMU prediction lasts (the integration window caps it at about a second).
+  const auto guard = imuPreintegrationGuardParams();
+  const double translation_m = static_cast<double>(
+    (prediction.block<3, 1>(0, 3) - measurement.block<3, 1>(0, 3)).norm());
+  const double rotation_deg = lidar_localization::rotationDeltaDeg(prediction, measurement);
+  if (
+    translation_m <= guard.smoother_measurement_translation_guard_m &&
+    rotation_deg <= guard.smoother_measurement_rotation_guard_deg)
+  {
+    return;
+  }
+  RCLCPP_WARN(
+    get_logger(),
+    "Rejecting a measurement %.3f m / %.3f deg from the IMU prediction (fitness=%.6f)",
+    translation_m, rotation_deg, result.selected_attempt.fitness_score);
+  result.gate_result.status_level = lidar_localization::kMeasurementGateWarn;
+  result.gate_result.status_message = "imu_prediction_disagreement_rejected";
+  result.gate_result.reject_measurement = true;
+  lidar_localization::syncPipelineStatusFromGate(result);
+}
+
 void PCLLocalization::logAlignmentPipelineRecovery(
   const lidar_localization::AlignmentPipelineResult & pipeline_result)
 {

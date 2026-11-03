@@ -863,6 +863,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   }
 
   applySoftOdomCorrectionGate(pipeline_result);
+  applyImuPredictionDisagreementGate(pipeline_result);
   logAlignmentPipelineRecovery(pipeline_result);
   if (handleTerminalAlignmentPipelineResult(
       msg->header.stamp,

@@ -331,6 +331,12 @@ void PCLLocalization::initializeParameters()
   get_parameter("enable_soft_odom_correction_gate", enable_soft_odom_correction_gate_);
   RCLCPP_INFO(get_logger(), "point_timestamp_unit: %s; soft odom correction gate: %d",
     point_timestamp_unit_name_.c_str(), enable_soft_odom_correction_gate_);
+  get_parameter(
+    "reject_measurement_far_from_imu_prediction",
+    reject_measurement_far_from_imu_prediction_);
+  RCLCPP_INFO(
+    get_logger(), "reject_measurement_far_from_imu_prediction: %d",
+    reject_measurement_far_from_imu_prediction_);
   get_parameter("reject_above_score_threshold", measurement_gate_config_.reject_above_score_threshold);
   get_parameter("enable_consistency_recovery_gate", measurement_gate_config_.enable_consistency_recovery_gate);
   get_parameter("consistency_recovery_min_rejections", measurement_gate_config_.consistency_recovery_min_rejections);

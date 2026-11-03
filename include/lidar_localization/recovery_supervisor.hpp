@@ -89,6 +89,7 @@ inline bool isRecoveryFailureStatus(const std::string & status_message)
          status_message == "scan_missing_xyz_field" ||
          status_message.rfind("fitness_score_over_", 0) == 0 ||
          status_message == "imu_prediction_correction_guard_rejected" ||
+         status_message == "imu_prediction_disagreement_rejected" ||
          status_message == "odom_tf_prediction_correction_guard_rejected" ||
          status_message == "seed_correction_guard_rejected";
 }
@@ -97,6 +98,7 @@ inline bool isRejectedMeasurementStatus(const std::string & status_message)
 {
   return status_message.rfind("fitness_score_over_", 0) == 0 ||
          status_message == "imu_prediction_correction_guard_rejected" ||
+         status_message == "imu_prediction_disagreement_rejected" ||
          status_message == "odom_tf_prediction_correction_guard_rejected" ||
          status_message == "seed_correction_guard_rejected";
 }

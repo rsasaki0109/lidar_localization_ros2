@@ -300,6 +300,7 @@ public:
   lidar_localization::PointTimestampUnit point_timestamp_unit_{lidar_localization::PointTimestampUnit::kAuto};
   std::string point_timestamp_unit_name_{"auto"};
   bool enable_soft_odom_correction_gate_{false};
+  bool reject_measurement_far_from_imu_prediction_{false};
 
   bool map_received_{false};
   bool initialpose_received_{false};
@@ -608,6 +609,7 @@ public:
     const lidar_localization::AlignmentAttempt & attempt,
     lidar_localization::RegistrationSeedSource seed_source);
   void applySoftOdomCorrectionGate(lidar_localization::AlignmentPipelineResult & result);
+  void applyImuPredictionDisagreementGate(lidar_localization::AlignmentPipelineResult & result);
   void logAlignmentPipelineRecovery(
     const lidar_localization::AlignmentPipelineResult & pipeline_result);
   bool handleTerminalAlignmentPipelineResult(

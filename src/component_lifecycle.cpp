@@ -104,6 +104,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     static_cast<int>(lidar_localization::kDefaultRegistrationTargetCloudKeepAliveCount));
   declare_parameter("point_timestamp_unit", "auto");
   declare_parameter("enable_soft_odom_correction_gate", false);
+  declare_parameter("reject_measurement_far_from_imu_prediction", false);
   declare_parameter("reject_above_score_threshold", true);
   declare_parameter("enable_consistency_recovery_gate", false);
   declare_parameter("consistency_recovery_min_rejections", 10);
