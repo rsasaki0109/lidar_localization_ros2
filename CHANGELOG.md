@@ -2,94 +2,10 @@
 
 ## Unreleased
 
-- An IMU gap no longer holds the last sample through every scan of it.
-  - **The bug:** `planCausalImuIntervals` compared its 0.5 s hold limit with the scan
-    window instead of the age of the held sample, so each 0.1 s window looked covered.
-  - **Koide `outdoor_hard_01a`:** the bag's 0.65 s without IMU at 104.6 s seeded six
-    scans from one sample. After the next cloud gap the prediction was 0.99 m and 4.9°
-    off; with the fix it is 0.61 m and 1.3° off.
-  - **The track:** it now holds up to the blocked sensor at 110.2 s, and is still lost
-    there.
-  - **Boreas:** its IMU has no gap, and its run is unchanged.
-- Why Boreas with `use_imu_preintegration` skipped 0.7-1.2% of its scans over 600 s.
-  The cloud queue dropped them: those runs shared the CPU with a download, and in
-  the dense stretches the preintegration puts the node up to 0.9 s behind real time
-  even without one, against 0.23 s without the IMU, on 4 vCPUs (`cloud_queue_depth` is
-  10 scans).
-- The IMU preintegration on a second dataset: Koide `outdoor_hard_01a`, the localizer
-  alone without odometry (`experiments/koide_imu_ab/replay.py`, the A/B prepared
-  before 6825f05). Without it the localizer loses the track at 35-49 s; with it, it
-  tracks to 111 s in both runs (766-774 poses of 2860 clouds against 228-321), at the
-  same 0.07 m RMSE where both track. Neither covers the 380 s sequence.
-  `koide_public_bag.prepare_si_bag` now converts any Koide sequence, not only
-  `outdoor_hard_02b`.
-- Boreas over the first 600 s (4.3 km): the preset scores 0.105 m RMSE in two runs
-  (max 0.41 m, every scan accepted), and with `use_imu_preintegration` 0.098-0.099 m
-  (max 0.39 m, 98.8-99.3% of the scans processed). `boreas_prepare.py` now retries a
-  download cut off mid-body, and merges the map 100 scans at a time: the 600 s
-  preparation was killed at 14 GB before, the map is byte-identical
-  ([docs/benchmark.md](docs/benchmark.md#boreas-vehicle-preset-replay)).
-- The legacy `use_imu` deskew is deprecated. It integrates the accelerometer without
-  removing gravity, times each point from its azimuth relative to the first point of
-  the cloud, and needs an IMU orientation; on the first 120 s of Boreas it scored 1.7 m
-  with 6% of the scans accepted, where the preset scores 0.132 m. The node warns when
-  `use_imu` is on. The config generator's `--enable-imu` and `--imu-mode both` now
-  enable only the IMU preintegration and print a note; they used to add the legacy
-  deskew. `--imu-mode legacy` still writes `use_imu: true`, with a warning. No preset
-  turned it on.
-- The IMU preintegration smoother solves its normal equations sparsely. The matrix is
-  block tridiagonal over the window plus the bias rows; it was factored densely, up to
-  10 times per accepted scan. Once the 50-pose window was full an update took 87-96 ms
-  (synthetic drive, one core), so with an NDT alignment on top a 10 Hz node skipped
-  scans: 18-19% of the first 120 s of Boreas. Assembled sparse, with the ordering
-  computed once per update, it takes 13 ms and gives the same final pose to 1e-9 m. Boreas
-  with `use_imu_preintegration` now processes every scan and scores 0.127 m (two
-  runs; 0.132 m without the IMU)
-  ([experiments/imu_smoother_solve](experiments/imu_smoother_solve/README.md)).
-- With `use_imu` and `use_imu_preintegration` both on (what the config generator's
-  `--imu-mode both` and `--enable-imu` used to write), the IMU callback now has its own callback
-  group, as it has with the preintegration alone. It used to share the cloud
-  callback's, so the samples waited behind each registration and arrived in bursts
-  after the scan had used a stale window. On the first 120 s of Boreas, one run got a
-  median of 0 new samples per scan and another reported too long an integration
-  window on 374 of 466 scans; a scan now gets 22-23 samples (median). The legacy
-  deskew state takes a new lock (`test/test_imu_callback_group.cpp`). The run still
-  fails, because of the legacy deskew:
-  `use_imu` alone scores 1.7 m with 6% of the scans accepted, where the preset scores
-  0.132 m. It integrates the accelerometer without removing gravity. The
-  preintegration alone scores 0.120-0.122 m with 81-82% of the scans processed
-  ([docs/imu_estimation.md](docs/imu_estimation.md#validation-state-honest-limits)).
-- Eight experiment-only parameter sets are removed and no longer installed:
-  - the six `param/nav2_ndt_urban_*` derivatives (`borderline_only`,
-    `recovery_retry_from_last_pose`, its `_r3` and `_r3_gap1_seed15` variants,
-    `rejected_seed_update` and its `_r1` variant);
-  - `param/odometry/`, the FAST-LIO, KISS-ICP and GLIM configurations for Koide
-    outdoor.
+## 1.6.0 - 2026-11-03
 
-  Nothing in the package read them; the scripts that did went in 6825f05. Each
-  derivative is `nav2_ndt_urban.yaml` with three to six overrides, and the recovery
-  retry that won their comparison is in `param/public_istanbul_60s_benchmark.yaml`.
-  `git checkout 7af1287` has all eight. A launch that passes one of them by path
-  needs `nav2_ndt_urban.yaml` and the overrides instead.
-- `param/benchmark/` is removed and no longer installed. Its 123 run manifests and
-  comparison specs were inputs to the offline runners removed in 6825f05, and nothing
-  has read them since; `git checkout 6825f05^` has both. The route-crop recovery
-  example from one of them is now in
-  [docs/global_localization.md](docs/global_localization.md#route-crop-candidates-opt-in-wp3).
-- Three misspelled members are renamed: `corrent_pose_with_cov_stamped_ptr_`,
-  `map_recieved_` and `initialpose_recieved_` are now `current_…` and `…_received_`.
-  No topic, parameter or diagnostic key changes.
-- The previous-delta seed is scaled to the time since the last pose, at most
-  `previous_delta_max_extrapolation_sec` (new, default 1.0 s; 0 restores one delta per
-  scan). It used to advance the last pose by one inter-scan motion whatever time had
-  passed. So it lagged after dropped scans: on Boreas a 0.6 s gap at 9.5 m/s left it
-  5 m behind, and NDT locked 4 m back along the road. It also overshot on the scan
-  after a gap. On the first 120 s of Boreas with 0.6 s dropped every 10 s, the preset
-  scores 0.132 m RMSE (max 0.41 m), as without gaps, against 0.8-6.3 m (max 7-60 m).
-  With an 80 m scan range, where scans wait for the local map, it scores 0.139 m
-  against 0.93 m. Without gaps nothing changes. The first motion after a reset, from an
-  initial pose to the first scan, is applied once and not rescaled
-  ([experiments/previous_delta_time_scaling](experiments/previous_delta_time_scaling/README.md)).
+### Added
+
 - Boreas is a usable `LiDAR + IMU + GT` benchmark
   ([docs/benchmark.md](docs/benchmark.md#boreas-vehicle-preset-replay)).
   `tools/benchmark/boreas_prepare.py` builds a fixture from `s3://boreas`: a window of
@@ -114,6 +30,9 @@
   scan, so the overall RMSE does not compare configurations well. The gate is unchanged.
   The online profile on `main` scored 0.176-0.183 m on the map in 11 runs, against
   0.222-0.232 m overall.
+
+### Changed
+
 - NDT and NDT_OMP targets are ready sooner. `pcl::Registration` builds a search tree
   over the target points in the first `align()` after `setInputTarget()`. NDT aligns
   with its voxel grid and uses that tree only for `getFitnessScore()`, but the two
@@ -147,6 +66,106 @@
   ([experiments/koide_online_coverage](experiments/koide_online_coverage/README.md)).
   The v1.5.0 verification in `docs/koide-online-replay.md` now lists those six runs and
   the v1.3.0 tag on the same setup (97.0% and 97.9%), not only the first two.
+- Three misspelled members are renamed: `corrent_pose_with_cov_stamped_ptr_`,
+  `map_recieved_` and `initialpose_recieved_` are now `current_…` and `…_received_`.
+  No topic, parameter or diagnostic key changes.
+
+### Deprecated
+
+- The legacy `use_imu` deskew is deprecated. It integrates the accelerometer without
+  removing gravity, times each point from its azimuth relative to the first point of
+  the cloud, and needs an IMU orientation; on the first 120 s of Boreas it scored 1.7 m
+  with 6% of the scans accepted, where the preset scores 0.132 m. The node warns when
+  `use_imu` is on. The config generator's `--enable-imu` and `--imu-mode both` now
+  enable only the IMU preintegration and print a note; they used to add the legacy
+  deskew. `--imu-mode legacy` still writes `use_imu: true`, with a warning. No preset
+  turned it on.
+
+### Removed
+
+- Eight experiment-only parameter sets are removed and no longer installed:
+  - the six `param/nav2_ndt_urban_*` derivatives (`borderline_only`,
+    `recovery_retry_from_last_pose`, its `_r3` and `_r3_gap1_seed15` variants,
+    `rejected_seed_update` and its `_r1` variant);
+  - `param/odometry/`, the FAST-LIO, KISS-ICP and GLIM configurations for Koide
+    outdoor.
+
+  Nothing in the package read them; the scripts that did went in 6825f05. Each
+  derivative is `nav2_ndt_urban.yaml` with three to six overrides, and the recovery
+  retry that won their comparison is in `param/public_istanbul_60s_benchmark.yaml`.
+  `git checkout 7af1287` has all eight. A launch that passes one of them by path
+  needs `nav2_ndt_urban.yaml` and the overrides instead.
+- `param/benchmark/` is removed and no longer installed. Its 123 run manifests and
+  comparison specs were inputs to the offline runners removed in 6825f05, and nothing
+  has read them since; `git checkout 6825f05^` has both. The route-crop recovery
+  example from one of them is now in
+  [docs/global_localization.md](docs/global_localization.md#route-crop-candidates-opt-in-wp3).
+
+### Fixed
+
+- An IMU gap no longer holds the last sample through every scan of it.
+  - **The bug:** `planCausalImuIntervals` compared its 0.5 s hold limit with the scan
+    window instead of the age of the held sample, so each 0.1 s window looked covered.
+  - **Koide `outdoor_hard_01a`:** the bag's 0.65 s without IMU at 104.6 s seeded six
+    scans from one sample. After the next cloud gap the prediction was 0.99 m and 4.9°
+    off; with the fix it is 0.61 m and 1.3° off.
+  - **The track:** it now holds up to the blocked sensor at 110.2 s, and is still lost
+    there.
+  - **Boreas:** its IMU has no gap, and its run is unchanged.
+- With `use_imu` and `use_imu_preintegration` both on (what the config generator's
+  `--imu-mode both` and `--enable-imu` used to write), the IMU callback now has its own callback
+  group, as it has with the preintegration alone. It used to share the cloud
+  callback's, so the samples waited behind each registration and arrived in bursts
+  after the scan had used a stale window. On the first 120 s of Boreas, one run got a
+  median of 0 new samples per scan and another reported too long an integration
+  window on 374 of 466 scans; a scan now gets 22-23 samples (median). The legacy
+  deskew state takes a new lock (`test/test_imu_callback_group.cpp`). The run still
+  fails, because of the legacy deskew:
+  `use_imu` alone scores 1.7 m with 6% of the scans accepted, where the preset scores
+  0.132 m. It integrates the accelerometer without removing gravity. The
+  preintegration alone scores 0.120-0.122 m with 81-82% of the scans processed
+  ([docs/imu_estimation.md](docs/imu_estimation.md#validation-state-honest-limits)).
+- The IMU preintegration smoother solves its normal equations sparsely. The matrix is
+  block tridiagonal over the window plus the bias rows; it was factored densely, up to
+  10 times per accepted scan. Once the 50-pose window was full an update took 87-96 ms
+  (synthetic drive, one core), so with an NDT alignment on top a 10 Hz node skipped
+  scans: 18-19% of the first 120 s of Boreas. Assembled sparse, with the ordering
+  computed once per update, it takes 13 ms and gives the same final pose to 1e-9 m. Boreas
+  with `use_imu_preintegration` now processes every scan and scores 0.127 m (two
+  runs; 0.132 m without the IMU)
+  ([experiments/imu_smoother_solve](experiments/imu_smoother_solve/README.md)).
+- The previous-delta seed is scaled to the time since the last pose, at most
+  `previous_delta_max_extrapolation_sec` (new, default 1.0 s; 0 restores one delta per
+  scan). It used to advance the last pose by one inter-scan motion whatever time had
+  passed. So it lagged after dropped scans: on Boreas a 0.6 s gap at 9.5 m/s left it
+  5 m behind, and NDT locked 4 m back along the road. It also overshot on the scan
+  after a gap. On the first 120 s of Boreas with 0.6 s dropped every 10 s, the preset
+  scores 0.132 m RMSE (max 0.41 m), as without gaps, against 0.8-6.3 m (max 7-60 m).
+  With an 80 m scan range, where scans wait for the local map, it scores 0.139 m
+  against 0.93 m. Without gaps nothing changes. The first motion after a reset, from an
+  initial pose to the first scan, is applied once and not rescaled
+  ([experiments/previous_delta_time_scaling](experiments/previous_delta_time_scaling/README.md)).
+
+### Validation
+
+- Why Boreas with `use_imu_preintegration` skipped 0.7-1.2% of its scans over 600 s.
+  The cloud queue dropped them: those runs shared the CPU with a download, and in
+  the dense stretches the preintegration puts the node up to 0.9 s behind real time
+  even without one, against 0.23 s without the IMU, on 4 vCPUs (`cloud_queue_depth` is
+  10 scans).
+- The IMU preintegration on a second dataset: Koide `outdoor_hard_01a`, the localizer
+  alone without odometry (`experiments/koide_imu_ab/replay.py`, the A/B prepared
+  before 6825f05). Without it the localizer loses the track at 35-49 s; with it, it
+  tracks to 111 s in both runs (766-774 poses of 2860 clouds against 228-321), at the
+  same 0.07 m RMSE where both track. Neither covers the 380 s sequence.
+  `koide_public_bag.prepare_si_bag` now converts any Koide sequence, not only
+  `outdoor_hard_02b`.
+- Boreas over the first 600 s (4.3 km): the preset scores 0.105 m RMSE in two runs
+  (max 0.41 m, every scan accepted), and with `use_imu_preintegration` 0.098-0.099 m
+  (max 0.39 m, 98.8-99.3% of the scans processed). `boreas_prepare.py` now retries a
+  download cut off mid-body, and merges the map 100 scans at a time: the 600 s
+  preparation was killed at 14 GB before, the map is byte-identical
+  ([docs/benchmark.md](docs/benchmark.md#boreas-vehicle-preset-replay)).
 - Re-measured the target build times quoted in `docs/troubleshooting.md` and
   `param/istanbul_gtsam_smoother.yaml`, which came from the unoptimized NDT_OMP before
   v1.5.0. A new NDT_OMP target takes 0.08-0.19 s for a 150 m Istanbul crop after the
