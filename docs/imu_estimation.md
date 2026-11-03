@@ -276,6 +276,8 @@ result:
 | `localizability_guard_active` | whether the proxy suppressed the previous-delta seed |
 | `imu_last_sample_age_sec` | scan-to-IMU timestamp lag |
 | `imu_integration_window_sec` | IMU time available for the current scan interval |
+| `imu_gyro_bias_{x,y,z}_rad_s` / `imu_accel_bias_{x,y,z}_m_s2` | the preintegration smoother's bias estimates after this scan's update (`nan` while it is off or uninitialized); a gyro bias far above the sensor's spec turns an IMU-only prediction |
+| `imu_velocity_{x,y,z}_m_s` | the smoother's velocity in the map frame after this scan's update |
 | `scan_time_status` | continuous-time / deskew data readiness for per-point timing |
 | `scan_time_field` | point field selected for timing, such as `offset_time`, `time`, or `timestamp` |
 | `scan_time_duration_sec` | observed scan span after normalizing per-point times |

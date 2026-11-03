@@ -114,6 +114,12 @@ struct AlignmentDiagnosticValuesInput
   std::size_t path_pose_count{0};
   std::string point_timestamp_unit{"auto"};
   bool soft_odom_correction_gate_enabled{false};
+  // The IMU preintegration smoother's state after this scan's update (NaN while it is
+  // disabled or uninitialized): gyro bias (rad/s), accelerometer bias (m/s^2) and
+  // velocity (m/s, map frame).
+  double imu_gyro_bias_rad_s[3]{NAN, NAN, NAN};
+  double imu_accel_bias_m_s2[3]{NAN, NAN, NAN};
+  double imu_velocity_m_s[3]{NAN, NAN, NAN};
 };
 
 inline const char * boolString(bool value)
@@ -151,7 +157,7 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
   const AlignmentDiagnosticValuesInput & input)
 {
   std::vector<DiagnosticKeyValue> values;
-  values.reserve(100);
+  values.reserve(109);
   auto append = [&values](const std::string & key, const std::string & value) {
       values.emplace_back(key, value);
     };
@@ -312,6 +318,21 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
   append("point_timestamp_unit", input.point_timestamp_unit);
   append("soft_odom_correction_gate_enabled", boolString(input.soft_odom_correction_gate_enabled));
   append("registration_iterations", std::to_string(input.registration_iterations));
+  for (int axis = 0; axis < 3; ++axis) {
+    append(
+      std::string("imu_gyro_bias_") + kAxes[axis] + "_rad_s",
+      std::to_string(input.imu_gyro_bias_rad_s[axis]));
+  }
+  for (int axis = 0; axis < 3; ++axis) {
+    append(
+      std::string("imu_accel_bias_") + kAxes[axis] + "_m_s2",
+      std::to_string(input.imu_accel_bias_m_s2[axis]));
+  }
+  for (int axis = 0; axis < 3; ++axis) {
+    append(
+      std::string("imu_velocity_") + kAxes[axis] + "_m_s",
+      std::to_string(input.imu_velocity_m_s[axis]));
+  }
   return values;
 }
 
