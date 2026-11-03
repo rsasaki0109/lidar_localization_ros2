@@ -380,9 +380,9 @@ What to keep in mind with this dataset (`boreas_prepare.py` handles the first th
   sweep, about 52 ms later. So at a scan's callback the IMU covers only half its sweep:
   the gyro `imu_pose_history` deskew reports `pose_history_ends_too_early` on every
   scan and never runs.
-- **Timings drift between sessions.** In one day the same configuration aligned in
-  16.5-31 ms on average on the same 4-vCPU container. Compare timings only between
-  runs made back to back.
+- **Timings drift between sessions.** On the same 4-vCPU container the preset, with a
+  byte-identical trajectory, aligned in 31.1 ms on average in one session and 20.1 ms in
+  another. Compare timings only between runs made back to back.
 - **`imu.csv` is post-processed and has gravity removed.** `imu_raw.csv` keeps it, in the
   Applanix frame turned by 180° about (1, −1, 0)/√2. In the lidar frame its yaw rate
   follows the ground-truth heading rate with correlation 1.0. Parked, it reads
