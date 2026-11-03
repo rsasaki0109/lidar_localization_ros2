@@ -259,6 +259,19 @@ PCLLocalization::prepareAlignmentDiagnosticValuesInput(
   diagnostic_input.path_pose_count = path_ptr_ ? path_ptr_->poses.size() : 0;
   diagnostic_input.point_timestamp_unit = point_timestamp_unit_name_;
   diagnostic_input.soft_odom_correction_gate_enabled = enable_soft_odom_correction_gate_;
+  if (use_imu_preintegration_) {
+    std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
+    if (imu_smoother_.isInitialized()) {
+      const Eigen::Vector3d gyro_bias = imu_smoother_.gyroBias();
+      const Eigen::Vector3d accel_bias = imu_smoother_.accelBias();
+      const Eigen::Vector3d velocity = imu_smoother_.velocity();
+      for (int axis = 0; axis < 3; ++axis) {
+        diagnostic_input.imu_gyro_bias_rad_s[axis] = gyro_bias[axis];
+        diagnostic_input.imu_accel_bias_m_s2[axis] = accel_bias[axis];
+        diagnostic_input.imu_velocity_m_s[axis] = velocity[axis];
+      }
+    }
+  }
   return diagnostic_input;
 }
 

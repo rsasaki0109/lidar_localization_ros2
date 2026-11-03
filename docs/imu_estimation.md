@@ -276,6 +276,8 @@ result:
 | `localizability_guard_active` | whether the proxy suppressed the previous-delta seed |
 | `imu_last_sample_age_sec` | scan-to-IMU timestamp lag |
 | `imu_integration_window_sec` | IMU time available for the current scan interval |
+| `imu_gyro_bias_{x,y,z}_rad_s` / `imu_accel_bias_{x,y,z}_m_s2` | the preintegration smoother's bias estimates after this scan's update (`nan` while it is off or uninitialized); a gyro bias far above the sensor's spec turns an IMU-only prediction |
+| `imu_velocity_{x,y,z}_m_s` | the smoother's velocity in the map frame after this scan's update |
 | `scan_time_status` | continuous-time / deskew data readiness for per-point timing |
 | `scan_time_field` | point field selected for timing, such as `offset_time`, `time`, or `timestamp` |
 | `scan_time_duration_sec` | observed scan span after normalizing per-point times |
@@ -455,8 +457,14 @@ accuracy.
   scan window instead of the sample's age. With the fix the prediction after the next
   cloud gap is 0.61 m and 1.3° off instead of 0.99 m and 4.9°. The runs then track up
   to the blocked sensor, where the IMU-only prediction over 0.9 s is about 10° off. The
-  bag's gyro alone gets within 0.7° of the ground truth over that time, so the
-  smoother's state is the next suspect.
+  bag's gyro alone gets within 0.7° of the ground truth over that time. The cause is
+  not the biases, which `/alignment_status` now reports (0.7-1.0°/s gyro, 0.07 m/s²).
+  From 107 s on, NDT accepts poses on the degraded scans that are up to 16° off. The
+  divergence guard then takes the LiDAR as right and resets the smoother to them,
+  zeroing the biases and re-estimating the velocity from the wrong poses (3.8 m/s
+  against 1.1 m/s;
+  [experiments/koide_imu_ab](../experiments/koide_imu_ab/README.md#the-smoother-is-reset-to-wrong-measurements)).
+  Boreas never trips that guard.
 
   So the preintegration helps on both datasets: a little accuracy on Boreas,
   robustness on Koide. It is offered as a working, math-verified, guarded option. It is

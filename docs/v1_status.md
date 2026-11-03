@@ -198,10 +198,11 @@ that reproduces the reset.
 
 Open items after v1.6.0:
 
-- **Report the IMU smoother's biases in the diagnostics.** On Koide `outdoor_hard_01a`
-  the IMU-only prediction across a 0.9 s blind stretch is about 10° off, where the
-  bag's gyro alone comes within 0.7°
-  ([experiments/koide_imu_ab](../experiments/koide_imu_ab/README.md#why-the-imu-runs-stop-at-111-s)).
+- **Stop resetting the IMU smoother to a measurement that only just passed.** On Koide
+  `outdoor_hard_01a` NDT accepts poses up to 16° off on degraded scans. The divergence
+  guard then resets the smoother to them, which zeroes its biases and gives it a
+  velocity 3.5 times the true one
+  ([experiments/koide_imu_ab](../experiments/koide_imu_ab/README.md#the-smoother-is-reset-to-wrong-measurements)).
 - **Lower the per-scan cost of `use_imu_preintegration`.** In the dense stretches of
   Boreas it puts the node up to 0.9 s behind real time on 4 vCPUs, near the 10-scan
   cloud queue (0.23 s without it).

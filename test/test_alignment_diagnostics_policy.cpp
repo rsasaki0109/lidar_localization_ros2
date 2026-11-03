@@ -145,9 +145,13 @@ void test_build_alignment_diagnostic_values_order_and_strings()
   input.path_pose_count = 456;
   input.point_timestamp_unit = "nanoseconds";
   input.soft_odom_correction_gate_enabled = true;
+  input.imu_gyro_bias_rad_s[0] = 0.01;
+  input.imu_gyro_bias_rad_s[2] = -0.03;
+  input.imu_accel_bias_m_s2[1] = 0.25;
+  input.imu_velocity_m_s[0] = 1.5;
 
   const auto values = ll::buildAlignmentDiagnosticValues(input);
-  assert(values.size() == 100);
+  assert(values.size() == 109);
   assert(values[0].first == "registration_method");
   assert(values[0].second == "NDT");
   assert(values[1].first == "has_converged");
@@ -271,6 +275,19 @@ void test_build_alignment_diagnostic_values_order_and_strings()
   assert(values[97].first == "point_timestamp_unit" && values[97].second == "nanoseconds");
   assert(values[98].first == "soft_odom_correction_gate_enabled" && values[98].second == "true");
   assert(values[99].first == "registration_iterations" && values[99].second == "9");
+  assert(values[100].first == "imu_gyro_bias_x_rad_s");
+  assert(values[100].second.find("0.010") == 0);
+  assert(values[101].first == "imu_gyro_bias_y_rad_s" && values[101].second == "nan");
+  assert(values[102].first == "imu_gyro_bias_z_rad_s");
+  assert(values[102].second.find("-0.030") == 0);
+  assert(values[103].first == "imu_accel_bias_x_m_s2" && values[103].second == "nan");
+  assert(values[104].first == "imu_accel_bias_y_m_s2");
+  assert(values[104].second.find("0.250") == 0);
+  assert(values[105].first == "imu_accel_bias_z_m_s2");
+  assert(values[106].first == "imu_velocity_x_m_s");
+  assert(values[106].second.find("1.500") == 0);
+  assert(values[107].first == "imu_velocity_y_m_s");
+  assert(values[108].first == "imu_velocity_z_m_s" && values[108].second == "nan");
 }
 
 int main()

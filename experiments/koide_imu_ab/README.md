@@ -85,8 +85,35 @@ blind stretch:**
   ground truth.
 - The next scans are rejected, and the retry lands 3 m off.
 - The bag's gyro, integrated over the same 0.9 s, comes within 0.7° of the ground
-  truth. So the error is in the smoother's state (its biases are the suspect), not in
-  the IMU data. The diagnostics do not report the biases yet.
+  truth, so the IMU data is not the problem.
+
+## The smoother is reset to wrong measurements
+
+`/alignment_status` now reports the smoother's biases and velocity
+(`imu_gyro_bias_*`, `imu_accel_bias_*`, `imu_velocity_*`). One more run with them
+shows that the biases are not the cause:
+
+- **The estimated biases are plausible.** The gyro bias is 0.7-1.0°/s through
+  105 s, which would turn a 0.9 s prediction by under 1°. The accelerometer bias is
+  0.07 m/s². On Boreas, with its Applanix IMU, they are 0.02-0.07°/s and
+  0.01-0.03 m/s².
+- **What breaks the state is a reset onto a wrong measurement.**
+  - At 107.0 s NDT accepted, with a warning, a pose 1.9 m and 16° from the ground
+    truth. The smoother disagreed with it by 1.5 m and 15°.
+  - Above its fixed 2 m / 10° limit, the divergence guard takes the LiDAR as right. So
+    it reset the smoother to that pose: biases back to zero, and a velocity of 3.8 m/s
+    from the two poses across the 0.6 s before it. The ground truth moved at 1.1 m/s.
+  - All later scans were rejected, so nothing corrected it.
+- **Every IMU run here goes through such resets.** The two runs before the fix and the
+  two after it reset 3-5 times each from about 107 s on, at 11-47° of disagreement;
+  the run above reset once. The 10° prediction at 110.7 s comes after such resets at
+  107 s.
+- **Boreas never trips the guard**, over 120 s or 600 s.
+
+When a measurement only just passes and the smoother disagrees by more than 10°, the
+guard cannot tell which of the two is wrong. On this sequence it is the measurement.
+Rejecting such a measurement, or keeping the smoother's velocity on a reset, would be
+the next thing to try.
 
 ## Rerun
 
