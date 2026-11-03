@@ -41,13 +41,52 @@ Two runs each, 2026-11-03, ROS 2 Jazzy, 4 vCPUs:
 - **Neither covers the sequence.** After 111 s the IMU runs are lost too, and their
   last poses are wrong by up to 16 m. That run's RMSE over all poses is the worst of
   the four for this reason. Compare the runs by coverage first, as the doc says.
-- **Why both IMU runs stop at 111 s is not known.** The map has points under the
-  path there; whether it has enough structure to register against was not checked.
-  A whole Koide sequence needs odometry, as in the online check.
+- **Both IMU runs stop at 111 s because the bag has holes there:** gaps in the clouds,
+  a gap in the IMU and a blocked sensor (next section). A whole Koide sequence needs
+  odometry, as in the online check.
 
 So on Koide the preintegration does not show an accuracy gain where both track. It
 shows robustness: it carries the localizer through a stretch where it otherwise
 loses the track.
+
+## Why the IMU runs stop at 111 s
+
+The localizer processes every cloud of the bag; the bag itself has holes. All four
+come within 8 s, in seconds from the start pose:
+
+| When | What the bag has |
+| --- | --- |
+| 103.2-104.6 s | no cloud (1.4 s) |
+| 104.6-105.25 s | no IMU (0.65 s, its only IMU gap) |
+| 105.3-106.2 s | no cloud (0.9 s) |
+| 110.2-110.7 s | the sensor is blocked: 75-100% of the points within 1 m, 0-2568 left after filtering |
+
+**The IMU dropout exposed a bug.** `planCausalImuIntervals` compared its 0.5 s hold
+limit with the scan window, not with the age of the held sample. So the last sample
+before the dropout was held through every scan of it, each 0.1 s window looking
+covered. After the 0.9 s cloud gap, the prediction at 106.2 s was 0.99 m and 4.9° off,
+and the track degraded until the blind stretch. The limit now counts from the held
+sample's stamp. Scans more than 0.5 s into the dropout get no IMU seed, and the pose
+is updated alone. The prediction at 106.2 s is then 0.61 m and 1.3° off.
+
+**Both runs with the fix then track through 106-110 s, but they still stop at the
+blind stretch:**
+
+| Build | Poses / 2860 clouds | Error above 2 m from | RMSE, first 30 s |
+| --- | --- | --- | --- |
+| before the fix | 766, 774 | 110.2 s, 111.7 s | 0.114 m, 0.072 m |
+| with the fix | 780, 781 | 111.6 s (both) | 0.072 m (both) |
+
+**What is left is the IMU-only prediction across the blind stretch.**
+- The last good scan is at 109.8 s. The ground truth then turns 16.5° and moves 1.2 m
+  before the next usable scan, at 110.7 s.
+- The prediction there is about 1 m and 10° off. NDT moves it only 0.26 m and 3° on
+  the three-quarters-blocked scan, and the pose ends 0.93 m and 11.5° from the
+  ground truth.
+- The next scans are rejected, and the retry lands 3 m off.
+- The bag's gyro, integrated over the same 0.9 s, comes within 0.7° of the ground
+  truth. So the error is in the smoother's state (its biases are the suspect), not in
+  the IMU data. The diagnostics do not report the biases yet.
 
 ## Rerun
 

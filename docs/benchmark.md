@@ -340,9 +340,19 @@ Over the first 600 s (`--duration 600`: 4.3 km, 5786 scans, a map of 20.9 M poin
   (0.07-0.17 m); after them no bin exceeds 0.15 m, so the whole scores lower than its
   start.
 - **The IMU preintegration helps here too.** It lowers the RMSE in 27 of the 30 bins,
-  only horizontally, and seeds all but 6 of the scans. It still leaves 0.7-1.2% of the
-  scans unprocessed, the cost of its smoother.
-- **These runs are not identical.** One preset run lost 6 scans; the RMSE is the same.
+  only horizontally, and seeds all but 6 of the scans.
+- **The unprocessed scans were dropped by the cloud queue, under load.** These runs
+  overlapped a download.
+  - **Where:** the dropped scans fall in the dense stretches, such as 84-96 s and
+    104-116 s, where 4600-4900 points remain after filtering against 2700 elsewhere.
+  - **Without the IMU** the node keeps up there on 4 vCPUs: over the first 120 s its
+    pose lags `/clock` by 0.12 s at p95 and 0.23 s at most.
+  - **With it** the lag is 0.46-0.70 s at p95 and 0.75-0.92 s at most, close to the
+    10-scan `cloud_queue_depth` (about 1 s). Four such runs lost no scan.
+  - **With two cores kept busy** the lag reaches 1.3 s, and the queue drops the oldest
+    scans: 74 of 1158 with the IMU, 15 without.
+  - **Not the transport:** a second subscriber with the same QoS received every cloud.
+  - **The preset run that lost 6 scans** lost them the same way; its RMSE is the same.
 
 What to keep in mind with this dataset (`boreas_prepare.py` handles the first three):
 

@@ -80,6 +80,10 @@ inline ImuIntegrationPlan planCausalImuIntervals(
     }
   }
 
+  // A held sample is only good for MAX_INTERVAL_SEC after its own stamp. The
+  // intervals are clipped to [start, end], but the gap is not: in an IMU
+  // dropout the held sample can predate START by more than a scan, and
+  // measuring from START would hold it scan after scan without a limit.
   double cursor = start_stamp_sec;
   bool coverage_broken = !active.has_value();
   for (const auto & sample : samples) {
@@ -91,13 +95,13 @@ inline ImuIntegrationPlan planCausalImuIntervals(
     }
     if (active.has_value()) {
       const double dt = sample.stamp_sec - cursor;
-      if (dt > 0.0 && dt < max_interval_sec) {
+      if (sample.stamp_sec - active->stamp_sec >= max_interval_sec) {
+        ++plan.skipped_gap_count;
+        coverage_broken = true;
+      } else if (dt > 0.0) {
         plan.intervals.push_back(
           {cursor, sample.stamp_sec, active->gyro, active->accel});
         plan.covered_duration_sec += dt;
-      } else if (dt >= max_interval_sec) {
-        ++plan.skipped_gap_count;
-        coverage_broken = true;
       }
     } else {
       coverage_broken = true;
@@ -108,7 +112,7 @@ inline ImuIntegrationPlan planCausalImuIntervals(
 
   if (active.has_value() && cursor < end_stamp_sec) {
     const double dt = end_stamp_sec - cursor;
-    if (dt < max_interval_sec) {
+    if (end_stamp_sec - active->stamp_sec < max_interval_sec) {
       plan.intervals.push_back({cursor, end_stamp_sec, active->gyro, active->accel});
       plan.covered_duration_sec += dt;
     } else {
