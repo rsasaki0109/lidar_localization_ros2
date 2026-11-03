@@ -39,9 +39,8 @@ ROS 2 Jazzy, 4 vCPUs; a public-dataset replay, not a physical-robot test.
 
 ## The anchor never let it converge
 
-Even sparse, an update kept to 9-14 ms on Boreas, where 4600-4900 points remain after
-filtering, against about 3 ms on the synthetic drive. Counted, most updates ran all ten
-Gauss-Newton iterations:
+Even sparse, an update on Boreas took 9.4 ms on average, 12-14 ms in the dense
+stretches. Counted, most updates ran all ten Gauss-Newton iterations:
 - **The cause:** the prior that holds the first pose of the window had its weight
   (1e6) on the diagonal, but no residual. Nothing pulled the first pose back, so the
   other factors moved it by about 3e-5 every iteration.
@@ -49,7 +48,7 @@ Gauss-Newton iterations:
   the synthetic drive, and higher on Boreas. It never reached the 1e-10 at which the
   loop stops.
 - **The fix:** the anchor now carries its residual against the first pose as the
-  update found it. The step then falls 5e-4, 7e-11, 1e-16.
+  update found it. The squared step then falls 5e-4, 7e-11, 1e-16.
 
 | Build | Synthetic, scans 51-120 median / max | Boreas GN iterations, mean | Boreas update, mean (84-116 s) |
 | --- | --- | --- | --- |
