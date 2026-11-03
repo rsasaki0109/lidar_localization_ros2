@@ -234,6 +234,8 @@ public:
   Eigen::Vector3d position() const { return poses_.back().position; }
   Eigen::Matrix3d rotation() const { return poses_.back().R; }
   Eigen::Vector3d gyroBias() const { return gyro_bias_; }
+  // Gauss-Newton iterations of the last optimization (0 before the first one).
+  int lastIterationCount() const { return last_iteration_count_; }
   Eigen::Vector3d accelBias() const { return accel_bias_; }
   std::size_t poseCount() const { return poses_.size(); }
 
@@ -280,6 +282,7 @@ private:
 
   std::deque<PoseEntry> poses_;
   bool initialized_ = false;
+  int last_iteration_count_ = 0;
   double last_stamp_ = 0.0;
 
   // Current preintegration being accumulated
@@ -323,6 +326,13 @@ private:
     Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
     Eigen::Index analyzed_non_zeros = -1;
 
+    // The anchor holds the first pose where this update found it. It needs its residual:
+    // with only the weight on the diagonal, the other factors pulled the first pose by
+    // about 3e-5 per iteration, the step never fell below the 1e-10 limit, and every
+    // update ran all ten iterations.
+    const Eigen::Vector3d anchor_position = poses_[0].position;
+    const Eigen::Matrix3d anchor_rotation = poses_[0].R;
+    last_iteration_count_ = 0;
     for (int iter = 0; iter < 10; ++iter) {
       triplets.clear();
       Eigen::VectorXd b = Eigen::VectorXd::Zero(total_dim);
@@ -333,6 +343,8 @@ private:
         add_diagonal(k, anchor_w);
         add_diagonal(6 + k, anchor_w);
       }
+      b.segment<3>(0) += anchor_w * (poses_[0].position - anchor_position);
+      b.segment<3>(6) += anchor_w * so3::Log(anchor_rotation.transpose() * poses_[0].R);
 
       // Velocity is only weakly observed when an interval has too little IMU
       // data to form a stable factor. Keep those dimensions numerically tame.
@@ -544,6 +556,7 @@ private:
       gyro_bias_ += delta.segment<3>(bias_offset);
       accel_bias_ += delta.segment<3>(bias_offset + 3);
 
+      last_iteration_count_ = iter + 1;
       if (delta.squaredNorm() < 1e-10) break;
     }
   }
