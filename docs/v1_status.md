@@ -42,7 +42,27 @@ for benchmark and regression commands.
 
 ## Current Public Snapshot
 
-Latest release verification (`2026-11-01`):
+Latest release verification (`2026-11-03`):
+
+- release: `v1.6.0`, verified on `release/v1.6.0` at `a3f0076` (`main` at `b1692d5` plus
+  the version bump)
+- Koide `outdoor_hard_02b`, the release check: two full replays at 1x in ROS 2 Jazzy on
+  4 vCPUs with the current online profile, built without a build type as in `AGENTS.md`
+- both passed: `0.232 m` map-frame RMSE (`0.178 m` on the map), `99.8%` and `100.0%`
+  diagnostic coverage
+- Boreas `boreas-2021-09-02-11-42`, `param/boreas_ndt_velodyne.yaml`: `0.132 m` RMSE over
+  the first 120 s, `0.105 m` over the first 600 s (4.3 km); with
+  `use_imu_preintegration`, `0.127 m` and `0.098-0.099 m`
+- Istanbul, `param/istanbul_gtsam_smoother.yaml`, three windows: `0.23`, `0.75` and
+  `0.46 m` horizontal RMSE at `8.9-10 Hz` (median of three runs; measured for v1.5.0,
+  not re-run)
+
+See [the v1.6.0 verification](koide-online-replay.md#v160-release-verification-2026-11-03)
+and [docs/benchmark.md](benchmark.md#boreas-vehicle-preset-replay). This does not
+validate automatic initialization, recovery, physical hardware, or multi-hour
+operation.
+
+Previous release verification (`2026-11-01`):
 
 - release: `v1.5.0`, verified on `main` at `eed5098` (the release tree)
 - Koide `outdoor_hard_02b`: six full replays at 1x in ROS 2 Jazzy on 4 vCPUs, unchanged
@@ -64,7 +84,7 @@ background: five runs passed (`97.2-99.2%`, `0.235-0.239 m`;
 [experiments/koide_online_coverage](../experiments/koide_online_coverage/README.md)). It does not validate automatic initialization,
 recovery, physical hardware, or multi-hour operation.
 
-Previous release-tag verification (`2026-10-09`):
+Earlier release-tag verification (`2026-10-09`):
 
 - release: `v1.3.0`, commit `3878a7ad64a5ef4119942b559f05bf8868270477`
 - Koide `outdoor_hard_02b`: one full replay at 1x in ROS 2 Humble, unchanged 75 m profile
@@ -176,10 +196,16 @@ fixtures, but it did not win the replay of 2026-10-11:
 A fix needs a confirmation that does not lean on intermittent odometry, and a replay
 that reproduces the reset.
 
-Open items after v1.5.0:
+Open items after v1.6.0:
 
-- extend the Boreas replay beyond its first 120 s (the bag takes about 1.4 MB per
-  scan), and compare the IMU-seeded configurations on it
+- **Report the IMU smoother's biases in the diagnostics.** On Koide `outdoor_hard_01a`
+  the IMU-only prediction across a 0.9 s blind stretch is about 10° off, where the
+  bag's gyro alone comes within 0.7°
+  ([experiments/koide_imu_ab](../experiments/koide_imu_ab/README.md#why-the-imu-runs-stop-at-111-s)).
+- **Lower the per-scan cost of `use_imu_preintegration`.** In the dense stretches of
+  Boreas it puts the node up to 0.9 s behind real time on 4 vCPUs, near the 10-scan
+  cloud queue (0.23 s without it).
+- **Remove the deprecated legacy `use_imu` deskew in a later release.**
 
 Other work remains:
 
