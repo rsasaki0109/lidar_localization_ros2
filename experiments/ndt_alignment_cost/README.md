@@ -74,6 +74,53 @@ The localizer now uses it for every registration attempt. It saves about 4.5-5 m
 each scan callback, with the same score and so the same decisions: the Boreas preset's
 trajectory over 120 s is byte-identical.
 
+## Inside `align()`: false sharing
+
+Timers inside NDT_OMP showed where `align()` goes. They ran on 4 threads with the
+preset, with the hash table described below already in:
+
+- **The derivative passes are all of it.** One pass runs per iteration plus one at the
+  seed, about 6.2 per scan. They took 29.2 of the 29.5 ms. The point transforms took
+  0.1 ms and the 6x6 solves 0.02 ms.
+- **Too slow for the arithmetic.** A pass handles about 25 000 point-voxel pairs
+  (5.4 voxels per point). That came to 460 ns of thread time per pair, outside the
+  voxel lookups. Computing each point's transform derivatives once instead of once per
+  voxel saved nothing at this point.
+- **The cause was false sharing.** Each thread added its score, gradient, Hessian and
+  correspondence counts into its own entry of shared vectors, for every point and
+  every correspondence. Those entries sit in the same cache lines, so the threads kept
+  invalidating each other's caches.
+- **The voxel lookups went through a `std::map`**, about 17 tree nodes for the
+  100 000 voxels of a 100 m crop. On their own, the DIRECT7 lookups for one scan took
+  1.7-1.9 ms on 8 threads, and 1.0-1.1 ms with a hash table.
+
+[ndt_omp_ros2 #15](https://github.com/rsasaki0109/ndt_omp_ros2/pull/15) has each thread
+sum into locals, and looks the voxels up in a hash table. The final transforms are
+bit-identical on all 154 scans, for all four neighbour search methods:
+
+| Setting | Threads | Before | After |
+| --- | --- | --- | --- |
+| preset | 8 | 27.5-29 ms | 14.0-14.6 ms |
+| preset | 4 | 33.6 ms | 12.0-12.5 ms |
+| preset, seed moved by `PERTURB` 0.5 | 8 | 65.0 ms | 32.8 ms |
+| DIRECT1, seed moved by `PERTURB` 0.5 | 8 | 33.5 ms | 13.7 ms |
+
+Taken one at a time on 8 threads, the per-thread locals take 27.5 ms to 19.5 ms and the
+hash table takes that to 14 ms.
+
+In the node, over the Boreas preset's 120 s, two pairs of runs alternated back to back
+gave the following `alignment_time_sec`, with a byte-identical trajectory:
+
+| ndt_omp_ros2 | Mean | p90 | p99 | Max |
+| --- | --- | --- | --- | --- |
+| before #15, run 1 | 18.1 ms | 31.8 ms | 58.1 ms | 94.0 ms |
+| with #15, run 1 | 12.4 ms | 22.8 ms | 44.4 ms | 71.8 ms |
+| before #15, run 2 | 19.1 ms | 34.1 ms | 68.8 ms | 120.1 ms |
+| with #15, run 2 | 12.2 ms | 21.1 ms | 43.6 ms | 73.9 ms |
+
+The node gains a third rather than half. Its other threads share the 4 vCPUs, and most
+of its scans are smaller than the dense stretch above.
+
 ## Rerun
 
 ```bash

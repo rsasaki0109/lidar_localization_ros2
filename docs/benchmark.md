@@ -383,6 +383,11 @@ What to keep in mind with this dataset (`boreas_prepare.py` handles the first th
 - **Timings drift between sessions.** On the same 4-vCPU container the preset, with a
   byte-identical trajectory, aligned in 31.1 ms on average in one session and 20.1 ms in
   another. Compare timings only between runs made back to back.
+- **NDT_OMP aligns faster since
+  [ndt_omp_ros2 #15](https://github.com/rsasaki0109/ndt_omp_ros2/pull/15).** Run back
+  to back, the preset aligned in 12.2-12.4 ms on average with it and 18.1-19.1 ms
+  without, with a byte-identical trajectory. The runs above predate it
+  ([experiments/ndt_alignment_cost](../experiments/ndt_alignment_cost/README.md#inside-align-false-sharing)).
 - **`imu.csv` is post-processed and has gravity removed.** `imu_raw.csv` keeps it, in the
   Applanix frame turned by 180° about (1, −1, 0)/√2. In the lidar frame its yaw rate
   follows the ground-truth heading rate with correlation 1.0. Parked, it reads
