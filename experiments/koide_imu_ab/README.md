@@ -112,8 +112,34 @@ shows that the biases are not the cause:
 
 When a measurement only just passes and the smoother disagrees by more than 10°, the
 guard cannot tell which of the two is wrong. On this sequence it is the measurement.
-Rejecting such a measurement, or keeping the smoother's velocity on a reset, would be
-the next thing to try.
+
+## Neither guard change saves the track
+
+Both changes were tried, two runs each, and neither is kept. In the table, "Within
+1 m until" is the last pose within 1 m of the ground truth:
+
+| Change | Within 1 m until | Last accepted scan | Max error | Boreas 120 s |
+| --- | --- | --- | --- | --- |
+| none (the run above) | 106.4 s | 107.0 s | 1.9 m | 0.126 m |
+| keep the velocity and biases on a reset (`fix/imu-reset-keeps-motion`) | 110.8 s, 106.4 s | 110.8 s, 107.0 s | 1.9 m (both) | 0.127 m |
+| reject a measurement 2 m or 10° from the IMU prediction (`fix/imu-prediction-disagreement-gate`) | 106.4 s (both) | 116.4 s, 116.9 s | 14.5 m, 51.7 m | 0.127 m |
+
+- **Keeping the velocity and biases does not help.** The reset pose is still 16° off,
+  so the next updates pull the gyro bias to 0-0.2°/s and the speed down to 0.1-1 m/s.
+  One run is lost at 107.0 s, the other at 110.8 s, as before.
+- **Rejecting the measurement makes it worse.**
+  - The 107.0 s measurement is rejected as meant: 1.8 m and 15° from the prediction.
+  - The next scans start from the previous-delta seed, because the seed consistency
+    gate has not allowed the IMU seed since 106.2 s. They score 6.2-7.6, over the
+    threshold of 6.
+  - About a second after the last accepted scan the IMU prediction runs out. At
+    108.7 s a wrong pose (score 5.2) is accepted, and the error reaches 14-52 m.
+- **Boreas never trips either guard**, so both leave it unchanged.
+
+So the guard is not what limits this stretch. The bag gives the localizer no usable
+registration for most of 106.4-111 s: two cloud gaps, an IMU gap and a blocked sensor,
+with turns of 8-29° across the gaps, and nothing else to bridge them. The online check of `outdoor_hard_02b`
+gets through such stretches with odometry, and 01a would need that too.
 
 ## Rerun
 

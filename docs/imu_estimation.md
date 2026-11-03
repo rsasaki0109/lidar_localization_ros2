@@ -464,7 +464,8 @@ accuracy.
   zeroing the biases and re-estimating the velocity from the wrong poses (3.8 m/s
   against 1.1 m/s;
   [experiments/koide_imu_ab](../experiments/koide_imu_ab/README.md#the-smoother-is-reset-to-wrong-measurements)).
-  Boreas never trips that guard.
+  Boreas never trips that guard. Neither keeping the velocity on a reset nor rejecting
+  such measurements saves the track there; that stretch needs odometry.
 
   So the preintegration helps on both datasets: a little accuracy on Boreas,
   robustness on Koide. It is offered as a working, math-verified, guarded option. It is
