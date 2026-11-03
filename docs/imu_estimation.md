@@ -434,18 +434,23 @@ accuracy.
   preintegration 0.098 and 0.099 m (max 0.39 against 0.41 m), with 98.8-99.3% of the
   scans processed ([benchmark.md](benchmark.md#boreas-vehicle-preset-replay)).
 
-  Until a second dataset agrees, the IMU estimator is offered as a working,
-  math-verified, guarded option, **not** as a general accuracy improvement over pure
-  NDT.
+- **Koide `outdoor_hard_01a`, the second dataset** (handheld MID-360, its own IMU, the
+  localizer alone without odometry, two runs each;
+  [experiments/koide_imu_ab](../experiments/koide_imu_ab/README.md)):
 
-### A/B runs to make
+  | `use_imu_preintegration` | Poses / 2860 clouds | Last accepted scan | RMSE, first 30 s |
+  | --- | --- | --- | --- |
+  | false | 228, 321 | 35 s, 49 s | 0.071 m |
+  | true | 766, 774 | 111 s (both) | 0.114, 0.072 m |
 
-- **Koide `outdoor_hard_01a`**: the bag carries `/livox/imu` (75947 samples over
-  380 s) and ground truth. The two manifests prepared for it differ only in
-  `use_imu_preintegration`; they and their runner, `benchmark_from_manifest`, are at
-  `git checkout 6825f05^` (`param/benchmark/*_full380_ndt_omp_imu_{off,on}.yaml`).
+  Without it the localizer loses the track at 35-49 s; with it, it tracks through to
+  111 s, at the same accuracy where both track. Neither covers the 380 s sequence.
 
-Judge them the Phase 1 way (docs/dev/phase1_koide_backend_comparison.md): a lower
+  So the preintegration helps on both datasets: a little accuracy on Boreas,
+  robustness on Koide. It is offered as a working, math-verified, guarded option. It is
+  **not** a general accuracy improvement over pure NDT.
+
+Judge such runs the Phase 1 way (docs/dev/phase1_koide_backend_comparison.md): a lower
 translation RMSE alone is a trap on a hard sequence, because an estimator can look
 better while tracking far fewer poses. Compare the share of scans accepted, the longest
 lost window and the pose count first, then the RMSE.
