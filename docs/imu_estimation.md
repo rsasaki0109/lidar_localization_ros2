@@ -430,6 +430,10 @@ accuracy.
     group is fixed
     (`test/test_imu_callback_group.cpp`); the legacy deskew still fails the run.
 
+  Over the first 600 s (4.3 km) the preset scores 0.105 m in two runs and the
+  preintegration 0.098 and 0.099 m (max 0.39 against 0.41 m), with 98.8-99.3% of the
+  scans processed ([benchmark.md](benchmark.md#boreas-vehicle-preset-replay)).
+
   Until a second dataset agrees, the IMU estimator is offered as a working,
   math-verified, guarded option, **not** as a general accuracy improvement over pure
   NDT.
@@ -440,7 +444,6 @@ accuracy.
   380 s) and ground truth. The two manifests prepared for it differ only in
   `use_imu_preintegration`; they and their runner, `benchmark_from_manifest`, are at
   `git checkout 6825f05^` (`param/benchmark/*_full380_ndt_omp_imu_{off,on}.yaml`).
-- **Boreas beyond 120 s**, with `--set use_imu_preintegration=true` (not `use_imu`).
 
 Judge them the Phase 1 way (docs/dev/phase1_koide_backend_comparison.md): a lower
 translation RMSE alone is a trap on a hard sequence, because an estimator can look

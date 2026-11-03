@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Boreas over the first 600 s (4.3 km): the preset scores 0.105 m RMSE in two runs
+  (max 0.41 m, every scan accepted), and with `use_imu_preintegration` 0.098-0.099 m
+  (max 0.39 m, 98.8-99.3% of the scans processed). `boreas_prepare.py` now retries a
+  download cut off mid-body, and merges the map 100 scans at a time: the 600 s
+  preparation was killed at 14 GB before, the map is byte-identical
+  ([docs/benchmark.md](docs/benchmark.md#boreas-vehicle-preset-replay)).
 - The legacy `use_imu` deskew is deprecated. It integrates the accelerometer without
   removing gravity, times each point from its azimuth relative to the first point of
   the cloud, and needs an IMU orientation; on the first 120 s of Boreas it scored 1.7 m
