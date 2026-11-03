@@ -58,6 +58,32 @@ void test_missing_anchor_and_large_gap_fail_closed()
   assert(gap.intervals.empty());
 }
 
+void test_dropout_counts_from_the_held_sample_not_the_window()
+{
+  // The IMU stops after 0.0 while scans keep coming every 0.1 s. The held
+  // sample is good for 0.25 s after its own stamp, whatever the window.
+  const std::vector<ll::TimestampedImuSample> dropout{sample(0.0, 1.0)};
+  const auto within = ll::planCausalImuIntervals(0.1, 0.2, dropout, 0.25);
+  assert(within.complete_coverage);
+  assert(within.intervals.size() == 1);
+  assert(std::abs(within.intervals[0].dt() - 0.1) < 1e-12);
+
+  const auto held_too_long = ll::planCausalImuIntervals(0.2, 0.3, dropout, 0.25);
+  assert(!held_too_long.complete_coverage);
+  assert(held_too_long.skipped_gap_count == 1);
+  assert(held_too_long.intervals.empty());
+
+  // The IMU comes back at 0.35 inside the window: the 0.35 s gap since the
+  // held sample breaks coverage although the window started only 0.05 s
+  // before the sample.
+  const auto resumed = ll::planCausalImuIntervals(
+    0.3, 0.4, {sample(0.0, 1.0), sample(0.35, 2.0)}, 0.25);
+  assert(!resumed.complete_coverage);
+  assert(resumed.skipped_gap_count == 1);
+  assert(resumed.intervals.size() == 1);
+  assert(resumed.intervals[0].accel.x() == 2.0);
+}
+
 void test_non_monotonic_or_non_finite_input_is_rejected()
 {
   const auto duplicate = ll::planCausalImuIntervals(
@@ -115,6 +141,7 @@ int main()
   test_plan_stops_exactly_at_scan_time_without_future_sample();
   test_sample_exactly_on_boundary_updates_only_the_next_interval();
   test_missing_anchor_and_large_gap_fail_closed();
+  test_dropout_counts_from_the_held_sample_not_the_window();
   test_non_monotonic_or_non_finite_input_is_rejected();
   test_dual_queue_keeps_prediction_tail_for_repropagation();
   return 0;
