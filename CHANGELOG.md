@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The IMU preintegration on a second dataset: Koide `outdoor_hard_01a`, the localizer
+  alone without odometry (`experiments/koide_imu_ab/replay.py`, the A/B prepared
+  before 6825f05). Without it the localizer loses the track at 35-49 s; with it, it
+  tracks to 111 s in both runs (766-774 poses of 2860 clouds against 228-321), at the
+  same 0.07 m RMSE where both track. Neither covers the 380 s sequence.
+  `koide_public_bag.prepare_si_bag` now converts any Koide sequence, not only
+  `outdoor_hard_02b`.
 - Boreas over the first 600 s (4.3 km): the preset scores 0.105 m RMSE in two runs
   (max 0.41 m, every scan accepted), and with `use_imu_preintegration` 0.098-0.099 m
   (max 0.39 m, 98.8-99.3% of the scans processed). `boreas_prepare.py` now retries a
