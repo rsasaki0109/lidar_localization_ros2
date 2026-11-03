@@ -441,7 +441,7 @@ accuracy.
   cloud queue dropped the rest. Those runs shared the CPU with a download, and in the
   dense stretches the preintegration put the node up to 0.9 s behind real time even
   without that, against 0.23 s without the IMU, on 4 vCPUs. With the smoother's anchor
-  fixed it is 0.56-0.68 s.
+  fixed it is 0.56-0.83 s in three runs.
 
 - **Koide `outdoor_hard_01a`, the second dataset** (handheld MID-360, its own IMU, the
   localizer alone without odometry, two runs each;

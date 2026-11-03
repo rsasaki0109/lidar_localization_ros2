@@ -10,9 +10,13 @@
   - **The fix:** the anchor now pulls the first pose back to where the update found
     it. Updates stop after about three iterations, and take 5 ms on Boreas instead
     of 9 ms (12-14 ms in the dense stretches).
-  - **Boreas:** the RMSE is unchanged at 0.127 m. The node's lag behind real time
-    falls to 0.25-0.41 s at p95 and 0.56-0.68 s at most, from 0.46-0.70 and
-    0.75-0.92 s.
+  - **Boreas:** the RMSE is unchanged at 0.127 m. The node's lag behind real time is
+    0.25-0.59 s at p95 and 0.56-0.83 s at most in three runs, against 0.46-0.70 and
+    0.75-0.92 s before: about as much as it varies from run to run.
+- `ndt_num_threads: 8` stays in the Boreas preset. With 4 threads on 4 vCPUs the
+  alignment takes 1-2 ms longer. With two cores kept busy, 36-43 more of the 1158
+  scans drop
+  ([docs/benchmark.md](docs/benchmark.md#boreas-vehicle-preset-replay)).
   - **Test:** `test_smoother_converges_in_a_few_iterations_with_a_full_window`
     ([experiments/imu_smoother_solve](experiments/imu_smoother_solve/README.md#the-anchor-never-let-it-converge)).
 - Two changes to the IMU smoother's divergence guard were tried on Koide

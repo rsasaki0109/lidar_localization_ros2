@@ -203,9 +203,10 @@ Open items after v1.6.0:
   far from the IMU prediction. Neither saves the track; the stretch needs odometry
   ([experiments/koide_imu_ab](../experiments/koide_imu_ab/README.md#neither-guard-change-saves-the-track)).
 - **Lower the per-scan cost of `use_imu_preintegration` further.** In the dense
-  stretches of Boreas it still puts the node up to 0.56-0.68 s behind real time on
+  stretches of Boreas it still puts the node up to 0.56-0.83 s behind real time on
   4 vCPUs (0.23 s without it). The smoother update is 5-8 ms there, and the scan
-  preparation takes 3-4 ms more than without the IMU.
+  preparation takes 3-4 ms more than without the IMU. Four NDT threads instead of
+  the preset's 8 do not help.
 - **Remove the deprecated legacy `use_imu` deskew in a later release.**
 
 Other work remains:
