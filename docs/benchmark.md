@@ -357,6 +357,13 @@ Over the first 600 s (`--duration 600`: 4.3 km, 5786 scans, a map of 20.9 M poin
     takes 1-2 ms longer. With two cores kept busy, 36-43 more scans drop (1107
     against 1143 without the IMU, 1048 against 1091 with it), since more threads keep
     a larger share of the CPU.
+  - **The deskew is off.** With the preintegration on, the default `relative_motion`
+    deskew took the IMU smoother's poses and ran on about 45 000 points a scan. That
+    accounted for the 3-4 ms longer scan preparation. It changed nothing: with it off
+    the preintegration still scores 0.127 m, so the gain comes from the IMU seed. The
+    preset now sets `use_continuous_time_deskew: false`. Without the IMU the deskew
+    never ran (`continuous_time_deskew_imu_preintegration_disabled`), and the preset's
+    trajectory is byte-identical.
   - **With two cores kept busy** the lag reaches 1.3 s, and the queue drops the oldest
     scans: 74 of 1158 with the IMU, 15 without.
   - **Not the transport:** a second subscriber with the same QoS received every cloud.
@@ -369,6 +376,13 @@ What to keep in mind with this dataset (`boreas_prepare.py` handles the first th
   0.54, and a map built from them is wrong.
 - **The point `time` field is seconds from the scan stamp** (−0.052 to +0.052 s), which
   is mid-sweep, not microseconds.
+- **The bag plays each cloud at its stamp, mid-sweep.** A driver publishes it after the
+  sweep, about 52 ms later. So at a scan's callback the IMU covers only half its sweep:
+  the gyro `imu_pose_history` deskew reports `pose_history_ends_too_early` on every
+  scan and never runs.
+- **Timings drift between sessions.** On the same 4-vCPU container the preset, with a
+  byte-identical trajectory, aligned in 31.1 ms on average in one session and 20.1 ms in
+  another. Compare timings only between runs made back to back.
 - **`imu.csv` is post-processed and has gravity removed.** `imu_raw.csv` keeps it, in the
   Applanix frame turned by 180° about (1, −1, 0)/√2. In the lidar frame its yaw rate
   follows the ground-truth heading rate with correlation 1.0. Parked, it reads

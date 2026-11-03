@@ -412,7 +412,9 @@ accuracy.
   | both, with it | 1.33, 3.53 | 17, 31 | 64%, 68% |
 
   - **The preintegration alone helps a little.** It seeds almost every scan, and its
-    RMSE is 0.005 m lower than without the IMU.
+    RMSE is 0.005 m lower than without the IMU. The seed does that, not the deskew:
+    with `use_continuous_time_deskew: false` it scores the same 0.127 m, and the Boreas
+    preset now turns the deskew off.
   - **It used to cost one scan in five.** The smoother solved its normal equations
     densely: a (9n + 6)-square matrix for a window of n = 50 poses, up to 10 times per
     accepted scan, 87-96 ms per update once the window was full (synthetic drive,

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `param/boreas_ndt_velodyne.yaml` sets `use_continuous_time_deskew: false`.
+  - **What it saved:** with `use_imu_preintegration` on, the default `relative_motion`
+    deskew ran on about 45 000 points a scan. That was the 3-4 ms longer scan
+    preparation measured with the IMU.
+  - **What it bought:** nothing. With it off the preintegration scores the same
+    0.127 m; the gain comes from the IMU seed.
+  - **Without the IMU:** the deskew never ran, and the trajectory is byte-identical.
+  - **Fixture timing:** the Boreas fixture plays each cloud at its mid-sweep stamp,
+    about 52 ms before a driver would. The gyro `imu_pose_history` deskew therefore
+    cannot run on it. Timings on the same container drift between sessions
+    ([docs/benchmark.md](docs/benchmark.md#boreas-vehicle-preset-replay)).
 - The IMU preintegration smoother converges.
   - **The bug:** the prior that holds the first pose of its window had its weight on
     the diagonal but no residual. The other factors moved that pose a little every
