@@ -593,7 +593,9 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   }
   attempt.has_converged = registration_->hasConverged();
   attempt.registration_iterations = registration_objects_.finalIterationCount();
-  attempt.fitness_score = registration_->getFitnessScore();
+  attempt.fitness_score = lidar_localization::parallelFitnessScore(
+    *registration_,
+    lidar_localization::resolveRegistrationThreadCount(ndt_num_threads_, omp_get_max_threads()));
 
   if (enable_registration_localizability_diagnostics_ && registration_objects_.ndt_omp) {
     Eigen::Matrix<double, 6, 6> hessian;
