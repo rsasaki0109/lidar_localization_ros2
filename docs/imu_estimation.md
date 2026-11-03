@@ -432,7 +432,10 @@ accuracy.
 
   Over the first 600 s (4.3 km) the preset scores 0.105 m in two runs and the
   preintegration 0.098 and 0.099 m (max 0.39 against 0.41 m), with 98.8-99.3% of the
-  scans processed ([benchmark.md](benchmark.md#boreas-vehicle-preset-replay)).
+  scans processed ([benchmark.md](benchmark.md#boreas-vehicle-preset-replay)). The
+  cloud queue dropped the rest. Those runs shared the CPU with a download, and in the
+  dense stretches the preintegration puts the node up to 0.9 s behind real time even
+  without that, against 0.23 s without the IMU, on 4 vCPUs.
 
 - **Koide `outdoor_hard_01a`, the second dataset** (handheld MID-360, its own IMU, the
   localizer alone without odometry, two runs each;
@@ -445,6 +448,15 @@ accuracy.
 
   Without it the localizer loses the track at 35-49 s; with it, it tracks through to
   111 s, at the same accuracy where both track. Neither covers the 380 s sequence.
+
+  The stop at 111 s comes after four holes in the bag within 8 s: two cloud gaps, a
+  0.65 s IMU gap and a blocked sensor. The IMU gap exposed a bug. The last sample was
+  held through every scan of it, because the 0.5 s hold limit was compared with the
+  scan window instead of the sample's age. With the fix the prediction after the next
+  cloud gap is 0.61 m and 1.3° off instead of 0.99 m and 4.9°. The runs then track up
+  to the blocked sensor, where the IMU-only prediction over 0.9 s is about 10° off. The
+  bag's gyro alone gets within 0.7° of the ground truth over that time, so the
+  smoother's state is the next suspect.
 
   So the preintegration helps on both datasets: a little accuracy on Boreas,
   robustness on Koide. It is offered as a working, math-verified, guarded option. It is

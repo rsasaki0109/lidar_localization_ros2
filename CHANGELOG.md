@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- An IMU gap no longer holds the last sample through every scan of it.
+  - **The bug:** `planCausalImuIntervals` compared its 0.5 s hold limit with the scan
+    window instead of the age of the held sample, so each 0.1 s window looked covered.
+  - **Koide `outdoor_hard_01a`:** the bag's 0.65 s without IMU at 104.6 s seeded six
+    scans from one sample. After the next cloud gap the prediction was 0.99 m and 4.9°
+    off; with the fix it is 0.61 m and 1.3° off.
+  - **The track:** it now holds up to the blocked sensor at 110.2 s, and is still lost
+    there.
+  - **Boreas:** its IMU has no gap, and its run is unchanged.
+- Why Boreas with `use_imu_preintegration` skipped 0.7-1.2% of its scans over 600 s.
+  The cloud queue dropped them: those runs shared the CPU with a download, and in
+  the dense stretches the preintegration puts the node up to 0.9 s behind real time
+  even without one, against 0.23 s without the IMU, on 4 vCPUs (`cloud_queue_depth` is
+  10 scans).
 - The IMU preintegration on a second dataset: Koide `outdoor_hard_01a`, the localizer
   alone without odometry (`experiments/koide_imu_ab/replay.py`, the A/B prepared
   before 6825f05). Without it the localizer loses the track at 35-49 s; with it, it
