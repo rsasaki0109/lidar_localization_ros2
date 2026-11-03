@@ -57,9 +57,11 @@ stretches. Counted, most updates ran all ten Gauss-Newton iterations:
 
 - **The result barely moves.** The synthetic final pose moves by 4e-5 m. Two Boreas runs
   score 0.127 m with every scan processed, as before.
-- **The node falls less far behind.** Over the first 120 s its pose lags `/clock` by
-  0.25-0.41 s at p95 and 0.56-0.68 s at most, against 0.46-0.70 s and 0.75-0.92 s.
-  Without the IMU it is 0.12 and 0.23 s.
+- **The lag moves less than the update time.** Over the first 120 s the pose lags
+  `/clock` by 0.25-0.41 s at p95 and 0.56-0.68 s at most in the two profiled runs. A
+  third run of the same code gave 0.59 and 0.83 s, against 0.46-0.70 s and 0.75-0.92 s
+  before. The update time is the measure that holds; the lag varies from run to run
+  about as much. Without the IMU it is 0.12 and 0.23 s.
 - **Under load it still drops scans.** With two cores kept busy, 1091 of 1158 scans
   remain, against 1084.
 - **The test:** `test_smoother_converges_in_a_few_iterations_with_a_full_window` fails
