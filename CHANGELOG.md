@@ -13,6 +13,11 @@
   - **Boreas 120 s preset**, two pairs of runs back to back: `alignment_time_sec`
     averages 12.2-12.4 ms instead of 18.1-19.1 ms, with a p90 of 21-23 ms instead of
     32-34 ms. The trajectory is byte-identical.
+  - **Under load**, with two cores kept busy and the IMU preintegration on, the pose lags
+    `/clock` by 0.12-0.16 s at p95 instead of 0.58-0.77 s, and by 0.34-0.41 s at most
+    instead of 0.90-1.16 s. That was two pairs of runs back to back; none of the four
+    dropped a scan
+    ([docs/benchmark.md](docs/benchmark.md#boreas-vehicle-preset-replay)).
   - **On its own**, on 154 dense Boreas scans, `align()` takes 14 ms instead of 27.5 ms
     on 8 threads, and 12 ms instead of 33.6 ms on 4
     ([experiments/ndt_alignment_cost](experiments/ndt_alignment_cost/README.md#inside-align-false-sharing)).

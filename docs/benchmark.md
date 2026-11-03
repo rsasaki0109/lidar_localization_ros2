@@ -366,6 +366,22 @@ Over the first 600 s (`--duration 600`: 4.3 km, 5786 scans, a map of 20.9 M poin
     trajectory is byte-identical.
   - **With two cores kept busy** the lag reaches 1.3 s, and the queue drops the oldest
     scans: 74 of 1158 with the IMU, 15 without.
+  - **NDT_OMP's fix takes most of that lag away**
+    ([ndt_omp_ros2 #15](https://github.com/rsasaki0109/ndt_omp_ros2/pull/15)). Two pairs
+    of runs with two cores kept busy were alternated back to back, before and after it,
+    on 2026-11-03:
+
+    | Two cores kept busy | Lag p95 | Lag max | `alignment_time_sec` mean | Scans dropped |
+    | --- | --- | --- | --- | --- |
+    | with the IMU, before #15 | 0.58-0.77 s | 0.90-1.16 s | 35.8-36.2 ms | 0, 0 |
+    | with the IMU, with #15 | 0.12-0.16 s | 0.34-0.41 s | 24.1-25.9 ms | 0, 0 |
+    | without the IMU, before #15 | 0.17-0.18 s | 0.40 s | 36.9 ms | 0, 7 |
+    | without the IMU, with #15 | 0.11-0.12 s | 0.23 s | 26.9-28.5 ms | 0, 0 |
+
+    The RMSE did not change (0.127 m with the IMU, 0.132-0.133 m without). In this
+    session even the runs before #15 dropped few scans, so it is the lag that shows the
+    difference. The IMU runs no longer approach the 10-scan queue. Without load, the
+    IMU run's lag is 0.06 s at p95 with #15 and 0.08 s before it.
   - **Not the transport:** a second subscriber with the same QoS received every cloud.
   - **The preset run that lost 6 scans** lost them the same way; its RMSE is the same.
 
