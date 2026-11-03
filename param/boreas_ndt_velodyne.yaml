@@ -38,7 +38,6 @@
     use_twist_prediction: false
     twist_prediction_use_angular_velocity: false
     max_twist_prediction_dt: 0.1
-    use_imu: false
     use_imu_preintegration: false
     # With use_imu_preintegration on, the default relative_motion deskew would run on
     # every scan (about 45 000 points, 3-4 ms) and leave the RMSE at 0.127 m: the gain

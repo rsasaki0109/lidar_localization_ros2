@@ -92,7 +92,7 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
         self.assertEqual(params["map_path"], "/maps/site.pcd")
         self.assertEqual(params["local_map_update_distance"], 10.0)
         self.assertFalse(params["enable_map_odom_tf"])
-        self.assertFalse(params["use_imu"])
+        self.assertNotIn("use_imu", params)
         self.assertFalse(params["use_imu_preintegration"])
         self.assertFalse(params["use_continuous_time_deskew"])
         self.assertEqual(params["continuous_time_deskew_reference_time_sec"], 0.0)
@@ -148,7 +148,7 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
         launch_command = config_tool.launch_command(tool_args, Path(tool_args.output))
         doctor_command = config_tool.doctor_command(tool_args)
 
-        self.assertFalse(params["use_imu"])
+        self.assertNotIn("use_imu", params)
         self.assertTrue(params["use_imu_preintegration"])
         self.assertTrue(params["imu_preintegration_use_base_frame_transform"])
         self.assertIn("map_path:=/maps/site.pcd", launch_command)
@@ -166,7 +166,7 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
         launch_command = config_tool.launch_command(tool_args, Path(tool_args.output))
         doctor_command = config_tool.doctor_command(tool_args)
 
-        self.assertFalse(params["use_imu"])
+        self.assertNotIn("use_imu", params)
         self.assertFalse(params["use_imu_preintegration"])
         self.assertFalse(params["imu_preintegration_use_base_frame_transform"])
         self.assertIn("use_imu_preintegration:=false", launch_command)
@@ -389,13 +389,13 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
         )
 
     def test_enable_imu_and_both_enable_only_the_preintegration(self):
-        # The legacy use_imu deskew integrates gravity; it is deprecated.
+        # The legacy use_imu deskew integrated gravity; it was removed in 2.0.0.
         for tool_args, flag in (
             (args(enable_imu=True), "--enable-imu"),
             (args(imu_mode="both"), "--imu-mode both"),
         ):
             params = config_tool.make_params(tool_args)
-            self.assertFalse(params["use_imu"])
+            self.assertNotIn("use_imu", params)
             self.assertTrue(params["use_imu_preintegration"])
             self.assertIn(
                 "use_imu_preintegration:=true",
@@ -403,27 +403,25 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
             )
             (warning,) = config_tool.imu_mode_warnings(tool_args)
             self.assertIn(flag, warning)
-            self.assertIn("deprecated", warning)
+            self.assertIn("removed", warning)
 
-    def test_legacy_imu_mode_still_works_with_a_warning(self):
-        tool_args = args(imu_mode="legacy")
-        params = config_tool.make_params(tool_args)
+    def test_legacy_imu_mode_is_refused(self):
+        error = config_tool.validate_args(args(imu_mode="legacy"))
 
-        self.assertTrue(params["use_imu"])
-        self.assertFalse(params["use_imu_preintegration"])
-        (warning,) = config_tool.imu_mode_warnings(tool_args)
-        self.assertIn("integrates", warning)
+        self.assertIn("removed in 2.0.0", error)
+        self.assertIn("--imu-mode preintegration", error)
+        self.assertIsNone(config_tool.validate_args(args(imu_mode="preintegration")))
         self.assertEqual(
             config_tool.imu_mode_warnings(args(imu_mode="preintegration")), []
         )
 
     def test_render_quotes_paths_and_uses_yaml_booleans(self):
         rendered = config_tool.render_ros_params(
-            {"map_path": "/tmp/a map.pcd", "use_imu": False, "score_threshold": 6.0}
+            {"map_path": "/tmp/a map.pcd", "use_odom": False, "score_threshold": 6.0}
         )
 
         self.assertIn('map_path: "/tmp/a map.pcd"', rendered)
-        self.assertIn("use_imu: false", rendered)
+        self.assertIn("use_odom: false", rendered)
         self.assertIn("score_threshold: 6.0", rendered)
 
     def test_main_refuses_to_overwrite_without_flag(self):

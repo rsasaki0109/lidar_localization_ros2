@@ -159,7 +159,6 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
     lidar_localization::shouldUseDirectRangeFilter(
     lidar_localization::ScanPreprocessingPathInput{
       enable_scan_voxel_filter_,
-      use_imu_,
       msg->header.frame_id,
       base_frame_id_});
 
@@ -249,11 +248,6 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
       pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZI>());
       pcl::transformPointCloud(*cloud_ptr, *transformed_cloud, initial_transformation);
       cloud_ptr = transformed_cloud;
-    }
-
-    if (use_imu_) {
-      std::lock_guard<std::mutex> undistortion_lock(lidar_undistortion_mutex_);
-      lidar_undistortion_.adjustDistortion(cloud_ptr, scan_stamp_sec);
     }
 
     pcl::PointCloud<pcl::PointXYZI> tmp;

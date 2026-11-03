@@ -107,16 +107,17 @@ def _arg_or_profile(args: argparse.Namespace, key: str) -> object:
     return PROFILE_DEFAULTS[args.profile][key]
 
 
-# The legacy deskew (use_imu) integrates the accelerometer without removing gravity; on
-# Boreas it broke the run (docs/imu_estimation.md). --enable-imu and --imu-mode both
-# therefore enable the preintegration only, and only --imu-mode legacy writes use_imu.
-LEGACY_IMU_WARNING = (
-    "--imu-mode legacy enables the deprecated use_imu deskew, which integrates the "
-    "accelerometer without removing gravity; prefer --imu-mode preintegration."
+# The legacy deskew (use_imu) integrated the accelerometer without removing gravity; on
+# Boreas it broke the run (docs/imu_estimation.md). It was removed in 2.0.0, so
+# --imu-mode legacy is refused, and --enable-imu and --imu-mode both mean the
+# preintegration.
+LEGACY_IMU_ERROR = (
+    "--imu-mode legacy was removed in 2.0.0 with the use_imu deskew, which integrated "
+    "the accelerometer without removing gravity. Use --imu-mode preintegration."
 )
 BOTH_IMU_NOTE = (
-    "{flag} now enables only the IMU preintegration: the legacy use_imu deskew is "
-    "deprecated (--imu-mode legacy still enables it, on its own)."
+    "{flag} enables the IMU preintegration: the legacy use_imu deskew it used to add "
+    "was removed in 2.0.0."
 )
 
 
@@ -133,8 +134,6 @@ def imu_mode_warnings(args: argparse.Namespace) -> list[str]:
         return [BOTH_IMU_NOTE.format(flag="--enable-imu")]
     if args.imu_mode == "both":
         return [BOTH_IMU_NOTE.format(flag="--imu-mode both")]
-    if effective_imu_mode(args) == "legacy":
-        return [LEGACY_IMU_WARNING]
     return []
 
 
@@ -165,6 +164,8 @@ def continuous_time_deskew_requires_imu(args: argparse.Namespace) -> bool:
 
 
 def validate_args(args: argparse.Namespace) -> str | None:
+    if args.imu_mode == "legacy":
+        return LEGACY_IMU_ERROR
     if continuous_time_deskew_requires_imu(args) and effective_imu_mode(args) == "off":
         return (
             "--enable-continuous-time-deskew requires IMU preintegration. "
@@ -205,7 +206,6 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         "use_twist_prediction": _arg_or_profile(args, "use_twist_prediction"),
         "twist_prediction_use_angular_velocity": False,
         "max_twist_prediction_dt": _arg_or_profile(args, "max_twist_prediction_dt"),
-        "use_imu": imu_mode == "legacy",
         "use_imu_preintegration": imu_mode == "preintegration",
         "imu_preintegration_use_base_frame_transform": use_imu_preintegration_base_frame_transform(
             args
@@ -538,9 +538,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default="profile",
         help=(
             "IMU usage in the generated YAML. profile uses the selected profile default; "
-            "preintegration enables the guarded IMU preintegration path; legacy enables the "
-            "deprecated use_imu deskew, which integrates gravity; both is kept for "
-            "compatibility and now means preintegration."
+            "preintegration enables the guarded IMU preintegration path; legacy was "
+            "removed in 2.0.0 with the use_imu deskew and is refused; both is kept for "
+            "compatibility and means preintegration."
         ),
     )
     parser.add_argument(

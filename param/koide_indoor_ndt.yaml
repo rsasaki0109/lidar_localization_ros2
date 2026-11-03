@@ -36,7 +36,6 @@
     use_twist_prediction: true
     twist_prediction_use_angular_velocity: false
     max_twist_prediction_dt: 0.5
-    use_imu: false
     # Disable IMU preintegration: Koide IMU calibration unknown, diverges immediately
     use_imu_preintegration: false
     imu_preintegration_use_base_frame_transform: false

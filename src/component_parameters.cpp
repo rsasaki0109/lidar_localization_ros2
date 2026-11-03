@@ -223,7 +223,6 @@ void PCLLocalization::initializeParameters()
   get_parameter("use_twist_prediction", use_twist_prediction_);
   get_parameter("twist_prediction_use_angular_velocity", twist_prediction_use_angular_velocity_);
   get_parameter("max_twist_prediction_dt", max_twist_prediction_dt_);
-  get_parameter("use_imu", use_imu_);
   get_parameter("use_twist_ekf", use_twist_ekf_);
   if (use_twist_ekf_) {
     TwistEkf::Params ekf_params;
@@ -608,15 +607,6 @@ void PCLLocalization::initializeParameters()
     get_logger(), "twist_prediction_use_angular_velocity: %d",
     twist_prediction_use_angular_velocity_);
   RCLCPP_INFO(get_logger(),"max_twist_prediction_dt: %lf", max_twist_prediction_dt_);
-  RCLCPP_INFO(get_logger(),"use_imu: %d", use_imu_);
-  if (use_imu_) {
-    RCLCPP_WARN(
-      get_logger(),
-      "use_imu turns on the legacy IMU deskew, which is deprecated: it integrates the "
-      "accelerometer without removing gravity, and on Boreas it broke the run (1.7 m RMSE, "
-      "6%% of scans accepted). Use use_continuous_time_deskew with use_imu_preintegration "
-      "or continuous_time_deskew_mode imu_pose_history instead (docs/imu_estimation.md).");
-  }
   RCLCPP_INFO(get_logger(),"use_imu_preintegration: %d", use_imu_preintegration_);
   RCLCPP_INFO(
     get_logger(),

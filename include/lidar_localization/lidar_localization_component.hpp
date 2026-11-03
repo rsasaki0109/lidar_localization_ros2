@@ -56,7 +56,6 @@
 #include <small_gicp/pcl/pcl_registration.hpp>
 #endif
 
-#include "lidar_localization/lidar_undistortion.hpp"
 #include "lidar_localization/twist_ekf.hpp"
 #include "lidar_localization/causal_twist_history.hpp"
 #include "lidar_localization/local_reacquisition_policy.hpp"
@@ -429,7 +428,6 @@ public:
   bool use_twist_prediction_{false};
   bool twist_prediction_use_angular_velocity_{true};
   double max_twist_prediction_dt_{0.5};
-  bool use_imu_{false};
   bool use_twist_ekf_{false};
   bool use_gtsam_smoother_{false};
   bool enable_debug_{false};
@@ -511,11 +509,6 @@ public:
 
   double pose_publish_frequency_;
   bool enable_timer_publishing_{false};
-
-  // The use_imu deskew. The IMU callback can run beside the cloud callback (it has its
-  // own callback group with preintegration or the gyro history), so both lock this.
-  LidarUndistortion lidar_undistortion_;
-  std::mutex lidar_undistortion_mutex_;
 
   lidar_localization::ScanTimeRangeStatus latest_scan_time_status_{
     lidar_localization::ScanTimeRangeStatus::kNoTimeField};

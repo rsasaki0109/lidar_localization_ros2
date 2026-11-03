@@ -32,7 +32,6 @@
       twist_prediction_use_angular_velocity: true
       max_twist_prediction_dt: 0.5
       # IMU preintegration backend and input units
-      use_imu: false
       use_imu_preintegration: true
       imu_preintegration_use_base_frame_transform: false
       imu_accel_scale: 1.0
