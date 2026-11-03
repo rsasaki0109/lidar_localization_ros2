@@ -127,7 +127,12 @@ def prepare_si_bag(raw: Path, destination: Path) -> Path:
     from rclpy.serialization import deserialize_message, serialize_message
     from sensor_msgs.msg import Imu
 
-    source_hash = checksum(raw / "rosbag2_2023_09_13-00_53_37_0.db3", "sha256")
+    # Each Koide sequence is one sqlite3 database; outdoor_hard_02b's is
+    # rosbag2_2023_09_13-00_53_37_0.db3.
+    databases = sorted(raw.glob("*.db3"))
+    if len(databases) != 1:
+        raise ValueError(f"expected one .db3 in {raw}, found {len(databases)}")
+    source_hash = checksum(databases[0], "sha256")
     provenance = {
         "source_db_sha256": source_hash,
         "imu_scale": G,
