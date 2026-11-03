@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- NDT_OMP aligns about a third faster in the node, with the same result
+  ([ndt_omp_ros2 #15](https://github.com/rsasaki0109/ndt_omp_ros2/pull/15)). CI and the
+  Docker image build ndt_omp_ros2's `humble` branch, so they get it. A workspace with
+  its own checkout of ndt_omp_ros2 needs to pull it.
+  - **What was slow:** in every derivative pass, each thread added its sums into its own
+    entry of shared vectors, for every point. Those entries share cache lines, so the
+    threads kept invalidating each other's caches. The voxel lookups also went through a
+    `std::map`.
+  - **Boreas 120 s preset**, two pairs of runs back to back: `alignment_time_sec`
+    averages 12.2-12.4 ms instead of 18.1-19.1 ms, with a p90 of 21-23 ms instead of
+    32-34 ms. The trajectory is byte-identical.
+  - **On its own**, on 154 dense Boreas scans, `align()` takes 14 ms instead of 27.5 ms
+    on 8 threads, and 12 ms instead of 33.6 ms on 4
+    ([experiments/ndt_alignment_cost](experiments/ndt_alignment_cost/README.md#inside-align-false-sharing)).
 - The fitness score of every registration attempt is computed on the registration
   threads (`include/lidar_localization/registration_fitness.hpp`).
   - **Why:** PCL's `getFitnessScore()` runs one nearest-neighbour search per scan
