@@ -334,8 +334,11 @@ lose track.
   (SMALL_GICP), 0.3 s (SMALL_VGICP) and 0.25-0.44 s (GICP_OMP) after the crop. On the
   dense Koide outdoor map an 80 m NDT_OMP target takes 0.3 s
   ([experiments/istanbul_ndt_tracking](../experiments/istanbul_ndt_tracking/README.md#search-tree-alongside-the-voxel-grid)).
-  It is off by default; the Istanbul preset and the online Koide profile turn it on.
-  Turn it on for dense maps and fast motion
+  It is off by default; `nav2_ndt_urban.yaml`, the Boreas and Istanbul presets and the
+  online Koide profile turn it on. With `nav2_ndt_urban.yaml` on Koide
+  `outdoor_hard_01a` without odometry, rebuilding in the callback left 10% of the
+  clouds without a diagnostic (90.3% coverage, 99.8-99.9% with it). Turn it on for
+  dense maps and fast motion
 - or, when the full map fits in memory and its NDT voxel grid can be indexed (next
   section), disable the crop for NDT backends
 

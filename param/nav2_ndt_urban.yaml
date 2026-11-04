@@ -49,6 +49,7 @@
     local_map_radius: 150.0
     local_map_update_distance: 10.0
     local_map_min_points: 100
+    local_map_async_rebuild: true
     reject_above_score_threshold: true
     enable_borderline_seed_rejection_gate: true
     borderline_seed_gate_score_threshold: 5.25

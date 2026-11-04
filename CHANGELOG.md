@@ -31,6 +31,17 @@
 
 ### Changed
 
+- `param/nav2_ndt_urban.yaml` rebuilds the local map in the background
+  (`local_map_async_rebuild: true`), as the Boreas and Istanbul presets and the online
+  Koide profile already do.
+  - **Koide `outdoor_hard_01a`, without odometry:** rebuilding the 150 m crop in the
+    callback left 10% of the clouds without a diagnostic. Coverage is now 99.8-99.9%.
+    With `min_inlier_ratio` 0.8, the track holds within 1 m to 140.2 s, against 105.9 s.
+    Without the gate it ends at 106.4 s either way.
+  - **Koide `outdoor_hard_02b`, without odometry:** within 1 m until 28.7 s instead of
+    13.1 s. The preset loses this sequence without odometry either way.
+  - **Istanbul, the three windows with this preset:** 3D RMSE 0.504, 0.416 and 0.591 m,
+    against 0.507, 0.425 and 0.586 m, with 3-44 more scans aligned per window.
 - `experiments/koide_imu_ab/replay.py` rebuilds the local map in the background
   (`local_map_async_rebuild`), as the online profile does. Rebuilt in the callback, the
   150 m crop of the Koide map dropped 10% of the clouds; a gap over 1 s drops the IMU
