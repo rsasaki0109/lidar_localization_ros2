@@ -88,10 +88,9 @@ void PCLLocalization::initializePubSub()
   rclcpp::SubscriptionOptions imu_subscription_options;
   // The preintegration and the gyro history for imu_pose_history deskew need the IMU
   // samples of a sweep before its scan is prepared, so they must not queue behind long
-  // registrations. With use_imu as well, they used to share the cloud callback's group:
-  // on Boreas the samples then arrived in bursts after the scan had used a stale
-  // window, and the pose left the road within 10 s. The use_imu deskew state has its
-  // own lock instead (lidar_undistortion_mutex_).
+  // registrations. With the legacy use_imu deskew (removed in 2.0.0) they used to share
+  // the cloud callback's group: on Boreas the samples then arrived in bursts after the
+  // scan had used a stale window, and the pose left the road within 10 s.
   if (use_imu_preintegration_ || usesGyroPoseHistoryWithoutPreintegration()) {
     imu_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     imu_subscription_options.callback_group = imu_callback_group_;
@@ -592,7 +591,7 @@ void PCLLocalization::twistReceived(
 void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr msg)
 {
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
-  // IMU preintegration buffering (always runs if enabled, independent of use_imu_)
+  // IMU preintegration buffering (always runs if enabled)
   Eigen::Vector3d preintegration_gyro(
     msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
   Eigen::Vector3d preintegration_accel(
@@ -746,60 +745,6 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
       }
     }
   }
-
-  if (!use_imu_) {return;}
-
-  sensor_msgs::msg::Imu tf_converted_imu;
-
-  try {
-    const geometry_msgs::msg::TransformStamped transform = tfbuffer_.lookupTransform(
-     base_frame_id_, msg->header.frame_id, tf2::TimePointZero);
-
-    geometry_msgs::msg::Vector3Stamped angular_velocity, linear_acceleration, transformed_angular_velocity, transformed_linear_acceleration;
-    tf2::Quaternion imu_orientation;
-    tf2::Quaternion base_from_imu;
-
-    angular_velocity.header = msg->header;
-    angular_velocity.vector = msg->angular_velocity;
-    linear_acceleration.header = msg->header;
-    linear_acceleration.vector = msg->linear_acceleration;
-
-    tf2::doTransform(angular_velocity, transformed_angular_velocity, transform);
-    tf2::doTransform(linear_acceleration, transformed_linear_acceleration, transform);
-    tf2::fromMsg(msg->orientation, imu_orientation);
-    tf2::fromMsg(transform.transform.rotation, base_from_imu);
-
-    tf_converted_imu.angular_velocity = transformed_angular_velocity.vector;
-    tf_converted_imu.linear_acceleration = transformed_linear_acceleration.vector;
-    tf_converted_imu.orientation = tf2::toMsg(base_from_imu * imu_orientation);
-
-  }
-  catch (tf2::TransformException& ex)
-  {
-    std::cout << "Failed to lookup transform" << std::endl;
-    RCLCPP_WARN(this->get_logger(), "Failed to lookup transform.");
-    return;
-  }
-
-  Eigen::Vector3f angular_velo{
-    static_cast<float>(tf_converted_imu.angular_velocity.x),
-    static_cast<float>(tf_converted_imu.angular_velocity.y),
-    static_cast<float>(tf_converted_imu.angular_velocity.z)};
-  Eigen::Vector3f acc{
-    static_cast<float>(tf_converted_imu.linear_acceleration.x),
-    static_cast<float>(tf_converted_imu.linear_acceleration.y),
-    static_cast<float>(tf_converted_imu.linear_acceleration.z)};
-  Eigen::Quaternionf quat{
-    static_cast<float>(tf_converted_imu.orientation.w),
-    static_cast<float>(tf_converted_imu.orientation.x),
-    static_cast<float>(tf_converted_imu.orientation.y),
-    static_cast<float>(tf_converted_imu.orientation.z)};
-  double imu_time = msg->header.stamp.sec +
-    msg->header.stamp.nanosec * 1e-9;
-
-  std::lock_guard<std::mutex> undistortion_lock(lidar_undistortion_mutex_);
-  lidar_undistortion_.getImu(angular_velo, acc, quat, imu_time);
-
 }
 
 void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)

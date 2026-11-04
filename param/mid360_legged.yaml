@@ -42,7 +42,6 @@
     use_gtsam_smoother: false
 
     # IMU preintegration backend and input units
-    use_imu: false
     use_imu_preintegration: true
     imu_preintegration_use_base_frame_transform: true
     imu_accel_scale: 1.0

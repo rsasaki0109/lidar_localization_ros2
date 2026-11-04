@@ -14,14 +14,14 @@ import replay_session
 
 
 def test_overrides_take_yaml_values():
-    parameters = {"scan_max_range": 60.0, "use_imu": False}
+    parameters = {"scan_max_range": 60.0, "use_odom": False}
     replay_session.apply_overrides(
         parameters,
-        ["scan_max_range=80", "use_imu=true", "registration_method=NDT_OMP"],
+        ["scan_max_range=80", "use_odom=true", "registration_method=NDT_OMP"],
     )
     assert parameters == {
         "scan_max_range": 80,
-        "use_imu": True,
+        "use_odom": True,
         "registration_method": "NDT_OMP",
     }
 

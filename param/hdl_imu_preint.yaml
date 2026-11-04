@@ -28,7 +28,6 @@
     initial_pose_qz: 0.0
     initial_pose_qw: 1.0
     use_odom: false
-    use_imu: false
     enable_debug: false
     predict_pose_from_previous_delta: false
     reject_above_score_threshold: false

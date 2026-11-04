@@ -98,8 +98,8 @@ component that feeds itself must not be able to diverge unbounded.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `use_imu` | `false` | Enable the legacy IMU correction path |
-| `use_imu_preintegration` | `true` | Use the guarded preintegration smoother from `/imu`, independent of `use_imu` |
+| `use_imu` | `false` | Removed in 2.0.0 with the legacy deskew; `true` makes configuration fail |
+| `use_imu_preintegration` | `true` | Use the guarded preintegration smoother from `/imu` |
 | `imu_preintegration_use_base_frame_transform` | `false` | Transform IMU samples into the base frame before integrating |
 | `imu_accel_scale` | `1.0` | Multiply incoming acceleration before integration; use `9.80665` only for drivers/bags that publish acceleration in `g` rather than m/s² |
 | `imu_dual_queue_enabled` | `true` | LIO-SAM-style optimization/prediction queues with correction-time repropagation and velocity/bias retention; set `false` only for the legacy single-stream A/B baseline |
@@ -158,17 +158,16 @@ needed. In the params file:
 ```yaml
 /**:
   ros__parameters:
-    use_imu: false
     use_imu_preintegration: true
 ```
 
-Keep `use_imu: false`. It turns on the legacy deskew, which is deprecated: it
-integrates the accelerometer without removing gravity and broke every Boreas run it was
-on (see [Validation state](#validation-state-honest-limits)), and the node warns when it
-is on. `continuous_time_deskew` replaces it. In the first-bringup config generator,
-`--imu-mode preintegration`, `--enable-imu` and `--imu-mode both` all enable the
-preintegration only (the last two used to add the legacy deskew, and now say so);
-`--imu-mode legacy` still writes `use_imu: true`, with a warning.
+The legacy `use_imu` deskew was removed in 2.0.0. It integrated the accelerometer
+without removing gravity and broke every Boreas run it was on (see
+[Validation state](#validation-state-honest-limits)). `continuous_time_deskew` replaces
+it. The parameter is still declared: `use_imu: true` makes the node fail to configure,
+with a message, rather than run without the deskew it asks for. In the first-bringup
+config generator, `--imu-mode preintegration`, `--enable-imu` and `--imu-mode both` all
+enable the preintegration, and `--imu-mode legacy` is refused.
 
 The MID-360 launch (`mid360_legged_localization.launch.py`) already wires
 `imu_topic:=/livox/imu` as a worked example. When
@@ -407,7 +406,7 @@ accuracy.
   | the preset, no IMU | 0.132 | 0.41 | 100% |
   | `use_imu_preintegration: true` | **0.127** (both runs) | 0.36 | 100%, 99% |
   | the same, dense smoother solve | 0.120, 0.122 | 0.36, 0.61 | 82%, 81% |
-  | `use_imu: true` (the legacy deskew) | 1.70 | 4.9 | 6% |
+  | `use_imu: true` (the legacy deskew, removed in 2.0.0) | 1.70 | 4.9 | 6% |
   | both, before the callback group fix | 1.89, 2.21 | 4.5, 5.6 | 21%, 6% |
   | both, with it | 1.33, 3.53 | 17, 31 | 64%, 68% |
 
@@ -426,10 +425,11 @@ accuracy.
     The anchor on the first pose of the window had no residual, so Gauss-Newton never
     met its stopping limit and ran all ten iterations. With the residual it stops after
     about three, and an update on Boreas takes 5 ms instead of 9 ms.
-  - **The legacy `use_imu` deskew breaks the clouds.** It integrates the
-    accelerometer without removing gravity, times each point from its azimuth
+  - **The legacy `use_imu` deskew broke the clouds.** It integrated the
+    accelerometer without removing gravity, timed each point from its azimuth
     relative to the first point of the cloud (meaningless after a voxel filter), and
-    needs an IMU orientation (Boreas has none). Use `continuous_time_deskew` instead.
+    needed an IMU orientation (Boreas has none). It was removed in 2.0.0; use
+    `continuous_time_deskew` instead.
   - **With both on, the preintegration used to starve.** The IMU callback shared the
     cloud callback's group, so samples waited behind each registration and arrived
     in bursts: a median of 0 new samples per scan in one run, too long an integration

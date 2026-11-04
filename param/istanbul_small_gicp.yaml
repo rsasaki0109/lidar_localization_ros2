@@ -36,7 +36,6 @@
     initial_pose_qz: 0.959846363599952
     initial_pose_qw: -0.2804290366287121
     use_odom: false
-    use_imu: false
     enable_debug: false
     predict_pose_from_previous_delta: false
     # The 15 x 13 km map needs 5.5e10 NDT cells at 1 m: crop it.

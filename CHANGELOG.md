@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Removed
+
+- The legacy `use_imu` deskew, deprecated in 1.6.0. It integrated the accelerometer
+  without removing gravity: on Boreas it scored 1.7 m RMSE with 6% of the scans
+  accepted, against 0.127 m with the IMU preintegration.
+  - **`use_imu` is still declared,** so that `use_imu: true` is not silently ignored:
+    the node now fails to configure with a message. `use_imu: false`, or leaving it
+    out, works as before.
+  - **Migration:** use `use_imu_preintegration`, with `use_continuous_time_deskew` for
+    the deskew ([docs/imu_estimation.md](docs/imu_estimation.md)).
+  - **The config generator** refuses `--imu-mode legacy`, and no longer writes
+    `use_imu`. `--imu-mode both` and `--enable-imu` still mean the preintegration.
+  - **Gone with it:** `include/lidar_localization/lidar_undistortion.hpp`, its two
+    tests, the IMU callback's legacy path and its lock, and `use_imu: false` in the
+    presets under `param/`.
+  - **Test:** `test_imu_callback_group` checks that `use_imu: true` fails to configure.
+
 ## 1.7.0 - 2026-11-03
 
 ### Added

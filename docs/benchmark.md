@@ -419,11 +419,11 @@ What to keep in mind with this dataset (`boreas_prepare.py` handles the first th
   ([experiments/previous_delta_time_scaling](../experiments/previous_delta_time_scaling/README.md)).
   The preset still reuses each 100 m target for 10 m and builds the next one in the
   background, with a 60 m scan range, so a scan does not wait for one.
-- **The IMU preintegration helps a little; the legacy `use_imu` deskew breaks the
+- **The IMU preintegration helps a little; the legacy `use_imu` deskew broke the
   run.** With `--set use_imu_preintegration=true` the window scores 0.127 m (twice),
   with every scan processed; before the smoother's solve went sparse it skipped one
   scan in five. With
-  `use_imu: true` it scores 1.7 m, with 6% of the scans accepted: that deskew
-  integrates gravity. With both, the IMU callback used to wait behind every
+  `use_imu: true` it scored 1.7 m, with 6% of the scans accepted: that deskew
+  integrated gravity, and was removed in 2.0.0. With both, the IMU callback used to wait behind every
   registration; it now has its own callback group
   ([imu_estimation.md](imu_estimation.md#validation-state-honest-limits)).

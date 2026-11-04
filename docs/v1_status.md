@@ -198,7 +198,6 @@ Open items after v1.7.0:
   far from the IMU prediction. Neither saves the track; the stretch needs odometry
   ([experiments/koide_imu_ab](../experiments/koide_imu_ab/README.md#neither-guard-change-saves-the-track)).
   With RKO-LIO odometry the sequence is tracked.
-- **Remove the deprecated legacy `use_imu` deskew in a later release.**
 
 Other work remains:
 

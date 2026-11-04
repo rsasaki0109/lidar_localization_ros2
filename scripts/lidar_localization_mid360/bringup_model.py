@@ -428,7 +428,8 @@ def _missing_imu_hint(
     if config.require_imu:
         return f"Set imu_topic:={config.imu_topic} and verify the driver publishes sensor_msgs/Imu."
     return (
-        "This is fine when use_imu is false; pass --require-imu for strict IMU bringup."
+        "This is fine without use_imu_preintegration; pass --require-imu for strict IMU "
+        "bringup."
     )
 
 
