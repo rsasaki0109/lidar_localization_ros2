@@ -180,6 +180,18 @@ void PCLLocalization::initializeParameters()
   get_parameter("ndt_num_threads", ndt_num_threads_);
   get_parameter("min_inlier_ratio", min_inlier_ratio_);
   get_parameter("inlier_ratio_distance_m", inlier_ratio_distance_m_);
+  get_parameter("inlier_ratio_min_points", inlier_ratio_min_points_);
+  if (min_inlier_ratio_ < 0.0 || min_inlier_ratio_ >= 1.0 || !(inlier_ratio_distance_m_ > 0.0)) {
+    if (min_inlier_ratio_ != 0.0) {
+      RCLCPP_WARN(
+        get_logger(),
+        "min_inlier_ratio must be in [0, 1) and inlier_ratio_distance_m above 0 "
+        "(got %.3f and %.3f): the score stays the fitness score",
+        min_inlier_ratio_, inlier_ratio_distance_m_);
+    }
+    min_inlier_ratio_ = 0.0;
+  }
+  inlier_ratio_min_points_ = std::max(0, inlier_ratio_min_points_);
   get_parameter("ndt_max_iterations", ndt_max_iterations_);
   get_parameter("gicp_corr_randomness", gicp_corr_randomness_);
   get_parameter("gicp_max_correspondence_distance", gicp_max_correspondence_distance_);

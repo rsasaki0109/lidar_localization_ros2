@@ -595,14 +595,18 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   attempt.registration_iterations = registration_objects_.finalIterationCount();
   const int fitness_threads =
     lidar_localization::resolveRegistrationThreadCount(ndt_num_threads_, omp_get_max_threads());
-  attempt.fitness_score = lidar_localization::parallelFitnessScore(*registration_, fitness_threads);
-  if (min_inlier_ratio_ > 0.0 && min_inlier_ratio_ < 1.0) {
-    const double inlier_ratio = lidar_localization::registrationInlierRatio(
-      *registration_, fitness_threads, inlier_ratio_distance_m_);
-    RCLCPP_DEBUG(
-      get_logger(), "fitness %.3f inlier ratio %.3f", attempt.fitness_score, inlier_ratio);
+  if (min_inlier_ratio_ > 0.0) {
+    const auto fitness = lidar_localization::registrationFitness(
+      *registration_, fitness_threads, inlier_ratio_distance_m_,
+      static_cast<std::size_t>(inlier_ratio_min_points_));
+    attempt.registration_fitness_score = fitness.score;
+    attempt.inlier_ratio = fitness.inlier_ratio;
     attempt.fitness_score = lidar_localization::inlierRatioGateScore(
-      inlier_ratio, min_inlier_ratio_, measurement_gate_config_.score_threshold);
+      fitness.inlier_ratio, min_inlier_ratio_, measurement_gate_config_.score_threshold);
+  } else {
+    attempt.fitness_score =
+      lidar_localization::parallelFitnessScore(*registration_, fitness_threads);
+    attempt.registration_fitness_score = attempt.fitness_score;
   }
 
   if (enable_registration_localizability_diagnostics_ && registration_objects_.ndt_omp) {

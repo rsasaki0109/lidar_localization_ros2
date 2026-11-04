@@ -218,7 +218,9 @@ These keys are diagnostics only — they never change acceptance behavior.
 
 | Key | How to use it |
 | --- | --- |
-| `fitness_score` | lower is better; compare to `effective_score_threshold` |
+| `fitness_score` | lower is better; compare to `effective_score_threshold`. With `min_inlier_ratio` it is the inlier ratio on the same scale (see below) |
+| `registration_fitness_score` | the backend's own fitness, the mean squared distance from each scan point to the map |
+| `inlier_ratio` | with `min_inlier_ratio`, the share of scan points within `inlier_ratio_distance_m` of the map |
 | `consecutive_rejected_updates` | high streak means seed or map is wrong |
 | `seed_translation_since_accept_m` | large drift since last accept → open-loop problem |
 | `filtered_point_count` | very low → scan preprocessing or crop issue |
@@ -233,6 +235,30 @@ ros2 topic echo /alignment_status
 ```
 
 To analyze diagnostics later, record them with `ros2 bag record /alignment_status`.
+
+## Symptom: Good Alignments Rejected Where the Map Misses Structure
+
+The fitness score is a mean squared distance, so points that see something the map
+lacks (vegetation, parked cars, new walls) dominate it. Where the map is incomplete, an
+alignment within 0.1 m of the truth can score 10-24 and be rejected, while one several
+metres off scores lower. On Koide `outdoor_hard_01a`, from 125 s on, every alignment
+from the ground truth scored above 6.
+
+`min_inlier_ratio` gates on the share of scan points within `inlier_ratio_distance_m`
+(default 0.5 m) of the map instead. The score becomes that ratio on the fitness scale:
+0 when every point is an inlier, `score_threshold` at `min_inlier_ratio`. The gate, the
+covariance and the recovery then all read it. Scans of fewer than
+`inlier_ratio_min_points` (default 200) points get a ratio of 0.
+
+```yaml
+min_inlier_ratio: 0.8
+```
+
+On Koide `outdoor_hard_01a` with odometry it took the on-map RMSE from 0.66 m to 0.27 m.
+On `outdoor_hard_02b` the on-map RMSE went from 0.18 m to 0.17 m, and the Boreas preset
+did not change
+([experiments/inlier_ratio_gate](../experiments/inlier_ratio_gate/README.md)). It stays
+off by default.
 
 ## Symptom: Direct Positioning Got Stuck (#35)
 
