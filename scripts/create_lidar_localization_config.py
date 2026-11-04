@@ -108,16 +108,16 @@ def _arg_or_profile(args: argparse.Namespace, key: str) -> object:
 
 
 # The legacy deskew (use_imu) integrated the accelerometer without removing gravity; on
-# Boreas it broke the run (docs/imu_estimation.md). It was removed in 2.0.0, so
+# Boreas it broke the run (docs/imu_estimation.md). It was removed in 1.8.0, so
 # --imu-mode legacy is refused, and --enable-imu and --imu-mode both mean the
 # preintegration.
 LEGACY_IMU_ERROR = (
-    "--imu-mode legacy was removed in 2.0.0 with the use_imu deskew, which integrated "
+    "--imu-mode legacy was removed in 1.8.0 with the use_imu deskew, which integrated "
     "the accelerometer without removing gravity. Use --imu-mode preintegration."
 )
 BOTH_IMU_NOTE = (
     "{flag} enables the IMU preintegration: the legacy use_imu deskew it used to add "
-    "was removed in 2.0.0."
+    "was removed in 1.8.0."
 )
 
 
@@ -539,7 +539,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "IMU usage in the generated YAML. profile uses the selected profile default; "
             "preintegration enables the guarded IMU preintegration path; legacy was "
-            "removed in 2.0.0 with the use_imu deskew and is refused; both is kept for "
+            "removed in 1.8.0 with the use_imu deskew and is refused; both is kept for "
             "compatibility and means preintegration."
         ),
     )

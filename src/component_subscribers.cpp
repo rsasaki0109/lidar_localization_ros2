@@ -88,7 +88,7 @@ void PCLLocalization::initializePubSub()
   rclcpp::SubscriptionOptions imu_subscription_options;
   // The preintegration and the gyro history for imu_pose_history deskew need the IMU
   // samples of a sweep before its scan is prepared, so they must not queue behind long
-  // registrations. With the legacy use_imu deskew (removed in 2.0.0) they used to share
+  // registrations. With the legacy use_imu deskew (removed in 1.8.0) they used to share
   // the cloud callback's group: on Boreas the samples then arrived in bursts after the
   // scan had used a stale window, and the pose left the road within 10 s.
   if (use_imu_preintegration_ || usesGyroPoseHistoryWithoutPreintegration()) {

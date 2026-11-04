@@ -389,7 +389,7 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
         )
 
     def test_enable_imu_and_both_enable_only_the_preintegration(self):
-        # The legacy use_imu deskew integrated gravity; it was removed in 2.0.0.
+        # The legacy use_imu deskew integrated gravity; it was removed in 1.8.0.
         for tool_args, flag in (
             (args(enable_imu=True), "--enable-imu"),
             (args(imu_mode="both"), "--imu-mode both"),
@@ -408,7 +408,7 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
     def test_legacy_imu_mode_is_refused(self):
         error = config_tool.validate_args(args(imu_mode="legacy"))
 
-        self.assertIn("removed in 2.0.0", error)
+        self.assertIn("removed in 1.8.0", error)
         self.assertIn("--imu-mode preintegration", error)
         self.assertIsNone(config_tool.validate_args(args(imu_mode="preintegration")))
         self.assertEqual(
