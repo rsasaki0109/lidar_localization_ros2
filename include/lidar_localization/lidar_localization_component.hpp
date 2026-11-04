@@ -505,6 +505,14 @@ public:
   lidar_localization::ErrorFloorCovarianceParams error_floor_covariance_params_;
 
   int ndt_num_threads_;
+  // With min_inlier_ratio > 0, the score is the inlier ratio on the fitness scale
+  // (registration_fitness.hpp).
+  double min_inlier_ratio_{0.0};
+  double inlier_ratio_distance_m_{0.5};
+  int inlier_ratio_min_points_{200};
+  // The attempt whose status is being published, for /alignment_status.
+  double status_registration_fitness_score_{std::numeric_limits<double>::quiet_NaN()};
+  double status_inlier_ratio_{std::numeric_limits<double>::quiet_NaN()};
   int ndt_max_iterations_;
 
   double pose_publish_frequency_;

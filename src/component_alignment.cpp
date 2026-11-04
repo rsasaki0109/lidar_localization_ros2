@@ -593,9 +593,19 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   }
   attempt.has_converged = registration_->hasConverged();
   attempt.registration_iterations = registration_objects_.finalIterationCount();
-  attempt.fitness_score = lidar_localization::parallelFitnessScore(
-    *registration_,
-    lidar_localization::resolveRegistrationThreadCount(ndt_num_threads_, omp_get_max_threads()));
+  const int fitness_threads =
+    lidar_localization::resolveRegistrationThreadCount(ndt_num_threads_, omp_get_max_threads());
+  // The inlier ratio comes from the same nearest-neighbour searches as the fitness, so
+  // it is reported whether or not the gate reads it.
+  const auto fitness = lidar_localization::registrationFitness(
+    *registration_, fitness_threads, inlier_ratio_distance_m_,
+    static_cast<std::size_t>(inlier_ratio_min_points_));
+  attempt.registration_fitness_score = fitness.score;
+  attempt.inlier_ratio = fitness.inlier_ratio;
+  attempt.fitness_score = min_inlier_ratio_ > 0.0 ?
+    lidar_localization::inlierRatioGateScore(
+    fitness.inlier_ratio, min_inlier_ratio_, measurement_gate_config_.score_threshold) :
+    fitness.score;
 
   if (enable_registration_localizability_diagnostics_ && registration_objects_.ndt_omp) {
     Eigen::Matrix<double, 6, 6> hessian;

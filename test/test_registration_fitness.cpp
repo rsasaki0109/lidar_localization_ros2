@@ -1,5 +1,6 @@
 // parallelFitnessScore returns pcl::Registration::getFitnessScore() bit for bit, on
 // several threads, for NDT_OMP and PCL's NDT, and before and after alignment.
+// registrationFitness adds the inlier ratio in the same pass, without changing the score.
 #include "lidar_localization/registration_fitness.hpp"
 
 #include <pcl/registration/ndt.h>
@@ -97,11 +98,61 @@ void test_pcl_ndt_score_is_identical()
   checkMatchesPcl(ndt);
 }
 
+// A quarter of the scan 5 m above the ground grid, far from any map point: they count
+// as outliers, and they inflate the fitness score, not the inlier ratio.
+void test_inlier_ratio_counts_points_far_from_the_map()
+{
+  const Cloud::Ptr map = makeMap();
+  // A 40 x 40 grid at 0.5 m on map points of the ground; every 4th point raised 5 m.
+  Cloud::Ptr scan(new Cloud());
+  Point p;
+  p.intensity = 1.0f;
+  for (int ix = 0; ix < 40; ++ix) {
+    for (int iy = 0; iy < 40; ++iy) {
+      p.x = -10.0f + 0.5f * static_cast<float>(ix);
+      p.y = -10.0f + 0.5f * static_cast<float>(iy);
+      p.z = scan->size() % 4 == 3 ? 5.0f : 0.0f;
+      scan->push_back(p);
+    }
+  }
+  assert(scan->size() == 1600);
+  pclomp::NormalDistributionsTransform<Point, Point> ndt;
+  ndt.setResolution(1.0);
+  ndt.setInputTarget(map);
+  ndt.setInputSource(scan);
+  ndt.setMaximumIterations(0);
+  Cloud aligned;
+  ndt.align(aligned, Eigen::Matrix4f::Identity());
+
+  for (const int threads : {1, 4}) {
+    const auto fitness = lidar_localization::registrationFitness(ndt, threads, 0.5, 200);
+    assert(fitness.score == ndt.getFitnessScore());
+    assert(std::abs(fitness.inlier_ratio - 0.75) < 1e-9);
+    // 5 m above the grid the squared distance is about 9 (to the 3 m walls) to 25.
+    assert(fitness.score > 2.0);
+  }
+  // Without an inlier distance there is no ratio.
+  assert(std::isnan(lidar_localization::registrationFitness(ndt, 4, -1.0, 0).inlier_ratio));
+  // A scan below the minimum point count gets none either way.
+  assert(lidar_localization::registrationFitness(ndt, 4, 0.5, 1601).inlier_ratio == 0.0);
+}
+
+void test_inlier_ratio_gate_score_scale()
+{
+  using lidar_localization::inlierRatioGateScore;
+  assert(inlierRatioGateScore(1.0, 0.8, 6.0) == 0.0);
+  assert(std::abs(inlierRatioGateScore(0.8, 0.8, 6.0) - 6.0) < 1e-12);
+  assert(std::abs(inlierRatioGateScore(0.47, 0.8, 6.0) - 15.9) < 1e-9);
+  assert(std::isinf(inlierRatioGateScore(std::nan(""), 0.8, 6.0)));
+}
+
 }  // namespace
 
 int main()
 {
   test_ndt_omp_score_is_identical_before_and_after_alignment();
   test_pcl_ndt_score_is_identical();
+  test_inlier_ratio_counts_points_far_from_the_map();
+  test_inlier_ratio_gate_score_scale();
   return 0;
 }

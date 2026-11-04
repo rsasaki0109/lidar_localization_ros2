@@ -149,9 +149,10 @@ void test_build_alignment_diagnostic_values_order_and_strings()
   input.imu_gyro_bias_rad_s[2] = -0.03;
   input.imu_accel_bias_m_s2[1] = 0.25;
   input.imu_velocity_m_s[0] = 1.5;
+  input.registration_fitness_score = 3.5;
 
   const auto values = ll::buildAlignmentDiagnosticValues(input);
-  assert(values.size() == 109);
+  assert(values.size() == 111);
   assert(values[0].first == "registration_method");
   assert(values[0].second == "NDT");
   assert(values[1].first == "has_converged");
@@ -288,6 +289,9 @@ void test_build_alignment_diagnostic_values_order_and_strings()
   assert(values[106].second.find("1.500") == 0);
   assert(values[107].first == "imu_velocity_y_m_s");
   assert(values[108].first == "imu_velocity_z_m_s" && values[108].second == "nan");
+  assert(values[109].first == "registration_fitness_score");
+  assert(values[109].second.find("3.500") == 0);
+  assert(values[110].first == "inlier_ratio" && values[110].second == "nan");
 }
 
 int main()

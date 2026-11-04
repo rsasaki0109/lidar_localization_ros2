@@ -24,7 +24,13 @@ struct AlignmentAttempt
   double alignment_time_sec{0.0};
   // Final iteration count of the backend; -1 when it does not report one.
   int registration_iterations{-1};
+  // The score the gate, the covariance, the recovery and the EKF and GTSAM backends read.
+  // It is the registration's fitness, or with min_inlier_ratio the inlier ratio on the
+  // same scale.
   double fitness_score{std::numeric_limits<double>::quiet_NaN()};
+  // The backend's own fitness, and the inlier ratio (NaN without a target search tree).
+  double registration_fitness_score{std::numeric_limits<double>::quiet_NaN()};
+  double inlier_ratio{std::numeric_limits<double>::quiet_NaN()};
   Eigen::Matrix4f init_guess{Eigen::Matrix4f::Identity()};
   Eigen::Matrix4f final_transformation{Eigen::Matrix4f::Identity()};
   double correction_translation_m{std::numeric_limits<double>::quiet_NaN()};

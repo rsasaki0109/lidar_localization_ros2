@@ -4,6 +4,10 @@
   ros__parameters:
     registration_method: NDT_OMP
     score_threshold: 6.0
+    # Gate on the share of points within 0.5 m of the map: outdoors the map misses
+    # structure the sensor sees, and the fitness rejected good alignments
+    # (experiments/inlier_ratio_gate).
+    min_inlier_ratio: 0.8
     ndt_resolution: 1.0
     ndt_step_size: 0.1
     ndt_num_threads: 4

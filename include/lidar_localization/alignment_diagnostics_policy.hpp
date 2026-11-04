@@ -120,6 +120,10 @@ struct AlignmentDiagnosticValuesInput
   double imu_gyro_bias_rad_s[3]{NAN, NAN, NAN};
   double imu_accel_bias_m_s2[3]{NAN, NAN, NAN};
   double imu_velocity_m_s[3]{NAN, NAN, NAN};
+  // The backend's own fitness and the inlier ratio of the attempt (NaN without one).
+  // fitness_score is what the gate read.
+  double registration_fitness_score{NAN};
+  double inlier_ratio{NAN};
 };
 
 inline const char * boolString(bool value)
@@ -333,6 +337,8 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
       std::string("imu_velocity_") + kAxes[axis] + "_m_s",
       std::to_string(input.imu_velocity_m_s[axis]));
   }
+  append("registration_fitness_score", std::to_string(input.registration_fitness_score));
+  append("inlier_ratio", std::to_string(input.inlier_ratio));
   return values;
 }
 

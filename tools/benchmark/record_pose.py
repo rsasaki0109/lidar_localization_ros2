@@ -27,6 +27,8 @@ from std_msgs.msg import String
 # /alignment_status values kept per scan (the launch log keeps the rest).
 ALIGNMENT_KEYS = (
     "fitness_score",
+    "registration_fitness_score",
+    "inlier_ratio",
     "alignment_time_sec",
     "registration_iterations",
     "correction_translation_m",
