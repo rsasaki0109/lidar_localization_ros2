@@ -43,6 +43,11 @@ OVERRIDES = {
     "recovery_retry_from_last_pose_min_rejections": 3,
     "recovery_retry_from_last_pose_max_accepted_gap_sec": 1.0,
     "recovery_retry_from_last_pose_max_seed_translation_m": 15.0,
+    # Since 2026-11-04. Rebuilt in the callback, the 150 m crop of the 2M-point map
+    # stalls the node: 10% of the clouds got no diagnostic, 1.1 s of them at 21.4 s,
+    # and a gap over 1 s drops the IMU prediction. The online profile rebuilds in the
+    # background too.
+    "local_map_async_rebuild": True,
 }
 
 

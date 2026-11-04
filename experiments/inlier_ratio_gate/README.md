@@ -124,19 +124,56 @@ The values are 3D RMSE over each window.
 - **`inlier_ratio` is in `/alignment_status` with the gate off,** so it can be read on a
   stretch that tracks well before choosing the distance and the threshold.
 
-## Without odometry it is not enough
+## Without odometry, to 140-151 s
 
-With `use_imu_preintegration` and no odometry (`replay.py`), 0.7 brings the RMSE from
-0.844 m to 0.344 m, but the track still ends at about 107 s:
+`experiments/koide_imu_ab/replay.py` runs the localizer alone, with
+`use_imu_preintegration`. It now rebuilds the local map in the background, as the
+online profile does. "Tracked until" is the last pose; every pose up to it lies within
+1 m of the ground truth (2026-11-04):
 
-- **The gate does its part.** It rejects the 106.5-106.9 s poses that broke the track
-  before (inlier ratio 0.47-0.65).
-- **The seeds do not follow the turn.** The IMU seed consistency gate has refused the
-  IMU prediction since 106.2 s, so every seed is the previous delta. From there NDT
-  lands 0.3-0.4 inlier ratio away from the truth, and nothing is accepted again.
+| `min_inlier_ratio` | Runs | Tracked until | 0-105 s | 105-185 s, hard (accepted) |
+| --- | --- | --- | --- | --- |
+| off | 1 | 106.4 s, then up to 15.6 m off | 0.078 m | 2.56 m (20%) |
+| **0.8** | 3 | **140.2 s** (all three) | 0.066 m | **0.123-0.124 m** (36%) |
+| 0.7 | 3 | 147.2 s (two), 151.5 s | 0.073-0.075 m | 0.137-0.139 m (44-48%) |
 
-A localizer without odometry would need the IMU seed through that stretch, or a search
-around the last pose ranked by the inlier ratio, as above.
+The 151.5 s run of 0.7 also had the IMU seed consistency gate off and a 15° correction
+guard.
+
+- **The gate carries the localizer through 106-140 s.** Without it, the fitness score
+  accepts the 106.5 s pose that is 1.9 m and 16° off, as before.
+- **Where 0.8 ends, at 140.3 s, the alignments are still close.** NDT corrects the IMU
+  seed by 0.1-0.45 m, but the inlier ratio is 0.75-0.79. At 135-155 s the alignments
+  from the ground truth have a median of 0.78 (the first table). After a second of
+  rejections the IMU prediction runs out, the previous delta seeds the scans, and they
+  land at 0.07-0.31.
+- **Where 0.7 ends, the scans do not register even from the ground truth.** At
+  151.6-153.5 s the alignments from the ground truth have inlier ratios of 0.48-0.76,
+  and NDT moves them up to 1.0 m off (0.91 m at 151.6 s, 1.00 m at 153.0 s). At 147.9 s
+  the ground truth has 0.42.
+- **Off the map, at 185-305 s, there is nothing to register,** so without odometry
+  the track could not continue past it anyway.
+
+These did not get further:
+
+| Change | `min_inlier_ratio` 0.8 | 0.7 |
+| --- | --- | --- |
+| none | 140.2 s | 147.2 s |
+| IMU seed consistency gate off, correction guard 15° instead of 4° | 140.2 s | 151.5 s (one run) |
+| the same, and the IMU prediction kept for 3 s instead of 1 s | 137.7 s | 144.3 s |
+
+- **The IMU seed consistency gate turns off after the 0.9 s cloud gap at 104.8 s.**
+  The prediction across it is 0.61 m off, over the 0.5 m limit. A retry from the last
+  pose at 106.7 s is accepted, and the gate turns on again after 5 scans.
+- **A longer IMU prediction does not help.** At 0.8 the IMU-seeded scans of
+  137.9-140.7 s are still rejected, at 0.62-0.79. At 0.7 the seed has drifted by 144.7 s:
+  NDT moves it by 0.1-0.3 m to an inlier ratio of 0.38-0.52, where the ground truth has
+  0.83-0.85.
+
+**The earlier runs rebuilt the map in the callback.** Each rebuild dropped clouds, 10% in
+all (diagnostic coverage 90.3%, now 99.8-99.9%). At 0.8 the track then ended at 105.9 s;
+with the IMU seed gate off at 128.2 s, and with the guard at 15° too at 140.2 s. That made
+both look like the cause. With the background rebuild, neither changes 0.8.
 
 ## Rerun
 
@@ -153,6 +190,9 @@ g++ -O3 -DNDEBUG -std=c++17 -fopenmp -I"$WS/src/ndt_omp_ros2/include" \
   -47.65 73.34 -12.38 73.1 6 1.0 45 15 FIRST LAST x
 python3 experiments/koide_imu_ab/online.py KOIDE_DATA outdoor_hard_01a /tmp/run \
   --ws WS --rko RKO_ONLINE_NODE --set min_inlier_ratio=0.8
+# Without odometry
+python3 experiments/koide_imu_ab/replay.py KOIDE_DATA outdoor_hard_01a /tmp/alone \
+  --ws WS --set use_imu_preintegration=true --set min_inlier_ratio=0.8
 # Istanbul windows: --start 0 --duration 60, 2820 150, 2300 120
 python3 tools/benchmark/istanbul_replay.py --ws WS --fixture FIXTURE --bag BAG --map MAP \
   --start 2300 --duration 120 --out /tmp/ist \

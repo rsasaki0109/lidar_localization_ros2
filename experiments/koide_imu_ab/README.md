@@ -141,6 +141,12 @@ registration for most of 106.4-111 s: two cloud gaps, an IMU gap and a blocked s
 with turns of 8-29° across the gaps, and nothing else to bridge them. The online check of `outdoor_hard_02b`
 gets through such stretches with odometry, and 01a would need that too.
 
+**Update, 2026-11-04:** these runs rebuilt the local map in the callback, which dropped
+10% of the clouds. `replay.py` now rebuilds it in the background. With that and
+`min_inlier_ratio` 0.8, the localizer alone holds within 1 m to 140.2 s
+([experiments/inlier_ratio_gate](../inlier_ratio_gate/README.md#without-odometry-to-140-151-s)).
+To reproduce the tables here, pass `--set local_map_async_rebuild=false`.
+
 ## With odometry
 
 `online.py` replays the sequence the way the online `outdoor_hard_02b` check does:

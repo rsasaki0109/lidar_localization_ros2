@@ -25,7 +25,17 @@
     sets 0.8. With RKO-LIO odometry, `outdoor_hard_01a` goes from 3.64 m to 0.43 m
     RMSE, and `outdoor_hard_02b`, the release check's sequence, stays within 0.01 m
     ([experiments/inlier_ratio_gate](experiments/inlier_ratio_gate/README.md)).
-  - **Without odometry** it is not enough: 01a still loses the track at about 107 s.
+  - **Without odometry**, 01a holds within 1 m to 140.2 s at 0.8 (106.4 s without the
+    gate) and to 147-152 s at 0.7. There even alignments from the ground truth have
+    inlier ratios of 0.48-0.76 and land up to 1 m off.
+
+### Changed
+
+- `experiments/koide_imu_ab/replay.py` rebuilds the local map in the background
+  (`local_map_async_rebuild`), as the online profile does. Rebuilt in the callback, the
+  150 m crop of the Koide map dropped 10% of the clouds; a gap over 1 s drops the IMU
+  prediction and can end the track. `--set local_map_async_rebuild=false` reproduces the
+  earlier runs.
 
 ### Removed
 
