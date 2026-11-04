@@ -79,7 +79,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       std::max(0.0, scan_stamp_sec - last_scan_stamp_for_imu_) :
       lidar_localization::imuIntegrationWindowSec(last_imu_stamp_, last_scan_stamp_for_imu_);
     const double max_imu_integration_window_sec =
-      imuPredictionMaxWindowSec();
+      lidar_localization::imuMaximumIntegrationWindowSec(scan_period_);
     const bool imu_window_too_large =
       lidar_localization::isImuIntegrationWindowTooLarge(
         latest_imu_seed_integration_window_sec_, max_imu_integration_window_sec);

@@ -347,8 +347,6 @@ public:
   double imu_prediction_correction_guard_yaw_deg_{10.0};
   int imu_prediction_correction_guard_warmup_accepts_{5};
   bool imu_seed_consistency_gate_enabled_{true};
-  // 0: max(1 s, 5 scan periods) (imuMaximumIntegrationWindowSec).
-  double imu_prediction_max_window_sec_{0.0};
   bool imu_dual_queue_enabled_{true};
   lidar_localization::ImuSeedConsistencyParams imu_seed_consistency_params_;
   lidar_localization::ImuSeedConsistencyState imu_seed_consistency_state_;
@@ -752,13 +750,6 @@ public:
     builtin_interfaces::msg::Time * resolved_stamp = nullptr);
   void publishBridgePoseAsRejectedOutput(const builtin_interfaces::msg::Time & stamp);
   void fillPoseCovariance(double fitness_score);
-  // The longest IMU prediction used as a seed or for deskew.
-  double imuPredictionMaxWindowSec() const
-  {
-    return imu_prediction_max_window_sec_ > 0.0 ?
-           imu_prediction_max_window_sec_ :
-           lidar_localization::imuMaximumIntegrationWindowSec(scan_period_);
-  }
 
   // --- Alignment status and diagnostics ---
 
