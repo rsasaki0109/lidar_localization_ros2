@@ -40,8 +40,10 @@
     Without the gate it ends at 106.4 s either way.
   - **Koide `outdoor_hard_02b`, without odometry:** within 1 m until 28.7 s instead of
     13.1 s. The preset loses this sequence without odometry either way.
-  - **Istanbul, the three windows with this preset:** 3D RMSE 0.504, 0.416 and 0.591 m,
-    against 0.507, 0.425 and 0.586 m, with 3-44 more scans aligned per window.
+  - **Istanbul with this preset:** the 0 s and 2300 s windows score 0.504 and 0.591 m
+    3D RMSE, against 0.507 and 0.586 m, with every aligned scan accepted. The preset
+    loses the 2820 s window at 34.8 s either way: 345-348 of its 1500 scans are
+    accepted, where `istanbul_gtsam_smoother.yaml` accepts 1499.
 - `experiments/koide_imu_ab/replay.py` rebuilds the local map in the background
   (`local_map_async_rebuild`), as the online profile does. Rebuilt in the callback, the
   150 m crop of the Koide map dropped 10% of the clouds; a gap over 1 s drops the IMU
