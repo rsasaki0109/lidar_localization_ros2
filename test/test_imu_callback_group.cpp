@@ -1,6 +1,6 @@
 // The IMU subscription gets its own callback group whenever the preintegration needs
 // its samples before a scan is prepared. With the legacy use_imu deskew (removed in
-// 2.0.0) it used to share the cloud callback's group: the samples then waited behind
+// 1.8.0) it used to share the cloud callback's group: the samples then waited behind
 // each registration, arrived in bursts after the scan had used a stale window, and on
 // Boreas the pose left the road within 10 s.
 //

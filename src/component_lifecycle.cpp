@@ -66,7 +66,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("use_twist_prediction", false);
   declare_parameter("twist_prediction_use_angular_velocity", true);
   declare_parameter("max_twist_prediction_dt", 0.5);
-  // use_imu turned on the legacy IMU deskew, removed in 2.0.0. It stays declared so that
+  // use_imu turned on the legacy IMU deskew, removed in 1.8.0. It stays declared so that
   // on_configure() can refuse it instead of ignoring it.
   declare_parameter("use_imu", false);
   declare_parameter("use_twist_ekf", false);
@@ -201,7 +201,7 @@ CallbackReturn PCLLocalization::on_configure(const rclcpp_lifecycle::State &)
   if (get_parameter("use_imu").as_bool()) {
     RCLCPP_ERROR(
       get_logger(),
-      "use_imu was removed in 2.0.0. It turned on the legacy IMU deskew, which integrated "
+      "use_imu was removed in 1.8.0. It turned on the legacy IMU deskew, which integrated "
       "the accelerometer without removing gravity (on Boreas: 1.7 m RMSE, 6%% of scans "
       "accepted). Set use_imu: false, and use use_imu_preintegration, with "
       "use_continuous_time_deskew for the deskew (docs/imu_estimation.md).");

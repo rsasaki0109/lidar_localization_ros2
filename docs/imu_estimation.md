@@ -98,7 +98,7 @@ component that feeds itself must not be able to diverge unbounded.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `use_imu` | `false` | Removed in 2.0.0 with the legacy deskew; `true` makes configuration fail |
+| `use_imu` | `false` | Removed in 1.8.0 with the legacy deskew; `true` makes configuration fail |
 | `use_imu_preintegration` | `true` | Use the guarded preintegration smoother from `/imu` |
 | `imu_preintegration_use_base_frame_transform` | `false` | Transform IMU samples into the base frame before integrating |
 | `imu_accel_scale` | `1.0` | Multiply incoming acceleration before integration; use `9.80665` only for drivers/bags that publish acceleration in `g` rather than m/s² |
@@ -161,7 +161,7 @@ needed. In the params file:
     use_imu_preintegration: true
 ```
 
-The legacy `use_imu` deskew was removed in 2.0.0. It integrated the accelerometer
+The legacy `use_imu` deskew was removed in 1.8.0. It integrated the accelerometer
 without removing gravity and broke every Boreas run it was on (see
 [Validation state](#validation-state-honest-limits)). `continuous_time_deskew` replaces
 it. The parameter is still declared: `use_imu: true` makes the node fail to configure,
@@ -406,7 +406,7 @@ accuracy.
   | the preset, no IMU | 0.132 | 0.41 | 100% |
   | `use_imu_preintegration: true` | **0.127** (both runs) | 0.36 | 100%, 99% |
   | the same, dense smoother solve | 0.120, 0.122 | 0.36, 0.61 | 82%, 81% |
-  | `use_imu: true` (the legacy deskew, removed in 2.0.0) | 1.70 | 4.9 | 6% |
+  | `use_imu: true` (the legacy deskew, removed in 1.8.0) | 1.70 | 4.9 | 6% |
   | both, before the callback group fix | 1.89, 2.21 | 4.5, 5.6 | 21%, 6% |
   | both, with it | 1.33, 3.53 | 17, 31 | 64%, 68% |
 
@@ -428,7 +428,7 @@ accuracy.
   - **The legacy `use_imu` deskew broke the clouds.** It integrated the
     accelerometer without removing gravity, timed each point from its azimuth
     relative to the first point of the cloud (meaningless after a voxel filter), and
-    needed an IMU orientation (Boreas has none). It was removed in 2.0.0; use
+    needed an IMU orientation (Boreas has none). It was removed in 1.8.0; use
     `continuous_time_deskew` instead.
   - **With both on, the preintegration used to starve.** The IMU callback shared the
     cloud callback's group, so samples waited behind each registration and arrived
