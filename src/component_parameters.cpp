@@ -15,6 +15,9 @@ void PCLLocalization::declareImuPreintegrationParameters()
   declare_parameter("imu_prediction_correction_guard_translation_m", 2.0);
   declare_parameter("imu_prediction_correction_guard_yaw_deg", 10.0);
   declare_parameter("imu_prediction_correction_guard_warmup_accepts", 5);
+  // The longest IMU prediction used as a seed or for deskew; 0 means
+  // max(1 s, 5 scan periods).
+  declare_parameter("imu_prediction_max_window_sec", 0.0);
 
   // Preintegration noise and factor model.
   declare_parameter("imu_gyro_noise_density", 0.01);
@@ -67,6 +70,7 @@ void PCLLocalization::loadImuPreintegrationParameters()
     "imu_seed_consistency_required_consecutive_passes", required_consecutive_passes);
   imu_seed_consistency_params_.required_consecutive_passes = static_cast<std::size_t>(
     std::max(1, required_consecutive_passes));
+  get_parameter("imu_prediction_max_window_sec", imu_prediction_max_window_sec_);
   // Experimental deskew and localizability diagnostics.
   get_parameter("use_continuous_time_deskew", use_continuous_time_deskew_);
   get_parameter("continuous_time_deskew_mode", continuous_time_deskew_mode_);

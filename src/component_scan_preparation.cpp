@@ -347,7 +347,7 @@ bool PCLLocalization::applyContinuousTimeDeskewIfEnabled(
     const bool imu_window_too_large =
       lidar_localization::isImuIntegrationWindowTooLarge(
         imu_integration_window_sec,
-        lidar_localization::imuMaximumIntegrationWindowSec(scan_period_));
+        imuPredictionMaxWindowSec());
     imu_samples_ready_for_deskew = use_pose_history ?
       !continuous_time_imu_pose_history_.empty() :
       (use_lidar_motion ?
