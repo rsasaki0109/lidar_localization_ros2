@@ -61,7 +61,10 @@ double registrationInlierRatio(
 {
   const auto source = registration.getInputSource();
   const auto tree = registration.getSearchMethodTarget();
-  if (!source || source->empty() || !tree || !tree->getInputCloud()) {
+  // A nearly blind scan (a blocked sensor) has too few points to count: all of them may
+  // happen to lie near the map.
+  constexpr std::size_t kMinPoints = 200;
+  if (!source || source->size() < kMinPoints || !tree || !tree->getInputCloud()) {
     return 0.0;
   }
   pcl::PointCloud<PointSource> transformed;
