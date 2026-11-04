@@ -120,8 +120,8 @@ struct AlignmentDiagnosticValuesInput
   double imu_gyro_bias_rad_s[3]{NAN, NAN, NAN};
   double imu_accel_bias_m_s2[3]{NAN, NAN, NAN};
   double imu_velocity_m_s[3]{NAN, NAN, NAN};
-  // The backend's own fitness and the inlier ratio of the attempt (NaN without one; the
-  // inlier ratio also without min_inlier_ratio). fitness_score is what the gate read.
+  // The backend's own fitness and the inlier ratio of the attempt (NaN without one).
+  // fitness_score is what the gate read.
   double registration_fitness_score{NAN};
   double inlier_ratio{NAN};
 };

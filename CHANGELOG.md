@@ -15,7 +15,12 @@
     recovery keep their thresholds. A scan of fewer than `inlier_ratio_min_points`
     (200) points gets a ratio of 0.
   - **`/alignment_status`** adds `registration_fitness_score`, the backend's own
-    fitness, and `inlier_ratio`. `fitness_score` stays what the gate reads.
+    fitness, and `inlier_ratio`, also with the gate off. `fitness_score` stays what
+    the gate reads.
+  - **The distance must suit the map.** On Istanbul at 0.5 m, good alignments have
+    inlier ratios of 0.58-0.93, and 0.8 lost a window: the GTSAM smoother reads the
+    same score against `gtsam_fitness_nominal` and all but ignored the scans. At 1.0 m
+    the three Istanbul windows match or beat the gate off. Boreas does not change.
   - **The online Koide profile** (`tools/readme_media/koide_outdoor_hard_02b_online.yaml`)
     sets 0.8. With RKO-LIO odometry, `outdoor_hard_01a` goes from 3.64 m to 0.43 m
     RMSE, and `outdoor_hard_02b`, the release check's sequence, stays within 0.01 m

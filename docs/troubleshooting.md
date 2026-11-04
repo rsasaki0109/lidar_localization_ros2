@@ -220,7 +220,7 @@ These keys are diagnostics only — they never change acceptance behavior.
 | --- | --- |
 | `fitness_score` | lower is better; compare to `effective_score_threshold`. With `min_inlier_ratio` it is the inlier ratio on the same scale (see below) |
 | `registration_fitness_score` | the backend's own fitness, the mean squared distance from each scan point to the map |
-| `inlier_ratio` | with `min_inlier_ratio`, the share of scan points within `inlier_ratio_distance_m` of the map |
+| `inlier_ratio` | the share of scan points within `inlier_ratio_distance_m` of the map, reported whether or not `min_inlier_ratio` is set |
 | `consecutive_rejected_updates` | high streak means seed or map is wrong |
 | `seed_translation_since_accept_m` | large drift since last accept → open-loop problem |
 | `filtered_point_count` | very low → scan preprocessing or crop issue |
@@ -259,6 +259,21 @@ On `outdoor_hard_02b` the on-map RMSE went from 0.18 m to 0.17 m, and the Boreas
 did not change
 ([experiments/inlier_ratio_gate](../experiments/inlier_ratio_gate/README.md)). It stays
 off by default.
+
+Before you set it, read `inlier_ratio` in `/alignment_status` on a stretch where the
+localizer tracks well. The ratio depends on how close the map's points lie to each
+other, so `inlier_ratio_distance_m` must suit the map:
+- **Koide, 0.5 m:** alignments from the ground truth have a median of 0.78-0.96 on the
+  map.
+- **Istanbul, 0.5 m:** good alignments have 0.58-0.93 (5th to 95th percentile), so 0.8
+  reads a third of them as bad. At 1.0 m they have 0.93-1.00.
+
+The EKF and GTSAM backends read the same score against `ekf_fitness_nominal` or
+`gtsam_fitness_nominal` (1.0), and a score of 4 multiplies a measurement's variance by
+16. With the Istanbul preset at 0.5 m, every scan scored above 18 within the first
+second, the smoother all but ignored the scans, and the track was lost. At 1.0 m the
+three Istanbul windows scored 0.369, 0.562 and 0.927 m RMSE, against 0.450,
+0.559-0.573 and 0.937 m without the gate.
 
 ## Symptom: Direct Positioning Got Stuck (#35)
 

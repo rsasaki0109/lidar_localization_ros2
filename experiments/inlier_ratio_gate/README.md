@@ -59,10 +59,11 @@ So the score is 0 when every point is an inlier and `score_threshold` at
 `min_inlier_ratio`. The measurement gate, the pose covariance, the map-to-odom anchor
 gate and the recovery all read it, so their thresholds keep their meaning.
 `registrationFitness` (`registration_fitness.hpp`) gets the ratio from the same
-nearest-neighbour searches as the fitness. `/alignment_status` reports the
-backend's own fitness as `registration_fitness_score`, and the ratio as
-`inlier_ratio`. A scan of fewer than `inlier_ratio_min_points` (200) points gets a
-ratio of 0: at 116.9 s the blocked sensor left 7 points, and all 7 lay near the map.
+nearest-neighbour searches as the fitness, so the fitness stays bit-identical.
+`/alignment_status` reports the backend's own fitness as `registration_fitness_score`,
+and the ratio as `inlier_ratio`, whether or not the gate is on. A scan of fewer than
+`inlier_ratio_min_points` (200) points gets a ratio of 0: at 116.9 s the blocked sensor
+left 7 points, and all 7 lay near the map.
 
 ## Online, with RKO-LIO odometry
 
@@ -75,7 +76,10 @@ runs were on one 4-vCPU container, 2026-11-04.
 | --- | --- | --- | --- | --- | --- |
 | off | 3.636 m | 0.945 m (19%) | 6.52 m | 0.733 m | 0.664 m |
 | 0.7 | 0.492 m | 0.157 m (81%) | 0.79 m | 0.498 m | 0.274 m |
-| **0.8** | **0.428 m** | **0.136 m (66%)** | **0.66 m** | **0.503 m** | **0.272 m** |
+| **0.8** | **0.428-0.434 m** | **0.136 m (66%)** | **0.66 m** | **0.503 m** | **0.272 m** |
+
+The 0.8 row is the sweep's run; the profile's run scored 0.434 m over the whole
+sequence.
 
 The hard stretch now registers. The path then leaves the map from a pose that is right,
 so odometry drifts 0.7 m instead of 9.9 m before the scans register again.
@@ -86,7 +90,7 @@ so odometry drifts 0.7 m instead of 9.9 m before the scans register again.
 | --- | --- | --- | --- | --- |
 | off | 3 | 0.233 m | 0.181-0.182 m | 0.319-0.320 m |
 | 0.7 | 2 | 0.280-0.283 m | 0.172-0.179 m | 0.431 m |
-| **0.8** | 2 | **0.236-0.240 m** | **0.170-0.171 m** | 0.338-0.347 m |
+| **0.8** | 3 | **0.236-0.242 m** | **0.170-0.171 m** | 0.338-0.353 m |
 
 - **On the map, both thresholds help.**
 - **Off the map, 0.7 costs 0.11 m.** It accepts twice as many scans at the map's edge,
@@ -94,8 +98,31 @@ so odometry drifts 0.7 m instead of 9.9 m before the scans register again.
 - **0.8 keeps the RMSE over the whole sequence within 0.01 m of off.** So 0.8 is the
   value for the online Koide profile.
 
-On the Boreas preset, 0.7 leaves the trajectory byte-identical, because every scan
-passes either way.
+## Boreas and Istanbul
+
+- **Boreas:** at 0.7 and at 0.8 the preset's trajectory is byte-identical to `main`'s
+  (0.132 m), because every scan passes either way. With the gate off it is too.
+- **Istanbul (`istanbul_replay.py`, the GTSAM smoother preset):** 0.8 at 0.5 m lost
+  the 2300 s window, but 0.8 at 1.0 m left all three windows within run-to-run spread
+  or better:
+
+| Window | Off | 0.8 at 0.5 m | 0.8 at 1.0 m |
+| --- | --- | --- | --- |
+| 0 s, 60 s long | 0.450 m | 0.347 m | 0.369 m |
+| 2820 s, 150 s long | 0.937 m | 0.896 m | 0.927 m |
+| 2300 s, 120 s long | 0.559-0.573 m | 139.5 m | 0.562 m |
+
+The values are 3D RMSE over each window.
+
+- **The map sets the inlier distance.** Without the gate, the Istanbul alignments have
+  inlier ratios of 0.58-0.93 at 0.5 m (5th to 95th percentile, median 0.84) and
+  0.93-1.00 at 1.0 m. At 0.5 m, 0.8 reads a third of the good alignments as bad.
+- **The smoother reads the score too.** It scales a measurement's variance by
+  `(score / gtsam_fitness_nominal)^2`, with a nominal score of 1.0. At 0.5 m every
+  recorded scan scored above 18 within the first second, so the smoother all but
+  ignored them, and the track was lost, with up to 268 m of z error.
+- **`inlier_ratio` is in `/alignment_status` with the gate off,** so it can be read on a
+  stretch that tracks well before choosing the distance and the threshold.
 
 ## Without odometry it is not enough
 
@@ -126,4 +153,8 @@ g++ -O3 -DNDEBUG -std=c++17 -fopenmp -I"$WS/src/ndt_omp_ros2/include" \
   -47.65 73.34 -12.38 73.1 6 1.0 45 15 FIRST LAST x
 python3 experiments/koide_imu_ab/online.py KOIDE_DATA outdoor_hard_01a /tmp/run \
   --ws WS --rko RKO_ONLINE_NODE --set min_inlier_ratio=0.8
+# Istanbul windows: --start 0 --duration 60, 2820 150, 2300 120
+python3 tools/benchmark/istanbul_replay.py --ws WS --fixture FIXTURE --bag BAG --map MAP \
+  --start 2300 --duration 120 --out /tmp/ist \
+  --set min_inlier_ratio=0.8 --set inlier_ratio_distance_m=1.0
 ```
