@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Added
+
+- `min_inlier_ratio` (off at 0) gates on the share of scan points within
+  `inlier_ratio_distance_m` (0.5 m) of a map point, instead of the fitness score.
+  - **Why:** where the map misses structure the sensor sees, a few points metres from
+    any map point dominate the fitness score's mean of squared distances. On Koide
+    `outdoor_hard_01a`, alignments within 0.1-0.2 m of the ground truth score 10-24
+    against a threshold of 6, and wrong poses score lower than right ones.
+  - **The score:** `score_threshold * (1 - inlier_ratio) / (1 - min_inlier_ratio)`, so
+    the measurement gate, the pose covariance, the map-to-odom anchor gate and the
+    recovery keep their thresholds. A scan of fewer than `inlier_ratio_min_points`
+    (200) points gets a ratio of 0.
+  - **`/alignment_status`** adds `registration_fitness_score`, the backend's own
+    fitness, and `inlier_ratio`. `fitness_score` stays what the gate reads.
+  - **The online Koide profile** (`tools/readme_media/koide_outdoor_hard_02b_online.yaml`)
+    sets 0.8. With RKO-LIO odometry, `outdoor_hard_01a` goes from 3.64 m to 0.43 m
+    RMSE, and `outdoor_hard_02b`, the release check's sequence, stays within 0.01 m
+    ([experiments/inlier_ratio_gate](experiments/inlier_ratio_gate/README.md)).
+  - **Without odometry** it is not enough: 01a still loses the track at about 107 s.
+
 ### Removed
 
 - The legacy `use_imu` deskew, deprecated in 1.6.0. It integrated the accelerometer
