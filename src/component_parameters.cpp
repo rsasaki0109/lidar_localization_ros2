@@ -178,6 +178,8 @@ void PCLLocalization::initializeParameters()
   get_parameter("ndt_resolution", ndt_resolution_);
   get_parameter("ndt_step_size", ndt_step_size_);
   get_parameter("ndt_num_threads", ndt_num_threads_);
+  get_parameter("min_inlier_ratio", min_inlier_ratio_);
+  get_parameter("inlier_ratio_distance_m", inlier_ratio_distance_m_);
   get_parameter("ndt_max_iterations", ndt_max_iterations_);
   get_parameter("gicp_corr_randomness", gicp_corr_randomness_);
   get_parameter("gicp_max_correspondence_distance", gicp_max_correspondence_distance_);

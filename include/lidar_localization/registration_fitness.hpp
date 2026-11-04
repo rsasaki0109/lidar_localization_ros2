@@ -4,6 +4,7 @@
 #include <pcl/common/transforms.h>
 #include <pcl/registration/registration.h>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <vector>
@@ -48,6 +49,43 @@ double parallelFitnessScore(
     }
   }
   return matched > 0 ? fitness / matched : std::numeric_limits<double>::max();
+}
+
+// The share of the source points, moved by the final transformation, whose nearest
+// target point lies within inlier_distance_m. Unlike the fitness score, points that see
+// structure missing from the map do not drag it down beyond their count.
+template<typename PointSource, typename PointTarget, typename Scalar>
+double registrationInlierRatio(
+  pcl::Registration<PointSource, PointTarget, Scalar> & registration, int threads,
+  double inlier_distance_m)
+{
+  const auto source = registration.getInputSource();
+  const auto tree = registration.getSearchMethodTarget();
+  if (!source || source->empty() || !tree || !tree->getInputCloud()) {
+    return 0.0;
+  }
+  pcl::PointCloud<PointSource> transformed;
+  pcl::transformPointCloud(*source, transformed, registration.getFinalTransformation());
+  const int count = static_cast<int>(transformed.size());
+  const float limit = static_cast<float>(inlier_distance_m * inlier_distance_m);
+  int inliers = 0;
+#pragma omp parallel for num_threads(std::max(1, threads)) schedule(guided, 32) reduction(+ : inliers)
+  for (int i = 0; i < count; ++i) {
+    pcl::Indices index(1);
+    std::vector<float> distance(1);
+    if (tree->nearestKSearch(transformed[i], 1, index, distance) > 0 && distance[0] <= limit) {
+      ++inliers;
+    }
+  }
+  return static_cast<double>(inliers) / count;
+}
+
+// The inlier ratio on the fitness score's scale, for the measurement gate: 0 when every
+// point is an inlier, score_threshold at min_inlier_ratio, larger below it.
+inline double inlierRatioGateScore(
+  double inlier_ratio, double min_inlier_ratio, double score_threshold)
+{
+  return score_threshold * (1.0 - inlier_ratio) / (1.0 - min_inlier_ratio);
 }
 
 }  // namespace lidar_localization

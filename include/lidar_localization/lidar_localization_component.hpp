@@ -505,6 +505,9 @@ public:
   lidar_localization::ErrorFloorCovarianceParams error_floor_covariance_params_;
 
   int ndt_num_threads_;
+  // Experiment: gate on the inlier ratio instead of the fitness score when > 0.
+  double min_inlier_ratio_{0.0};
+  double inlier_ratio_distance_m_{0.5};
   int ndt_max_iterations_;
 
   double pose_publish_frequency_;
