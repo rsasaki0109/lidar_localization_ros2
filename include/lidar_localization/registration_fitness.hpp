@@ -39,11 +39,9 @@ RegistrationFitness registrationFitness(
   RegistrationFitness result;
   const auto source = registration.getInputSource();
   const auto tree = registration.getSearchMethodTarget();
+  // Without a target tree there is nothing to count against, so no inlier ratio.
   if (!source || !tree || !tree->getInputCloud()) {
     result.score = registration.getFitnessScore();
-    if (inlier_distance_m > 0.0) {
-      result.inlier_ratio = 0.0;
-    }
     return result;
   }
   pcl::PointCloud<PointSource> transformed;
