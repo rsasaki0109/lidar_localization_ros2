@@ -19,9 +19,9 @@ namespace lidar_localization
 // over THREADS. The fitness is summed in point order, as in getFitnessScore().
 //
 // The fitness is a mean squared distance, so points that see structure missing from the
-// map, a few metres from any map point, dominate it: on Koide outdoor_hard_01a an
-// alignment within 0.1 m of the ground truth scores 10-24, while one 7 m and 33 deg off
-// scores 2.3. The inlier ratio counts them once each: 0.86-0.92 against 0.40.
+// map, a few metres from any map point, dominate it. On Koide outdoor_hard_01a at
+// 111.3 s, the alignment from the ground truth scores 3.7, and one 8.3 m and 34 deg off
+// scores 2.3. The inlier ratio counts those points once each: 0.92 against 0.40.
 //
 // A scan of fewer than min_inlier_points points gets an inlier ratio of 0: a nearly
 // blind scan may lie near the map by chance.

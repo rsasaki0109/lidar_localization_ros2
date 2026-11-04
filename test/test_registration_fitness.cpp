@@ -103,18 +103,19 @@ void test_pcl_ndt_score_is_identical()
 void test_inlier_ratio_counts_points_far_from_the_map()
 {
   const Cloud::Ptr map = makeMap();
+  // A 40 x 40 grid at 0.5 m on map points of the ground; every 4th point raised 5 m.
   Cloud::Ptr scan(new Cloud());
-  for (std::size_t i = 0; i < map->size() && scan->size() < 3000; i += 7) {
-    Point p = map->points[i];
-    if (p.z != 0.0f || std::hypot(p.x, p.y) > 15.0f) {
-      continue;
+  Point p;
+  p.intensity = 1.0f;
+  for (int ix = 0; ix < 40; ++ix) {
+    for (int iy = 0; iy < 40; ++iy) {
+      p.x = -10.0f + 0.5f * static_cast<float>(ix);
+      p.y = -10.0f + 0.5f * static_cast<float>(iy);
+      p.z = scan->size() % 4 == 3 ? 5.0f : 0.0f;
+      scan->push_back(p);
     }
-    if (scan->size() % 4 == 3) {
-      p.z = 5.0f;
-    }
-    scan->push_back(p);
   }
-  assert(scan->size() == 3000);
+  assert(scan->size() == 1600);
   pclomp::NormalDistributionsTransform<Point, Point> ndt;
   ndt.setResolution(1.0);
   ndt.setInputTarget(map);
@@ -133,7 +134,7 @@ void test_inlier_ratio_counts_points_far_from_the_map()
   // Without an inlier distance there is no ratio.
   assert(std::isnan(lidar_localization::registrationFitness(ndt, 4, -1.0, 0).inlier_ratio));
   // A scan below the minimum point count gets none either way.
-  assert(lidar_localization::registrationFitness(ndt, 4, 0.5, 3001).inlier_ratio == 0.0);
+  assert(lidar_localization::registrationFitness(ndt, 4, 0.5, 1601).inlier_ratio == 0.0);
 }
 
 void test_inlier_ratio_gate_score_scale()
