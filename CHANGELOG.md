@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.8.0 - 2026-11-07
 
 ### Added
 
@@ -99,6 +99,23 @@
     tests, the IMU callback's legacy path and its lock, and `use_imu: false` in the
     presets under `param/`.
   - **Test:** `test_imu_callback_group` checks that `use_imu: true` fails to configure.
+
+### Validation
+
+- The release check: two full Koide `outdoor_hard_02b` replays at 1x passed on
+  `release/v1.8.0` at `d853fbd` (`main` at `64a14db` plus the version bump), built
+  without a build type, with ndt_omp_ros2 at its 0.2.0 release.
+  - **Accuracy:** 0.242 and 0.245 m RMSE (0.171 m on the map), against 0.233 m
+    (0.181 m) for v1.7.0. The online profile now sets `min_inlier_ratio: 0.8`; off the
+    map the drift is 0.353-0.357 m against 0.319-0.320 m.
+  - **Coverage:** 100.0% diagnostic coverage in both.
+  - **Alignment:** 12-13 ms at the median and 32-33 ms at p95, against 17 and 45-46 ms,
+    on a faster host CPU (2.30 GHz against 2.10 GHz)
+    ([docs/koide-online-replay.md](docs/koide-online-replay.md#v180-release-verification-2026-11-07),
+    `docs/validation/v1.8.0-koide-20261107`).
+- Istanbul, `param/istanbul_gtsam_smoother.yaml`: 0.24-0.27, 0.74-0.77 and 0.45-0.47 m
+  horizontal RMSE on the three windows, three runs each with clean starts, as for
+  v1.5.0 (0.23, 0.75 and 0.46 m).
 
 ## 1.7.0 - 2026-11-03
 
