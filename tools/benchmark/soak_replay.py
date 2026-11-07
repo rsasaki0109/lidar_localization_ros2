@@ -496,7 +496,7 @@ def main():
         "overrides": args.set,
         "wrap": args.wrap,
         "laps": lap_count,
-        "lap_sec": round(period_ns * 1e-9, 1),
+        "lap_sec": period_ns * 1e-9,
         "localizer_alive_at_end": alive,
         "memory": memory_trend(samples, skip_sec=period_ns * 1e-9),
         "per_lap": laps,
