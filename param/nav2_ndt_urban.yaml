@@ -30,7 +30,7 @@
     initial_pose_qw: 1.0
     use_odom: false
     use_twist_prediction: true
-    twist_prediction_use_angular_velocity: false
+    twist_prediction_use_angular_velocity: true
     max_twist_prediction_dt: 0.5
     use_imu_preintegration: true
     imu_preintegration_use_base_frame_transform: false
