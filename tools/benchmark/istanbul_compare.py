@@ -102,11 +102,18 @@ def _scores(out):
 
 def summarize(out):
     print(
-        "| window | variant | runs | horizontal RMSE m | z RMSE m | yaw RMSE deg | 3D p95 m |"
+        "| window | variant | runs | horizontal RMSE m | z RMSE m | yaw RMSE deg | 3D p95 m"
+        " | longest pose gap s |"
     )
-    print("| --- | --- | --- | --- | --- | --- | --- |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- |")
     for window, variant, scores in _scores(out):
         cells = [_cell([s[group][key] for s in scores]) for group, key in METRICS]
+        # The errors cover only the published poses; a long gap means the localizer
+        # stopped publishing. Runs scored before the gap was recorded show "-".
+        gaps = [
+            s["longest_pose_gap_sec"] for s in scores if "longest_pose_gap_sec" in s
+        ]
+        cells.append(_cell(gaps, 1) if gaps else "-")
         print(f"| {window} | {variant} | {len(scores)} | " + " | ".join(cells) + " |")
 
     # Runs recorded before istanbul_replay.py scored the alignment cost have no

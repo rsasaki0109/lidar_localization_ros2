@@ -29,6 +29,11 @@
     gate) and to 147-152 s at 0.7. There even alignments from the ground truth have
     inlier ratios of 0.48-0.76 and land up to 1 m off.
 
+- `tools/benchmark/istanbul_replay.py` adds `last_pose_sec` and `longest_pose_gap_sec`
+  to `score.json`, and `istanbul_compare.py` prints the longest gap. The errors cover
+  only the published poses: `nav2_ndt_urban.yaml` scored 0.42 m 3D RMSE on the 2820 s
+  window while publishing nothing after 34.7 s, a 115 s gap.
+
 ### Changed
 
 - `param/nav2_ndt_urban.yaml` rebuilds the local map in the background
