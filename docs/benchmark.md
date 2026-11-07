@@ -427,3 +427,62 @@ What to keep in mind with this dataset (`boreas_prepare.py` handles the first th
   integrated gravity, and was removed in 1.8.0. With both, the IMU callback used to wait behind every
   registration; it now has its own callback group
   ([imu_estimation.md](imu_estimation.md#validation-state-honest-limits)).
+
+### Soak and fault injection
+
+`soak_replay.py` runs one localizer for an hour on the 120 s fixture, played lap after
+lap at 1x. Each lap's stamps and `/clock` are shifted past the laps before it, and an
+`/initialpose` at the ground-truth start pose begins every lap after the first. Every
+5 s it samples the node's resident memory, CPU use and threads from `/proc`.
+`--fault KIND@LAP:START[+DURATION]` injects a fault into one lap: `lidar` or `imu`
+drops those messages, `stall` stops the node (SIGSTOP, then SIGCONT), `reinit` sends
+`/initialpose` at the ground-truth pose there, while moving. `--wrap` runs the node
+under a profiler such as heaptrack.
+
+```bash
+python3 tools/benchmark/soak_replay.py /tmp/boreas_fixture /tmp/boreas_soak --ws WS \
+  --minutes 60 --set use_imu_preintegration=true
+python3 tools/benchmark/soak_replay.py /tmp/boreas_fixture /tmp/boreas_faults --ws WS \
+  --minutes 20.4 --set use_imu_preintegration=true \
+  --fault lidar@1:50+1 --fault lidar@2:50+5 --fault stall@5:50+2 --fault reinit@7:60
+```
+
+`summary.json` holds each lap's RMSE, max error, accepted scans and alignment time, the
+memory trend, and per fault the largest error from its start to 10 s after its end, the
+time from its end until the error stays under 0.5 m for the rest of the lap, and the
+RMSE after that.
+
+An hour with `use_imu_preintegration: true` on v1.8.0, with 4 vCPUs, on 2026-11-07:
+
+- **Tracking does not wear down.** All 29 laps score 0.127 m RMSE, 0.36 m at most, and
+  every scan is accepted. The alignment takes 7.8-9.2 ms at the median and 23-31 ms
+  at p95 in every lap. CPU use averages 74% of one core, with 43 threads.
+- **Resident memory climbs from 1.5 to 1.9 GB, 2.2 GB at most, but nothing leaks.**
+  Under heaptrack the heap in use bottoms out at 403-426 MB in every half lap for
+  12 minutes, and peaks at 1.1-1.3 GB. glibc keeps what is freed across its malloc
+  arenas: with `MALLOC_ARENA_MAX=2` the same hour stays at 0.9-1.1 GB.
+
+Faults 50 s into a lap, at 5-8 m/s, on v1.8.0 with `use_imu_preintegration: true`:
+
+| Fault | Poses published during it | Largest error | Back under 0.5 m after |
+| --- | --- | --- | --- |
+| none (laps 0 and 8) | | 0.36 m | |
+| LiDAR gap, 1 s | 0 | 0.24 m | 0.02 s |
+| LiDAR gap, 2 s | 0 | **8.6 m** | 1.6 s |
+| LiDAR gap, 5 s | 0 | no pose for the rest of the lap | never |
+| LiDAR gap, 30 s | 0 | no pose for the rest of the lap | never |
+| IMU gap, 10 s | 96 | 0.29 m | 0.05 s |
+| node stopped, 2 s | 19 | 1.5 m | 0.06 s |
+| node stopped, 10 s | 19 | **54 m** | never |
+| `/initialpose` while moving | | 0.28 m | 0.05 s |
+
+- **After more than 1 s without an accepted scan the IMU seed is dropped.** Its window
+  runs from the last accepted scan, and above 1 s the seed falls back to the previous
+  scan's motion, which advances at most 1 s. After the 5 s gap the seed had moved
+  6.2 m of the 33.4 m driven, every scan was rejected, and the reinitialization
+  request came 19 s later.
+- **A wrong alignment can pass `score_threshold: 6`.** The poses more than 1 m off
+  were accepted at fitness 0.5-5.9 with 50-74% of the points within 0.5 m of the map,
+  against 96% at the median when tracking (85% at the 1st percentile).
+  `min_inlier_ratio: 0.8` rejects them, but then the laps with the 2 s and 5 s gaps
+  and both stops publish no pose after the fault either.
