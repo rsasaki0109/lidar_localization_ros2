@@ -4,6 +4,21 @@
 
 ### Changed
 
+- **The node holds 0.6-0.8 GB instead of 1.5-2.2 GB** on the looped Boreas fixture
+  (`tools/benchmark/soak_replay.py`, with `use_imu_preintegration: true`), at the same
+  alignment times. Nothing leaked before; the memory was kept.
+  - **No older registration targets are kept alive**
+    (`registration_target_cloud_keep_alive_count` defaults to 0, from 8). The
+    registration objects hold their targets through shared pointers. Under
+    AddressSanitizer, three laps with a re-initialization while moving and a LiDAR gap
+    reported nothing, and the node shut down cleanly.
+  - **The local-map crop is sized to its points.** Grown point by point, a crop of up
+    to 1.4 million points kept 2.5 million points' worth of memory (79 MB).
+  - With both, the heap in use peaks at 0.69 GB instead of 1.34 GB.
+  - **`lidar_localization_node` limits glibc to two malloc arenas** unless
+    `MALLOC_ARENA_MAX` is set. With one arena per thread, about 40 threads kept up to
+    2.2 GB resident whatever the heap held. A component loaded into another container
+    needs `MALLOC_ARENA_MAX=2` in that container's environment.
 - `param/boreas_ndt_velodyne.yaml` sets `min_inlier_ratio: 0.8`.
   - **Why:** after LiDAR gaps of 2 s and stops of 10 s injected with
     `tools/benchmark/soak_replay.py`, the preset accepted poses 8.6-117 m off. They

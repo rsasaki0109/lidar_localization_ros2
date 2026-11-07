@@ -462,6 +462,25 @@ An hour with `use_imu_preintegration: true` on v1.8.0, with 4 vCPUs, on 2026-11-
   12 minutes, and peaks at 1.1-1.3 GB. glibc keeps what is freed across its malloc
   arenas: with `MALLOC_ARENA_MAX=2` the same hour stays at 0.9-1.1 GB.
 
+Since then the node keeps no older registration targets alive, sizes the local-map crop
+to its points, and limits glibc to two malloc arenas. Five laps each, with
+`use_imu_preintegration: true`, on 2026-11-07:
+
+| Build | Resident memory, max | Lowest in each lap | Heap in use (heaptrack) | Alignment median / p95 |
+| --- | --- | --- | --- | --- |
+| v1.8.0 | 2.0 GB | 1.3-1.6 GB | 0.40-1.3 GB | 8.0-9.2 / 24-31 ms |
+| now | **0.82 GB** | **0.62-0.66 GB** | 0.28-0.69 GB | 8.1-9.0 / 24-28 ms |
+
+- **The heap peaked with the local-map crops.** Eight older targets were kept alive,
+  each a crop of the dense map of up to 1.4 million points in a buffer grown to 2.5
+  million (79 MB). Freed, they halve the heap's peak.
+- **The resident memory follows the arenas.** The smaller heap alone left it at
+  1.5-2.2 GB; two arenas take it down, for 2-6% more of one core (83% against
+  85-89% in the same session).
+- **`MALLOC_ARENA_MAX` in the environment still wins.** The limit is set in
+  `lidar_localization_node`; a component loaded into another container needs
+  `MALLOC_ARENA_MAX=2` in that container's environment.
+
 Faults 50 s into a lap, at 5-8 m/s, on v1.8.0 with `use_imu_preintegration: true`:
 
 | Fault | Poses published during it | Largest error | Back under 0.5 m after |
