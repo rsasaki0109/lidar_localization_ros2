@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <string>
 
 #include <Eigen/Dense>
@@ -57,6 +58,7 @@ struct AlignmentPipelineResult
   AlignmentAttempt selected_attempt;
   MeasurementGateDecision gate_result;
   bool recovered_by_retry_from_last_pose{false};
+  bool recovered_by_alternate_seed{false};
   bool should_continue{true};
   bool should_advance_prediction_without_measurement{false};
   std::uint8_t status_level{kMeasurementGateOk};
@@ -115,15 +117,50 @@ inline MeasurementGateDecision makeForcedRetryRejectedGateDecision(
   return gate;
 }
 
-template<typename RetryAttemptFn, typename GateEvaluatorFn>
+inline MeasurementGateDecision makeAlternateSeedRecoveredGateDecision(
+  const MeasurementGateDecision & gate)
+{
+  MeasurementGateDecision recovered_gate = gate;
+  recovered_gate.status_level = kMeasurementGateWarn;
+  recovered_gate.status_message = "alternate_seed_recovered";
+  recovered_gate.reject_measurement = false;
+  recovered_gate.rejected_seed_update_applied = false;
+  return recovered_gate;
+}
+
+// ALTERNATE_ATTEMPT_FN returns std::optional<AlignmentAttempt>: an alignment from a
+// second seed, or nothing when there is none. It runs when the primary attempt does
+// not converge or is rejected, before the retry from the last accepted pose, and its
+// result is taken when the gate accepts it.
+template<typename AlternateAttemptFn, typename RetryAttemptFn, typename GateEvaluatorFn>
 AlignmentPipelineResult runAlignmentPipeline(
   const AlignmentAttempt & primary_attempt,
   const AlignmentPipelineInput & input,
+  AlternateAttemptFn alternate_attempt_fn,
   RetryAttemptFn retry_attempt_fn,
   GateEvaluatorFn evaluate_gate)
 {
   AlignmentPipelineResult result;
   result.selected_attempt = primary_attempt;
+
+  auto try_alternate_seed = [&]() {
+      const std::optional<AlignmentAttempt> alternate = alternate_attempt_fn();
+      if (
+        !alternate || !alternate->target_ready || !alternate->has_converged ||
+        !alternate->final_transformation.allFinite())
+      {
+        return false;
+      }
+      const MeasurementGateDecision alternate_gate = evaluate_gate(*alternate);
+      if (alternate_gate.reject_measurement) {
+        return false;
+      }
+      result.selected_attempt = *alternate;
+      result.gate_result = makeAlternateSeedRecoveredGateDecision(alternate_gate);
+      result.recovered_by_alternate_seed = true;
+      syncPipelineStatusFromGate(result);
+      return true;
+    };
 
   auto try_recovery_retry = [&](bool force_retry) {
       const double fallback_accepted_gap_sec =
@@ -190,7 +227,7 @@ AlignmentPipelineResult runAlignmentPipeline(
   }
 
   if (!result.selected_attempt.has_converged) {
-    if (try_recovery_retry(false)) {
+    if (try_alternate_seed() || try_recovery_retry(false)) {
       return result;
     }
     return makeTerminalAlignmentPipelineResult(
@@ -198,7 +235,7 @@ AlignmentPipelineResult runAlignmentPipeline(
   }
 
   if (!result.selected_attempt.final_transformation.allFinite()) {
-    if (try_recovery_retry(false)) {
+    if (try_alternate_seed() || try_recovery_retry(false)) {
       return result;
     }
     return makeTerminalAlignmentPipelineResult(
@@ -214,10 +251,23 @@ AlignmentPipelineResult runAlignmentPipeline(
 
   result.gate_result = evaluate_gate(result.selected_attempt);
   syncPipelineStatusFromGate(result);
-  if (result.gate_result.reject_measurement) {
+  if (result.gate_result.reject_measurement && !try_alternate_seed()) {
     (void)try_recovery_retry(false);
   }
   return result;
+}
+
+template<typename RetryAttemptFn, typename GateEvaluatorFn>
+AlignmentPipelineResult runAlignmentPipeline(
+  const AlignmentAttempt & primary_attempt,
+  const AlignmentPipelineInput & input,
+  RetryAttemptFn retry_attempt_fn,
+  GateEvaluatorFn evaluate_gate)
+{
+  return runAlignmentPipeline(
+    primary_attempt, input,
+    []() {return std::optional<AlignmentAttempt>{};},
+    retry_attempt_fn, evaluate_gate);
 }
 
 }  // namespace lidar_localization

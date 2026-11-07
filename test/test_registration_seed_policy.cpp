@@ -209,8 +209,45 @@ void test_registration_seed_source_names_are_stable_for_diagnostics()
     "odom_tf_prediction");
 }
 
+void test_imu_retry_seed_only_past_the_seed_window()
+{
+  ll::ImuRetrySeedInput input;
+  input.use_imu_preintegration = true;
+  input.imu_smoother_initialized = true;
+  input.imu_has_new_samples = true;
+  input.imu_window_too_large = true;
+  input.imu_integration_window_sec = 5.0;
+  assert(ll::isImuRetrySeedReady(input));
+
+  // Within the window the IMU seeds the scan itself.
+  auto within = input;
+  within.imu_window_too_large = false;
+  assert(!ll::isImuRetrySeedReady(within));
+
+  auto too_long = input;
+  too_long.imu_integration_window_sec = ll::kMaximumImuRetrySeedWindowSec + 0.1;
+  assert(!ll::isImuRetrySeedReady(too_long));
+
+  auto not_covered = input;
+  not_covered.imu_has_new_samples = false;
+  assert(!ll::isImuRetrySeedReady(not_covered));
+
+  auto blocked = input;
+  blocked.imu_seed_allowed = false;
+  assert(!ll::isImuRetrySeedReady(blocked));
+
+  auto fallback = input;
+  fallback.imu_preintegration_fallback_mode = true;
+  assert(!ll::isImuRetrySeedReady(fallback));
+
+  auto off = input;
+  off.use_imu_preintegration = false;
+  assert(!ll::isImuRetrySeedReady(off));
+}
+
 int main()
 {
+  test_imu_retry_seed_only_past_the_seed_window();
   test_imu_preintegration_has_highest_priority_when_finite();
   test_non_finite_imu_prediction_blocks_lower_priority_sources();
   test_fallback_order_without_imu_candidate();

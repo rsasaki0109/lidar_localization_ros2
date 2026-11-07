@@ -107,9 +107,26 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
     latest_imu_open_loop_prediction_available_ =
       imu_candidate_ready && imu_prediction_finite;
     latest_imu_seed_prediction_finite_ = !imu_candidate_ready || imu_prediction_finite;
-    imu_has_usable_new_samples =
-      imu_has_usable_new_samples &&
-      (!imu_seed_consistency_gate_enabled_ || imu_seed_consistency_state_.seed_allowed);
+    const bool imu_seed_allowed =
+      !imu_seed_consistency_gate_enabled_ || imu_seed_consistency_state_.seed_allowed;
+    imu_has_usable_new_samples = imu_has_usable_new_samples && imu_seed_allowed;
+    if (
+      lidar_localization::isImuRetrySeedReady(
+        lidar_localization::ImuRetrySeedInput{
+          use_imu_preintegration_,
+          imu_preintegration_fallback_mode,
+          imu_smoother_initialized,
+          imu_has_new_samples,
+          imu_window_too_large,
+          latest_imu_seed_integration_window_sec_,
+          imu_seed_allowed}))
+    {
+      const Eigen::Matrix4f imu_retry_guess = imu_dual_queue_enabled_ ?
+        dual_queue_prediction : imu_smoother_.predictedPoseMatrix();
+      if (imu_retry_guess.allFinite()) {
+        selected_seed.imu_retry_guess = imu_retry_guess;
+      }
+    }
   }
 
   Eigen::Matrix4f odom_tf_prediction = Eigen::Matrix4f::Identity();
@@ -641,6 +658,7 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
 
 lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelineForScan(
   const Eigen::Matrix4f & init_guess,
+  const std::optional<Eigen::Matrix4f> & alternate_guess,
   double scan_stamp_sec,
   lidar_localization::RegistrationSeedSource seed_source,
   bool imu_prediction_ready,
@@ -676,6 +694,16 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
       recoveryRetryFromLastPoseParams(),
       force_retry_from_last_pose,
       "imu_prediction_correction_guard_rejected"},
+    [&]() -> std::optional<lidar_localization::AlignmentAttempt> {
+      if (
+        !alternate_guess ||
+        !callback_state_coordinator_.initialPoseGenerationMatches(seed_generation))
+      {
+        return std::nullopt;
+      }
+      return runAlignmentAttempt(
+        *alternate_guess, *alternate_guess, scan_stamp_sec, state_lock, seed_generation);
+    },
     [&]() {
       return runAlignmentAttempt(
         prediction_state_.last_accepted_pose_matrix, prediction_state_.last_accepted_pose_matrix,
@@ -735,6 +763,14 @@ void PCLLocalization::applySoftOdomCorrectionGate(
 void PCLLocalization::logAlignmentPipelineRecovery(
   const lidar_localization::AlignmentPipelineResult & pipeline_result)
 {
+  if (pipeline_result.recovered_by_alternate_seed) {
+    RCLCPP_INFO(
+      get_logger(),
+      "IMU prediction retry succeeded after %zu rejects: fitness=%.6f",
+      prediction_state_.consecutive_rejected_updates,
+      pipeline_result.selected_attempt.fitness_score);
+    return;
+  }
   const auto handling = lidar_localization::decideAlignmentPipelineHandling(pipeline_result);
   if (!handling.log_recovery_retry_success) {
     return;
