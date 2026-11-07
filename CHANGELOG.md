@@ -36,6 +36,18 @@
 
 ### Changed
 
+- `param/nav2_ndt_urban.yaml` rotates the twist seed with the twist's angular velocity
+  (`twist_prediction_use_angular_velocity: true`, the node default). Without it the
+  seed keeps the old heading.
+  - **Istanbul 2820 s:** on a 145° turn at up to 37°/s, the seed lagged 3.7° per scan.
+    The preset lost the track 34.8 s in and published nothing for 115 s. It now tracks
+    the whole window, at 0.974 m 3D RMSE.
+  - **Istanbul 2300 s:** 0.595 m against 0.591 m.
+  - **Istanbul 0 s:** 0.623 m against 0.504 m, the same in three runs. All of it is at
+    42-48 s, on a straight where the seed changes by 0.1° per scan, and NDT settles
+    elsewhere at a hard stretch.
+  - The other presets that use twist prediction keep `false`; they were tuned on their
+    own robots and data.
 - `param/nav2_ndt_urban.yaml` rebuilds the local map in the background
   (`local_map_async_rebuild: true`), as the Boreas and Istanbul presets and the online
   Koide profile already do.

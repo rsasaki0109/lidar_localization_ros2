@@ -275,6 +275,29 @@ second, the smoother all but ignored the scans, and the track was lost. At 1.0 m
 three Istanbul windows scored 0.369, 0.562 and 0.927 m RMSE, against 0.450,
 0.559-0.573 and 0.937 m without the gate.
 
+## Symptom: Tracking Is Lost on a Fast Turn With Twist Prediction
+
+With `use_twist_prediction`, the seed moves the last pose by the twist's linear
+velocity. With `twist_prediction_use_angular_velocity: false` it keeps the old heading,
+so on a fast turn every seed lags by the yaw rate times the scan period. NDT corrects a
+few degrees per scan, but the lag builds up until a scan is rejected, and the later
+seeds start ever further off.
+
+On the Istanbul 2820 s window the vehicle turns about 145° left at up to 37°/s, so the
+seed lags 3.7° per scan. With angular velocity off, `nav2_ndt_urban.yaml` lost the track
+34.8 s in and published nothing for the remaining 115 s. With it on, it tracks the
+whole window (0.97 m 3D RMSE, against 0.94 m for `istanbul_gtsam_smoother.yaml`).
+
+```yaml
+twist_prediction_use_angular_velocity: true
+```
+
+`nav2_ndt_urban.yaml` and the node default use `true`. The twist's angular velocity must
+be in the base frame. The rotation also applies its roll and pitch rates, so a twist
+whose `angular.x` and `angular.y` are noise should have them zeroed. On the 0 s window,
+where the twist reads about 1°/s at 42-48 s, the 3D RMSE went from 0.50 to 0.62 m: the
+small change in the seed sends NDT to a different solution at a hard stretch.
+
 ## Symptom: Direct Positioning Got Stuck (#35)
 
 "Stuck" usually means repeated rejects, not a hung process.
