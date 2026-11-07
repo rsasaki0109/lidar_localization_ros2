@@ -86,7 +86,7 @@ PCLLocalization::updateGtsamPoseBackend(
   PlanarSmootherBackendUpdate update;
   update.updated = gtsam_smoother_.update(
     observation.x, observation.y, observation.z, observation.yaw,
-    attempt.fitness_score, stamp_sec);
+    backendFitness(attempt), stamp_sec);
   update.pose = gtsam_smoother_.poseMatrix(last_ndt_roll_, last_ndt_pitch_);
   update.rejected_status_message = "gtsam_update_rejected";
   return update;
@@ -105,7 +105,7 @@ PCLLocalization::updateTwistEkfPoseBackend(
 
   PlanarSmootherBackendUpdate update;
   update.updated = twist_ekf_.update(
-    observation.x, observation.y, observation.z, observation.yaw, attempt.fitness_score,
+    observation.x, observation.y, observation.z, observation.yaw, backendFitness(attempt),
     stamp_sec);
   update.pose = twist_ekf_.poseMatrixAt(last_ndt_roll_, last_ndt_pitch_, stamp_sec);
   update.rejected_status_message = "ekf_update_rejected";
@@ -292,12 +292,12 @@ PCLLocalization::updateImuPreintegrationBackend(
       update.updated = imu_smoother_.updatePoseOnly(
         observation.x, observation.y, observation.z,
         observation.roll, observation.pitch, observation.yaw,
-        attempt.fitness_score, stamp_sec);
+        backendFitness(attempt), stamp_sec);
     } else {
       update.updated = imu_smoother_.update(
         observation.x, observation.y, observation.z,
         observation.roll, observation.pitch, observation.yaw,
-        attempt.fitness_score, stamp_sec);
+        backendFitness(attempt), stamp_sec);
     }
 
     update.pose = imu_smoother_.poseMatrix();
