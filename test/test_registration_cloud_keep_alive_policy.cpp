@@ -31,10 +31,10 @@ void test_keep_alive_ignores_empty_inputs()
   assert(recent.empty());
 }
 
-void test_default_limits_are_small_bounded_windows()
+void test_default_limits_keep_sources_not_targets()
 {
   assert(ll::kDefaultRegistrationSourceCloudKeepAliveCount == 8);
-  assert(ll::kDefaultRegistrationTargetCloudKeepAliveCount == 8);
+  assert(ll::kDefaultRegistrationTargetCloudKeepAliveCount == 0);
 }
 
 void test_normalize_registration_cloud_keep_alive_count()
@@ -56,7 +56,7 @@ int main()
 {
   test_keep_alive_retains_only_recent_entries();
   test_keep_alive_ignores_empty_inputs();
-  test_default_limits_are_small_bounded_windows();
+  test_default_limits_keep_sources_not_targets();
   test_normalize_registration_cloud_keep_alive_count();
   return 0;
 }
