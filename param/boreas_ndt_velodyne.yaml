@@ -53,6 +53,14 @@
     local_map_async_rebuild: true
     local_map_min_points: 100
     reject_above_score_threshold: true
+    # Reject alignments with less than 80% of the points within inlier_ratio_distance_m
+    # (0.5 m) of a map point. Tracking scans have 96% at the median and 85% at the 1st
+    # percentile, so the trajectory over the fixture stays byte-identical (within 3 cm
+    # with use_imu_preintegration, whose smoother weighs scans by the gate's score).
+    # After the LiDAR gaps and stops injected with tools/benchmark/soak_replay.py, the
+    # preset accepted poses 8.6-117 m off at 50-74%; with the gate it rejects them and
+    # requests reinitialization 15-21 s later.
+    min_inlier_ratio: 0.8
     enable_borderline_seed_rejection_gate: true
     borderline_seed_gate_score_threshold: 5.25
     borderline_seed_gate_min_seed_translation_m: 1.0
