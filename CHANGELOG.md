@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **A rejected scan past the IMU window is aligned again from the IMU prediction.**
+  With `use_imu_preintegration`, a scan more than 1 s after the last accepted one is
+  seeded from the previous scan's motion, which advances at most 1 s. When that
+  alignment is rejected and the IMU covers the window, up to 10 s, the scan is aligned
+  once more from the IMU prediction, before the retry from the last pose.
+  - **On the looped Boreas fixture** (`tools/benchmark/soak_replay.py`, with
+    `min_inlier_ratio: 0.8`), LiDAR gaps of 2 s and 5 s now recover on the first scan
+    after them, within 0.36 m, where every later scan was rejected.
+  - **The 1 s rule stays for the first alignment.** Seeding from the IMU for up to 10 s
+    instead recovered the Boreas gaps too, but on Koide `outdoor_hard_01a` without
+    odometry, with a handheld MID-360's IMU and the gate, it lost the track at 48.6 s
+    instead of 140.7 s: after short rejection streaks its prediction had drifted where
+    the previous scan's motion recovers. With the retry the track holds to 148.9 s.
+
 ## 1.8.0 - 2026-11-07
 
 ### Added
