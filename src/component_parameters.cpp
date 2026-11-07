@@ -181,7 +181,6 @@ void PCLLocalization::initializeParameters()
   get_parameter("min_inlier_ratio", min_inlier_ratio_);
   get_parameter("inlier_ratio_distance_m", inlier_ratio_distance_m_);
   get_parameter("inlier_ratio_min_points", inlier_ratio_min_points_);
-  get_parameter("backends_use_registration_fitness", backends_use_registration_fitness_);
   if (min_inlier_ratio_ < 0.0 || min_inlier_ratio_ >= 1.0 || !(inlier_ratio_distance_m_ > 0.0)) {
     if (min_inlier_ratio_ != 0.0) {
       RCLCPP_WARN(

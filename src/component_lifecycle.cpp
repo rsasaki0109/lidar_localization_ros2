@@ -39,7 +39,6 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("min_inlier_ratio", 0.0);
   declare_parameter("inlier_ratio_distance_m", 0.5);
   declare_parameter("inlier_ratio_min_points", 200);
-  declare_parameter("backends_use_registration_fitness", false);
   declare_parameter("gicp_corr_randomness", 20);
   declare_parameter("gicp_max_correspondence_distance", 2.0);
   declare_parameter("vgicp_voxel_resolution", 1.0);

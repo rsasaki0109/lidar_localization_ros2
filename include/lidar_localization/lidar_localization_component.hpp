@@ -510,9 +510,6 @@ public:
   double min_inlier_ratio_{0.0};
   double inlier_ratio_distance_m_{0.5};
   int inlier_ratio_min_points_{200};
-  // Experiment: the EKF and GTSAM backends weight a measurement by the backend's own
-  // fitness instead of the score the gate read.
-  bool backends_use_registration_fitness_{false};
   // The attempt whose status is being published, for /alignment_status.
   double status_registration_fitness_score_{std::numeric_limits<double>::quiet_NaN()};
   double status_inlier_ratio_{std::numeric_limits<double>::quiet_NaN()};
@@ -753,13 +750,6 @@ public:
     builtin_interfaces::msg::Time * resolved_stamp = nullptr);
   void publishBridgePoseAsRejectedOutput(const builtin_interfaces::msg::Time & stamp);
   void fillPoseCovariance(double fitness_score);
-  // The score the EKF and GTSAM backends weight a measurement by.
-  double backendFitness(const lidar_localization::AlignmentAttempt & attempt) const
-  {
-    return backends_use_registration_fitness_ &&
-           std::isfinite(attempt.registration_fitness_score) ?
-           attempt.registration_fitness_score : attempt.fitness_score;
-  }
 
   // --- Alignment status and diagnostics ---
 
