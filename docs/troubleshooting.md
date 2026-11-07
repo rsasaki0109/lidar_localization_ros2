@@ -265,15 +265,18 @@ localizer tracks well. The ratio depends on how close the map's points lie to ea
 other, so `inlier_ratio_distance_m` must suit the map:
 - **Koide, 0.5 m:** alignments from the ground truth have a median of 0.78-0.96 on the
   map.
-- **Istanbul, 0.5 m:** good alignments have 0.58-0.93 (5th to 95th percentile), so 0.8
-  reads a third of them as bad. At 1.0 m they have 0.93-1.00.
+- **Istanbul, 0.5 m:** good alignments have 0.58-0.93 (5th to 95th percentile), so a
+  preset that rejects above the threshold would drop a third of them at 0.8. At 1.0 m
+  they have 0.93-1.00.
 
-The EKF and GTSAM backends read the same score against `ekf_fitness_nominal` or
-`gtsam_fitness_nominal` (1.0), and a score of 4 multiplies a measurement's variance by
-16. With the Istanbul preset at 0.5 m, every scan scored above 18 within the first
-second, the smoother all but ignored the scans, and the track was lost. At 1.0 m the
-three Istanbul windows scored 0.369, 0.562 and 0.927 m RMSE, against 0.450,
-0.559-0.573 and 0.937 m without the gate.
+The EKF and GTSAM backends weight a measurement by the same score, against
+`ekf_fitness_nominal` or `gtsam_fitness_nominal` (1.0). Both scales are 0 for a perfect
+scan and `score_threshold` at the acceptance limit; in between, the gate's score rises
+linearly with the share of outliers. The Istanbul preset does not reject above the
+threshold, so there the gate only reweights the smoother. At 0.5 m its three windows
+scored 0.35-0.38, 0.89-0.90 and 0.55 m 3D RMSE, against 0.45-0.47, 0.93-0.97 and
+0.56-0.57 m without the gate
+([experiments/inlier_ratio_gate](../experiments/inlier_ratio_gate/README.md#boreas-and-istanbul)).
 
 ## Symptom: Tracking Is Lost on a Fast Turn With Twist Prediction
 
