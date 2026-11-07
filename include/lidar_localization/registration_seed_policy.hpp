@@ -67,6 +67,40 @@ inline bool isImuSeedCandidateReady(const RegistrationSeedPolicyInput & input)
          input.imu_has_new_samples;
 }
 
+// The IMU prediction no longer seeds a scan once its window, from the last accepted
+// scan, passes imuMaximumIntegrationWindowSec (1 s): on Koide outdoor_hard_01a, with a
+// handheld MID-360's IMU, the scan's other seed (the previous scan's motion) recovers
+// from short rejection streaks where the IMU's has drifted. It can still seed a second
+// alignment, up to this window, when the first is rejected: on the looped Boreas
+// fixture, with its Applanix IMU, it carries the pose through LiDAR gaps of 2-5 s where
+// the previous scan's motion, advanced at most 1 s, is metres short.
+constexpr double kMaximumImuRetrySeedWindowSec = 10.0;
+
+struct ImuRetrySeedInput
+{
+  bool use_imu_preintegration{false};
+  bool imu_preintegration_fallback_mode{false};
+  bool imu_smoother_initialized{false};
+  // The IMU samples cover the whole window.
+  bool imu_has_new_samples{false};
+  bool imu_window_too_large{false};
+  double imu_integration_window_sec{0.0};
+  // The IMU seed consistency gate allows IMU seeds (true when it is off).
+  bool imu_seed_allowed{true};
+};
+
+inline bool isImuRetrySeedReady(const ImuRetrySeedInput & input)
+{
+  return input.use_imu_preintegration &&
+         !input.imu_preintegration_fallback_mode &&
+         input.imu_smoother_initialized &&
+         input.imu_has_new_samples &&
+         input.imu_window_too_large &&
+         std::isfinite(input.imu_integration_window_sec) &&
+         input.imu_integration_window_sec <= kMaximumImuRetrySeedWindowSec &&
+         input.imu_seed_allowed;
+}
+
 inline double clampPredictionDt(
   double scan_stamp_sec,
   double predicted_pose_time_sec,

@@ -782,12 +782,13 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   const SelectedRegistrationSeed selected_seed =
     selectRegistrationSeed(msg->header.stamp, scan_stamp_sec);
   const bool imu_prediction_ready = selected_seed.imu_prediction_ready;
-  const std::string registration_seed_source =
+  std::string registration_seed_source =
     lidar_localization::registrationSeedSourceName(selected_seed.source);
   Eigen::Matrix4f init_guess =
     refineSeedWithNdtInitializer(tmp_ptr, selected_seed.init_guess);
   auto pipeline_result = runAlignmentPipelineForScan(
     init_guess,
+    selected_seed.imu_retry_guess,
     scan_stamp_sec,
     selected_seed.source,
     imu_prediction_ready,
@@ -807,6 +808,10 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     return;
   }
 
+  if (pipeline_result.recovered_by_alternate_seed) {
+    registration_seed_source = lidar_localization::registrationSeedSourceName(
+      lidar_localization::RegistrationSeedSource::kImuPreintegration);
+  }
   applySoftOdomCorrectionGate(pipeline_result);
   logAlignmentPipelineRecovery(pipeline_result);
   if (handleTerminalAlignmentPipelineResult(

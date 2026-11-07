@@ -486,3 +486,24 @@ Faults 50 s into a lap, at 5-8 m/s, on v1.8.0 with `use_imu_preintegration: true
   against 96% at the median when tracking (85% at the 1st percentile).
   `min_inlier_ratio: 0.8` rejects them, but then the laps with the 2 s and 5 s gaps
   and both stops publish no pose after the fault either.
+
+Since then the preset sets `min_inlier_ratio: 0.8`, and a rejected scan past the IMU
+window is aligned once more from the IMU prediction, up to 10 s. On 2026-11-07:
+
+| Fault | Poses published during it | Largest error | Back under 0.5 m after |
+| --- | --- | --- | --- |
+| LiDAR gap, 2 s | 0 | 0.25 m | 0.06 s |
+| LiDAR gap, 5 s | 0 | 0.28 m | 0.07 s |
+| LiDAR gap, 30 s | 0 | no pose for the rest of the lap | never |
+| node stopped, 2 s | 0 | no pose for the rest of the lap | never |
+| node stopped, 10 s | 0 | no pose for the rest of the lap | never |
+
+- **The gaps of 2 and 5 s recover on the first scan after them.** That scan's
+  previous-scan seed is rejected, and the retry from the IMU, over a 2.1 and a 5.1 s
+  window, is accepted with 98-99% inliers. Both laps score 0.126-0.127 m RMSE, like
+  the laps without a fault.
+- **No wrong pose is accepted in any lap.** The longer faults end in a
+  reinitialization request 14-18 s later.
+- **The stops lose IMU samples too.** In the second after the node resumes, 5-15
+  samples arrive per scan instead of 21, so the prediction no longer covers the window
+  and there is nothing to retry from.
