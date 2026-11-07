@@ -8,8 +8,9 @@ usage: istanbul_replay.py --ws WS --fixture DIR --bag BAG --map PCD --start SEC 
 
 FIXTURE is istanbul_prepare.py's output directory. The run directory gets params.yaml,
 node.log, est.tum and alignment.jsonl (record_pose.py) and score.json. score.json has the
-pose errors and, under "alignment", the share of the window's scans that were aligned,
-the alignment wall time and the registration iterations.
+pose errors, the time of the last pose and the longest stretch without one, and, under
+"alignment", the share of the window's scans that were aligned, the alignment wall time
+and the registration iterations.
 """
 
 import argparse
@@ -233,7 +234,7 @@ def evaluate(est_path, ref, t0, t1):
         est = np.loadtxt(est_path, ndmin=2)
         est = est[(est[:, 0] >= t0) & (est[:, 0] <= t1)]
     if len(est) == 0:
-        return {"poses": 0}
+        return {"poses": 0, "longest_pose_gap_sec": round(t1 - t0, 1)}
     rx = np.interp(est[:, 0], ref[:, 0], ref[:, 1])
     ry = np.interp(est[:, 0], ref[:, 0], ref[:, 2])
     rz = np.interp(est[:, 0], ref[:, 0], ref[:, 3])
@@ -253,9 +254,15 @@ def evaluate(est_path, ref, t0, t1):
             "max": round(float(np.max(np.abs(v))), 3),
         }
 
+    # The errors cover only the published poses, so a localizer that stops publishing
+    # can score well on the stretch before. The longest stretch without a pose, from
+    # the window start to its end, shows that.
+    edges = np.concatenate(([t0], est[:, 0], [t1]))
     return {
         "poses": len(est),
         "poses_per_sec": round(len(est) / (t1 - t0), 2),
+        "last_pose_sec": round(float(est[-1, 0] - t0), 1),
+        "longest_pose_gap_sec": round(float(np.max(np.diff(edges))), 1),
         "horizontal_m": stats(dh),
         "z_m": stats(dz),
         "trans3d_m": stats(d3),

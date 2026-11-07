@@ -193,11 +193,14 @@ that reproduces the reset.
 
 Open items after v1.7.0:
 
-- **Koide `outdoor_hard_01a` without odometry stops at 107-111 s.** Two guard changes
-  were tried: keeping the smoother's velocity on a reset, and rejecting a measurement
-  far from the IMU prediction. Neither saves the track; the stretch needs odometry
-  ([experiments/koide_imu_ab](../experiments/koide_imu_ab/README.md#neither-guard-change-saves-the-track)).
-  With RKO-LIO odometry the sequence is tracked.
+- **Koide `outdoor_hard_01a` without odometry holds to 140-151 s, not to the end.**
+  With the background map rebuild and `min_inlier_ratio` 0.8, the localizer alone stays
+  within 1 m of the ground truth to 140.2 s; at 0.7, to 147-152 s. Where it ends, even
+  alignments from the ground truth have inlier ratios of 0.48-0.77, and from 185 s the
+  path leaves the map
+  ([experiments/inlier_ratio_gate](../experiments/inlier_ratio_gate/README.md#without-odometry-to-140-151-s)).
+  The earlier stop at 107-111 s came from rebuilding the map in the scan callback. With
+  RKO-LIO odometry the sequence is tracked.
 
 Other work remains:
 
