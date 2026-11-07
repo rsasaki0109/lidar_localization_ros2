@@ -124,8 +124,8 @@ void test_integration_window_too_large_overrides_prediction_available()
   input.has_imu_stamp = true;
   input.smoother_initialized = true;
   input.has_new_samples = true;
-  input.integration_window_sec = 1.2;
-  input.max_integration_window_sec = 1.0;
+  input.integration_window_sec = 10.2;
+  input.max_integration_window_sec = 10.0;
 
   const auto diagnostics = ll::makeImuPreintegrationDiagnostics(input);
 
@@ -211,12 +211,13 @@ void test_prediction_active_and_helpers()
   assert(std::isnan(ll::imuLastSampleAgeSec(10.0, 0.0)));
   assert(ll::imuStaleSampleAgeThresholdSec(0.05) == 0.2);
   assert(std::abs(ll::imuStaleSampleAgeThresholdSec(0.2) - 0.4) < 1e-9);
-  assert(ll::imuMaximumIntegrationWindowSec(0.05) == 1.0);
-  assert(ll::imuMaximumIntegrationWindowSec(0.2) == 1.0);
-  assert(std::abs(ll::imuMaximumIntegrationWindowSec(0.3) - 1.5) < 1e-9);
-  assert(!ll::isImuIntegrationWindowTooLarge(1.009, 1.0));
-  assert(ll::isImuIntegrationWindowTooLarge(1.011, 1.0));
-  assert(!ll::isImuIntegrationWindowTooLarge(1.0, 1.0));
+  assert(ll::imuMaximumIntegrationWindowSec(0.05) == 10.0);
+  assert(ll::imuMaximumIntegrationWindowSec(0.1) == 10.0);
+  assert(std::abs(ll::imuMaximumIntegrationWindowSec(3.0) - 15.0) < 1e-9);
+  assert(ll::imuMaximumIntegrationWindowSec(std::nan("")) == 10.0);
+  assert(!ll::isImuIntegrationWindowTooLarge(10.009, 10.0));
+  assert(ll::isImuIntegrationWindowTooLarge(10.011, 10.0));
+  assert(!ll::isImuIntegrationWindowTooLarge(10.0, 10.0));
   assert(ll::isValidImuPreintegrationDt(0.001));
   assert(!ll::isValidImuPreintegrationDt(0.0));
   assert(!ll::isValidImuPreintegrationDt(0.5));

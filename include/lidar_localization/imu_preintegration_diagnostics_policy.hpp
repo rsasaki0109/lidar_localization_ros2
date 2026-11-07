@@ -58,7 +58,7 @@ struct ImuPreintegrationDiagnosticsInput
   double last_sample_age_sec{std::numeric_limits<double>::quiet_NaN()};
   double integration_window_sec{0.0};
   double stale_sample_age_threshold_sec{0.2};
-  double max_integration_window_sec{1.0};
+  double max_integration_window_sec{10.0};
   bool seed_consistency_gate_enabled{false};
   bool seed_consistency_seed_allowed{false};
   std::size_t seed_consistency_valid_comparison_count{0};
@@ -95,10 +95,8 @@ struct ImuPreintegrationDiagnostics
 };
 
 constexpr double kMaximumImuPreintegrationSampleDtSec = 0.5;
-// ROS timestamps and callback scheduling can put an otherwise complete scan
-// interval a fraction of an IMU tick beyond the nominal one-second guard.
-// This tolerance is tiny relative to the guard and does not permit a genuine
-// missing scan interval (for example 1.1 s) to seed registration.
+// ROS timestamps and callback scheduling can put an otherwise complete window a
+// fraction of an IMU tick beyond the limit.
 constexpr double kImuIntegrationWindowJitterToleranceSec = 0.01;
 
 inline double finiteNonnegativeOrNaN(double value)
@@ -144,12 +142,18 @@ inline double imuStaleSampleAgeThresholdSec(double scan_period_sec)
   return std::max(0.2, scan_period_sec * 2.0);
 }
 
+// The longest IMU window, from the last accepted scan, that still seeds registration.
+// The window only restarts on an accepted scan, so it also bounds how long the IMU can
+// carry the pose through missing or rejected scans. At 1 s, a LiDAR gap of 2 s on the
+// looped Boreas fixture (tools/benchmark/soak_replay.py) fell back to the previous-delta
+// seed, which advances at most 1 s, and accepted poses 8.6 m off; a gap of 5 s never
+// recovered. With 10 s both recover on the next scan, within 0.3 m.
 inline double imuMaximumIntegrationWindowSec(double scan_period_sec)
 {
   if (!std::isfinite(scan_period_sec) || scan_period_sec <= 0.0) {
-    return 1.0;
+    return 10.0;
   }
-  return std::max(1.0, scan_period_sec * 5.0);
+  return std::max(10.0, scan_period_sec * 5.0);
 }
 
 inline bool isValidImuPreintegrationDt(double dt)
