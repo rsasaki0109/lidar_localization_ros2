@@ -194,11 +194,8 @@ inline double planarDistance(float ax, float ay, float bx, float by)
     static_cast<double>(ay) - static_cast<double>(by));
 }
 
-inline std::size_t localMapReserveCapacity(std::size_t full_map_points)
-{
-  return full_map_points / 10;
-}
-
+// The points are counted before they are copied: grown point by point, a crop of the
+// dense Boreas map (up to 1.4 million points) kept 2.5 million points' worth of memory.
 inline pcl::PointCloud<pcl::PointXYZI>::Ptr cropLocalMapByRadius(
   const pcl::PointCloud<pcl::PointXYZI> & full_map,
   float center_x,
@@ -206,12 +203,17 @@ inline pcl::PointCloud<pcl::PointXYZI>::Ptr cropLocalMapByRadius(
   double radius_m)
 {
   const float radius_squared = static_cast<float>(radius_m * radius_m);
+  const auto inside = [&](const pcl::PointXYZI & point) {
+      const float dx = point.x - center_x;
+      const float dy = point.y - center_y;
+      return dx * dx + dy * dy <= radius_squared;
+    };
   pcl::PointCloud<pcl::PointXYZI>::Ptr local_map(new pcl::PointCloud<pcl::PointXYZI>());
-  local_map->reserve(localMapReserveCapacity(full_map.size()));
+  local_map->reserve(
+    static_cast<std::size_t>(
+      std::count_if(full_map.points.begin(), full_map.points.end(), inside)));
   for (const auto & point : full_map.points) {
-    const float dx = point.x - center_x;
-    const float dy = point.y - center_y;
-    if (dx * dx + dy * dy <= radius_squared) {
+    if (inside(point)) {
       local_map->push_back(point);
     }
   }

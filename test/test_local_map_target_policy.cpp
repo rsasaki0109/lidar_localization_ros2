@@ -50,6 +50,8 @@ void test_crop_local_map_by_horizontal_radius()
 
   const auto local_map = ll::cropLocalMapByRadius(full_map, 0.0f, 0.0f, 5.0);
   assert(local_map->size() == 3);
+  assert(local_map->points.capacity() == 3);
+  assert(local_map->width == 3 && local_map->height == 1);
   assert(local_map->points[1].z == 100.0f);
 }
 

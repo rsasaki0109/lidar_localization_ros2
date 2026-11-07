@@ -8,7 +8,11 @@ namespace lidar_localization
 {
 
 inline constexpr std::size_t kDefaultRegistrationSourceCloudKeepAliveCount = 8;
-inline constexpr std::size_t kDefaultRegistrationTargetCloudKeepAliveCount = 8;
+// The registration objects hold their targets themselves (pcl::Registration and
+// NDT_OMP's voxel grid keep shared pointers), so older targets are not kept. Eight of
+// them were the largest share of the node's memory: local-map crops of the dense
+// Boreas map of up to 79 MB each, a heap peak of 1.34 GB instead of 0.69 GB.
+inline constexpr std::size_t kDefaultRegistrationTargetCloudKeepAliveCount = 0;
 
 struct RegistrationCloudKeepAliveCount
 {
