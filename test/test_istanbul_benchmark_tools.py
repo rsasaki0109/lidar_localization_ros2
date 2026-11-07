@@ -143,15 +143,29 @@ def test_scores_cover_only_the_window_and_wrap_yaw(tmp_path):
     assert abs(score["trans3d_m"]["median"] - math.hypot(0.5, 0.2)) < 1e-3
     assert abs(score["yaw_deg"]["rmse"] - 2.0) < 1e-3
     assert abs(score["final_trans3d_m"] - math.hypot(0.5, 0.2)) < 1e-3
+    assert score["last_pose_sec"] == 9.9
+    assert score["longest_pose_gap_sec"] == 0.1
 
 
 def test_runs_without_poses_in_the_window_score_zero_poses(tmp_path):
     ref = _poses(np.arange(0.0, 20.0, 0.05), 0.0)
-    assert replay.evaluate(tmp_path / "missing.tum", ref, 0.0, 10.0) == {"poses": 0}
+    empty = {"poses": 0, "longest_pose_gap_sec": 10.0}
+    assert replay.evaluate(tmp_path / "missing.tum", ref, 0.0, 10.0) == empty
     (tmp_path / "empty.tum").write_text("")
-    assert replay.evaluate(tmp_path / "empty.tum", ref, 0.0, 10.0) == {"poses": 0}
+    assert replay.evaluate(tmp_path / "empty.tum", ref, 0.0, 10.0) == empty
     _write_estimate(tmp_path / "late.tum", _poses(np.arange(30.0, 40.0, 0.1), 0.0))
-    assert replay.evaluate(tmp_path / "late.tum", ref, 0.0, 10.0) == {"poses": 0}
+    assert replay.evaluate(tmp_path / "late.tum", ref, 0.0, 10.0) == empty
+
+
+def test_a_localizer_that_stops_publishing_shows_the_gap(tmp_path):
+    # Accurate poses for the first 3 s of a 10 s window, then none: the errors look
+    # fine, the gap does not.
+    ref = _poses(np.arange(0.0, 20.0, 0.05), 0.0)
+    _write_estimate(tmp_path / "est.tum", _poses(np.arange(0.0, 3.05, 0.1), 0.0))
+    score = replay.evaluate(tmp_path / "est.tum", ref, 0.0, 10.0)
+    assert score["horizontal_m"]["rmse"] == 0.0
+    assert score["last_pose_sec"] == 3.0
+    assert score["longest_pose_gap_sec"] == 7.0
 
 
 def _compare_args(out, **overrides):
@@ -236,10 +250,22 @@ def test_summary_reports_the_median_and_range_per_variant(tmp_path, capsys):
     rows = capsys.readouterr().out.splitlines()[2:]
     assert rows == [
         "| B_grade_2820 | base | 3 | 0.200 (0.100-0.600) | 0.100 (0.100-0.100)"
-        " | 0.500 (0.500-0.500) | 1.000 (1.000-1.000) |",
+        " | 0.500 (0.500-0.500) | 1.000 (1.000-1.000) | - |",
         "| B_grade_2820 | cand | 1 | 0.250 (0.250-0.250) | 0.400 (0.400-0.400)"
-        " | 0.500 (0.500-0.500) | 1.000 (1.000-1.000) |",
+        " | 0.500 (0.500-0.500) | 1.000 (1.000-1.000) | - |",
     ]
+
+
+def test_summary_prints_the_longest_pose_gap_when_scored(tmp_path, capsys):
+    for repeat, gap in enumerate((0.2, 115.3)):
+        run = tmp_path / "B_grade_2820" / f"base_{repeat}"
+        run.mkdir(parents=True)
+        (run / "score.json").write_text(
+            json.dumps(dict(_score(0.3), longest_pose_gap_sec=gap))
+        )
+    compare.summarize(tmp_path)
+    row = capsys.readouterr().out.splitlines()[2]
+    assert row.endswith("| 57.8 (0.2-115.3) |")
 
 
 def _write_alignment(path, records):
