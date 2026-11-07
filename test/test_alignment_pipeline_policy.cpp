@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <limits>
+#include <optional>
 #include <string>
 
 namespace ll = lidar_localization;
@@ -349,6 +350,112 @@ void test_nonfinite_pose_never_reaches_measurement_gate()
   }
 }
 
+void test_alternate_seed_replaces_rejected_primary_before_retry()
+{
+  int alternate_calls = 0;
+  int retry_calls = 0;
+
+  const auto result = ll::runAlignmentPipeline(
+    make_attempt(true, true, 9.0),
+    default_input(),
+    [&]() {
+      ++alternate_calls;
+      return std::optional<ll::AlignmentAttempt>(make_attempt(true, true, 0.5));
+    },
+    [&]() {
+      ++retry_calls;
+      return make_attempt(true, true, 1.0);
+    },
+    [](const ll::AlignmentAttempt & attempt) {
+      return attempt.fitness_score > 6.0 ? rejected_gate() : accepted_gate();
+    });
+
+  assert(result.should_continue);
+  assert(result.recovered_by_alternate_seed);
+  assert(!result.recovered_by_retry_from_last_pose);
+  assert(!result.gate_result.reject_measurement);
+  assert(result.status_message == "alternate_seed_recovered");
+  assert(result.selected_attempt.fitness_score == 0.5);
+  assert(alternate_calls == 1);
+  assert(retry_calls == 0);
+}
+
+void test_rejected_alternate_seed_falls_through_to_retry()
+{
+  int alternate_calls = 0;
+  int retry_calls = 0;
+
+  const auto result = ll::runAlignmentPipeline(
+    make_attempt(true, true, 9.0),
+    default_input(),
+    [&]() {
+      ++alternate_calls;
+      return std::optional<ll::AlignmentAttempt>(make_attempt(true, true, 8.0));
+    },
+    [&]() {
+      ++retry_calls;
+      return make_attempt(true, true, 1.0);
+    },
+    [](const ll::AlignmentAttempt & attempt) {
+      return attempt.fitness_score > 6.0 ? rejected_gate() : accepted_gate();
+    });
+
+  assert(!result.recovered_by_alternate_seed);
+  assert(result.recovered_by_retry_from_last_pose);
+  assert(result.selected_attempt.fitness_score == 1.0);
+  assert(alternate_calls == 1);
+  assert(retry_calls == 1);
+}
+
+void test_alternate_seed_is_not_tried_after_an_accepted_primary()
+{
+  int alternate_calls = 0;
+
+  const auto result = ll::runAlignmentPipeline(
+    make_attempt(true, true, 1.0),
+    default_input(),
+    [&]() {
+      ++alternate_calls;
+      return std::optional<ll::AlignmentAttempt>(make_attempt(true, true, 0.5));
+    },
+    []() {return make_attempt(true, true, 1.0);},
+    [](const ll::AlignmentAttempt &) {return accepted_gate();});
+
+  assert(!result.recovered_by_alternate_seed);
+  assert(result.selected_attempt.fitness_score == 1.0);
+  assert(alternate_calls == 0);
+}
+
+void test_alternate_seed_recovers_an_unconverged_primary()
+{
+  const auto result = ll::runAlignmentPipeline(
+    make_attempt(true, false, 3.0),
+    default_input(),
+    []() {return std::optional<ll::AlignmentAttempt>(make_attempt(true, true, 0.5));},
+    []() {return make_attempt(true, false, 1.0);},
+    [](const ll::AlignmentAttempt &) {return accepted_gate();});
+
+  assert(result.should_continue);
+  assert(result.recovered_by_alternate_seed);
+  assert(result.selected_attempt.has_converged);
+}
+
+void test_missing_alternate_seed_keeps_the_rejection()
+{
+  auto input = default_input();
+  input.recovery_retry_params.enable = false;
+
+  const auto result = ll::runAlignmentPipeline(
+    make_attempt(true, true, 9.0),
+    input,
+    []() {return std::optional<ll::AlignmentAttempt>{};},
+    []() {return make_attempt(true, true, 1.0);},
+    [](const ll::AlignmentAttempt &) {return rejected_gate();});
+
+  assert(!result.recovered_by_alternate_seed);
+  assert(result.gate_result.reject_measurement);
+}
+
 int main()
 {
   test_nonfinite_pose_never_reaches_measurement_gate();
@@ -362,5 +469,10 @@ int main()
   test_forced_retry_failure_rejects_primary();
   test_terminal_handling_publishes_and_advances();
   test_continuing_recovery_handling_logs_and_uses_backend();
+  test_alternate_seed_replaces_rejected_primary_before_retry();
+  test_rejected_alternate_seed_falls_through_to_retry();
+  test_alternate_seed_is_not_tried_after_an_accepted_primary();
+  test_alternate_seed_recovers_an_unconverged_primary();
+  test_missing_alternate_seed_keeps_the_rejection();
   return 0;
 }
