@@ -10,10 +10,12 @@
     any map point dominate the fitness score's mean of squared distances. On Koide
     `outdoor_hard_01a`, alignments within 0.1-0.2 m of the ground truth score 10-24
     against a threshold of 6, and wrong poses score lower than right ones.
-  - **The score:** `score_threshold * (1 - inlier_ratio) / (1 - min_inlier_ratio)`, so
-    the measurement gate, the pose covariance, the map-to-odom anchor gate and the
-    recovery keep their thresholds. A scan of fewer than `inlier_ratio_min_points`
-    (200) points gets a ratio of 0.
+  - **The score:** `score_threshold * (1 - inlier_ratio) / (1 - min_inlier_ratio)`: 0
+    for a perfect scan and `score_threshold` at `min_inlier_ratio`, so the measurement
+    gate keeps its threshold. The pose covariance, the recovery and the EKF and GTSAM
+    noise models read the same score; the reinitialization trigger's fitness explosion
+    test reads the backend's own fitness. A scan of fewer than
+    `inlier_ratio_min_points` (200) points gets a ratio of 0.
   - **`/alignment_status`** adds `registration_fitness_score`, the backend's own
     fitness, and `inlier_ratio`, also with the gate off. `fitness_score` stays what
     the gate reads.
