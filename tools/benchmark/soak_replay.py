@@ -14,7 +14,7 @@ the localizer process (SIGSTOP, then SIGCONT), and reinit sends /initialpose at 
 ground-truth pose there, while moving. The laps without one are the control.
 
 Writes into OUT_DIR: localizer.yaml, localizer.log, estimate.tum, alignment.jsonl,
-resources.csv (wall_sec, sim_sec, rss_mb, cpu_percent, threads) and summary.json, with
+resources.csv (wall_sec, sim_sec, rss_mb, cpu_percent, threads, state) and summary.json, with
 each lap's RMSE, acceptance and alignment time, the memory trend, and per fault the
 poses published during it, the largest error from its start to SETTLE_SEC after its
 end, the time from its end until the error stays under RECOVERED_M for the rest of
@@ -206,19 +206,21 @@ def memory_trend(samples, skip_sec):
 
 
 def process_sample(pid, previous):
-    """(rss_mb, cpu_percent, threads, ticks) of PID; cpu over the time since PREVIOUS,
-    a (wall_sec, ticks) pair or None."""
+    """(rss_mb, cpu_percent, threads, ticks, state) of PID; cpu over the time since
+    PREVIOUS, a (wall_sec, ticks) pair or None; state as /proc shows it (R running,
+    S sleeping, T stopped)."""
     status = Path(f"/proc/{pid}/status").read_text()
     fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
     rss_mb = int(fields["VmRSS"].split()[0]) / 1024.0
     threads = int(fields["Threads"])
     stat = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+    state = stat[0]
     ticks = int(stat[11]) + int(stat[12])
     cpu = None
     if previous is not None:
         wall = time.monotonic() - previous[0]
         cpu = 100.0 * (ticks - previous[1]) / os.sysconf("SC_CLK_TCK") / wall
-    return rss_mb, cpu, threads, ticks
+    return rss_mb, cpu, threads, ticks, state
 
 
 def localizer_pid(group, name="lidar_localization_node"):
@@ -363,7 +365,7 @@ def main():
         session.spin_for(2.0)
 
         resources = (args.out / "resources.csv").open("w")
-        resources.write("wall_sec,sim_sec,rss_mb,cpu_percent,threads\n")
+        resources.write("wall_sec,sim_sec,rss_mb,cpu_percent,threads,state\n")
         began = time.monotonic()
         previous = None
         next_sample = began
@@ -394,13 +396,13 @@ def main():
                 while pending and pending[0][0] <= now:
                     pending.pop(0)[1]()
                 if now >= next_sample:
-                    rss, cpu, threads, ticks = process_sample(pid, previous)
+                    rss, cpu, threads, ticks, state = process_sample(pid, previous)
                     previous = (now, ticks)
                     elapsed = now - began
                     samples.append((elapsed, rss))
                     resources.write(
                         f"{elapsed:.1f},{sim_ns * 1e-9:.3f},{rss:.1f},"
-                        f"{'' if cpu is None else f'{cpu:.1f}'},{threads}\n"
+                        f"{'' if cpu is None else f'{cpu:.1f}'},{threads},{state}\n"
                     )
                     resources.flush()
                     next_sample += SAMPLE_SEC
@@ -415,9 +417,17 @@ def main():
             flush=True,
         )
 
-        def signal_localizer(sig):
+        def signal_localizer(sig, report=True):
             with contextlib.suppress(ProcessLookupError):
                 os.kill(pid, sig)
+                if report:
+                    time.sleep(0.01)
+                    state = process_sample(pid, None)[4]
+                    print(
+                        f"{signal.Signals(sig).name} at {time.monotonic() - began:.1f} s:"
+                        f" state {state}",
+                        flush=True,
+                    )
 
         start_ns = round(start_sec * 1e9)
         try:
@@ -474,7 +484,7 @@ def main():
                 print(f"lap {lap + 1}/{lap_count} done", flush=True)
             wait_until(time.monotonic() + 5.0, last_ns + offset)
         finally:
-            signal_localizer(signal.SIGCONT)
+            signal_localizer(signal.SIGCONT, report=False)
         alive = process.poll() is None
         resources.close()
 
