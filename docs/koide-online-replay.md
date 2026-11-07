@@ -113,6 +113,48 @@ python3 tools/readme_media/initial_pose_from_tum.py \
 
 Ground truth supplies only that initial pose and evaluation; it is not an odometry input. Record `/pcl_pose` and `/alignment_status` before playing the bag. For the 150 m comparison, change only `local_map_radius` in the generated localizer YAML.
 
+## v1.8.0 release verification (2026-11-07)
+
+Two full `outdoor_hard_02b` replays at 1x passed on `release/v1.8.0` at `d853fbd`:
+`main` at `64a14db` plus the version bump, which is not compiled in.
+
+- **Build:** both this package and `ndt_omp_ros2` were built as in `AGENTS.md`, without
+  a build type. `ndt_omp_ros2` was at its 0.2.0 release (`9f5567e`).
+- **Setup:** ROS 2 Jazzy in one 4-vCPU cloud container, with the same RKO-LIO 0.3.2
+  binary (`7e91814`, Release) as for v1.6.0 and v1.7.0.
+- **The profile changed:** `koide_outdoor_hard_02b_online.yaml` now sets
+  `min_inlier_ratio: 0.8` (#299). Its configuration hash differs from v1.7.0's; RKO's
+  and the QoS file's are identical.
+- **The host CPU changed again:** 2.30 GHz, against 2.10 GHz for v1.7.0.
+
+| Metric | Run 1 | Run 2 | Demo acceptance |
+| --- | --- | --- | --- |
+| Position RMSE | 0.242 m | 0.245 m | <= 0.35 m |
+| on / off the map (163.3-259.0 s) | 0.171 / 0.353 m | 0.171 / 0.357 m | — |
+| Diagnostic cloud stamps | 2,209 / 2,209 (100.0%) | 2,209 / 2,209 (100.0%) | >= 97% |
+| Distinct GT-matched pose stamps / expected clouds | 2,201 / 2,209 (99.6%) | 2,201 / 2,209 (99.6%) | >= 95% |
+| Position error p95 | 0.533 m | 0.537 m | — |
+| Maximum output timestamp gap | 0.90 s | 0.90 s | — |
+| Alignment median / p95 | 12 / 32 ms | 13 / 33 ms | — |
+| Command / RKO / localizer / player exit codes | all 0 | all 0 | successful exit |
+
+RKO dropped 20 frames per run for too few ICP keypoints, as before. Against the v1.7.0
+check:
+
+- **On the map:** 0.171 m against 0.181 m, with the inlier gate (#299).
+- **Overall:** 0.242-0.245 m against 0.233 m, because off the map the drift is
+  0.353-0.357 m against 0.319-0.320 m. The sweep for #299 measured 0.236-0.242 m
+  overall and 0.338-0.353 m off the map at 0.8.
+- **Alignment:** 12-13 ms at the median and 32-33 ms at p95, against 17 and 45-46 ms,
+  on a faster CPU; not a like-for-like comparison.
+
+Machine-readable summaries and receipts of [run 1](validation/v1.8.0-koide-20261107/run1/summary.json)
+and [run 2](validation/v1.8.0-koide-20261107/run2/summary.json), and the
+[provenance](validation/v1.8.0-koide-20261107/provenance.json) record the result,
+configuration and executable hashes.
+[Download the logs, trajectories and receipts of both runs](validation/v1.8.0-koide-20261107/evidence.tar.gz).
+Archive SHA-256: `cf620a7d02d6481ff41a00ebd9bf2751deaccde901b7db137b2894efaeed8796`. It contains no bag or map files.
+
 ## v1.7.0 release verification (2026-11-03)
 
 Two full `outdoor_hard_02b` replays at 1x passed on `main` at `6b1e693`. The release

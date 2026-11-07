@@ -42,40 +42,40 @@ for benchmark and regression commands.
 
 ## Current Public Snapshot
 
-Latest release verification (`2026-11-03`):
+Latest release verification (`2026-11-07`):
 
-- release: `v1.7.0`, verified on `main` at `6b1e693` (the release branch adds only the
-  version bump and docs), with `ndt_omp_ros2` at `24c5df3` (the 0.2.0 content)
+- release: `v1.8.0`, verified on `release/v1.8.0` at `d853fbd` (`main` at `64a14db` plus
+  the version bump), with `ndt_omp_ros2` at its 0.2.0 release (`9f5567e`)
 - Koide `outdoor_hard_02b`, the release check: two full replays at 1x in ROS 2 Jazzy on
-  4 vCPUs with the same online profile as v1.6.0, built without a build type as in
-  `AGENTS.md`
-- both passed: `0.233 m` map-frame RMSE (`0.181 m` on the map), `100.0%` diagnostic
-  coverage; alignment `17 ms` at the median and `45-46 ms` at p95, against `36` and
-  `106-112 ms` for v1.6.0 (on a slower host CPU)
+  4 vCPUs, built without a build type as in `AGENTS.md`; the online profile now sets
+  `min_inlier_ratio: 0.8`
+- both passed: `0.242 m` and `0.245 m` map-frame RMSE (`0.171 m` on the map, against
+  `0.181 m` for v1.7.0), `100.0%` diagnostic coverage; alignment `12-13 ms` at the
+  median and `32-33 ms` at p95 (on a faster host CPU than v1.7.0's)
 - Boreas `boreas-2021-09-02-11-42`, `param/boreas_ndt_velodyne.yaml`: `0.132 m` RMSE over
   the first 120 s, `0.105 m` over the first 600 s (4.3 km); with
   `use_imu_preintegration`, `0.127 m` and `0.098-0.099 m`. With two cores kept busy
   and the IMU on, the pose lags `0.12-0.16 s` at p95, against `0.58-0.77 s` before
   ndt_omp_ros2 #15
-- Istanbul, `param/istanbul_gtsam_smoother.yaml`, three windows: `0.23`, `0.75` and
-  `0.46 m` horizontal RMSE at `8.9-10 Hz` (median of three runs; measured for v1.5.0,
-  not re-run)
+- Istanbul, `param/istanbul_gtsam_smoother.yaml`, three windows: `0.24-0.27`,
+  `0.74-0.77` and `0.45-0.47 m` horizontal RMSE at `8.9-10 Hz` (three runs each,
+  2026-11-04 to 11-07, every one starting within 0.05 s of the window start)
 
-See [the v1.7.0 verification](koide-online-replay.md#v170-release-verification-2026-11-03)
+See [the v1.8.0 verification](koide-online-replay.md#v180-release-verification-2026-11-07)
 and [docs/benchmark.md](benchmark.md#boreas-vehicle-preset-replay). This does not
 validate automatic initialization, recovery, physical hardware, or multi-hour
 operation.
 
 Previous release verification (`2026-11-03`):
 
-- release: `v1.6.0`, verified on `release/v1.6.0` at `a3f0076` (`main` at `b1692d5` plus
-  the version bump)
+- release: `v1.7.0`, verified on `main` at `6b1e693` (the release branch adds only the
+  version bump and docs), with `ndt_omp_ros2` at `24c5df3` (the 0.2.0 content)
 - Koide `outdoor_hard_02b`, the release check: two full replays at 1x in ROS 2 Jazzy on
-  4 vCPUs with the current online profile, built without a build type as in `AGENTS.md`
-- both passed: `0.232 m` map-frame RMSE (`0.178 m` on the map), `99.8%` and `100.0%`
-  diagnostic coverage
+  4 vCPUs, built without a build type as in `AGENTS.md`
+- both passed: `0.233 m` map-frame RMSE (`0.181 m` on the map), `100.0%` diagnostic
+  coverage; alignment `17 ms` at the median and `45-46 ms` at p95
 
-See [the v1.6.0 verification](koide-online-replay.md#v160-release-verification-2026-11-03).
+See [the v1.7.0 verification](koide-online-replay.md#v170-release-verification-2026-11-03).
 It does not validate automatic initialization, recovery, physical hardware, or
 multi-hour operation.
 
@@ -191,7 +191,7 @@ fixtures, but it did not win the replay of 2026-10-11:
 A fix needs a confirmation that does not lean on intermittent odometry, and a replay
 that reproduces the reset.
 
-Open items after v1.7.0:
+Open items after v1.8.0:
 
 - **Koide `outdoor_hard_01a` without odometry holds to 140-151 s, not to the end.**
   With the background map rebuild and `min_inlier_ratio` 0.8, the localizer alone stays
