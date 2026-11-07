@@ -147,9 +147,9 @@ inline double imuStaleSampleAgeThresholdSec(double scan_period_sec)
 inline double imuMaximumIntegrationWindowSec(double scan_period_sec)
 {
   if (!std::isfinite(scan_period_sec) || scan_period_sec <= 0.0) {
-    return 1.0;
+    return 10.0;
   }
-  return std::max(1.0, scan_period_sec * 5.0);
+  return std::max(10.0, scan_period_sec * 5.0);
 }
 
 inline bool isValidImuPreintegrationDt(double dt)
