@@ -498,6 +498,8 @@ def main():
         "laps": lap_count,
         "lap_sec": period_ns * 1e-9,
         "localizer_alive_at_end": alive,
+        # After SIGINT on exit: 0 for a clean shutdown, -11 for a crash in it.
+        "localizer_exit_code": process.returncode,
         "memory": memory_trend(samples, skip_sec=period_ns * 1e-9),
         "per_lap": laps,
         "faults": faults,
@@ -505,7 +507,7 @@ def main():
     (args.out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     rmse = [lap["rmse_m"] for lap in laps if lap["rmse_m"] is not None]
     print(
-        f"{lap_count} laps, alive {alive}; RMSE per lap {min(rmse):.3f}-{max(rmse):.3f} m; "
+        f"{lap_count} laps, alive {alive}, exit {process.returncode}; RMSE per lap {min(rmse):.3f}-{max(rmse):.3f} m; "
         f"memory {summary['memory']}; {args.out}",
         flush=True,
     )
