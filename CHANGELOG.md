@@ -18,9 +18,11 @@
     fitness, and `inlier_ratio`, also with the gate off. `fitness_score` stays what
     the gate reads.
   - **The distance must suit the map.** On Istanbul at 0.5 m, good alignments have
-    inlier ratios of 0.58-0.93, and 0.8 lost a window: the GTSAM smoother reads the
-    same score against `gtsam_fitness_nominal` and all but ignored the scans. At 1.0 m
-    the three Istanbul windows match or beat the gate off. Boreas does not change.
+    inlier ratios of 0.58-0.93, so a preset that rejects above the threshold would drop
+    a third of them at 0.8. The Istanbul preset does not reject: its GTSAM smoother
+    weights the scans by the same score, and its three windows scored 0.35-0.38,
+    0.89-0.90 and 0.55 m 3D RMSE, against 0.45-0.47, 0.93-0.97 and 0.56-0.57 m without
+    the gate. Boreas does not change.
   - **The online Koide profile** (`tools/readme_media/koide_outdoor_hard_02b_online.yaml`)
     sets 0.8. With RKO-LIO odometry, `outdoor_hard_01a` goes from 3.64 m to 0.43 m
     RMSE, and `outdoor_hard_02b`, the release check's sequence, stays within 0.01 m
@@ -66,6 +68,18 @@
   150 m crop of the Koide map dropped 10% of the clouds; a gap over 1 s drops the IMU
   prediction and can end the track. `--set local_map_async_rebuild=false` reproduces the
   earlier runs.
+
+### Fixed
+
+- With `min_inlier_ratio`, the reinitialization trigger's fitness explosion test reads
+  `registration_fitness_score`. The gate's score tops out at
+  `score_threshold / (1 - min_inlier_ratio)`, 30 at the defaults, so the test's 1000
+  could never fire. Without the gate the two scores are the same.
+- `tools/benchmark/istanbul_replay.py` delays playback by 2 s and records
+  `alignment.first_scan_sec`. `ros2 bag play` published before discovery matched the
+  localizer, so a run could start 0.65-1.15 s into the window from the window start's
+  pose: up to 18 m behind on the 2820 s window. Three Istanbul runs diverged that way,
+  one of them the "0.5 m loses the 2300 s window" of the inlier gate's first record.
 
 ### Removed
 

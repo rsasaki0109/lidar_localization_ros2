@@ -86,7 +86,7 @@ lidar_localization::AlignmentStatusInput PCLLocalization::makeAlignmentStatusInp
   const AlignmentStatusPublishInput & input) const
 {
   const double stamp_sec = stamp_to_sec(input.stamp);
-  return lidar_localization::makeAlignmentStatusInput(
+  auto status = lidar_localization::makeAlignmentStatusInput(
     lidar_localization::AlignmentStatusObservation{
       input.level,
       input.message,
@@ -104,6 +104,9 @@ lidar_localization::AlignmentStatusInput PCLLocalization::makeAlignmentStatusInp
       input.registration_seed_source,
       input.registration_localizability},
     makeAlignmentStatusRuntimeContext(stamp_sec));
+  // Set while an attempt's status is published; NaN otherwise.
+  status.registration_fitness_score = status_registration_fitness_score_;
+  return status;
 }
 
 lidar_localization::AlignmentStatusRuntimeContext

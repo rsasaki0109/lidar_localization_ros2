@@ -201,14 +201,17 @@ def replay(args, out, env, node_log, recorder_log):
     )
     time.sleep(2.0)
     began = time.time()
-    # Play the bag's own /clock: it is in the header stamps' time base.
+    # Play the bag's own /clock: it is in the header stamps' time base. The player
+    # publishes as soon as it starts, and the localizer drops what arrives before
+    # discovery matches it: up to about a second, from a pose the window start set.
+    # --delay waits 2 s first.
     subprocess.run(
         [
             "bash",
             "-c",
             shell(
                 args.ws,
-                f"{ROS2} bag play {args.bag} --start-offset {args.start} "
+                f"{ROS2} bag play {args.bag} --delay 2.0 --start-offset {args.start} "
                 f"--playback-duration {args.duration} --topics /clock {CLOUD} {TWIST}",
             ),
         ],
@@ -279,12 +282,13 @@ def evaluate_alignment(alignment_path, time_map_path, t0, t1, max_iterations):
     if time_map_path.exists():
         stamps = np.loadtxt(time_map_path, ndmin=2)[:, 1]
         result["scans"] = int(np.count_nonzero((stamps >= t0) & (stamps <= t1)))
-    seconds, iterations = [], []
+    seconds, iterations, stamps = [], [], []
     if alignment_path.exists():
         for line in alignment_path.read_text().splitlines():
             record = json.loads(line)
             if not t0 <= record.get("stamp", -math.inf) <= t1:
                 continue
+            stamps.append(record["stamp"])
             # A scan rejected before registration (for example an empty scan)
             # reports 0 s: no alignment ran.
             elapsed = float(record.get("alignment_time_sec", 0.0))
@@ -295,6 +299,9 @@ def evaluate_alignment(alignment_path, time_map_path, t0, t1, max_iterations):
             if count >= 0:
                 iterations.append(count)
     result["aligned_scans"] = len(seconds)
+    # The localizer starts at the window start's pose; a late first scan starts it off.
+    if stamps:
+        result["first_scan_sec"] = round(min(stamps) - t0, 2)
     if result["scans"]:
         result["aligned_share"] = round(len(seconds) / result["scans"], 3)
     if seconds:

@@ -102,25 +102,35 @@ so odometry drifts 0.7 m instead of 9.9 m before the scans register again.
 
 - **Boreas:** at 0.7 and at 0.8 the preset's trajectory is byte-identical to `main`'s
   (0.132 m), because every scan passes either way. With the gate off it is too.
-- **Istanbul (`istanbul_replay.py`, the GTSAM smoother preset):** 0.8 at 0.5 m lost
-  the 2300 s window, but 0.8 at 1.0 m left all three windows within run-to-run spread
-  or better:
+- **Istanbul (`istanbul_replay.py`, the GTSAM smoother preset):** every setting tracks
+  all three windows. The preset does not reject above the threshold, so the gate only
+  reweights the smoother. 3D RMSE over each window, with every run of 2026-11-04 to
+  11-07 whose first scan came within 0.05 s of the window start:
 
 | Window | Off | 0.8 at 0.5 m | 0.8 at 1.0 m |
 | --- | --- | --- | --- |
-| 0 s, 60 s long | 0.450 m | 0.347 m | 0.369 m |
-| 2820 s, 150 s long | 0.937 m | 0.896 m | 0.927 m |
-| 2300 s, 120 s long | 0.559-0.573 m | 139.5 m | 0.562 m |
+| 0 s, 60 s long | 0.450-0.473 m (3 runs) | 0.347-0.379 m (3) | 0.369-0.407 m (3) |
+| 2820 s, 150 s long | 0.929-0.965 m (3) | 0.889-0.896 m (3) | 0.927-0.936 m (2) |
+| 2300 s, 120 s long | 0.559-0.573 m (3) | 0.551 m (1) | 0.561-0.562 m (2) |
 
-The values are 3D RMSE over each window.
-
+- **The earlier "0.5 m loses the 2300 s window" was the replay.** That run's first scan
+  came 0.65 s after the window start, with the localizer starting from the start's pose:
+  `ros2 bag play` published before discovery matched the localizer. Two runs of the
+  2820 s window started 1.05-1.15 s late, about 18 m behind at 16 m/s, and diverged
+  too, at 0.5 m and at 1.0 m. `istanbul_replay.py` now delays playback by 2 s and records
+  `first_scan_sec`; the table leaves the late runs out.
 - **The map sets the inlier distance.** Without the gate, the Istanbul alignments have
   inlier ratios of 0.58-0.93 at 0.5 m (5th to 95th percentile, median 0.84) and
-  0.93-1.00 at 1.0 m. At 0.5 m, 0.8 reads a third of the good alignments as bad.
-- **The smoother reads the score too.** It scales a measurement's variance by
-  `(score / gtsam_fitness_nominal)^2`, with a nominal score of 1.0. At 0.5 m every
-  recorded scan scored above 18 within the first second, so the smoother all but
-  ignored them, and the track was lost, with up to 268 m of z error.
+  0.93-1.00 at 1.0 m. At 0.5 m, a preset that rejects above the threshold would drop a
+  third of the good alignments at 0.8.
+- **The smoother reads the gate's score,** against `gtsam_fitness_nominal` (1.0). Both
+  scales are 0 for a perfect scan and `score_threshold` at the acceptance limit. Fed the
+  backend's own fitness instead, at 0.5 m the smoother scored 0.440-0.527, 0.919 and
+  0.560 m: worse in all three windows. At 1.0 m the two were within 0.05 m of each
+  other. The gate's score stays.
+- **The reinitialization trigger's fitness explosion test reads the backend's own
+  fitness.** The gate's score tops out at `score_threshold / (1 - min_inlier_ratio)`, 30
+  at the defaults, so its threshold of 1000 could never fire.
 - **`inlier_ratio` is in `/alignment_status` with the gate off,** so it can be read on a
   stretch that tracks well before choosing the distance and the threshold.
 

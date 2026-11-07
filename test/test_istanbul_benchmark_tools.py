@@ -308,6 +308,8 @@ def test_alignment_cost_counts_the_window_scans_and_skips_scans_without_registra
     assert cost["iterations"]["median"] == 6.0
     assert cost["iterations"]["max"] == 36
     assert cost["iterations"]["at_cap_share"] == round(1 / 3, 3)
+    # The first scan in the window, aligned or not, 0.5 s after its start.
+    assert cost["first_scan_sec"] == 0.5
 
 
 def test_alignment_cost_without_records_reports_no_aligned_scans(tmp_path):

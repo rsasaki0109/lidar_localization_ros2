@@ -57,6 +57,33 @@ void test_prepare_alignment_status_computes_gate_and_reinit()
   assert(preparation.reinitialization_request.reason == "sustained_failure_reinit_requested");
 }
 
+// With min_inlier_ratio the gate's score tops out at score_threshold / (1 - min_inlier_ratio),
+// so the fitness explosion test reads the backend's own fitness.
+void test_fitness_explosion_reads_the_registration_fitness()
+{
+  auto input = default_status_input();
+  input.accepted_gap_sec = 4.0;
+  input.stamp_sec = 16.0;
+  input.seed_translation_since_accept_m = 2.0;
+  input.fallback_seed_translation_since_accept_m = 2.0;
+  input.consecutive_rejected_updates = 1;
+  // 0.45 * 0.5 + 0.30 * 0.5 + 0.20 * 0.2 = 0.415, under the 0.5 threshold.
+  input.fitness_score = 30.0;
+  assert(!ll::prepareAlignmentStatus(input).reinitialization_request.requested);
+
+  input.registration_fitness_score = 5000.0;
+  const auto exploded = ll::prepareAlignmentStatus(input).reinitialization_request;
+  assert(exploded.requested);
+  assert(exploded.reason == "fitness_exploded_reinit_requested");
+
+  // Without one, fitness_score is read.
+  input.registration_fitness_score = NAN;
+  input.fitness_score = 5000.0;
+  assert(
+    ll::prepareAlignmentStatus(input).reinitialization_request.reason ==
+    "fitness_exploded_reinit_requested");
+}
+
 void test_make_alignment_status_input_combines_observation_and_context()
 {
   ll::AlignmentStatusObservation observation;
@@ -286,6 +313,7 @@ int main()
 {
   test_make_alignment_status_input_combines_observation_and_context();
   test_prepare_alignment_status_computes_gate_and_reinit();
+  test_fitness_explosion_reads_the_registration_fitness();
   test_prepare_alignment_status_uses_fallback_reinit_metrics();
   test_recovery_evaluation_uses_latched_reinit_request();
   test_make_diagnostic_input_preserves_status_context();

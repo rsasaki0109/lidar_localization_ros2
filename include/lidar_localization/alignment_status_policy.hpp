@@ -21,6 +21,10 @@ struct AlignmentStatusInput
   std::string message{"ok"};
   bool has_converged{false};
   double fitness_score{0.0};
+  // The backend's own fitness. With min_inlier_ratio, fitness_score is the inlier
+  // ratio on the gate's scale, which tops out at score_threshold / (1 - min_inlier_ratio),
+  // so the fitness explosion test reads this one. NaN falls back to fitness_score.
+  double registration_fitness_score{NAN};
   double alignment_time_sec{0.0};
   int registration_iterations{-1};
   std::size_t filtered_point_count{0};
@@ -176,7 +180,8 @@ inline AlignmentStatusPreparation prepareAlignmentStatus(
 
   const auto reinit_input = makeReinitializationTriggerInput(
     input.message,
-    input.fitness_score,
+    std::isfinite(input.registration_fitness_score) ?
+    input.registration_fitness_score : input.fitness_score,
     preparation.effective_reinitialization_metrics.seed_translation_since_accept_m,
     preparation.effective_reinitialization_metrics.accepted_gap_sec,
     input.consecutive_rejected_updates);
