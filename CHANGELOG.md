@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- `param/boreas_ndt_velodyne.yaml` sets `min_inlier_ratio: 0.8`.
+  - **Why:** after LiDAR gaps of 2 s and stops of 10 s injected with
+    `tools/benchmark/soak_replay.py`, the preset accepted poses 8.6-117 m off. They
+    passed `score_threshold: 6` with only 50-74% of the points within 0.5 m of the map,
+    against 96% at the median when tracking (85% at the 1st percentile). With the gate
+    the node rejects them and requests reinitialization 15-21 s later.
+  - **Tracking is unchanged:** over the 120 s fixture the trajectory is byte-identical.
+    With `use_imu_preintegration: true` the smoother weighs scans by the gate's score,
+    and the poses move by 3 cm at most (RMSE 0.127 m either way).
+
 ## 1.8.0 - 2026-11-07
 
 ### Added
