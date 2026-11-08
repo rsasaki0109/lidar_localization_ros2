@@ -33,6 +33,15 @@
     no longer reports `soft_odom_correction_gate_enabled`.
   - `enable_seed_correction_guard` stays: the quickstart turns it on with odometry
     prediction.
+- **The twist EKF** (`use_twist_ekf`, with the seven `ekf_sigma_*` and three
+  `ekf_fitness_*` parameters): a constant-velocity EKF on the twist that seeded NDT and
+  set the published covariance.
+  - **Why:** the docs called it experimental. On the graded and fast Istanbul windows
+    it lost track in three of six runs, where `use_gtsam_smoother` kept all of them, and
+    they recommended the smoother instead. No preset turned it on; four set it to
+    `false`.
+  - It took its 369-line filter, a seed source, a pose backend and a covariance mode with
+    it. `use_twist_ekf: true` is refused at configure.
 
 ### Changed
 

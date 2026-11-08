@@ -32,8 +32,7 @@ lidar_localization::PoseBackendKind PCLLocalization::selectRegistrationPoseBacke
     lidar_localization::PoseBackendSelectionInput{
       use_gtsam_smoother_,
       use_imu_preintegration_,
-      has_imu_stamp,
-      use_twist_ekf_});
+      has_imu_stamp});
 }
 
 bool PCLLocalization::dispatchRegistrationPoseBackend(
@@ -46,9 +45,6 @@ bool PCLLocalization::dispatchRegistrationPoseBackend(
 
     case lidar_localization::PoseBackendKind::kImuPreintegration:
       return applyImuPreintegrationPoseBackend(context);
-
-    case lidar_localization::PoseBackendKind::kTwistEkf:
-      return applyTwistEkfPoseBackend(context);
 
     case lidar_localization::PoseBackendKind::kRawRegistration:
       return applyRawRegistrationPoseBackend(context);
@@ -89,26 +85,6 @@ PCLLocalization::updateGtsamPoseBackend(
     attempt.fitness_score, stamp_sec);
   update.pose = gtsam_smoother_.poseMatrix(last_ndt_roll_, last_ndt_pitch_);
   update.rejected_status_message = "gtsam_update_rejected";
-  return update;
-}
-
-PCLLocalization::PlanarSmootherBackendUpdate
-PCLLocalization::updateTwistEkfPoseBackend(
-  const lidar_localization::RegistrationObservation & observation,
-  const lidar_localization::AlignmentAttempt & attempt,
-  double stamp_sec)
-{
-  if (!twist_ekf_.isInitialized()) {
-    twist_ekf_.initialize(
-      observation.x, observation.y, observation.z, observation.yaw, stamp_sec);
-  }
-
-  PlanarSmootherBackendUpdate update;
-  update.updated = twist_ekf_.update(
-    observation.x, observation.y, observation.z, observation.yaw, attempt.fitness_score,
-    stamp_sec);
-  update.pose = twist_ekf_.poseMatrixAt(last_ndt_roll_, last_ndt_pitch_, stamp_sec);
-  update.rejected_status_message = "ekf_update_rejected";
   return update;
 }
 
@@ -397,15 +373,6 @@ PCLLocalization::makeImuPreintegrationPoseBackendResult(
     imu_status.warning,
     diagnostic_msgs::msg::DiagnosticStatus::WARN,
     imu_status.status_message);
-}
-
-bool PCLLocalization::applyTwistEkfPoseBackend(
-  const PoseBackendApplyContext & context)
-{
-  updateBackendRollPitch(context.observation);
-  return applyPlanarSmootherPoseBackendUpdate(
-    updateTwistEkfPoseBackend(context.observation, context.attempt, context.stamp_sec),
-    context);
 }
 
 bool PCLLocalization::applyRawRegistrationPoseBackend(

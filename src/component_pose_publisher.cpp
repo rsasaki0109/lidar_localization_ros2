@@ -302,15 +302,6 @@ void PCLLocalization::publishBridgePoseAsRejectedOutput(
 
 void PCLLocalization::fillPoseCovariance(double fitness_score)
 {
-  if (use_twist_ekf_ && twist_ekf_.isInitialized()) {
-    current_pose_with_cov_stamped_ptr_->pose.covariance =
-      use_error_floor_covariance_ ?
-      lidar_localization::makeEkfErrorFloorPoseCovariance(
-      twist_ekf_.covariance(), error_floor_covariance_params_, fitness_score) :
-      lidar_localization::makeEkfPoseCovariance(twist_ekf_.covariance(), fitness_score);
-    return;
-  }
-
   current_pose_with_cov_stamped_ptr_->pose.covariance =
     use_error_floor_covariance_ ?
     lidar_localization::makeErrorFloorPoseCovariance(

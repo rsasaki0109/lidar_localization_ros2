@@ -211,7 +211,7 @@ These keys are diagnostics only — they never change acceptance behavior.
 | `fitness_score_over_threshold_rejected` | match quality too poor | fix initial pose, map alignment, or sensor frame |
 | `seed_correction_guard_rejected` | result jumped more than `seed_correction_guard_translation_m` / `_yaw_deg` from the seed (opt-in guard) | expected while an aliased match is suppressed; persistent streaks mean the seed itself drifted |
 | `recovery_retry_from_last_pose_recovered` | retry from last good pose succeeded | transient glitch; usually OK |
-| `gtsam_update_rejected` / `ekf_update_rejected` | backend smoother rejected the update | often follows repeated measurement rejects |
+| `gtsam_update_rejected` | backend smoother rejected the update | often follows repeated measurement rejects |
 
 ### Useful numeric keys
 
@@ -268,8 +268,8 @@ other, so `inlier_ratio_distance_m` must suit the map:
   preset that rejects above the threshold would drop a third of them at 0.8. At 1.0 m
   they have 0.93-1.00.
 
-The EKF and GTSAM backends weight a measurement by the same score, against
-`ekf_fitness_nominal` or `gtsam_fitness_nominal` (1.0). Both scales are 0 for a perfect
+The GTSAM backend weights a measurement by the same score, against
+`gtsam_fitness_nominal` (1.0). Both scales are 0 for a perfect
 scan and `score_threshold` at the acceptance limit; in between, the gate's score rises
 linearly with the share of outliers. The Istanbul preset does not reject above the
 threshold, so there the gate only reweights the smoother. At 0.5 m its three windows
