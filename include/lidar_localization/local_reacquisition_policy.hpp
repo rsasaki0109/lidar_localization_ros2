@@ -61,6 +61,23 @@ struct LocalReacquisitionTriggerInput
   std::size_t scans_since_last_attempt{0};
 };
 
+// Without the odometry bridge, the search runs inside a rejected scan's own alignment,
+// around its prediction (the IMU retry seed when there is one), and its result is that
+// scan's measurement if the gate passes it.
+inline bool shouldSearchAroundPrediction(
+  const LocalReacquisitionParams & params,
+  bool odom_bridge_enabled,
+  bool occupancy_ready,
+  std::size_t consecutive_rejected_updates,
+  std::size_t scans_since_last_attempt)
+{
+  return params.enable && !odom_bridge_enabled && occupancy_ready &&
+         consecutive_rejected_updates >=
+         static_cast<std::size_t>(std::max(1, params.min_rejections)) &&
+         scans_since_last_attempt >=
+         static_cast<std::size_t>(std::max(1, params.attempt_interval_scans));
+}
+
 inline bool shouldAttemptLocalReacquisition(
   const LocalReacquisitionParams & params, const LocalReacquisitionTriggerInput & input)
 {

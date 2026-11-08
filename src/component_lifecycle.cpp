@@ -111,6 +111,9 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("local_reacquisition_search_radius_m", 15.0);
   declare_parameter("local_reacquisition_yaw_window_deg", 20.0);
   declare_parameter("local_reacquisition_max_candidates", 6);
+  // The height band of scan points matched to the grid, in the base frame.
+  declare_parameter("local_reacquisition_scan_min_z_m", 0.5);
+  declare_parameter("local_reacquisition_scan_max_z_m", 5.0);
   declare_parameter("seed_correction_guard_translation_m", 0.5);
   declare_parameter("seed_correction_guard_yaw_deg", 15.0);
   declare_parameter("seed_correction_guard_release_rejections", 10);

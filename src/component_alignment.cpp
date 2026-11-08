@@ -715,10 +715,7 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
       force_retry_from_last_pose,
       "imu_prediction_correction_guard_rejected"},
     [&]() -> std::optional<lidar_localization::AlignmentAttempt> {
-      if (
-        !alternate_guess ||
-        !callback_state_coordinator_.initialPoseGenerationMatches(seed_generation))
-      {
+      if (!callback_state_coordinator_.initialPoseGenerationMatches(seed_generation)) {
         return std::nullopt;
       }
       const auto usable = [this](const lidar_localization::AlignmentAttempt & attempt) {
@@ -726,10 +723,18 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
                  attempt.final_transformation.allFinite() &&
                  !measurementGateDecisionFor(attempt).reject_measurement;
         };
+      if (!alternate_guess) {
+        return searchAroundPrediction(init_guess, scan_stamp_sec, state_lock, seed_generation);
+      }
       auto attempt = runAlignmentAttempt(
         *alternate_guess, *alternate_guess, scan_stamp_sec, state_lock, seed_generation);
-      if (!sweep_alternate_yaw || usable(attempt)) {
+      if (usable(attempt)) {
         return attempt;
+      }
+      if (!sweep_alternate_yaw) {
+        auto found =
+          searchAroundPrediction(*alternate_guess, scan_stamp_sec, state_lock, seed_generation);
+        return found ? found : std::optional<lidar_localization::AlignmentAttempt>(attempt);
       }
       // Bridged across an IMU gap, the seed is short of the turn: try it turned, and take
       // the best that passes the gate.
@@ -746,7 +751,12 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
           best = candidate;
         }
       }
-      return best ? *best : attempt;
+      if (best) {
+        return best;
+      }
+      auto found =
+        searchAroundPrediction(*alternate_guess, scan_stamp_sec, state_lock, seed_generation);
+      return found ? found : std::optional<lidar_localization::AlignmentAttempt>(attempt);
     },
     [&]() {
       return runAlignmentAttempt(

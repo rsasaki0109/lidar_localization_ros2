@@ -349,15 +349,19 @@ void PCLLocalization::initializeParameters()
     "local_reacquisition_yaw_window_deg", local_reacquisition_params_.yaw_window_deg);
   get_parameter(
     "local_reacquisition_max_candidates", local_reacquisition_params_.max_candidates);
+  get_parameter(
+    "local_reacquisition_scan_min_z_m", local_reacquisition_params_.scan_min_z_m);
+  get_parameter(
+    "local_reacquisition_scan_max_z_m", local_reacquisition_params_.scan_max_z_m);
   local_reacquisition_map_.reset();
   if (local_reacquisition_params_.enable) {
     std::string occupancy_yaml;
     get_parameter("local_reacquisition_occupancy_yaml", occupancy_yaml);
-    if (!use_odom_tf_prediction_ || occupancy_yaml.empty()) {
+    if (occupancy_yaml.empty()) {
       RCLCPP_WARN(
         get_logger(),
-        "enable_local_reacquisition requires use_odom_tf_prediction and "
-        "local_reacquisition_occupancy_yaml; local re-acquisition is disabled");
+        "enable_local_reacquisition requires local_reacquisition_occupancy_yaml; "
+        "local re-acquisition is disabled");
       local_reacquisition_params_.enable = false;
     } else {
       try {

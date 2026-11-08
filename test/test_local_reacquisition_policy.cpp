@@ -144,8 +144,25 @@ void testDecision()
   assert(!decision.propose && decision.reason == "no_candidates");
 }
 
+void test_search_around_prediction_runs_only_without_the_bridge()
+{
+  ll::LocalReacquisitionParams params;
+  params.enable = true;
+  params.min_rejections = 10;
+  params.attempt_interval_scans = 10;
+  assert(ll::shouldSearchAroundPrediction(params, false, true, 10, 10));
+  // With the odometry bridge the proposal flow runs instead.
+  assert(!ll::shouldSearchAroundPrediction(params, true, true, 10, 10));
+  assert(!ll::shouldSearchAroundPrediction(params, false, false, 10, 10));
+  assert(!ll::shouldSearchAroundPrediction(params, false, true, 9, 10));
+  assert(!ll::shouldSearchAroundPrediction(params, false, true, 10, 9));
+  params.enable = false;
+  assert(!ll::shouldSearchAroundPrediction(params, false, true, 10, 10));
+}
+
 int main()
 {
+  test_search_around_prediction_runs_only_without_the_bridge();
   testTrigger();
   testOccupancyLoader();
   testWindowAndHeadingFilter();

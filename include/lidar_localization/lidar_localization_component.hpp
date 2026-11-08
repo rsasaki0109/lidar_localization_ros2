@@ -620,6 +620,22 @@ public:
     lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
     std::uint64_t seed_generation);
   void finishLocalReacquisitionConfirmation(bool accepted);
+  // The occupancy-grid candidates within local_reacquisition_search_radius_m of CENTER,
+  // each aligned against the target cropped around CENTER.
+  std::vector<lidar_localization::AlignmentAttempt> alignLocalReacquisitionCandidates(
+    const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud,
+    const Eigen::Matrix4f & center,
+    double scan_stamp_sec,
+    lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
+    std::uint64_t seed_generation,
+    std::size_t * bbs_candidate_count);
+  // Without the odometry bridge: the unambiguous candidate around PREDICTION that passes
+  // the gate (lidar_localization::shouldSearchAroundPrediction), for a rejected scan.
+  std::optional<lidar_localization::AlignmentAttempt> searchAroundPrediction(
+    const Eigen::Matrix4f & prediction,
+    double scan_stamp_sec,
+    lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
+    std::uint64_t seed_generation);
   void setRegistrationSourceCloud(const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud);
   void printAlignmentDebugInfo(
     const Eigen::Matrix4f & init_guess,
