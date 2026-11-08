@@ -23,10 +23,14 @@ the lap, and the RMSE after the settling time.
 
 usage: soak_replay.py FIXTURE_DIR OUT_DIR --ws WS [--minutes 60] [--preset YAML]
                       [--set KEY=VALUE ...] [--fault KIND@LAP:START[+DURATION] ...]
-                      [--wrap COMMAND]
+                      [--wrap COMMAND] [--companion COMMAND ...]
 
 --wrap runs the localizer under COMMAND, e.g. --wrap 'heaptrack -o OUT_DIR/heap';
-the samples are still taken from the localizer process itself.
+the samples are still taken from the localizer process itself. Each --companion COMMAND
+starts once the localizer is active, in its ROS domain, logging to companionN.log, e.g.
+the global localization recovery nodes:
+--companion 'ros2 launch lidar_localization_ros2 global_localization_recovery.launch.py
+start_localization:=false use_sim_time:=true ...'.
 """
 
 import argparse
@@ -296,6 +300,7 @@ def main():
         metavar="KIND@LAP:START[+DURATION]",
     )
     parser.add_argument("--wrap", default="", metavar="COMMAND")
+    parser.add_argument("--companion", action="append", default=[], metavar="COMMAND")
     args = parser.parse_args()
 
     import rclpy
@@ -394,6 +399,8 @@ def main():
             "localizer",
         )
         activate(session.node, "/lidar_localization", 180.0)
+        for index, companion in enumerate(args.companion):
+            session.spawn(shlex.split(companion), f"companion{index}")
         pid = localizer_pid(process.pid)
         node = session.node
         reliable = QoSProfile(depth=50, reliability=ReliabilityPolicy.RELIABLE)
@@ -561,6 +568,7 @@ def main():
         "preset": str(args.preset),
         "overrides": args.set,
         "wrap": args.wrap,
+        "companions": args.companion,
         "laps": lap_count,
         "lap_sec": period_ns * 1e-9,
         "localizer_alive_at_end": alive,

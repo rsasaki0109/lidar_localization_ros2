@@ -38,6 +38,7 @@ from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
@@ -397,12 +398,17 @@ def generate_launch_description():
             'g2_route_longitudinal_offsets_m', default_value='-1,0,1',
             description='Comma-separated longitudinal offsets (m) for route-crop '
                         'candidates.'),
+        DeclareLaunchArgument(
+            'start_localization', default_value='true',
+            description='Start the localizer too; false adds the global localization '
+                        'node and the supervisor to a localizer already running.'),
     ]
 
     # 1. Core localizer (also raises /reinitialization_requested + /alignment_status).
     localization = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_share, 'launch', 'lidar_localization.launch.py')),
+        condition=IfCondition(LaunchConfiguration('start_localization')),
         launch_arguments={
             'localization_param_dir': localization_param_dir,
             'cloud_topic': cloud_topic,
