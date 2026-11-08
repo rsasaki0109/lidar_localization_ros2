@@ -84,6 +84,36 @@ void test_dropout_counts_from_the_held_sample_not_the_window()
   assert(resumed.intervals[0].accel.x() == 2.0);
 }
 
+void test_gaps_shorter_than_the_bridge_are_held_across()
+{
+  // Samples every 0.1 s, then none from 0.2 to 1.2 s, as when the node is stopped.
+  const std::vector<ll::TimestampedImuSample> samples{
+    sample(0.0, 1.0), sample(0.1, 2.0), sample(0.2, 3.0), sample(1.2, 4.0),
+    sample(1.3, 5.0)};
+
+  const auto broken = ll::planCausalImuIntervals(0.0, 1.35, samples, 0.5);
+  assert(!broken.complete_coverage);
+  assert(broken.skipped_gap_count == 1);
+  assert(broken.bridged_gap_count == 0);
+
+  // The sample before the gap is held across it.
+  const auto bridged = ll::planCausalImuIntervals(0.0, 1.35, samples, 0.5, 2.0);
+  assert(bridged.complete_coverage);
+  assert(bridged.skipped_gap_count == 0);
+  assert(bridged.bridged_gap_count == 1);
+  assert(bridged.intervals.size() == 5);
+  assert(std::abs(bridged.intervals[2].dt() - 1.0) < 1e-12);
+  assert(bridged.intervals[2].accel.x() == 3.0);
+  assert(std::abs(bridged.covered_duration_sec - 1.35) < 1e-12);
+
+  // A gap as long as the bridge still breaks the coverage, and so does one at the end.
+  assert(!ll::planCausalImuIntervals(0.0, 1.35, samples, 0.5, 1.0).complete_coverage);
+  const auto tail = ll::planCausalImuIntervals(0.0, 1.35, {sample(0.0, 1.0)}, 0.5, 2.0);
+  assert(tail.complete_coverage);
+  assert(tail.bridged_gap_count == 1);
+  assert(!ll::planCausalImuIntervals(0.0, 2.5, {sample(0.0, 1.0)}, 0.5, 2.0).complete_coverage);
+}
+
 void test_non_monotonic_or_non_finite_input_is_rejected()
 {
   const auto duplicate = ll::planCausalImuIntervals(
@@ -142,6 +172,7 @@ int main()
   test_sample_exactly_on_boundary_updates_only_the_next_interval();
   test_missing_anchor_and_large_gap_fail_closed();
   test_dropout_counts_from_the_held_sample_not_the_window();
+  test_gaps_shorter_than_the_bridge_are_held_across();
   test_non_monotonic_or_non_finite_input_is_rejected();
   test_dual_queue_keeps_prediction_tail_for_repropagation();
   return 0;

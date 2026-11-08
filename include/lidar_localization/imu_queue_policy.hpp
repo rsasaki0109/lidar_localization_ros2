@@ -35,6 +35,8 @@ struct ImuIntegrationPlan
   bool input_order_valid{true};
   bool complete_coverage{false};
   std::size_t skipped_gap_count{0};
+  // Gaps held across because they were shorter than max_bridged_gap_sec.
+  std::size_t bridged_gap_count{0};
   double covered_duration_sec{0.0};
 };
 
@@ -47,11 +49,14 @@ inline bool finiteImuSample(const TimestampedImuSample & sample)
 /// Build causal, zero-order-held IMU intervals over [start, end]. A sample at
 /// or before start is required as the held measurement. Samples after end are
 /// deliberately ignored, so delayed scan callbacks cannot integrate the future.
+/// A gap between samples of MAX_INTERVAL_SEC or more breaks the coverage, unless it
+/// is shorter than MAX_BRIDGED_GAP_SEC: then the sample before it is held across it.
 inline ImuIntegrationPlan planCausalImuIntervals(
   double start_stamp_sec,
   double end_stamp_sec,
   const std::vector<TimestampedImuSample> & samples,
-  double max_interval_sec)
+  double max_interval_sec,
+  double max_bridged_gap_sec = 0.0)
 {
   ImuIntegrationPlan plan;
   if (!std::isfinite(start_stamp_sec) || !std::isfinite(end_stamp_sec) ||
@@ -95,10 +100,14 @@ inline ImuIntegrationPlan planCausalImuIntervals(
     }
     if (active.has_value()) {
       const double dt = sample.stamp_sec - cursor;
-      if (sample.stamp_sec - active->stamp_sec >= max_interval_sec) {
+      const double gap = sample.stamp_sec - active->stamp_sec;
+      if (gap >= max_interval_sec && gap >= max_bridged_gap_sec) {
         ++plan.skipped_gap_count;
         coverage_broken = true;
       } else if (dt > 0.0) {
+        if (gap >= max_interval_sec) {
+          ++plan.bridged_gap_count;
+        }
         plan.intervals.push_back(
           {cursor, sample.stamp_sec, active->gyro, active->accel});
         plan.covered_duration_sec += dt;
@@ -112,7 +121,11 @@ inline ImuIntegrationPlan planCausalImuIntervals(
 
   if (active.has_value() && cursor < end_stamp_sec) {
     const double dt = end_stamp_sec - cursor;
-    if (end_stamp_sec - active->stamp_sec < max_interval_sec) {
+    const double gap = end_stamp_sec - active->stamp_sec;
+    if (gap < max_interval_sec || gap < max_bridged_gap_sec) {
+      if (gap >= max_interval_sec) {
+        ++plan.bridged_gap_count;
+      }
       plan.intervals.push_back({cursor, end_stamp_sec, active->gyro, active->accel});
       plan.covered_duration_sec += dt;
     } else {

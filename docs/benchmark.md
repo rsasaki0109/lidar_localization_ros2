@@ -527,6 +527,28 @@ window is aligned once more from the IMU prediction, up to 10 s. On 2026-11-07:
   samples arrive per scan instead of 21, so the prediction no longer covers the window
   and there is nothing to retry from.
 
+Since then a stop of 2 s recovers too. On 2026-11-08, twice each:
+
+| Fault | Poses published during it | Largest error | Back under 0.5 m after |
+| --- | --- | --- | --- |
+| node stopped 2 s, 50 s into the lap, in a turn | 17-18 | 0.24 m | 0.06 s |
+| node stopped 2 s, 30 s into the lap | 19 | 0.27 m | 0.04 s |
+| node stopped 10 s | 0 | no pose for the rest of the lap | never |
+
+- **The IMU gap stayed in every window.** A window starts at the last accepted scan,
+  and a gap of more than 0.5 s between IMU samples broke its coverage, so after a stop
+  no IMU prediction was made again: `imu_integrated_sample_count` stayed 0 while 18-31
+  samples arrived per scan. For the retry, the sample before a gap is now held across
+  it, up to the retry's 10 s.
+- **Held across a turn, that prediction is short of it.** The 2 s stop at 50 s falls in a
+  turn tightening from 5 to 12 deg/s. Its first retry was 8 deg short in yaw and 0.73 m
+  off, and aligned with 67% inliers; turned by -4 to -12 deg it aligned with 98%, 3 cm
+  from the reference, while turned the other way it never passed 63%. A rejected
+  bridged retry is now aligned again turned by -6, 6, -12 and 12 deg, within 3 s of
+  the last accepted scan, and the best that passes the gate is taken.
+- **After 10 s the prediction is metres and 20 deg off,** beyond that search. The node
+  rejects every scan and requests reinitialization, as before.
+
 #### Under a memory limit
 
 With the node alone in a memory cgroup, `--wrap` set to a script that writes its PID

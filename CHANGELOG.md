@@ -115,6 +115,18 @@
 
 ### Fixed
 
+- **A node stopped for 2 s recovers** with `use_imu_preintegration`. On the looped
+  Boreas fixture it published no pose for the rest of the lap; now it is back within
+  0.06 s and 0.27 m, in a turn and on a straight.
+  - **Why:** the IMU samples queued for a stopped node overflow, and the gap stayed in
+    every window from the last accepted scan, so the IMU prediction was never made
+    again. For the retry from the IMU, the sample before a gap is now held across it
+    (up to the retry's 10 s).
+  - Held across a tightening turn, that prediction was 8-14 deg short in yaw and
+    rejected. A rejected bridged retry is aligned again turned by +-6 and +-12 deg,
+    within 3 s of the last accepted scan, and the best that passes the gate is taken.
+    Turned the wrong way, no fit passed 63% inliers against the 80% the gate needs.
+  - After a 10 s stop the node still requests reinitialization.
 - **A rejected scan past the IMU window is aligned again from the IMU prediction.**
   With `use_imu_preintegration`, a scan more than 1 s after the last accepted one is
   seeded from the previous scan's motion, which advances at most 1 s. When that

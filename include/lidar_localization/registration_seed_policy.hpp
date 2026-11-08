@@ -2,7 +2,10 @@
 #define LIDAR_LOCALIZATION_REGISTRATION_SEED_POLICY_HPP_
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+
+#include <Eigen/Geometry>
 
 namespace lidar_localization
 {
@@ -84,6 +87,32 @@ struct ImuRetrySeedInput
   // The IMU seed consistency gate allows IMU seeds (true when it is off).
   bool imu_seed_allowed{true};
 };
+
+// A retry seed bridged across an IMU gap holds the turn rate from before the gap. On the
+// looped Boreas fixture, after a 2 s stop in a tightening turn, it was 8-14 deg short in
+// yaw and its alignment was rejected (66% inliers); turned by -4 to -12 deg the same scan
+// aligned with 98% inliers, 3 cm from the reference, while turned the other way it never
+// passed 63%. A rejected bridged retry is aligned again turned by these offsets, while
+// the last accepted scan is at most this far back.
+constexpr std::array<double, 4> kBridgedRetryYawOffsetsDeg{-6.0, 6.0, -12.0, 12.0};
+constexpr double kMaximumBridgedRetryYawSweepWindowSec = 3.0;
+
+inline bool shouldSweepBridgedRetryYaw(bool bridged, double window_sec)
+{
+  return bridged && std::isfinite(window_sec) &&
+         window_sec <= kMaximumBridgedRetryYawSweepWindowSec;
+}
+
+// SEED turned by OFFSET_DEG about the map's z axis, around its own position.
+inline Eigen::Matrix4f yawTurnedSeed(const Eigen::Matrix4f & seed, double offset_deg)
+{
+  Eigen::Matrix4f turned = seed;
+  turned.block<3, 3>(0, 0) =
+    Eigen::AngleAxisf(
+    static_cast<float>(offset_deg * M_PI / 180.0), Eigen::Vector3f::UnitZ()).toRotationMatrix() *
+    seed.block<3, 3>(0, 0);
+  return turned;
+}
 
 inline bool isImuRetrySeedReady(const ImuRetrySeedInput & input)
 {
