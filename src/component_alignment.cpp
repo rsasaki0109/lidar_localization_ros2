@@ -450,6 +450,8 @@ bool PCLLocalization::setInputTargetForPose(const Eigen::Matrix4f & center_pose_
   local_map_target_cached_ = true;
   local_map_target_center_x_ = cx;
   local_map_target_center_y_ = cy;
+  // The previous crop and NDT voxel grid were freed when the target was replaced.
+  heap_trim_pending_.store(true, std::memory_order_relaxed);
 
   const auto success_decision = lidar_localization::handleLocalMapTargetSuccess();
   consecutive_crop_failures_ = success_decision.consecutive_crop_failures;
@@ -461,14 +463,22 @@ void PCLLocalization::startLocalMapRebuild(float center_x, float center_y)
 {
   local_map_rebuild_center_x_ = center_x;
   local_map_rebuild_center_y_ = center_y;
+  // The next target is built on fresh objects. The spare ones still hold the target
+  // replaced at the last swap, with its crop and search tree; the task frees them before
+  // it crops, so a rebuild holds the target in use and the new one, not a third.
+  RegistrationObjects stale = std::move(spare_registration_objects_);
+  spare_registration_objects_ =
+    makeRegistrationObjects(lidar_localization::parseRegistrationBackend(registration_method_));
   // The task owns what it reads: a map switch or cleanup swaps the members.
   local_map_rebuild_ = std::async(
     std::launch::async,
-    [full_map = full_map_cloud_ptr_, objects = spare_registration_objects_,
+    [stale = std::move(stale), full_map = full_map_cloud_ptr_,
+    objects = spare_registration_objects_,
     radius = local_map_radius_, min_points = local_map_min_points_,
     filter_target = lidar_localization::usesFilteredTarget(registration_method_),
     ndt_target = lidar_localization::usesNdtVoxelGrid(registration_method_),
-    leaf = voxel_leaf_size_, center_x, center_y]() {
+    leaf = voxel_leaf_size_, center_x, center_y]() mutable {
+      stale = RegistrationObjects();
       LocalMapRebuild rebuild;
       rebuild.center_x = center_x;
       rebuild.center_y = center_y;
@@ -530,6 +540,8 @@ bool PCLLocalization::takeLocalMapRebuild(float center_x, float center_y, bool w
   auto registration_execution_lock =
     callback_state_coordinator_.lockRegistrationExecution();
   std::swap(registration_objects_, spare_registration_objects_);
+  // The task freed the stale target before it cropped.
+  heap_trim_pending_.store(true, std::memory_order_relaxed);
   registration_ = registration_objects_.get();
   if (registration_source_cloud_) {
     registration_->setInputSource(registration_source_cloud_);

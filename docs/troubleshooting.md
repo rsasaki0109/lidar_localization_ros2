@@ -400,8 +400,11 @@ dense stretch; under 1 GB it ran an hour, 890 MiB at most
   preset's score threshold rejected most scans and tracking stopped.
 - **A component loaded into another container needs `MALLOC_ARENA_MAX=2`** in that
   container's environment; `lidar_localization_node` sets the limit itself.
-- **Leave headroom for long runs.** Over an hour the lowest resident memory of each lap
-  rose by 50-100 MB, and the peak with it.
+- **The node frees a replaced target before it builds the next one** and returns the
+  freed memory to the OS, so the table's peaks are from before that: with it the 80 m
+  crop peaks at 525-539 MiB (613-652 MiB without, alternated in one session). Before it,
+  the lowest resident memory of each lap also rose by 50-100 MB an hour; now it stays
+  flat.
 
 ## Symptom: NDT Does Not Correct the Pose on a Large Map
 

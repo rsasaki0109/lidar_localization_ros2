@@ -18,6 +18,7 @@
 #include "lidar_localization/continuous_time_deskew_policy.hpp"
 #include "lidar_localization/imu_pose_history_deskew.hpp"
 #include "lidar_localization/deskew_readiness_policy.hpp"
+#include "lidar_localization/heap_release.hpp"
 #include "lidar_localization/imu_preintegration_diagnostics_policy.hpp"
 #include "lidar_localization/imu_preintegration_guard_policy.hpp"
 #include "lidar_localization/local_map_target_policy.hpp"

@@ -283,6 +283,9 @@ public:
     pcl::PointCloud<pcl::PointXYZI>::Ptr warm_up_source;
   };
   std::future<LocalMapRebuild> local_map_rebuild_;
+  // Set when a target change freed memory; the next cloud callback returns it to the OS
+  // (releaseFreedHeapMemory) when it is done.
+  std::atomic<bool> heap_trim_pending_{false};
   float local_map_rebuild_center_x_{0.0f};
   float local_map_rebuild_center_y_{0.0f};
   pcl::PointCloud<pcl::PointXYZI>::Ptr registration_source_cloud_;

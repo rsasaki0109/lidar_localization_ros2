@@ -62,6 +62,21 @@
 
 ### Changed
 
+- **The node frees a replaced registration target before it builds the next one, and
+  returns freed memory to the OS.** On the Boreas fixture with the preset (80 m crop,
+  `use_imu_preintegration: true`):
+  - **Peak:** 525-539 MiB instead of 613-652 MiB in one lap, alternated with the build
+    before, at the same RMSE and alignment time. Pose latency at p95 is 58-59 ms
+    instead of 55-57 ms.
+  - **An hour under 800 MB:** 576 MiB at most instead of 765 MiB. The lowest memory of
+    each lap stays at 329-339 MB, where it rose by 84 MB an hour.
+  - **Why:**
+    - During a background rebuild three crops were alive: the one in use, the replaced
+      one with its search tree, still held by the spare registration objects, and the
+      new one. The next target is now built on fresh objects, and the replaced one is
+      freed first.
+    - glibc returned only the top of its heaps. `malloc_trim` now runs once a target
+      change freed memory, at the end of that scan's callback (1.4 ms at the median).
 - **`param/boreas_ndt_velodyne.yaml` crops the map at 80 m instead of 100 m.** The node
   peaks 75-160 MiB lower (642-707 MiB against 782-803 MiB in one lap) at the same RMSE,
   0.132 m, or 0.127 m with `use_imu_preintegration: true`, and the same pose latency.
