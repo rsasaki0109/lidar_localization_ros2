@@ -463,14 +463,22 @@ void PCLLocalization::startLocalMapRebuild(float center_x, float center_y)
 {
   local_map_rebuild_center_x_ = center_x;
   local_map_rebuild_center_y_ = center_y;
+  // The next target is built on fresh objects. The spare ones still hold the target
+  // replaced at the last swap, with its crop and search tree; the task frees them before
+  // it crops, so a rebuild holds the target in use and the new one, not a third.
+  RegistrationObjects stale = std::move(spare_registration_objects_);
+  spare_registration_objects_ =
+    makeRegistrationObjects(lidar_localization::parseRegistrationBackend(registration_method_));
   // The task owns what it reads: a map switch or cleanup swaps the members.
   local_map_rebuild_ = std::async(
     std::launch::async,
-    [full_map = full_map_cloud_ptr_, objects = spare_registration_objects_,
+    [stale = std::move(stale), full_map = full_map_cloud_ptr_,
+    objects = spare_registration_objects_,
     radius = local_map_radius_, min_points = local_map_min_points_,
     filter_target = lidar_localization::usesFilteredTarget(registration_method_),
     ndt_target = lidar_localization::usesNdtVoxelGrid(registration_method_),
-    leaf = voxel_leaf_size_, center_x, center_y]() {
+    leaf = voxel_leaf_size_, center_x, center_y]() mutable {
+      stale = RegistrationObjects();
       LocalMapRebuild rebuild;
       rebuild.center_x = center_x;
       rebuild.center_y = center_y;
@@ -500,7 +508,7 @@ void PCLLocalization::startLocalMapRebuild(float center_x, float center_y)
       registration->setInputSource(rebuild.warm_up_source);
       pcl::PointCloud<pcl::PointXYZI> output;
       registration->align(output, Eigen::Matrix4f::Identity());
-      // The previous target in these objects was freed by the build above.
+      // Return the pages of the stale target freed above.
       lidar_localization::releaseFreedHeapMemory();
       return rebuild;
     });
