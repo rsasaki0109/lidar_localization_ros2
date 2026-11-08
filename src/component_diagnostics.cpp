@@ -267,7 +267,6 @@ PCLLocalization::prepareAlignmentDiagnosticValuesInput(
   diagnostic_input.point_timestamp_unit = point_timestamp_unit_name_;
   diagnostic_input.registration_fitness_score = status_registration_fitness_score_;
   diagnostic_input.inlier_ratio = status_inlier_ratio_;
-  diagnostic_input.soft_odom_correction_gate_enabled = enable_soft_odom_correction_gate_;
   if (use_imu_preintegration_) {
     std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
     if (imu_smoother_.isInitialized()) {

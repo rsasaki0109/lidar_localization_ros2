@@ -78,6 +78,5 @@
     continuous_time_deskew_mode: imu_pose_history
     path_max_poses: 2000
     point_timestamp_unit: auto
-    enable_soft_odom_correction_gate: false
     qos_overrides./livox/points.subscription.reliability: reliable
     cloud_queue_depth: 10

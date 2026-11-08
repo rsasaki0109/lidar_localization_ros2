@@ -328,17 +328,8 @@ void PCLLocalization::initializeParameters()
     }
     point_timestamp_unit_ = lidar_localization::PointTimestampUnit::kAuto;
   }
-  get_parameter("enable_soft_odom_correction_gate", enable_soft_odom_correction_gate_);
-  RCLCPP_INFO(get_logger(), "point_timestamp_unit: %s; soft odom correction gate: %d",
-    point_timestamp_unit_name_.c_str(), enable_soft_odom_correction_gate_);
+  RCLCPP_INFO(get_logger(), "point_timestamp_unit: %s", point_timestamp_unit_name_.c_str());
   get_parameter("reject_above_score_threshold", measurement_gate_config_.reject_above_score_threshold);
-  get_parameter("enable_consistency_recovery_gate", measurement_gate_config_.enable_consistency_recovery_gate);
-  get_parameter("consistency_recovery_min_rejections", measurement_gate_config_.consistency_recovery_min_rejections);
-  get_parameter("consistency_recovery_score_margin", measurement_gate_config_.consistency_recovery_score_margin);
-  get_parameter(
-    "consistency_recovery_max_translation_m",
-    measurement_gate_config_.consistency_recovery_max_translation_m);
-  get_parameter("consistency_recovery_max_yaw_deg", measurement_gate_config_.consistency_recovery_max_yaw_deg);
   get_parameter(
     "enable_post_reject_strict_score_threshold",
     measurement_gate_config_.enable_post_reject_strict_score_threshold);
@@ -413,30 +404,6 @@ void PCLLocalization::initializeParameters()
       }
     }
   }
-  get_parameter(
-    "enable_odom_tf_prediction_correction_guard",
-    measurement_gate_config_.enable_odom_tf_prediction_correction_guard);
-  get_parameter(
-    "odom_tf_prediction_correction_guard_translation_m",
-    measurement_gate_config_.odom_tf_prediction_correction_guard_translation_m);
-  get_parameter(
-    "odom_tf_prediction_correction_guard_yaw_deg",
-    measurement_gate_config_.odom_tf_prediction_correction_guard_yaw_deg);
-  get_parameter(
-    "enable_odom_tf_prediction_recovery_correction_guard",
-    measurement_gate_config_.enable_odom_tf_prediction_recovery_correction_guard);
-  get_parameter(
-    "odom_tf_prediction_recovery_min_rejections",
-    measurement_gate_config_.odom_tf_prediction_recovery_min_rejections);
-  get_parameter(
-    "odom_tf_prediction_recovery_max_fitness",
-    measurement_gate_config_.odom_tf_prediction_recovery_max_fitness);
-  get_parameter(
-    "odom_tf_prediction_recovery_guard_translation_m",
-    measurement_gate_config_.odom_tf_prediction_recovery_guard_translation_m);
-  get_parameter(
-    "odom_tf_prediction_recovery_guard_yaw_deg",
-    measurement_gate_config_.odom_tf_prediction_recovery_guard_yaw_deg);
   get_parameter("enable_rejected_seed_update", measurement_gate_config_.enable_rejected_seed_update);
   get_parameter("rejected_seed_update_min_rejections", measurement_gate_config_.rejected_seed_update_min_rejections);
   get_parameter("rejected_seed_update_max_fitness", measurement_gate_config_.rejected_seed_update_max_fitness);
@@ -643,21 +610,6 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "reject_above_score_threshold: %d", measurement_gate_config_.reject_above_score_threshold);
   RCLCPP_INFO(
-    get_logger(), "enable_consistency_recovery_gate: %d",
-    measurement_gate_config_.enable_consistency_recovery_gate);
-  RCLCPP_INFO(
-    get_logger(), "consistency_recovery_min_rejections: %d",
-    measurement_gate_config_.consistency_recovery_min_rejections);
-  RCLCPP_INFO(
-    get_logger(), "consistency_recovery_score_margin: %lf",
-    measurement_gate_config_.consistency_recovery_score_margin);
-  RCLCPP_INFO(
-    get_logger(), "consistency_recovery_max_translation_m: %lf",
-    measurement_gate_config_.consistency_recovery_max_translation_m);
-  RCLCPP_INFO(
-    get_logger(), "consistency_recovery_max_yaw_deg: %lf",
-    measurement_gate_config_.consistency_recovery_max_yaw_deg);
-  RCLCPP_INFO(
     get_logger(), "enable_post_reject_strict_score_threshold: %d",
     measurement_gate_config_.enable_post_reject_strict_score_threshold);
   RCLCPP_INFO(
@@ -709,30 +661,6 @@ void PCLLocalization::initializeParameters()
     measurement_gate_config_.seed_correction_guard_release_rejections,
     measurement_gate_config_.seed_correction_guard_warmup_accepts,
     measurement_gate_config_.seed_correction_guard_exact_start_translation_m);
-  RCLCPP_INFO(
-    get_logger(), "enable_odom_tf_prediction_correction_guard: %d",
-    measurement_gate_config_.enable_odom_tf_prediction_correction_guard);
-  RCLCPP_INFO(
-    get_logger(), "odom_tf_prediction_correction_guard_translation_m: %lf",
-    measurement_gate_config_.odom_tf_prediction_correction_guard_translation_m);
-  RCLCPP_INFO(
-    get_logger(), "odom_tf_prediction_correction_guard_yaw_deg: %lf",
-    measurement_gate_config_.odom_tf_prediction_correction_guard_yaw_deg);
-  RCLCPP_INFO(
-    get_logger(), "enable_odom_tf_prediction_recovery_correction_guard: %d",
-    measurement_gate_config_.enable_odom_tf_prediction_recovery_correction_guard);
-  RCLCPP_INFO(
-    get_logger(), "odom_tf_prediction_recovery_min_rejections: %d",
-    measurement_gate_config_.odom_tf_prediction_recovery_min_rejections);
-  RCLCPP_INFO(
-    get_logger(), "odom_tf_prediction_recovery_max_fitness: %lf",
-    measurement_gate_config_.odom_tf_prediction_recovery_max_fitness);
-  RCLCPP_INFO(
-    get_logger(), "odom_tf_prediction_recovery_guard_translation_m: %lf",
-    measurement_gate_config_.odom_tf_prediction_recovery_guard_translation_m);
-  RCLCPP_INFO(
-    get_logger(), "odom_tf_prediction_recovery_guard_yaw_deg: %lf",
-    measurement_gate_config_.odom_tf_prediction_recovery_guard_yaw_deg);
   RCLCPP_INFO(
     get_logger(), "enable_recovery_retry_from_last_pose: %d",
     recovery_retry_from_last_pose_config_.enable);

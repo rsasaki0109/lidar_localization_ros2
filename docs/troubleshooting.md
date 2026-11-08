@@ -210,7 +210,6 @@ These keys are diagnostics only — they never change acceptance behavior.
 | `registration_not_converged` | NDT/GICP did not converge | initial pose too far from truth; try closer seed |
 | `fitness_score_over_threshold_rejected` | match quality too poor | fix initial pose, map alignment, or sensor frame |
 | `seed_correction_guard_rejected` | result jumped more than `seed_correction_guard_translation_m` / `_yaw_deg` from the seed (opt-in guard) | expected while an aliased match is suppressed; persistent streaks mean the seed itself drifted |
-| `fitness_score_over_threshold_consistency_recovered` | borderline reject overridden by consistency gate | monitor; may recover if environment is consistent |
 | `recovery_retry_from_last_pose_recovered` | retry from last good pose succeeded | transient glitch; usually OK |
 | `gtsam_update_rejected` / `ekf_update_rejected` | backend smoother rejected the update | often follows repeated measurement rejects |
 

@@ -113,7 +113,6 @@ struct AlignmentDiagnosticValuesInput
   std::size_t path_max_poses{2000};
   std::size_t path_pose_count{0};
   std::string point_timestamp_unit{"auto"};
-  bool soft_odom_correction_gate_enabled{false};
   // The IMU preintegration smoother's state after this scan's update (NaN while it is
   // disabled or uninitialized): gyro bias (rad/s), accelerometer bias (m/s^2) and
   // velocity (m/s, map frame).
@@ -320,7 +319,6 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
   append("path_max_poses", std::to_string(input.path_max_poses));
   append("path_pose_count", std::to_string(input.path_pose_count));
   append("point_timestamp_unit", input.point_timestamp_unit);
-  append("soft_odom_correction_gate_enabled", boolString(input.soft_odom_correction_gate_enabled));
   append("registration_iterations", std::to_string(input.registration_iterations));
   for (int axis = 0; axis < 3; ++axis) {
     append(

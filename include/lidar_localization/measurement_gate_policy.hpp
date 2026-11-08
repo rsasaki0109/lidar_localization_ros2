@@ -19,12 +19,6 @@ struct MeasurementGateParams
   double score_threshold{2.0};
   bool reject_above_score_threshold{true};
 
-  bool enable_consistency_recovery_gate{false};
-  int consistency_recovery_min_rejections{10};
-  double consistency_recovery_score_margin{2.0};
-  double consistency_recovery_max_translation_m{0.05};
-  double consistency_recovery_max_yaw_deg{0.5};
-
   bool enable_post_reject_strict_score_threshold{false};
   int post_reject_strict_min_rejections{100};
   double post_reject_strict_score_threshold{5.5};
@@ -37,23 +31,6 @@ struct MeasurementGateParams
   bool enable_borderline_seed_rejection_gate{false};
   double borderline_seed_gate_score_threshold{5.25};
   double borderline_seed_gate_min_seed_translation_m{1.0};
-
-  // An external odometry seed is a strong motion prior.  A very low NDT
-  // fitness can still be an aliased solution, so reject a result that jumps
-  // implausibly far away from that prior.  This is independently opt-in to
-  // preserve all existing configurations.
-  bool enable_odom_tf_prediction_correction_guard{false};
-  double odom_tf_prediction_correction_guard_translation_m{2.0};
-  double odom_tf_prediction_correction_guard_yaw_deg{30.0};
-  // After a sustained rejection streak, permit a larger correction only for
-  // a very strong scan match. This lets a slowly drifting odom bridge snap
-  // back to the map when distinctive geometry returns, without weakening the
-  // normal alias guard during healthy tracking.
-  bool enable_odom_tf_prediction_recovery_correction_guard{false};
-  int odom_tf_prediction_recovery_min_rejections{30};
-  double odom_tf_prediction_recovery_max_fitness{1.5};
-  double odom_tf_prediction_recovery_guard_translation_m{5.0};
-  double odom_tf_prediction_recovery_guard_yaw_deg{30.0};
 
   // Seed-agnostic jump guard.  Whatever produced the seed (previous delta,
   // twist, IMU, odom), a legged or wheeled robot cannot move meters between
@@ -93,11 +70,6 @@ struct MeasurementGateInput
   double correction_translation_m{0.0};
   double correction_yaw_deg{0.0};
   std::size_t consecutive_rejected_updates{0};
-  // True while the external-odom motion-model mode has an established
-  // map->odom anchor.  It deliberately remains true for a scan that falls
-  // back to previous_delta because the live TF lookup briefly missed; that
-  // is exactly when an aliased NDT result must not replace the good anchor.
-  bool odom_tf_prediction_guard_applicable{false};
   // Consecutive accepted updates within the seed correction guard's limits
   // since the last reset or odometry gap (see nextSettledAccepts).
   std::size_t accepted_updates_since_reset{std::numeric_limits<std::size_t>::max()};
@@ -139,7 +111,6 @@ inline MeasurementGateInput makeMeasurementGateInput(
   double correction_translation_m,
   double correction_yaw_deg,
   std::size_t consecutive_rejected_updates,
-  bool odom_tf_prediction_guard_applicable = false,
   std::size_t accepted_updates_since_reset = std::numeric_limits<std::size_t>::max())
 {
   return {
@@ -149,7 +120,6 @@ inline MeasurementGateInput makeMeasurementGateInput(
     correction_translation_m,
     correction_yaw_deg,
     consecutive_rejected_updates,
-    odom_tf_prediction_guard_applicable,
     accepted_updates_since_reset};
 }
 
@@ -257,29 +227,6 @@ inline MeasurementGateDecision evaluateMeasurementGate(
   gate.borderline_seed_gate_active =
     isBorderlineSeedGateActive(params, input, gate.effective_score_threshold);
 
-  const bool odom_recovery_correction_window =
-    params.enable_odom_tf_prediction_recovery_correction_guard &&
-    static_cast<int>(input.consecutive_rejected_updates) >=
-    params.odom_tf_prediction_recovery_min_rejections &&
-    input.fitness_score <= params.odom_tf_prediction_recovery_max_fitness;
-  const double odom_translation_limit = odom_recovery_correction_window ?
-    params.odom_tf_prediction_recovery_guard_translation_m :
-    params.odom_tf_prediction_correction_guard_translation_m;
-  const double odom_yaw_limit = odom_recovery_correction_window ?
-    params.odom_tf_prediction_recovery_guard_yaw_deg :
-    params.odom_tf_prediction_correction_guard_yaw_deg;
-  const bool odom_correction_guard_active =
-    params.enable_odom_tf_prediction_correction_guard &&
-    input.odom_tf_prediction_guard_applicable &&
-    ((input.correction_translation_m > odom_translation_limit) ||
-    (input.correction_yaw_deg > odom_yaw_limit));
-  if (odom_correction_guard_active) {
-    gate.status_level = kMeasurementGateWarn;
-    gate.status_message = "odom_tf_prediction_correction_guard_rejected";
-    gate.reject_measurement = true;
-    return gate;
-  }
-
   const bool seed_correction_guard_active =
     params.enable_seed_correction_guard &&
     input.accepted_updates_since_reset >=
@@ -322,19 +269,6 @@ inline MeasurementGateDecision evaluateMeasurementGate(
       "fitness_score_over_threshold";
   }
   gate.reject_measurement = params.reject_above_score_threshold;
-
-  const bool recovery_candidate =
-    params.enable_consistency_recovery_gate &&
-    gate.reject_measurement &&
-    static_cast<int>(input.consecutive_rejected_updates) >=
-    params.consistency_recovery_min_rejections &&
-    input.fitness_score <= params.score_threshold + params.consistency_recovery_score_margin &&
-    input.correction_translation_m <= params.consistency_recovery_max_translation_m &&
-    input.correction_yaw_deg <= params.consistency_recovery_max_yaw_deg;
-  if (recovery_candidate) {
-    gate.reject_measurement = false;
-    gate.status_message = "fitness_score_over_threshold_consistency_recovered";
-  }
 
   const bool rejected_seed_update_candidate =
     params.enable_rejected_seed_update &&

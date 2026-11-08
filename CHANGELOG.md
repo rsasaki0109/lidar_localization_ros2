@@ -15,6 +15,24 @@
     longer declared, and ROS ignores them.
   - `level_map_to_odom` stays: `docs/troubleshooting.md` measures it on Koide.
   - With the defaults nothing changes: the Boreas trajectory is byte-identical.
+- **Four measurement-gate options that no preset turned on:**
+  - `enable_odom_tf_prediction_correction_guard` (with
+    `odom_tf_prediction_correction_guard_translation_m` and `_yaw_deg`): rejected a scan
+    whose correction from the odometry seed was too large.
+  - `enable_odom_tf_prediction_recovery_correction_guard` (with
+    `odom_tf_prediction_recovery_min_rejections`, `_max_fitness`,
+    `_guard_translation_m` and `_guard_yaw_deg`): widened that guard after a rejection
+    streak.
+  - `enable_soft_odom_correction_gate`: blended a scan that guard rejected with the
+    odometry prediction. `docs/imu_estimation.md` called it experimental and untested
+    on real data.
+  - `enable_consistency_recovery_gate` (with `consistency_recovery_min_rejections`,
+    `_score_margin`, `_max_translation_m` and `_max_yaw_deg`): accepted a scan over the
+    score threshold after a rejection streak when its correction was small.
+  - Their switches are refused when `true`, like the three above. `/alignment_status`
+    no longer reports `soft_odom_correction_gate_enabled`.
+  - `enable_seed_correction_guard` stays: the quickstart turns it on with odometry
+    prediction.
 
 ### Changed
 

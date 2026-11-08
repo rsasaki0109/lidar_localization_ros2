@@ -107,13 +107,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
     "registration_target_cloud_keep_alive_count",
     static_cast<int>(lidar_localization::kDefaultRegistrationTargetCloudKeepAliveCount));
   declare_parameter("point_timestamp_unit", "auto");
-  declare_parameter("enable_soft_odom_correction_gate", false);
   declare_parameter("reject_above_score_threshold", true);
-  declare_parameter("enable_consistency_recovery_gate", false);
-  declare_parameter("consistency_recovery_min_rejections", 10);
-  declare_parameter("consistency_recovery_score_margin", 2.0);
-  declare_parameter("consistency_recovery_max_translation_m", 0.05);
-  declare_parameter("consistency_recovery_max_yaw_deg", 0.5);
   declare_parameter("enable_post_reject_strict_score_threshold", false);
   declare_parameter("post_reject_strict_min_rejections", 100);
   declare_parameter("post_reject_strict_score_threshold", 5.5);
@@ -124,14 +118,6 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("enable_borderline_seed_rejection_gate", false);
   declare_parameter("borderline_seed_gate_score_threshold", 5.25);
   declare_parameter("borderline_seed_gate_min_seed_translation_m", 1.0);
-  declare_parameter("enable_odom_tf_prediction_correction_guard", false);
-  declare_parameter("odom_tf_prediction_correction_guard_translation_m", 2.0);
-  declare_parameter("odom_tf_prediction_correction_guard_yaw_deg", 30.0);
-  declare_parameter("enable_odom_tf_prediction_recovery_correction_guard", false);
-  declare_parameter("odom_tf_prediction_recovery_min_rejections", 30);
-  declare_parameter("odom_tf_prediction_recovery_max_fitness", 1.5);
-  declare_parameter("odom_tf_prediction_recovery_guard_translation_m", 5.0);
-  declare_parameter("odom_tf_prediction_recovery_guard_yaw_deg", 30.0);
   declare_parameter("enable_seed_correction_guard", false);
   declare_parameter("enable_local_reacquisition", false);
   declare_parameter("local_reacquisition_occupancy_yaml", "");

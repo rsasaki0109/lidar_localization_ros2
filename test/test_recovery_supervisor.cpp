@@ -153,11 +153,11 @@ void test_recovery_state_and_action_classification()
     "reject_measurement");
   assert(
     ll::classifyRecoverySupervisorState(
-      1, "odom_tf_prediction_correction_guard_rejected", no_request, 0) ==
+      1, "seed_correction_guard_rejected", no_request, 0) ==
     ll::RecoverySupervisorState::kRecovering);
   assert(
     ll::classifyRecoverySupervisorAction(
-      1, "odom_tf_prediction_correction_guard_rejected", no_request, 0) ==
+      1, "seed_correction_guard_rejected", no_request, 0) ==
     "reject_measurement");
   assert(
     ll::classifyRecoverySupervisorAction(
@@ -179,7 +179,7 @@ void test_prediction_guard_rejection_counts_as_reinitialization_failure()
   const auto decision = ll::computeReinitializationRequest(
     ll::ReinitializationTriggerParams{},
     ll::ReinitializationTriggerInput{
-      "odom_tf_prediction_correction_guard_rejected", 0.1, 0.5, 2.0, 1});
+      "seed_correction_guard_rejected", 0.1, 0.5, 2.0, 1});
 
   assert(!decision.requested);
   assert(decision.reason == "reinit_not_requested");
