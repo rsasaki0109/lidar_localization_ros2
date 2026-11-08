@@ -367,6 +367,42 @@ lose track.
 - or, when the full map fits in memory and its NDT voxel grid can be indexed (next
   section), disable the crop for NDT backends
 
+## Symptom: The Node Is Killed for Memory
+
+The node holds the full map, 32 bytes a point, and the registration target: the crop,
+the backend's search structure (the NDT voxel grid) and the inlier-ratio search tree.
+With `local_map_async_rebuild` it holds a second target while the next one is built.
+On the Boreas fixture (3.1 million points at a 0.3 m leaf, 60 m scans) the node peaked
+at 800 MiB with a 100 m crop. Under a memory limit of 768 MB it was killed in the
+dense stretch; under 1 GB it ran an hour, 890 MiB at most
+([benchmark](benchmark.md#under-a-memory-limit)).
+
+- **Size `local_map_radius` to the scans.** A target grows with the crop's area. Keep
+  `local_map_radius - scan_max_range` above `local_map_update_distance`: otherwise
+  the background build never starts, and a scan past the update distance builds its
+  target in the callback. On Boreas, with `scan_max_range: 60` and
+  `local_map_update_distance: 10`, one lap with `use_imu_preintegration: true`:
+
+  | `local_map_radius` | Peak resident memory | RMSE | Pose latency p95 / max |
+  | --- | --- | --- | --- |
+  | 100 m | 797-803 MiB | 0.127 m | 57 / 293 ms |
+  | 80 m (the preset) | 642-671 MiB | 0.127 m | 54 / 189 ms |
+  | 70 m | 495-499 MiB | 0.127 m | **205 / 408 ms**: built in the callback |
+  | 70 m, `local_map_update_distance: 5` | 613 MiB | 0.127 m | 66 / 288 ms |
+
+  At 60 m (428 MiB) 13 scans were rejected: the crop no longer covered them.
+
+- **`viz_downsample: true`** publishes `/initial_map` at `viz_voxel_leaf_size` (0.5 m).
+  The publisher keeps the last map for late subscribers, so the full map is held a
+  second time: 62 MiB less on Boreas.
+- **A coarser map costs accuracy.** At a 0.5 m leaf (1.07 million points) the peak fell
+  to 452 MiB, but the RMSE rose from 0.127 to 0.187 m. At 0.8 m (415 000 points) the
+  preset's score threshold rejected most scans and tracking stopped.
+- **A component loaded into another container needs `MALLOC_ARENA_MAX=2`** in that
+  container's environment; `lidar_localization_node` sets the limit itself.
+- **Leave headroom for long runs.** Over an hour the lowest resident memory of each lap
+  rose by 50-100 MB, and the peak with it.
+
 ## Symptom: NDT Does Not Correct the Pose on a Large Map
 
 Without a crop, the NDT voxel grid spans the bounding box of the whole map, and NDT

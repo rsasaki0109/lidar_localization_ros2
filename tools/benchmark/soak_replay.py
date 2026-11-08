@@ -15,7 +15,8 @@ ground-truth pose there, while moving. The laps without one are the control.
 
 Writes into OUT_DIR: localizer.yaml, localizer.log, estimate.tum, alignment.jsonl,
 resources.csv (wall_sec, sim_sec, rss_mb, cpu_percent, threads, state) and summary.json, with
-each lap's RMSE, acceptance and alignment time, the memory trend, and per fault the
+each lap's RMSE, acceptance, alignment time and pose latency (from publishing a cloud
+to receiving its pose), the memory trend, and per fault the
 poses published during it, the largest error from its start to SETTLE_SEC after its
 end, the time from its end until the error stays under RECOVERED_M for the rest of
 the lap, and the RMSE after the settling time.
@@ -51,6 +52,8 @@ SAMPLE_SEC = 5.0
 FAULT_KINDS = ("lidar", "imu", "stall", "reinit")
 SETTLE_SEC = 10.0
 RECOVERED_M = 0.5
+# A pose later than this after its cloud counts as late: two scans at 10 Hz.
+LATE_MS = 200.0
 
 
 def lap_of(stamp_sec, start_sec, period_sec):
@@ -107,11 +110,29 @@ def pose_errors(poses, reference, period_sec, lap_count):
     return rows
 
 
-def score_laps(poses, reference, period_sec, statuses, lap_count):
-    """Per lap: poses, RMSE and max error against the reference, accepted share and
-    alignment time. STATUSES are (stamp_sec, values) of /alignment_status."""
+def pose_latencies(published, received):
+    """(stamp_sec, latency_sec) of each cloud whose pose arrived: the time from
+    publishing the cloud to receiving its pose. PUBLISHED and RECEIVED map a stamp in
+    ns to a monotonic time; a pose without a cloud (after /initialpose) is left out."""
+    return [
+        (stamp * 1e-9, received[stamp] - published[stamp])
+        for stamp in sorted(received)
+        if stamp in published
+    ]
+
+
+def score_laps(poses, reference, period_sec, statuses, lap_count, latencies=()):
+    """Per lap: poses, RMSE and max error against the reference, accepted share,
+    alignment time and pose latency. STATUSES are (stamp_sec, values) of
+    /alignment_status, LATENCIES (stamp_sec, latency_sec) from pose_latencies."""
     start = reference[:, 0].min()
     laps = {}
+    latency_ms = {}
+    for stamp, latency in latencies:
+        lap = lap_of(stamp, start, period_sec)
+        if 0 <= lap < lap_count:
+            laps.setdefault(lap, {"errors": [], "poses": 0, "status": []})
+            latency_ms.setdefault(lap, []).append(1000.0 * latency)
     for lap, _, error in pose_errors(poses, reference, period_sec, lap_count):
         entry = laps.setdefault(lap, {"errors": [], "poses": 0, "status": []})
         entry["poses"] += 1
@@ -154,9 +175,28 @@ def score_laps(poses, reference, period_sec, statuses, lap_count):
                 "align_ms_p95": round(float(np.percentile(align_ms, 95)), 1)
                 if align_ms
                 else None,
+                **latency_summary(latency_ms.get(lap, [])),
             }
         )
     return result
+
+
+def latency_summary(latency_ms):
+    """Median, p95 and largest pose latency in ms, and how many exceeded LATE_MS."""
+    if not latency_ms:
+        return {
+            "latency_ms_median": None,
+            "latency_ms_p95": None,
+            "latency_ms_max": None,
+            "late_poses": 0,
+        }
+    values = np.array(latency_ms)
+    return {
+        "latency_ms_median": round(float(np.median(values)), 1),
+        "latency_ms_p95": round(float(np.percentile(values, 95)), 1),
+        "latency_ms_max": round(float(values.max()), 1),
+        "late_poses": int((values > LATE_MS).sum()),
+    }
 
 
 def score_faults(errors, start_sec, period_sec, faults):
@@ -329,9 +369,16 @@ def main():
     os.environ["ROS_DOMAIN_ID"] = str(args.ros_domain_id)
     os.environ["ROS_LOG_DIR"] = str(args.out / "ros-logs")
     samples = []
+    # Monotonic times a cloud was published and its pose arrived, by stamp in ns.
+    published_wall, received_wall = {}, {}
+
+    def note_pose(stamp):
+        received_wall.setdefault(stamp, time.monotonic())
+        return True
+
     with ReplaySession(args.out, os.environ.copy(), "soak_replay") as session:
         session.require_free_domain()
-        session.record()
+        session.record(accept_stamp=note_pose)
         process = session.spawn(
             [
                 *shlex.split(args.wrap),
@@ -481,6 +528,8 @@ def main():
                         continue
                     message.header.stamp = stamp_of(stamp_ns + offset)
                     publishers[topic].publish(message)
+                    if topic == POINTS:
+                        published_wall[stamp_ns + offset] = time.monotonic()
                 print(f"lap {lap + 1}/{lap_count} done", flush=True)
             wait_until(time.monotonic() + 5.0, last_ns + offset)
         finally:
@@ -493,7 +542,14 @@ def main():
     for line in (args.out / "alignment.jsonl").read_text().splitlines():
         record = json.loads(line)
         statuses.append((record["stamp_ns"] * 1e-9, record["values"]))
-    laps = score_laps(poses, reference, period_ns * 1e-9, statuses, lap_count)
+    laps = score_laps(
+        poses,
+        reference,
+        period_ns * 1e-9,
+        statuses,
+        lap_count,
+        pose_latencies(published_wall, received_wall),
+    )
     faults = score_faults(
         pose_errors(poses, reference, period_ns * 1e-9, lap_count),
         start_sec,

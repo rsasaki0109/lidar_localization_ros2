@@ -16,9 +16,10 @@
     transform_epsilon: 0.01
     voxel_leaf_size: 1.5
     enable_scan_voxel_filter: true
-    # Leaves local_map_radius - scan_max_range = 40 m to build the next crop in the
-    # background. At 80 m scans wait for it now and then: 0.139 against 0.132 m RMSE
-    # with the time-scaled seed, 0.93 m with one delta per scan.
+    # local_map_radius - scan_max_range = 20 m: the next crop is built in the
+    # background from 10 m (local_map_update_distance) and used before 20 m. A 100 m
+    # crop held 75-160 MiB more at the same RMSE and pose latency. At 70 m the
+    # background build never starts and poses come up to 0.4 s late.
     scan_max_range: 60.0
     scan_min_range: 1.0
     scan_period: 0.1
@@ -46,7 +47,7 @@
     enable_debug: false
     predict_pose_from_previous_delta: true
     enable_local_map_crop: true
-    local_map_radius: 100.0
+    local_map_radius: 80.0
     # Reuse the target for 10 m and build the next one in the background: rebuilding
     # the crop on every scan held the replay to one scan every 1-3 s.
     local_map_update_distance: 10.0

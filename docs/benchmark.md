@@ -447,8 +447,8 @@ python3 tools/benchmark/soak_replay.py /tmp/boreas_fixture /tmp/boreas_faults --
   --fault lidar@1:50+1 --fault lidar@2:50+5 --fault stall@5:50+2 --fault reinit@7:60
 ```
 
-`summary.json` holds each lap's RMSE, max error, accepted scans and alignment time, the
-memory trend, and per fault the largest error from its start to 10 s after its end, the
+`summary.json` holds each lap's RMSE, max error, accepted scans, alignment time and pose
+latency, the memory trend, and per fault the largest error from its start to 10 s after its end, the
 time from its end until the error stays under 0.5 m for the rest of the lap, and the
 RMSE after that.
 
@@ -526,3 +526,32 @@ window is aligned once more from the IMU prediction, up to 10 s. On 2026-11-07:
 - **The stops lose IMU samples too.** In the second after the node resumes, 5-15
   samples arrive per scan instead of 21, so the prediction no longer covers the window
   and there is nothing to retry from.
+
+#### Under a memory limit
+
+With the node alone in a memory cgroup, `--wrap` set to a script that writes its PID
+into the cgroup's `cgroup.procs` and runs the node, on 2026-11-08, with
+`use_imu_preintegration: true` and the preset's former 100 m crop:
+
+| Memory limit | Result |
+| --- | --- |
+| 1 GB | an hour, 29 laps at 0.127 m RMSE, every scan accepted; 890 MiB at most, and the limit was never reached |
+| 768 MB | killed 105 s into the first lap |
+| 640 MB | killed at 95 s |
+| 512 MB | killed at 80 s |
+
+- **The peak comes with the dense stretch.** The kills fall where 1.4 million map
+  points lie within the crop, as the heap's peak did. With `local_map_async_rebuild`
+  the node holds a second target while it builds the next one.
+- **The crop radius sets the peak** (troubleshooting:
+  [The Node Is Killed for Memory](troubleshooting.md#symptom-the-node-is-killed-for-memory)).
+  With the 80 m crop the preset now uses, an hour under 800 MB passed: 29 laps at
+  0.127 m, 765 MiB at most, pose latency 57 ms at p95 and 222 ms at most. The cgroup
+  reached its limit 4070 times and gave up page cache each time; nothing was killed.
+  Without the IMU the 80 m crop scores 0.132 m like the 100 m one and peaks 75 MiB
+  lower; the trajectories differ by 1.8 cm at most (3.0 cm with it).
+- **The lowest memory of each lap rises over the hour**, by 50-100 MB, from 600-610
+  to 660-710 MB with the 100 m crop and from 574 to 609-628 MB with the 80 m one.
+
+`summary.json` also holds each lap's pose latency: from publishing a cloud to receiving
+its pose, at the median, p95 and most, and how many poses came over 200 ms late.
