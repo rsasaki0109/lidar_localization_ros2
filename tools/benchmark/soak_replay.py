@@ -329,6 +329,7 @@ def main():
     os.environ["ROS_DOMAIN_ID"] = str(args.ros_domain_id)
     os.environ["ROS_LOG_DIR"] = str(args.out / "ros-logs")
     samples = []
+    scan_wall = (args.out / "scan_wall.csv").open("w", buffering=1)
     with ReplaySession(args.out, os.environ.copy(), "soak_replay") as session:
         session.require_free_domain()
         session.record()
@@ -481,6 +482,8 @@ def main():
                         continue
                     message.header.stamp = stamp_of(stamp_ns + offset)
                     publishers[topic].publish(message)
+                    if topic == POINTS:
+                        scan_wall.write(f"{stamp_ns + offset},{time.monotonic():.6f}\n")
                 print(f"lap {lap + 1}/{lap_count} done", flush=True)
             wait_until(time.monotonic() + 5.0, last_ns + offset)
         finally:
