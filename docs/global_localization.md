@@ -213,9 +213,23 @@ launch defaults. Two laps with a 10 s stop, 50 s and 30 s into the lap, with
   the right pose ranks first with the band at -1-3 m.
 - **The registration scoring takes the rest.** At 6 m/s the vehicle has moved 110-130 m
   by the time an answer comes.
-- **A search near the last pose works.** Over the grid cropped to 40 m around a
-  prediction 15 m and 20 deg off the truth, the BBS takes 0.4-0.7 s and ranks the right
-  pose first at 40 and 50 s and second at 61 s.
+- **A search near a close prediction works, but after 10 s none is close.**
+  - Over the grid cropped to 40 m around a prediction 15 m and 20 deg off the truth,
+    the BBS takes 0.4-0.7 s and ranks the right pose first at 40 and 50 s and second
+    at 61 s.
+  - After the 10 s stop, though, the localizer's IMU retry seed, bridged across the
+    gap, was 26-94 m and 61 deg off.
+  - Around the last accepted pose, over 70 m in every direction and every heading, the
+    right pose ranked first for one scan of three. When the search ran the vehicle was
+    64-94 m away, and a wider window brings the ambiguity back.
+  - Searching the grid from inside the localizer, around its prediction (40 m, 45 deg),
+    took nothing in 52 searches.
+- **The IMU samples during the stop are what is missing.** With them, the IMU
+  prediction carries LiDAR gaps of 5 s. Larger FastDDS shared-memory buffers (a
+  16384-entry port queue, a 128 MB segment) did not keep them either, with the replay
+  publishing clouds and IMU from one participant. Without an odometry source that
+  keeps running (`use_odom_tf_prediction`), a 10 s stop of a moving vehicle ends in a
+  reinitialization request.
 
 ### Replaying a bag through the recovery stack
 
