@@ -9,6 +9,7 @@
 #include <lidar_localization/lidar_localization_component.hpp>
 
 #include "lidar_localization/alignment_attempt_policy.hpp"
+#include "lidar_localization/removed_parameters.hpp"
 #include "lidar_localization/alignment_diagnostic_ros_adapter.hpp"
 #include "lidar_localization/alignment_pipeline_policy.hpp"
 #include "lidar_localization/alignment_retry_policy.hpp"

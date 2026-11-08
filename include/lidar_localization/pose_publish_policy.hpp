@@ -29,26 +29,6 @@ inline bool shouldPublishAcceptedPoseImmediately(
   return !enable_timer_publishing || publish_bridge_pose_when_lost;
 }
 
-inline bool shouldFreezeMapToOdomAnchor(
-  bool enable_fitness_gate,
-  double max_fitness,
-  double fitness_score,
-  double max_correction_rotation_deg,
-  double correction_rotation_deg)
-{
-  // With an external odometry bridge, repeatedly freezing individually small
-  // but low-confidence registration corrections can make map -> odom drift
-  // cumulatively.  Disabled preserves the legacy behaviour.  When enabled,
-  // only a finite, sufficiently good scan match may replace the bridge anchor.
-  return !enable_fitness_gate ||
-         (std::isfinite(max_fitness) && max_fitness >= 0.0 &&
-         std::isfinite(fitness_score) && fitness_score <= max_fitness &&
-         std::isfinite(max_correction_rotation_deg) &&
-         max_correction_rotation_deg >= 0.0 &&
-         std::isfinite(correction_rotation_deg) &&
-         correction_rotation_deg <= max_correction_rotation_deg);
-}
-
 inline double builtinTimeSeconds(const builtin_interfaces::msg::Time & stamp)
 {
   return static_cast<double>(stamp.sec) + 1.0e-9 * static_cast<double>(stamp.nanosec);
@@ -112,47 +92,6 @@ inline geometry_msgs::msg::Pose poseFromMatrix(const Eigen::Matrix4f & pose_matr
   pose.orientation.z = quat_eig.z();
   pose.orientation.w = quat_eig.w();
   return pose;
-}
-
-inline Eigen::Matrix4f constrainOdomPredictionToPlanarMotion(
-  const Eigen::Matrix4f & odom_prediction,
-  const Eigen::Matrix4f & last_accepted_pose)
-{
-  // Outdoor LIO retains useful planar motion through long geometrically
-  // degenerate stretches, while its unobservable height and tilt can drift by
-  // many metres/degrees. Keep the prediction's x/y/yaw, but anchor z/roll/pitch
-  // to the last scan-matched pose. This is deliberately an opt-in policy at the
-  // component level; unconstrained 6-DoF users keep the legacy composition.
-  // Extract the canonical ground-vehicle ZYX angles directly. Eigen's generic
-  // eulerAngles() is allowed to return the equivalent yaw+pi / inverted-tilt
-  // branch; mixing yaw from one pose with tilt from another would then create
-  // a real 180-degree jump even though each original rotation was continuous.
-  const float yaw_rad = std::atan2(odom_prediction(1, 0), odom_prediction(0, 0));
-  const float pitch_rad = std::asin(
-    std::clamp(-last_accepted_pose(2, 0), -1.0f, 1.0f));
-  const float roll_rad = std::atan2(
-    last_accepted_pose(2, 1), last_accepted_pose(2, 2));
-  const Eigen::AngleAxisf roll(roll_rad, Eigen::Vector3f::UnitX());
-  const Eigen::AngleAxisf pitch(pitch_rad, Eigen::Vector3f::UnitY());
-  const Eigen::AngleAxisf yaw(yaw_rad, Eigen::Vector3f::UnitZ());
-
-  Eigen::Matrix4f constrained = odom_prediction;
-  constrained.block<3, 3>(0, 0) = (yaw * pitch * roll).toRotationMatrix();
-  constrained(2, 3) = last_accepted_pose(2, 3);
-  return constrained;
-}
-
-inline Eigen::Matrix4f constrainOdomPredictionHeightOnly(
-  const Eigen::Matrix4f & odom_prediction,
-  const Eigen::Matrix4f & anchor_pose)
-{
-  // Some sensor frames do not use the conventional ground-vehicle axes, so
-  // fixing ZYX roll/pitch in the map frame is not meaningful. Preserve the
-  // external odometry's full relative rotation and horizontal motion while
-  // removing only its unobservable height drift.
-  Eigen::Matrix4f constrained = odom_prediction;
-  constrained(2, 3) = anchor_pose(2, 3);
-  return constrained;
 }
 
 inline geometry_msgs::msg::PoseStamped makePoseStamped(

@@ -158,21 +158,8 @@ void PCLLocalization::initializeParameters()
   get_parameter("enable_map_odom_tf", enable_map_odom_tf_);
   get_parameter("publish_tf", publish_tf_);
   get_parameter("use_odom_tf_prediction", use_odom_tf_prediction_);
-  get_parameter(
-    "constrain_odom_tf_prediction_to_planar",
-    constrain_odom_tf_prediction_to_planar_);
-  get_parameter(
-    "constrain_odom_tf_prediction_height_only",
-    constrain_odom_tf_prediction_height_only_);
   get_parameter("level_map_to_odom", level_map_to_odom_);
   get_parameter("publish_bridge_pose_when_lost", publish_bridge_pose_when_lost_);
-  get_parameter(
-    "enable_map_odom_anchor_fitness_gate",
-    enable_map_odom_anchor_fitness_gate_);
-  get_parameter("map_odom_anchor_max_fitness", map_odom_anchor_max_fitness_);
-  get_parameter(
-    "map_odom_anchor_max_correction_rotation_deg",
-    map_odom_anchor_max_correction_rotation_deg_);
   get_parameter("registration_method", registration_method_);
   get_parameter("score_threshold", measurement_gate_config_.score_threshold);
   get_parameter("ndt_resolution", ndt_resolution_);
@@ -575,24 +562,9 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(get_logger(),"enable_map_odom_tf: %d", enable_map_odom_tf_);
   RCLCPP_INFO(get_logger(), "publish_tf: %d", publish_tf_);
   RCLCPP_INFO(get_logger(),"use_odom_tf_prediction: %d", use_odom_tf_prediction_);
-  RCLCPP_INFO(
-    get_logger(), "constrain_odom_tf_prediction_to_planar: %d",
-    constrain_odom_tf_prediction_to_planar_);
-  RCLCPP_INFO(
-    get_logger(), "constrain_odom_tf_prediction_height_only: %d",
-    constrain_odom_tf_prediction_height_only_);
   RCLCPP_INFO(get_logger(), "level_map_to_odom: %d", level_map_to_odom_);
   RCLCPP_INFO(
     get_logger(),"publish_bridge_pose_when_lost: %d", publish_bridge_pose_when_lost_);
-  RCLCPP_INFO(
-    get_logger(), "enable_map_odom_anchor_fitness_gate: %d",
-    enable_map_odom_anchor_fitness_gate_);
-  RCLCPP_INFO(
-    get_logger(), "map_odom_anchor_max_fitness: %lf",
-    map_odom_anchor_max_fitness_);
-  RCLCPP_INFO(
-    get_logger(), "map_odom_anchor_max_correction_rotation_deg: %lf",
-    map_odom_anchor_max_correction_rotation_deg_);
   RCLCPP_INFO(get_logger(),"registration_method: %s", registration_method_.c_str());
   RCLCPP_INFO(get_logger(),"ndt_resolution: %lf", ndt_resolution_);
   RCLCPP_INFO(get_logger(),"ndt_step_size: %lf", ndt_step_size_);

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Removed
+
+- **Three odometry-bridge options that no preset turned on:**
+  `constrain_odom_tf_prediction_to_planar`, `constrain_odom_tf_prediction_height_only`
+  and `enable_map_odom_anchor_fitness_gate` (with `map_odom_anchor_max_fitness` and
+  `map_odom_anchor_max_correction_rotation_deg`). No preset, launch file, script or doc
+  set them.
+  - The three switches stay declared, so configuring with one of them `true` now fails
+    with a message that says so, as `use_imu` does since 1.8.0
+    (`include/lidar_localization/removed_parameters.hpp`). The two thresholds are no
+    longer declared, and ROS ignores them.
+  - `level_map_to_odom` stays: `docs/troubleshooting.md` measures it on Koide.
+  - With the defaults nothing changes: the Boreas trajectory is byte-identical.
+
 ### Changed
 
 - **The node holds 0.6-0.8 GB instead of 1.5-2.2 GB** on the looped Boreas fixture

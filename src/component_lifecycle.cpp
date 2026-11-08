@@ -23,13 +23,12 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("enable_map_odom_tf", false);
   declare_parameter("publish_tf", true);
   declare_parameter("use_odom_tf_prediction", false);
-  declare_parameter("constrain_odom_tf_prediction_to_planar", false);
-  declare_parameter("constrain_odom_tf_prediction_height_only", false);
   declare_parameter("level_map_to_odom", false);
   declare_parameter("publish_bridge_pose_when_lost", false);
-  declare_parameter("enable_map_odom_anchor_fitness_gate", false);
-  declare_parameter("map_odom_anchor_max_fitness", 1.5);
-  declare_parameter("map_odom_anchor_max_correction_rotation_deg", 10.0);
+  // Switches of removed features, declared so that on_configure() can refuse them.
+  for (const auto & removed : lidar_localization::kRemovedSwitches) {
+    declare_parameter(std::string(removed.name), false);
+  }
   declare_parameter("registration_method", "NDT");
   declare_parameter("score_threshold", 2.0);
   declare_parameter("ndt_resolution", 1.0);
@@ -206,6 +205,17 @@ CallbackReturn PCLLocalization::on_configure(const rclcpp_lifecycle::State &)
       "accepted). Set use_imu: false, and use use_imu_preintegration, with "
       "use_continuous_time_deskew for the deskew (docs/imu_estimation.md).");
     return CallbackReturn::FAILURE;
+  }
+  for (const auto & removed : lidar_localization::kRemovedSwitches) {
+    if (get_parameter(std::string(removed.name)).as_bool()) {
+      RCLCPP_ERROR(
+        get_logger(), "%.*s was removed in %.*s. No preset turned it on; it %.*s. Remove it "
+        "or set it to false.",
+        static_cast<int>(removed.name.size()), removed.name.data(),
+        static_cast<int>(removed.removed_in.size()), removed.removed_in.data(),
+        static_cast<int>(removed.what_it_did.size()), removed.what_it_did.data());
+      return CallbackReturn::FAILURE;
+    }
   }
   initializeParameters();
   initializePubSub();
@@ -478,8 +488,6 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   pending_reacquisition_map_to_odom_.reset();
   local_reacquisition_confirmation_scan_ = false;
   scans_since_local_reacquisition_attempt_ = 0;
-  odom_tf_constraint_anchor_pose_matrix_ = Eigen::Matrix4f::Identity();
-  has_odom_tf_constraint_anchor_pose_ = false;
   odom_bridge_transform_history_.clear();
   last_odom_bridge_source_advance_node_stamp_ = builtin_interfaces::msg::Time{};
   has_last_odom_bridge_source_advance_node_stamp_ = false;

@@ -284,7 +284,6 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   }
   // An admitted reset supersedes the old track even if its TF is not available yet.
   has_last_good_map_to_odom_ = false;
-  has_odom_tf_constraint_anchor_pose_ = false;
   odom_bridge_transform_history_.clear();
   has_last_odom_bridge_source_advance_node_stamp_ = false;
   initialpose_received_ = true;

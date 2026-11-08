@@ -634,6 +634,12 @@ if(BUILD_TESTING)
   add_test(NAME imu_callback_group COMMAND test_imu_callback_group)
   set_tests_properties(imu_callback_group PROPERTIES TIMEOUT 30)
 
+  add_executable(test_removed_parameters test/test_removed_parameters.cpp)
+  target_link_libraries(test_removed_parameters
+    lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+  add_test(NAME removed_parameters COMMAND test_removed_parameters)
+  set_tests_properties(removed_parameters PROPERTIES TIMEOUT 30)
+
   add_executable(test_local_map_async_rebuild test/test_local_map_async_rebuild.cpp)
   target_link_libraries(test_local_map_async_rebuild
     lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})

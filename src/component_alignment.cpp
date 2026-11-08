@@ -849,25 +849,13 @@ bool PCLLocalization::applyAcceptedAlignmentPipelineResult(
     // replace them.  Keeping the scan-stamped accepted pose guarantees an
     // initial output/anchor and fills any short gap in the upstream odom TF,
     // while timer ticks provide continuity when scans themselves pause.
-    publishCurrentPose(
-      stamp, pipeline_result.selected_attempt.fitness_score,
-      lidar_localization::rotationDeltaDeg(
-        pipeline_result.selected_attempt.init_guess,
-        pipeline_result.selected_attempt.final_transformation));
+    publishCurrentPose(stamp);
   } else if (current_pose_with_cov_stamped_ptr_) {
     // Timer publication still needs an accepted map->odom anchor before it
     // can compose the live odom bridge.  publishCurrentPose normally creates
     // that anchor, so skipping it in timer mode must skip only the pose/path
     // messages, not the accepted transform update.
-    const bool freeze_as_last_good = lidar_localization::shouldFreezeMapToOdomAnchor(
-      enable_map_odom_anchor_fitness_gate_, map_odom_anchor_max_fitness_,
-      pipeline_result.selected_attempt.fitness_score,
-      map_odom_anchor_max_correction_rotation_deg_,
-      lidar_localization::rotationDeltaDeg(
-        pipeline_result.selected_attempt.init_guess,
-        pipeline_result.selected_attempt.final_transformation));
-    publishPoseTransform(
-      stamp, current_pose_with_cov_stamped_ptr_->pose.pose, freeze_as_last_good);
+    publishPoseTransform(stamp, current_pose_with_cov_stamped_ptr_->pose.pose);
   }
   return true;
 }
