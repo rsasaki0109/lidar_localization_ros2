@@ -17,7 +17,7 @@ struct RemovedSwitch
   std::string_view what_it_did;
 };
 
-inline constexpr std::array<RemovedSwitch, 3> kRemovedSwitches{{
+inline constexpr std::array<RemovedSwitch, 7> kRemovedSwitches{{
   {"constrain_odom_tf_prediction_to_planar", "1.9.0",
     "kept the odometry prediction's x, y and yaw and took z, roll and pitch from the "
     "last accepted pose"},
@@ -26,6 +26,16 @@ inline constexpr std::array<RemovedSwitch, 3> kRemovedSwitches{{
   {"enable_map_odom_anchor_fitness_gate", "1.9.0",
     "kept map -> odom unchanged after an accepted scan with a fitness over "
     "map_odom_anchor_max_fitness"},
+  {"enable_odom_tf_prediction_correction_guard", "1.9.0",
+    "rejected a scan whose correction from the odometry seed exceeded "
+    "odom_tf_prediction_correction_guard_translation_m or _yaw_deg"},
+  {"enable_odom_tf_prediction_recovery_correction_guard", "1.9.0",
+    "widened that guard after a rejection streak for a strong match"},
+  {"enable_soft_odom_correction_gate", "1.9.0",
+    "blended a scan that guard rejected with the odometry prediction"},
+  {"enable_consistency_recovery_gate", "1.9.0",
+    "accepted a scan over the score threshold after a rejection streak when its "
+    "correction was small"},
 }};
 
 }  // namespace lidar_localization

@@ -25,7 +25,6 @@
 #include "lidar_localization/localization_update_policy.hpp"
 #include "lidar_localization/map_initialization_policy.hpp"
 #include "lidar_localization/measurement_gate_policy.hpp"
-#include "lidar_localization/soft_odom_correction_gate.hpp"
 #include "lidar_localization/ndt_initializer_policy.hpp"
 #include "lidar_localization/parameter_validation_policy.hpp"
 #include "lidar_localization/registration_fitness.hpp"

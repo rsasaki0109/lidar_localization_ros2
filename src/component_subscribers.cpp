@@ -811,7 +811,6 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     registration_seed_source = lidar_localization::registrationSeedSourceName(
       lidar_localization::RegistrationSeedSource::kImuPreintegration);
   }
-  applySoftOdomCorrectionGate(pipeline_result);
   logAlignmentPipelineRecovery(pipeline_result);
   if (handleTerminalAlignmentPipelineResult(
       msg->header.stamp,
