@@ -73,6 +73,17 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
           last_scan_stamp_for_imu_, scan_stamp_sec, prediction_samples,
           lidar_localization::kMaximumImuPreintegrationSampleDtSec,
           lidar_localization::kMaximumImuRetrySeedWindowSec);
+        RCLCPP_INFO(
+          get_logger(),
+          "DEBUGBRIDGE scan %.3f start %.3f samples %zu first %.3f last %.3f complete %d "
+          "bridged %zu skipped %zu intervals %zu covered %.3f order %d anchor %d",
+          scan_stamp_sec, last_scan_stamp_for_imu_, prediction_samples.size(),
+          prediction_samples.empty() ? 0.0 : prediction_samples.front().stamp_sec,
+          prediction_samples.empty() ? 0.0 : prediction_samples.back().stamp_sec,
+          bridged_plan.complete_coverage, bridged_plan.bridged_gap_count,
+          bridged_plan.skipped_gap_count, bridged_plan.intervals.size(),
+          bridged_plan.covered_duration_sec, bridged_plan.input_order_valid,
+          imu_prediction_anchor_sample_.has_value());
         if (bridged_plan.complete_coverage && !bridged_plan.intervals.empty()) {
           for (const auto & interval : bridged_plan.intervals) {
             imu_prediction_smoother_.integrateImu(
@@ -716,8 +727,13 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
       {
         return std::nullopt;
       }
-      return runAlignmentAttempt(
+      auto debug_attempt = runAlignmentAttempt(
         *alternate_guess, *alternate_guess, scan_stamp_sec, state_lock, seed_generation);
+      RCLCPP_INFO(
+        get_logger(), "DEBUGALT scan %.3f converged %d fitness %.3f inlier %.3f corr %.3f",
+        scan_stamp_sec, debug_attempt.has_converged, debug_attempt.fitness_score,
+        debug_attempt.inlier_ratio, debug_attempt.correction_translation_m);
+      return debug_attempt;
     },
     [&]() {
       return runAlignmentAttempt(
