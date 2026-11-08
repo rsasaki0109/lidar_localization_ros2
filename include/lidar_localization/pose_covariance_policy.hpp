@@ -5,13 +5,10 @@
 #include <array>
 #include <cmath>
 
-#include <Eigen/Core>
-
 namespace lidar_localization
 {
 
 using PoseCovariance = std::array<double, 36>;
-using EkfStateCovariance = Eigen::Matrix<double, 9, 9>;
 
 // Error-floor covariance model, calibrated against ground truth on the public
 // Koide outdoor_hard_01a and Autoware Istanbul replays (2026-06-12). Within the
@@ -71,21 +68,6 @@ inline PoseCovariance makeErrorFloorPoseCovariance(
   return covariance;
 }
 
-inline PoseCovariance makeEkfErrorFloorPoseCovariance(
-  const EkfStateCovariance & ekf_covariance,
-  const ErrorFloorCovarianceParams & params,
-  double fitness_score)
-{
-  auto covariance = makeErrorFloorPoseCovariance(params, fitness_score);
-  covariance[0] = ekf_covariance(0, 0);
-  covariance[1] = ekf_covariance(0, 1);
-  covariance[6] = ekf_covariance(1, 0);
-  covariance[7] = ekf_covariance(1, 1);
-  covariance[14] = ekf_covariance(2, 2);
-  covariance[35] = ekf_covariance(6, 6);
-  return covariance;
-}
-
 inline double poseCovarianceScale(double fitness_score)
 {
   return std::max(1.0, fitness_score);
@@ -101,24 +83,6 @@ inline PoseCovariance makeFitnessPoseCovariance(double fitness_score)
   covariance[21] = 0.001 * scale;
   covariance[28] = 0.001 * scale;
   covariance[35] = 0.0005 * scale;
-  return covariance;
-}
-
-inline PoseCovariance makeEkfPoseCovariance(
-  const EkfStateCovariance & ekf_covariance,
-  double fitness_score)
-{
-  PoseCovariance covariance{};
-  covariance[0] = ekf_covariance(0, 0);
-  covariance[1] = ekf_covariance(0, 1);
-  covariance[6] = ekf_covariance(1, 0);
-  covariance[7] = ekf_covariance(1, 1);
-  covariance[14] = ekf_covariance(2, 2);
-  covariance[35] = ekf_covariance(6, 6);
-
-  const double scale = poseCovarianceScale(fitness_score);
-  covariance[21] = 0.001 * scale;
-  covariance[28] = 0.001 * scale;
   return covariance;
 }
 

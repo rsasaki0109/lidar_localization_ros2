@@ -56,7 +56,6 @@
 #include <small_gicp/pcl/pcl_registration.hpp>
 #endif
 
-#include "lidar_localization/twist_ekf.hpp"
 #include "lidar_localization/causal_twist_history.hpp"
 #include "lidar_localization/local_reacquisition_policy.hpp"
 #include "lidar_localization/twist_gtsam_smoother.hpp"
@@ -430,7 +429,6 @@ public:
   bool use_twist_prediction_{false};
   bool twist_prediction_use_angular_velocity_{true};
   double max_twist_prediction_dt_{0.5};
-  bool use_twist_ekf_{false};
   bool use_gtsam_smoother_{false};
   bool enable_debug_{false};
   bool enable_map_odom_tf_{false};
@@ -511,7 +509,6 @@ public:
   std::size_t latest_scan_time_invalid_point_count_{0};
 
   // twist EKF
-  TwistEkf twist_ekf_;
   // GTSAM smoother
   TwistGtsamSmoother gtsam_smoother_;
   float last_ndt_roll_{0.0f};
@@ -658,10 +655,6 @@ public:
     const lidar_localization::RegistrationObservation & observation,
     const lidar_localization::AlignmentAttempt & attempt,
     double stamp_sec);
-  PlanarSmootherBackendUpdate updateTwistEkfPoseBackend(
-    const lidar_localization::RegistrationObservation & observation,
-    const lidar_localization::AlignmentAttempt & attempt,
-    double stamp_sec);
   bool applyPlanarSmootherPoseBackendUpdate(
     const PlanarSmootherBackendUpdate & update,
     const PoseBackendApplyContext & context);
@@ -685,7 +678,6 @@ public:
     const ImuPreintegrationBackendUpdate & update,
     uint8_t status_level,
     const std::string & status_message) const;
-  bool applyTwistEkfPoseBackend(const PoseBackendApplyContext & context);
   bool applyRawRegistrationPoseBackend(const PoseBackendApplyContext & context);
   bool applyPoseBackendResult(
     const lidar_localization::PoseBackendResult & result,

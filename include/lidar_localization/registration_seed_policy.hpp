@@ -12,7 +12,6 @@ enum class RegistrationSeedSource
   kCurrentPose = 0,
   kImuPreintegration,
   kGtsamSmoother,
-  kTwistEkf,
   kTwistPrediction,
   kPreviousDelta,
   kLocalizabilityGuard,
@@ -28,8 +27,6 @@ struct RegistrationSeedPolicyInput
   bool imu_prediction_finite{false};
   bool use_gtsam_smoother{false};
   bool gtsam_smoother_initialized{false};
-  bool use_twist_ekf{false};
-  bool twist_ekf_initialized{false};
   bool use_twist_prediction{false};
   bool have_last_accepted_pose{false};
   bool has_latest_twist{false};
@@ -159,13 +156,6 @@ inline RegistrationSeedPolicyDecision chooseRegistrationSeed(
       false,
       false};
   }
-  if (input.use_twist_ekf && input.twist_ekf_initialized) {
-    return {
-      RegistrationSeedSource::kTwistEkf,
-      false,
-      false,
-      false};
-  }
   if (
     input.use_twist_prediction &&
     input.have_last_accepted_pose &&
@@ -196,8 +186,6 @@ inline const char * registrationSeedSourceName(RegistrationSeedSource source)
       return "imu_preintegration";
     case RegistrationSeedSource::kGtsamSmoother:
       return "gtsam_smoother";
-    case RegistrationSeedSource::kTwistEkf:
-      return "twist_ekf";
     case RegistrationSeedSource::kTwistPrediction:
       return "twist_prediction";
     case RegistrationSeedSource::kPreviousDelta:

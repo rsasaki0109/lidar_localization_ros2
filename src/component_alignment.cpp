@@ -163,8 +163,6 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       imu_prediction_finite,
       use_gtsam_smoother_,
       gtsam_smoother_.isInitialized(),
-      use_twist_ekf_,
-      twist_ekf_.isInitialized(),
       use_twist_prediction_,
       prediction_state_.have_last_accepted_pose,
       static_cast<bool>(scan_twist_),
@@ -181,10 +179,6 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
     case lidar_localization::RegistrationSeedSource::kGtsamSmoother:
       selected_seed.init_guess = gtsam_smoother_.predictedPoseMatrixAt(
         last_ndt_roll_, last_ndt_pitch_, scan_stamp_sec);
-      break;
-    case lidar_localization::RegistrationSeedSource::kTwistEkf:
-      selected_seed.init_guess =
-        twist_ekf_.poseMatrixAt(last_ndt_roll_, last_ndt_pitch_, scan_stamp_sec);
       break;
     case lidar_localization::RegistrationSeedSource::kTwistPrediction: {
       const double dt = lidar_localization::clampPredictionDt(

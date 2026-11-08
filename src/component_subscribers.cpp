@@ -71,7 +71,7 @@ void PCLLocalization::initializePubSub()
   twist_sub_ = create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(
     "twist", rclcpp::SensorDataQoS().keep_last(kTwistQueueDepth),
     [this, subscription_generation,
-      update_pose_backends = use_twist_ekf_ || use_gtsam_smoother_](
+      update_pose_backends = use_gtsam_smoother_](
       const geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr msg) {
       twistReceived(msg, update_pose_backends, subscription_generation);
     },
@@ -312,22 +312,6 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   // rejections and silently undo the reset.
   resetPredictionState(currentPoseMatrix(), stamp_to_sec(msg->header.stamp));
   publishReinitializationRequest(msg->header.stamp, ReinitializationRequestDecision{});
-
-  if (use_twist_ekf_) {
-    tf2::Quaternion q;
-    tf2::fromMsg(msg->pose.pose.orientation, q);
-    double roll, pitch, yaw;
-    tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
-    last_ndt_roll_ = static_cast<float>(roll);
-    last_ndt_pitch_ = static_cast<float>(pitch);
-    twist_ekf_.initialize(
-      msg->pose.pose.position.x,
-      msg->pose.pose.position.y,
-      msg->pose.pose.position.z,
-      yaw,
-      stamp_to_sec(msg->header.stamp));
-    RCLCPP_INFO(get_logger(), "TwistEKF initialized from initial pose");
-  }
 
   if (use_gtsam_smoother_) {
     tf2::Quaternion q_gtsam;
@@ -577,10 +561,6 @@ void PCLLocalization::twistReceived(
   if (!update_pose_backends) {return;}
   double vx = msg->twist.twist.linear.x;
   double wz = msg->twist.twist.angular.z;
-
-  if (use_twist_ekf_ && twist_ekf_.isInitialized()) {
-    twist_ekf_.predict(vx, wz, stamp_sec, last_ndt_roll_, last_ndt_pitch_);
-  }
 
   if (use_gtsam_smoother_ && gtsam_smoother_.isInitialized()) {
     gtsam_smoother_.predict(vx, wz, stamp_sec, last_ndt_roll_, last_ndt_pitch_);

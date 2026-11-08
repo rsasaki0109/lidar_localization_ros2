@@ -82,12 +82,6 @@ Kept for compatibility. Base diagonal variances at `fitness <= 1.0`:
 x/y `0.01`, z `0.05`, roll/pitch `0.001`, yaw `0.0005`, each multiplied by
 `max(1.0, fitness_score)`. Not calibrated; treat as a relative hint only.
 
-### Twist EKF hybrid
-
-When `use_twist_ekf` is enabled and initialized, `x`, `y`, `z` variances (and
-the `x-y` cross terms) and `yaw` come from the EKF state covariance. Roll and
-pitch come from the active mode's model.
-
 ## What the covariance can and cannot promise
 
 Can (in `error_floor` mode, on environments comparable to the calibration data):

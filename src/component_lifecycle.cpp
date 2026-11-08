@@ -68,17 +68,6 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   // use_imu turned on the legacy IMU deskew, removed in 1.8.0. It stays declared so that
   // on_configure() can refuse it instead of ignoring it.
   declare_parameter("use_imu", false);
-  declare_parameter("use_twist_ekf", false);
-  declare_parameter("ekf_sigma_pos", 0.01);
-  declare_parameter("ekf_sigma_vel", 0.5);
-  declare_parameter("ekf_sigma_yaw", 0.01);
-  declare_parameter("ekf_sigma_gyro_bias", 0.001);
-  declare_parameter("ekf_sigma_speed_bias", 0.01);
-  declare_parameter("ekf_sigma_ndt_pos", 0.1);
-  declare_parameter("ekf_sigma_ndt_yaw", 0.02);
-  declare_parameter("ekf_fitness_nominal", 1.0);
-  declare_parameter("ekf_fitness_scale_factor", 2.0);
-  declare_parameter("ekf_fitness_reject", 50.0);
   declare_parameter("use_gtsam_smoother", false);
   declare_parameter("gtsam_odom_sigma_x", 0.05);
   declare_parameter("gtsam_odom_sigma_y", 0.02);

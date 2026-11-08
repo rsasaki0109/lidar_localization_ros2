@@ -54,7 +54,6 @@
     twist_prediction_use_angular_velocity: false
     max_twist_prediction_dt: 0.5
     # EKF disabled, GTSAM smoother enabled
-    use_twist_ekf: false
     use_gtsam_smoother: true
     # Smoother parameters (Pose2 sliding-window Gauss-Newton)
     gtsam_odom_sigma_x: 0.05

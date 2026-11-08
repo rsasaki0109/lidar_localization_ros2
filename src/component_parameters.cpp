@@ -224,22 +224,6 @@ void PCLLocalization::initializeParameters()
   get_parameter("use_twist_prediction", use_twist_prediction_);
   get_parameter("twist_prediction_use_angular_velocity", twist_prediction_use_angular_velocity_);
   get_parameter("max_twist_prediction_dt", max_twist_prediction_dt_);
-  get_parameter("use_twist_ekf", use_twist_ekf_);
-  if (use_twist_ekf_) {
-    TwistEkf::Params ekf_params;
-    get_parameter("ekf_sigma_pos", ekf_params.sigma_pos);
-    get_parameter("ekf_sigma_vel", ekf_params.sigma_vel);
-    get_parameter("ekf_sigma_yaw", ekf_params.sigma_yaw);
-    get_parameter("ekf_sigma_gyro_bias", ekf_params.sigma_gyro_bias);
-    get_parameter("ekf_sigma_speed_bias", ekf_params.sigma_speed_bias);
-    get_parameter("ekf_sigma_ndt_pos", ekf_params.sigma_ndt_pos);
-    get_parameter("ekf_sigma_ndt_yaw", ekf_params.sigma_ndt_yaw);
-    get_parameter("ekf_fitness_nominal", ekf_params.fitness_nominal);
-    get_parameter("ekf_fitness_scale_factor", ekf_params.fitness_scale_factor);
-    get_parameter("ekf_fitness_reject", ekf_params.fitness_reject);
-    twist_ekf_.setParams(ekf_params);
-    twist_ekf_.reset();
-  }
   get_parameter("use_gtsam_smoother", use_gtsam_smoother_);
   if (use_gtsam_smoother_) {
     TwistGtsamSmoother::Params gtsam_params;
@@ -590,7 +574,6 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "localizability_min_xy_eigen_ratio: %lf",
     localizability_min_xy_eigen_ratio_);
-  RCLCPP_INFO(get_logger(),"use_twist_ekf: %d", use_twist_ekf_);
   RCLCPP_INFO(get_logger(),"use_gtsam_smoother: %d", use_gtsam_smoother_);
   RCLCPP_INFO(get_logger(),"enable_debug: %d", enable_debug_);
   RCLCPP_INFO(

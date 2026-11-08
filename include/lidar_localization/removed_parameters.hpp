@@ -17,7 +17,7 @@ struct RemovedSwitch
   std::string_view what_it_did;
 };
 
-inline constexpr std::array<RemovedSwitch, 7> kRemovedSwitches{{
+inline constexpr std::array<RemovedSwitch, 8> kRemovedSwitches{{
   {"constrain_odom_tf_prediction_to_planar", "1.9.0",
     "kept the odometry prediction's x, y and yaw and took z, roll and pitch from the "
     "last accepted pose"},
@@ -36,6 +36,9 @@ inline constexpr std::array<RemovedSwitch, 7> kRemovedSwitches{{
   {"enable_consistency_recovery_gate", "1.9.0",
     "accepted a scan over the score threshold after a rejection streak when its "
     "correction was small"},
+  {"use_twist_ekf", "1.9.0",
+    "ran a constant-velocity EKF on the twist; on the Istanbul windows it lost track in "
+    "three of six runs where use_gtsam_smoother kept all of them, so use that"},
 }};
 
 }  // namespace lidar_localization

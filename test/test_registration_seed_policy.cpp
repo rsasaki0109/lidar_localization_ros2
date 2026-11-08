@@ -20,8 +20,6 @@ void test_imu_preintegration_has_highest_priority_when_finite()
       true,
       true,
       true,
-      true,
-      true,
       true});
 
   assert(decision.source == ll::RegistrationSeedSource::kImuPreintegration);
@@ -43,8 +41,6 @@ void test_non_finite_imu_prediction_blocks_lower_priority_sources()
       true,
       true,
       true,
-      true,
-      true,
       true});
 
   assert(decision.source == ll::RegistrationSeedSource::kCurrentPose);
@@ -57,8 +53,6 @@ void test_fallback_order_without_imu_candidate()
   ll::RegistrationSeedPolicyInput input;
   input.use_gtsam_smoother = true;
   input.gtsam_smoother_initialized = true;
-  input.use_twist_ekf = true;
-  input.twist_ekf_initialized = true;
   input.use_twist_prediction = true;
   input.have_last_accepted_pose = true;
   input.has_latest_twist = true;
@@ -66,9 +60,6 @@ void test_fallback_order_without_imu_candidate()
   assert(ll::chooseRegistrationSeed(input).source == ll::RegistrationSeedSource::kGtsamSmoother);
 
   input.gtsam_smoother_initialized = false;
-  assert(ll::chooseRegistrationSeed(input).source == ll::RegistrationSeedSource::kTwistEkf);
-
-  input.twist_ekf_initialized = false;
   assert(ll::chooseRegistrationSeed(input).source == ll::RegistrationSeedSource::kTwistPrediction);
   assert(ll::chooseRegistrationSeed(input).uses_prediction_state);
 
@@ -195,9 +186,6 @@ void test_registration_seed_source_names_are_stable_for_diagnostics()
   assert(
     std::string(ll::registrationSeedSourceName(ll::RegistrationSeedSource::kGtsamSmoother)) ==
     "gtsam_smoother");
-  assert(
-    std::string(ll::registrationSeedSourceName(ll::RegistrationSeedSource::kTwistEkf)) ==
-    "twist_ekf");
   assert(
     std::string(ll::registrationSeedSourceName(ll::RegistrationSeedSource::kTwistPrediction)) ==
     "twist_prediction");

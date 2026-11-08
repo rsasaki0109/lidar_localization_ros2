@@ -40,7 +40,6 @@
     use_twist_prediction: false
     twist_prediction_use_angular_velocity: false
     max_twist_prediction_dt: 0.5
-    use_twist_ekf: false
     use_gtsam_smoother: false
     # IMU preintegration backend and input units
     use_imu_preintegration: true
