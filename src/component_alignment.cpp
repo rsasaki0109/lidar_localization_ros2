@@ -729,10 +729,30 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
       }
       auto debug_attempt = runAlignmentAttempt(
         *alternate_guess, *alternate_guess, scan_stamp_sec, state_lock, seed_generation);
+      const Eigen::Matrix4f & g = *alternate_guess;
       RCLCPP_INFO(
-        get_logger(), "DEBUGALT scan %.3f converged %d fitness %.3f inlier %.3f corr %.3f",
-        scan_stamp_sec, debug_attempt.has_converged, debug_attempt.fitness_score,
+        get_logger(),
+        "DEBUGALT scan %.3f seed %.3f %.3f yaw %.3f converged %d fitness %.3f inlier %.3f corr %.3f",
+        scan_stamp_sec, g(0, 3), g(1, 3), std::atan2(g(1, 0), g(0, 0)) * 180.0 / M_PI,
+        debug_attempt.has_converged, debug_attempt.fitness_score,
         debug_attempt.inlier_ratio, debug_attempt.correction_translation_m);
+      if (debug_attempt.inlier_ratio < 0.8) {
+        for (const double offset_deg : {-12.0, -8.0, -4.0, 4.0, 8.0, 12.0}) {
+          Eigen::Matrix4f rotated = g;
+          rotated.block<3, 3>(0, 0) =
+            Eigen::AngleAxisf(static_cast<float>(offset_deg * M_PI / 180.0),
+            Eigen::Vector3f::UnitZ()).toRotationMatrix() * g.block<3, 3>(0, 0);
+          auto sweep = runAlignmentAttempt(
+            rotated, rotated, scan_stamp_sec, state_lock, seed_generation);
+          RCLCPP_INFO(
+            get_logger(),
+            "DEBUGSWEEP scan %.3f offset %+.0f converged %d fitness %.3f inlier %.3f corr %.3f "
+            "result %.3f %.3f",
+            scan_stamp_sec, offset_deg, sweep.has_converged, sweep.fitness_score,
+            sweep.inlier_ratio, sweep.correction_translation_m,
+            sweep.final_transformation(0, 3), sweep.final_transformation(1, 3));
+        }
+      }
       return debug_attempt;
     },
     [&]() {
