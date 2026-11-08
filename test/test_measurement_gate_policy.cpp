@@ -27,10 +27,6 @@ void test_param_and_input_builders_map_fields()
   config.enable_post_reject_strict_score_threshold = true;
   config.post_reject_strict_min_rejections = 5;
   config.post_reject_strict_score_threshold = 7.0;
-  config.enable_open_loop_strict_score_threshold = true;
-  config.open_loop_strict_min_accepted_gap_sec = 6.0;
-  config.open_loop_strict_min_seed_translation_m = 2.5;
-  config.open_loop_strict_score_threshold = 6.5;
   config.enable_borderline_seed_rejection_gate = true;
   config.borderline_seed_gate_score_threshold = 6.25;
   config.borderline_seed_gate_min_seed_translation_m = 1.25;
@@ -46,10 +42,6 @@ void test_param_and_input_builders_map_fields()
   assert(params.enable_post_reject_strict_score_threshold);
   assert(params.post_reject_strict_min_rejections == 5);
   assert(params.post_reject_strict_score_threshold == 7.0);
-  assert(params.enable_open_loop_strict_score_threshold);
-  assert(params.open_loop_strict_min_accepted_gap_sec == 6.0);
-  assert(params.open_loop_strict_min_seed_translation_m == 2.5);
-  assert(params.open_loop_strict_score_threshold == 6.5);
   assert(params.enable_borderline_seed_rejection_gate);
   assert(params.borderline_seed_gate_score_threshold == 6.25);
   assert(params.borderline_seed_gate_min_seed_translation_m == 1.25);
@@ -122,26 +114,21 @@ void test_default_ok_gate()
 
 }
 
-void test_effective_threshold_uses_lowest_active_strict_threshold()
+void test_post_reject_strict_threshold_lowers_the_effective_threshold()
 {
   auto params = default_params();
   params.enable_post_reject_strict_score_threshold = true;
   params.post_reject_strict_min_rejections = 3;
   params.post_reject_strict_score_threshold = 8.0;
-  params.enable_open_loop_strict_score_threshold = true;
-  params.open_loop_strict_min_accepted_gap_sec = 5.0;
-  params.open_loop_strict_min_seed_translation_m = 2.0;
-  params.open_loop_strict_score_threshold = 6.0;
 
   auto input = default_input();
-  input.consecutive_rejected_updates = 3;
-  input.accepted_gap_sec = 5.0;
-  input.seed_translation_since_accept_m = 2.0;
+  input.consecutive_rejected_updates = 2;
+  assert(!ll::computeEffectiveScoreThreshold(params, input).post_reject_strict_active);
 
+  input.consecutive_rejected_updates = 3;
   const auto threshold = ll::computeEffectiveScoreThreshold(params, input);
   assert(threshold.post_reject_strict_active);
-  assert(threshold.open_loop_strict_active);
-  assert(threshold.effective_score_threshold == 6.0);
+  assert(threshold.effective_score_threshold == 8.0);
 }
 
 void test_threshold_rejection_messages()
@@ -162,28 +149,17 @@ void test_threshold_rejection_messages()
   assert(gate.status_message == "fitness_score_over_threshold");
 }
 
-void test_open_loop_and_post_reject_messages()
+void test_post_reject_message()
 {
   auto params = default_params();
-  params.enable_open_loop_strict_score_threshold = true;
-  params.open_loop_strict_min_accepted_gap_sec = 5.0;
-  params.open_loop_strict_min_seed_translation_m = 2.0;
-  params.open_loop_strict_score_threshold = 6.0;
-
-  auto input = default_input();
-  input.accepted_gap_sec = 5.0;
-  input.seed_translation_since_accept_m = 2.0;
-  input.fitness_score = 7.0;
-
-  auto gate = ll::evaluateMeasurementGate(params, input);
-  assert(gate.open_loop_strict_active);
-  assert(gate.status_message == "fitness_score_over_open_loop_strict_threshold_rejected");
-
   params.enable_post_reject_strict_score_threshold = true;
   params.post_reject_strict_min_rejections = 2;
   params.post_reject_strict_score_threshold = 5.0;
+
+  auto input = default_input();
+  input.fitness_score = 7.0;
   input.consecutive_rejected_updates = 2;
-  gate = ll::evaluateMeasurementGate(params, input);
+  const auto gate = ll::evaluateMeasurementGate(params, input);
   assert(gate.post_reject_strict_active);
   assert(gate.status_message == "fitness_score_over_post_reject_strict_threshold_rejected");
 }
@@ -311,9 +287,9 @@ int main()
   test_param_and_input_builders_map_fields();
   test_default_ok_gate();
   test_nonfinite_fitness_is_never_accepted_or_seeded();
-  test_effective_threshold_uses_lowest_active_strict_threshold();
+  test_post_reject_strict_threshold_lowers_the_effective_threshold();
   test_threshold_rejection_messages();
-  test_open_loop_and_post_reject_messages();
+  test_post_reject_message();
   test_borderline_seed_gate();
   test_rejected_seed_update_marks_rejection_for_prediction_update();
   return 0;

@@ -58,16 +58,6 @@ inline HorizontalLocalizability evaluateHorizontalLocalizability(
   return result;
 }
 
-inline bool shouldSuppressPreviousDeltaSeed(
-  bool enabled,
-  const HorizontalLocalizability & localizability,
-  double minimum_eigenvalue_ratio)
-{
-  return enabled && localizability.valid &&
-         std::isfinite(minimum_eigenvalue_ratio) && minimum_eigenvalue_ratio > 0.0 &&
-         localizability.eigenvalue_ratio < minimum_eigenvalue_ratio;
-}
-
 }  // namespace lidar_localization
 
 #endif  // LIDAR_LOCALIZATION_LOCALIZABILITY_POLICY_HPP_

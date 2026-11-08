@@ -39,7 +39,6 @@ struct AlignmentDiagnosticValuesInput
   double score_threshold{NAN};
   double effective_score_threshold{NAN};
   bool post_reject_strict_active{false};
-  bool open_loop_strict_active{false};
   bool borderline_seed_gate_active{false};
   double alignment_time_sec{0.0};
   // Iterations of the selected registration attempt; -1 when the backend does not report them.
@@ -86,10 +85,8 @@ struct AlignmentDiagnosticValuesInput
   std::size_t continuous_time_deskew_clamped_time_count{0};
   std::string continuous_time_deskew_mode{"relative_motion"};
   double continuous_time_deskew_pose_history_coverage_ratio{0.0};
-  bool localizability_guard_enabled{false};
   bool localizability_valid{false};
   double horizontal_localizability_eigenvalue_ratio{NAN};
-  bool localizability_guard_active{false};
   RegistrationLocalizabilityMetrics registration_localizability;
   bool reinitialization_requested{false};
   std::string reinitialization_request_reason;
@@ -173,9 +170,6 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
   append(
     "post_reject_strict_score_threshold_active",
     boolString(input.post_reject_strict_active));
-  append(
-    "open_loop_strict_score_threshold_active",
-    boolString(input.open_loop_strict_active));
   append(
     "borderline_seed_rejection_gate_active",
     boolString(input.borderline_seed_gate_active));
@@ -289,12 +283,10 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
   append(
     "continuous_time_deskew_pose_history_coverage_ratio",
     std::to_string(input.continuous_time_deskew_pose_history_coverage_ratio));
-  append("localizability_guard_enabled", boolString(input.localizability_guard_enabled));
   append("localizability_valid", boolString(input.localizability_valid));
   append(
     "horizontal_localizability_eigenvalue_ratio",
     std::to_string(input.horizontal_localizability_eigenvalue_ratio));
-  append("localizability_guard_active", boolString(input.localizability_guard_active));
   append(
     "imu_seed_consistency_gate_enabled",
     boolString(input.imu_seed_consistency_gate_enabled));

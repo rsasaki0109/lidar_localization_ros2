@@ -474,11 +474,8 @@ public:
   // The previous delta is rescaled to the time since the predicted pose, up to this
   // many seconds (<= 0: one delta per scan).
   double previous_delta_max_extrapolation_sec_{1.0};
-  bool enable_localizability_guard_{false};
   bool enable_registration_localizability_diagnostics_{false};
-  double localizability_min_xy_eigen_ratio_{0.05};
   lidar_localization::HorizontalLocalizability latest_horizontal_localizability_;
-  bool latest_localizability_guard_active_{false};
   lidar_localization::MeasurementGateParamConfig measurement_gate_config_;
   lidar_localization::RecoveryRetryFromLastPoseParams recovery_retry_from_last_pose_config_;
   bool enable_reinitialization_request_output_{true};

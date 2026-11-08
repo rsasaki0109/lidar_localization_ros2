@@ -34,8 +34,6 @@ void PCLLocalization::declareImuPreintegrationParameters()
   declare_parameter("continuous_time_cloud_stamp_reference", "start");
   declare_parameter("continuous_time_deskew_reference_time_sec", 0.0);
   declare_parameter("continuous_time_pose_history_duration_sec", 2.0);
-  declare_parameter("enable_localizability_guard", false);
-  declare_parameter("localizability_min_xy_eigen_ratio", 0.05);
   declare_parameter("enable_registration_localizability_diagnostics", false);
 }
 
@@ -78,12 +76,9 @@ void PCLLocalization::loadImuPreintegrationParameters()
   get_parameter(
     "continuous_time_pose_history_duration_sec",
     continuous_time_pose_history_duration_sec_);
-  get_parameter("enable_localizability_guard", enable_localizability_guard_);
   get_parameter(
     "enable_registration_localizability_diagnostics",
     enable_registration_localizability_diagnostics_);
-  get_parameter(
-    "localizability_min_xy_eigen_ratio", localizability_min_xy_eigen_ratio_);
   if (
     continuous_time_deskew_mode_ != "relative_motion" &&
     continuous_time_deskew_mode_ != "imu_pose_history" &&
@@ -319,16 +314,6 @@ void PCLLocalization::initializeParameters()
     measurement_gate_config_.enable_post_reject_strict_score_threshold);
   get_parameter("post_reject_strict_min_rejections", measurement_gate_config_.post_reject_strict_min_rejections);
   get_parameter("post_reject_strict_score_threshold", measurement_gate_config_.post_reject_strict_score_threshold);
-  get_parameter(
-    "enable_open_loop_strict_score_threshold",
-    measurement_gate_config_.enable_open_loop_strict_score_threshold);
-  get_parameter(
-    "open_loop_strict_min_accepted_gap_sec",
-    measurement_gate_config_.open_loop_strict_min_accepted_gap_sec);
-  get_parameter(
-    "open_loop_strict_min_seed_translation_m",
-    measurement_gate_config_.open_loop_strict_min_seed_translation_m);
-  get_parameter("open_loop_strict_score_threshold", measurement_gate_config_.open_loop_strict_score_threshold);
   get_parameter(
     "enable_borderline_seed_rejection_gate",
     measurement_gate_config_.enable_borderline_seed_rejection_gate);
@@ -569,11 +554,6 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "continuous_time_pose_history_duration_sec: %lf",
     continuous_time_pose_history_duration_sec_);
-  RCLCPP_INFO(
-    get_logger(), "enable_localizability_guard: %d", enable_localizability_guard_);
-  RCLCPP_INFO(
-    get_logger(), "localizability_min_xy_eigen_ratio: %lf",
-    localizability_min_xy_eigen_ratio_);
   RCLCPP_INFO(get_logger(),"use_gtsam_smoother: %d", use_gtsam_smoother_);
   RCLCPP_INFO(get_logger(),"enable_debug: %d", enable_debug_);
   RCLCPP_INFO(
@@ -601,18 +581,6 @@ void PCLLocalization::initializeParameters()
   RCLCPP_INFO(
     get_logger(), "post_reject_strict_score_threshold: %lf",
     measurement_gate_config_.post_reject_strict_score_threshold);
-  RCLCPP_INFO(
-    get_logger(), "enable_open_loop_strict_score_threshold: %d",
-    measurement_gate_config_.enable_open_loop_strict_score_threshold);
-  RCLCPP_INFO(
-    get_logger(), "open_loop_strict_min_accepted_gap_sec: %lf",
-    measurement_gate_config_.open_loop_strict_min_accepted_gap_sec);
-  RCLCPP_INFO(
-    get_logger(), "open_loop_strict_min_seed_translation_m: %lf",
-    measurement_gate_config_.open_loop_strict_min_seed_translation_m);
-  RCLCPP_INFO(
-    get_logger(), "open_loop_strict_score_threshold: %lf",
-    measurement_gate_config_.open_loop_strict_score_threshold);
   RCLCPP_INFO(
     get_logger(), "enable_borderline_seed_rejection_gate: %d",
     measurement_gate_config_.enable_borderline_seed_rejection_gate);

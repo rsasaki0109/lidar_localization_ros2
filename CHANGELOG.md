@@ -42,6 +42,23 @@
     `false`.
   - It took its 369-line filter, a seed source, a pose backend and a covariance mode with
     it. `use_twist_ekf: true` is refused at configure.
+- **Two more gates that no preset turned on:**
+  - `enable_localizability_guard` (with `localizability_min_xy_eigen_ratio`): dropped the
+    previous-delta seed when the scan's XY spread was narrow. The docs called it an
+    experimental proxy. `horizontal_localizability_eigenvalue_ratio` stays in
+    `/alignment_status`; `localizability_guard_enabled`, `localizability_guard_active`
+    and the `localizability_guard_current_pose` seed source go.
+  - `enable_open_loop_strict_score_threshold` (with
+    `open_loop_strict_min_accepted_gap_sec`, `_min_seed_translation_m` and
+    `_score_threshold`): lowered the score threshold once no scan had been accepted for a
+    while and the seed had moved far. No doc mentioned it. `/alignment_status` no longer
+    reports `open_loop_strict_score_threshold_active`, and
+    `create_lidar_localization_config.py` drops its four `--open-loop-strict-*` flags.
+  - Both switches are refused when `true`.
+  - `enable_registration_localizability_diagnostics` stays: it only reports, and
+    `tools/benchmark/record_pose.py` records its output. `enable_local_reacquisition`
+    stays: `docs/troubleshooting.md` gives it as the fix for a lost odometry-bridged
+    pose and measures it on Koide.
 
 ### Changed
 

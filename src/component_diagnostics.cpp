@@ -257,11 +257,9 @@ PCLLocalization::prepareAlignmentDiagnosticValuesInput(
   diagnostic_input.continuous_time_deskew_mode = continuous_time_deskew_mode_;
   diagnostic_input.continuous_time_deskew_pose_history_coverage_ratio =
     latest_continuous_time_deskew_pose_history_coverage_ratio_;
-  diagnostic_input.localizability_guard_enabled = enable_localizability_guard_;
   diagnostic_input.localizability_valid = latest_horizontal_localizability_.valid;
   diagnostic_input.horizontal_localizability_eigenvalue_ratio =
     latest_horizontal_localizability_.eigenvalue_ratio;
-  diagnostic_input.localizability_guard_active = latest_localizability_guard_active_;
   diagnostic_input.path_max_poses = path_max_poses_;
   diagnostic_input.path_pose_count = path_ptr_ ? path_ptr_->poses.size() : 0;
   diagnostic_input.point_timestamp_unit = point_timestamp_unit_name_;

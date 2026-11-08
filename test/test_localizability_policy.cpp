@@ -5,7 +5,7 @@
 
 namespace ll = lidar_localization;
 
-void test_balanced_cloud_is_not_suppressed()
+void test_balanced_cloud_has_a_high_ratio()
 {
   pcl::PointCloud<pcl::PointXYZI> cloud;
   for (int x = -2; x <= 2; ++x) {
@@ -19,10 +19,9 @@ void test_balanced_cloud_is_not_suppressed()
   const auto metric = ll::evaluateHorizontalLocalizability(cloud);
   assert(metric.valid);
   assert(metric.eigenvalue_ratio > 0.99);
-  assert(!ll::shouldSuppressPreviousDeltaSeed(true, metric, 0.1));
 }
 
-void test_corridor_cloud_suppresses_previous_delta()
+void test_corridor_cloud_has_a_low_ratio()
 {
   pcl::PointCloud<pcl::PointXYZI> cloud;
   for (int x = -50; x <= 50; ++x) {
@@ -34,13 +33,11 @@ void test_corridor_cloud_suppresses_previous_delta()
   const auto metric = ll::evaluateHorizontalLocalizability(cloud);
   assert(metric.valid);
   assert(metric.eigenvalue_ratio < 0.001);
-  assert(ll::shouldSuppressPreviousDeltaSeed(true, metric, 0.05));
-  assert(!ll::shouldSuppressPreviousDeltaSeed(false, metric, 0.05));
 }
 
 int main()
 {
-  test_balanced_cloud_is_not_suppressed();
-  test_corridor_cloud_suppresses_previous_delta();
+  test_balanced_cloud_has_a_high_ratio();
+  test_corridor_cloud_has_a_low_ratio();
   return 0;
 }

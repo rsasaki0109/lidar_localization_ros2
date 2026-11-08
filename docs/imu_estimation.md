@@ -124,8 +124,6 @@ component that feeds itself must not be able to diverge unbounded.
 | `continuous_time_cloud_stamp_reference` | `start` | Whether the cloud header is the scan `start` or `end`; Koide Livox uses `start` |
 | `continuous_time_deskew_reference_time_sec` | `0.0` | Scan-relative reference time for the deskewed cloud; `0.0` means earliest point |
 | `continuous_time_pose_history_duration_sec` | `2.0` | Bounded rotation-only IMU pose-history horizon used by `imu_pose_history` |
-| `enable_localizability_guard` | `false` | Experimental XY scan-covariance proxy; suppress the previous-delta seed only below its threshold |
-| `localizability_min_xy_eigen_ratio` | `0.05` | Minimum XY covariance eigenvalue ratio for the proxy guard |
 
 ### Preintegration noise and factor model
 
@@ -271,7 +269,6 @@ result:
 | `continuous_time_deskew_mode` | selected experimental motion source |
 | `continuous_time_deskew_pose_history_coverage_ratio` | overlap between the required scan interval and available pose history |
 | `horizontal_localizability_eigenvalue_ratio` | lightweight XY scan-shape proxy; not a registration Hessian metric |
-| `localizability_guard_active` | whether the proxy suppressed the previous-delta seed |
 | `imu_last_sample_age_sec` | scan-to-IMU timestamp lag |
 | `imu_integration_window_sec` | IMU time available for the current scan interval |
 | `imu_gyro_bias_{x,y,z}_rad_s` / `imu_accel_bias_{x,y,z}_m_s2` | the preintegration smoother's bias estimates after this scan's update (`nan` while it is off or uninitialized); a gyro bias far above the sensor's spec turns an IMU-only prediction |

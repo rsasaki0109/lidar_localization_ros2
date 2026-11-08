@@ -221,12 +221,6 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         "continuous_time_pose_history_duration_sec": getattr(
             args, "continuous_time_pose_history_duration_sec", 2.0
         ),
-        "enable_localizability_guard": getattr(
-            args, "enable_localizability_guard", False
-        ),
-        "localizability_min_xy_eigen_ratio": getattr(
-            args, "localizability_min_xy_eigen_ratio", 0.05
-        ),
         "enable_registration_localizability_diagnostics": getattr(
             args, "enable_registration_localizability_diagnostics", False
         ),
@@ -242,18 +236,6 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         "enable_borderline_seed_rejection_gate": True,
         "borderline_seed_gate_score_threshold": 5.25,
         "borderline_seed_gate_min_seed_translation_m": 1.0,
-        "enable_open_loop_strict_score_threshold": getattr(
-            args, "enable_open_loop_strict_score_threshold", False
-        ),
-        "open_loop_strict_min_accepted_gap_sec": getattr(
-            args, "open_loop_strict_min_accepted_gap_sec", 15.0
-        ),
-        "open_loop_strict_min_seed_translation_m": getattr(
-            args, "open_loop_strict_min_seed_translation_m", 100.0
-        ),
-        "open_loop_strict_score_threshold": getattr(
-            args, "open_loop_strict_score_threshold", 5.25
-        ),
         "enable_reinitialization_request_output": True,
         "enable_reinitialization_request_latch": True,
         "reinitialization_trigger_threshold": getattr(
@@ -565,21 +547,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Scan-relative reference time for continuous-time deskew; 0.0 uses the earliest point.",
     )
     parser.add_argument("--score-threshold", type=float)
-    parser.add_argument(
-        "--enable-open-loop-strict-score-threshold",
-        action="store_true",
-        help=(
-            "Tighten the fitness gate when the localizer has been open-loop "
-            "for a while and the seed has moved away from the last accepted pose."
-        ),
-    )
-    parser.add_argument(
-        "--open-loop-strict-min-accepted-gap-sec", type=float, default=15.0
-    )
-    parser.add_argument(
-        "--open-loop-strict-min-seed-translation-m", type=float, default=100.0
-    )
-    parser.add_argument("--open-loop-strict-score-threshold", type=float, default=5.25)
     parser.add_argument(
         "--reinitialization-trigger-threshold",
         type=float,

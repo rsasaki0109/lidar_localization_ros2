@@ -243,8 +243,6 @@ inline AlignmentDiagnosticValuesInput makeAlignmentStatusDiagnosticValuesInput(
     preparation.threshold_decision.effective_score_threshold;
   diagnostic_input.post_reject_strict_active =
     preparation.threshold_decision.post_reject_strict_active;
-  diagnostic_input.open_loop_strict_active =
-    preparation.threshold_decision.open_loop_strict_active;
   diagnostic_input.borderline_seed_gate_active =
     preparation.borderline_seed_gate_active;
   diagnostic_input.alignment_time_sec = status.alignment_time_sec;
