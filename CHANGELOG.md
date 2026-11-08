@@ -62,6 +62,17 @@
 
 ### Changed
 
+- **`param/boreas_ndt_velodyne.yaml` crops the map at 80 m instead of 100 m.** The node
+  peaks 75-160 MiB lower (642-707 MiB against 782-803 MiB in one lap) at the same RMSE,
+  0.132 m, or 0.127 m with `use_imu_preintegration: true`, and the same pose latency.
+  The 20 m between the crop and the 60 m scans still lets the next crop be built in the
+  background. With the 80 m crop the node ran an hour under an 800 MB memory limit;
+  with the 100 m one it needed more than 768 MB.
+- **`docs/troubleshooting.md` has a section for a node killed for memory:** the crop
+  radius against the scan range, `viz_downsample`, a coarser map and `MALLOC_ARENA_MAX`,
+  measured on Boreas.
+- **`tools/benchmark/soak_replay.py` reports each lap's pose latency**, from publishing a
+  cloud to receiving its pose, and the poses later than 200 ms.
 - **The node holds 0.6-0.8 GB instead of 1.5-2.2 GB** on the looped Boreas fixture
   (`tools/benchmark/soak_replay.py`, with `use_imu_preintegration: true`), at the same
   alignment times. Nothing leaked before; the memory was kept.
