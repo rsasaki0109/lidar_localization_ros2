@@ -126,6 +126,8 @@ public:
     // The IMU prediction past its seed window, for a second alignment when the first
     // is rejected (lidar_localization::isImuRetrySeedReady).
     std::optional<Eigen::Matrix4f> imu_retry_guess;
+    // imu_retry_guess holds a sample across an IMU gap (shouldSweepBridgedRetryYaw).
+    bool imu_retry_guess_bridged{false};
   };
   struct ImuPreintegrationBackendUpdate
   {
@@ -583,6 +585,7 @@ public:
   lidar_localization::AlignmentPipelineResult runAlignmentPipelineForScan(
     const Eigen::Matrix4f & init_guess,
     const std::optional<Eigen::Matrix4f> & alternate_guess,
+    bool sweep_alternate_yaw,
     double scan_stamp_sec,
     lidar_localization::RegistrationSeedSource seed_source,
     bool imu_prediction_ready,
@@ -591,6 +594,9 @@ public:
   lidar_localization::MeasurementGateDecision evaluateMeasurementGateForAttempt(
     const lidar_localization::AlignmentAttempt & attempt,
     lidar_localization::RegistrationSeedSource seed_source);
+  // The gate's decision on ATTEMPT, without its log or the stored correction.
+  lidar_localization::MeasurementGateDecision measurementGateDecisionFor(
+    const lidar_localization::AlignmentAttempt & attempt) const;
   void logAlignmentPipelineRecovery(
     const lidar_localization::AlignmentPipelineResult & pipeline_result);
   bool handleTerminalAlignmentPipelineResult(

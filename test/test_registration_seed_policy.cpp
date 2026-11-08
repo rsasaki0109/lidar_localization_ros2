@@ -233,9 +233,33 @@ void test_imu_retry_seed_only_past_the_seed_window()
   assert(!ll::isImuRetrySeedReady(off));
 }
 
+void test_bridged_retry_yaw_sweep()
+{
+  assert(ll::shouldSweepBridgedRetryYaw(true, 1.0));
+  assert(ll::shouldSweepBridgedRetryYaw(true, ll::kMaximumBridgedRetryYawSweepWindowSec));
+  assert(!ll::shouldSweepBridgedRetryYaw(true, 3.5));
+  assert(!ll::shouldSweepBridgedRetryYaw(true, std::nan("")));
+  assert(!ll::shouldSweepBridgedRetryYaw(false, 1.0));
+
+  // The seed turns about the map's z axis around its own position.
+  Eigen::Matrix4f seed = Eigen::Matrix4f::Identity();
+  seed.block<3, 3>(0, 0) =
+    Eigen::AngleAxisf(static_cast<float>(M_PI / 4.0), Eigen::Vector3f::UnitZ()).toRotationMatrix();
+  seed(0, 3) = 10.0f;
+  seed(1, 3) = -5.0f;
+  seed(2, 3) = 1.0f;
+  const Eigen::Matrix4f turned = ll::yawTurnedSeed(seed, -12.0);
+  assert((turned.block<3, 1>(0, 3).isApprox(seed.block<3, 1>(0, 3))));
+  const double yaw = std::atan2(turned(1, 0), turned(0, 0)) * 180.0 / M_PI;
+  assert(std::abs(yaw - 33.0) < 1e-4);
+  assert(std::abs(turned(2, 2) - 1.0f) < 1e-6f);
+  assert(ll::yawTurnedSeed(seed, 0.0).isApprox(seed));
+}
+
 int main()
 {
   test_imu_retry_seed_only_past_the_seed_window();
+  test_bridged_retry_yaw_sweep();
   test_imu_preintegration_has_highest_priority_when_finite();
   test_non_finite_imu_prediction_blocks_lower_priority_sources();
   test_fallback_order_without_imu_candidate();

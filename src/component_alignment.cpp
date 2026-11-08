@@ -73,17 +73,6 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
           last_scan_stamp_for_imu_, scan_stamp_sec, prediction_samples,
           lidar_localization::kMaximumImuPreintegrationSampleDtSec,
           lidar_localization::kMaximumImuRetrySeedWindowSec);
-        RCLCPP_INFO(
-          get_logger(),
-          "DEBUGBRIDGE scan %.3f start %.3f samples %zu first %.3f last %.3f complete %d "
-          "bridged %zu skipped %zu intervals %zu covered %.3f order %d anchor %d",
-          scan_stamp_sec, last_scan_stamp_for_imu_, prediction_samples.size(),
-          prediction_samples.empty() ? 0.0 : prediction_samples.front().stamp_sec,
-          prediction_samples.empty() ? 0.0 : prediction_samples.back().stamp_sec,
-          bridged_plan.complete_coverage, bridged_plan.bridged_gap_count,
-          bridged_plan.skipped_gap_count, bridged_plan.intervals.size(),
-          bridged_plan.covered_duration_sec, bridged_plan.input_order_valid,
-          imu_prediction_anchor_sample_.has_value());
         if (bridged_plan.complete_coverage && !bridged_plan.intervals.empty()) {
           for (const auto & interval : bridged_plan.intervals) {
             imu_prediction_smoother_.integrateImu(
@@ -156,6 +145,10 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
         (dual_queue_prediction_ready ? dual_queue_prediction : bridged_prediction);
       if (imu_retry_guess.allFinite()) {
         selected_seed.imu_retry_guess = imu_retry_guess;
+        selected_seed.imu_retry_guess_bridged =
+          imu_dual_queue_enabled_ && !dual_queue_prediction_ready &&
+          lidar_localization::shouldSweepBridgedRetryYaw(
+          bridged_prediction_ready, latest_imu_seed_integration_window_sec_);
       }
     }
   }
@@ -685,6 +678,7 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
 lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelineForScan(
   const Eigen::Matrix4f & init_guess,
   const std::optional<Eigen::Matrix4f> & alternate_guess,
+  bool sweep_alternate_yaw,
   double scan_stamp_sec,
   lidar_localization::RegistrationSeedSource seed_source,
   bool imu_prediction_ready,
@@ -727,33 +721,32 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
       {
         return std::nullopt;
       }
-      auto debug_attempt = runAlignmentAttempt(
+      const auto usable = [this](const lidar_localization::AlignmentAttempt & attempt) {
+          return attempt.target_ready && attempt.has_converged &&
+                 attempt.final_transformation.allFinite() &&
+                 !measurementGateDecisionFor(attempt).reject_measurement;
+        };
+      auto attempt = runAlignmentAttempt(
         *alternate_guess, *alternate_guess, scan_stamp_sec, state_lock, seed_generation);
-      const Eigen::Matrix4f & g = *alternate_guess;
-      RCLCPP_INFO(
-        get_logger(),
-        "DEBUGALT scan %.3f seed %.3f %.3f yaw %.3f converged %d fitness %.3f inlier %.3f corr %.3f",
-        scan_stamp_sec, g(0, 3), g(1, 3), std::atan2(g(1, 0), g(0, 0)) * 180.0 / M_PI,
-        debug_attempt.has_converged, debug_attempt.fitness_score,
-        debug_attempt.inlier_ratio, debug_attempt.correction_translation_m);
-      if (debug_attempt.inlier_ratio < 0.8) {
-        for (const double offset_deg : {-12.0, -8.0, -4.0, 4.0, 8.0, 12.0}) {
-          Eigen::Matrix4f rotated = g;
-          rotated.block<3, 3>(0, 0) =
-            Eigen::AngleAxisf(static_cast<float>(offset_deg * M_PI / 180.0),
-            Eigen::Vector3f::UnitZ()).toRotationMatrix() * g.block<3, 3>(0, 0);
-          auto sweep = runAlignmentAttempt(
-            rotated, rotated, scan_stamp_sec, state_lock, seed_generation);
-          RCLCPP_INFO(
-            get_logger(),
-            "DEBUGSWEEP scan %.3f offset %+.0f converged %d fitness %.3f inlier %.3f corr %.3f "
-            "result %.3f %.3f",
-            scan_stamp_sec, offset_deg, sweep.has_converged, sweep.fitness_score,
-            sweep.inlier_ratio, sweep.correction_translation_m,
-            sweep.final_transformation(0, 3), sweep.final_transformation(1, 3));
+      if (!sweep_alternate_yaw || usable(attempt)) {
+        return attempt;
+      }
+      // Bridged across an IMU gap, the seed is short of the turn: try it turned, and take
+      // the best that passes the gate.
+      std::optional<lidar_localization::AlignmentAttempt> best;
+      for (const double offset_deg : lidar_localization::kBridgedRetryYawOffsetsDeg) {
+        if (!callback_state_coordinator_.initialPoseGenerationMatches(seed_generation)) {
+          break;
+        }
+        const Eigen::Matrix4f turned =
+          lidar_localization::yawTurnedSeed(*alternate_guess, offset_deg);
+        auto candidate =
+          runAlignmentAttempt(turned, turned, scan_stamp_sec, state_lock, seed_generation);
+        if (usable(candidate) && (!best || candidate.fitness_score < best->fitness_score)) {
+          best = candidate;
         }
       }
-      return debug_attempt;
+      return best ? *best : attempt;
     },
     [&]() {
       return runAlignmentAttempt(
@@ -765,22 +758,28 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
     });
 }
 
+lidar_localization::MeasurementGateDecision PCLLocalization::measurementGateDecisionFor(
+  const lidar_localization::AlignmentAttempt & attempt) const
+{
+  return lidar_localization::evaluateMeasurementGate(
+    measurementGateParams(),
+    lidar_localization::makeMeasurementGateInput(
+      attempt.fitness_score,
+      attempt.accepted_gap_sec,
+      attempt.seed_translation_since_accept_m,
+      attempt.correction_translation_m,
+      attempt.correction_yaw_deg,
+      prediction_state_.consecutive_rejected_updates,
+      settled_accepts_since_reset_));
+}
+
 lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurementGateForAttempt(
   const lidar_localization::AlignmentAttempt & attempt,
   lidar_localization::RegistrationSeedSource seed_source)
 {
-  const auto gate_input = lidar_localization::makeMeasurementGateInput(
-    attempt.fitness_score,
-    attempt.accepted_gap_sec,
-    attempt.seed_translation_since_accept_m,
-    attempt.correction_translation_m,
-    attempt.correction_yaw_deg,
-    prediction_state_.consecutive_rejected_updates,
-    settled_accepts_since_reset_);
   last_gated_correction_translation_m_ = attempt.correction_translation_m;
   last_gated_correction_yaw_deg_ = attempt.correction_yaw_deg;
-  auto gate =
-    lidar_localization::evaluateMeasurementGate(measurementGateParams(), gate_input);
+  auto gate = measurementGateDecisionFor(attempt);
   if (gate.status_level == lidar_localization::kMeasurementGateWarn) {
     RCLCPP_WARN(
       get_logger(),

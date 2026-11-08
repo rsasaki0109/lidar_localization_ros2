@@ -781,6 +781,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   auto pipeline_result = runAlignmentPipelineForScan(
     init_guess,
     selected_seed.imu_retry_guess,
+    selected_seed.imu_retry_guess_bridged,
     scan_stamp_sec,
     selected_seed.source,
     imu_prediction_ready,
