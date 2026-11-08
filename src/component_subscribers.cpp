@@ -728,6 +728,19 @@ void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr ms
 
 void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
 {
+  // Return the pages a target change freed once this scan is done and the state lock is
+  // released, outside any alignment: a trim takes 1-3 ms (15 ms at most) and holds the
+  // allocator's locks.
+  struct TrimFreedHeapAtExit
+  {
+    PCLLocalization * self;
+    ~TrimFreedHeapAtExit()
+    {
+      if (self->heap_trim_pending_.exchange(false, std::memory_order_relaxed)) {
+        lidar_localization::releaseFreedHeapMemory();
+      }
+    }
+  } trim_freed_heap_at_exit{this};
   auto state_lock = callback_state_coordinator_.lockState();
   if (shutting_down_.load(std::memory_order_acquire)) {return;}
   double scan_stamp_sec = 0.0;
