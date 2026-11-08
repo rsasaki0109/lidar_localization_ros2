@@ -547,7 +547,10 @@ Since then a stop of 2 s recovers too. On 2026-11-08, twice each:
   bridged retry is now aligned again turned by -6, 6, -12 and 12 deg, within 3 s of
   the last accepted scan, and the best that passes the gate is taken.
 - **After 10 s the prediction is metres and 20 deg off,** beyond that search. The node
-  rejects every scan and requests reinitialization, as before.
+  rejects every scan and requests reinitialization, as before. With the global
+  localization recovery nodes beside it (`--companion`), it does not recover either:
+  their map-wide search misses there and answers in 18-21 s
+  ([global localization](global_localization.md#on-the-boreas-fixture-after-a-10-s-stop)).
 
 #### Under a memory limit
 
