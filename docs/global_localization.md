@@ -194,6 +194,29 @@ confirm. Full defect chain and artifacts in
 remaining work in [global_localization_roadmap.md](dev/global_localization_roadmap.md)
 (G3 section).
 
+### On the Boreas fixture, after a 10 s stop
+
+`tools/benchmark/soak_replay.py --companion` runs the two recovery nodes beside the
+soaked localizer (`global_localization_recovery.launch.py start_localization:=false`),
+with a grid built from the fixture map by `generate_occupancy_map_from_pcd` and the
+launch defaults. Two laps with a 10 s stop, 50 s and 30 s into the lap, with
+`use_imu_preintegration: true`, on 2026-11-08:
+
+- **The loop closes, but finds nothing.** The supervisor queried G2 1.5 s after the
+  reinitialization request. Each answer took 18-21 s, and its candidates fit the scan
+  with registration fitness 50-657, too close to each other to pass the aliasing
+  check. Nothing was published, and no lap recovered. No wrong reset was published.
+- **The map-wide search misses there.** Offline, the BBS alone takes 0.5-1.8 s. Of
+  scans at 40, 50 and 61 s into the lap none had the right pose among its 16
+  candidates, with height bands of 0.5-5, -1-3 and -1.5-1.5 m, 256 or 1024 scan points
+  and 10 or 5 deg: tree-lined stretches score 0.86-0.93 at wrong places. At 20 and 100 s
+  the right pose ranks first with the band at -1-3 m.
+- **The registration scoring takes the rest.** At 6 m/s the vehicle has moved 110-130 m
+  by the time an answer comes.
+- **A search near the last pose works.** Over the grid cropped to 40 m around a
+  prediction 15 m and 20 deg off the truth, the BBS takes 0.4-0.7 s and ranks the right
+  pose first at 40 and 50 s and second at 61 s.
+
 ### Replaying a bag through the recovery stack
 
 The scripted replay harnesses were removed with the offline tooling (6825f05); the

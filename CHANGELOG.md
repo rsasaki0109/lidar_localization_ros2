@@ -62,6 +62,12 @@
 
 ### Changed
 
+- **`global_localization_recovery.launch.py start_localization:=false`** starts only the
+  global localization node and the supervisor, beside a localizer already running.
+  `tools/benchmark/soak_replay.py --companion COMMAND` starts such a command once the
+  soaked localizer is active, in its ROS domain. On the Boreas fixture, after a 10 s
+  stop, the recovery nodes did not recover the track: their map-wide search missed and
+  each answer took 18-21 s (`docs/global_localization.md`).
 - **The node frees a replaced registration target before it builds the next one, and
   returns freed memory to the OS.** On the Boreas fixture with the preset (80 m crop,
   `use_imu_preintegration: true`):
