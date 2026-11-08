@@ -453,11 +453,6 @@ public:
   // True while the current scan is seeded from a proposal (never search on it).
   bool scan_seeded_from_reacquisition_{false};
   bool has_last_good_map_to_odom_{false};
-  // Map-frame pose whose z/roll/pitch accompany last_good_map_to_odom_. Keep
-  // the planar constraint on the same confidence boundary as the TF anchor;
-  // an accepted but weak match must not tilt the otherwise stable bridge.
-  Eigen::Matrix4f odom_tf_constraint_anchor_pose_matrix_{Eigen::Matrix4f::Identity()};
-  bool has_odom_tf_constraint_anchor_pose_{false};
   std::deque<geometry_msgs::msg::TransformStamped> odom_bridge_transform_history_;
   builtin_interfaces::msg::Time last_odom_bridge_source_advance_node_stamp_;
   bool has_last_odom_bridge_source_advance_node_stamp_{false};
@@ -467,13 +462,6 @@ public:
   // while tracking is lost. See
   // registration_seed_policy.hpp's kOdomTfPrediction. Off by default.
   bool use_odom_tf_prediction_{false};
-  // Opt-in ground-vehicle constraint for an external odom bridge: retain the
-  // live odom prediction's x/y/yaw while holding z/roll/pitch at the last
-  // accepted map match. Off by default for general 6-DoF deployments.
-  bool constrain_odom_tf_prediction_to_planar_{false};
-  // Alternative for non-conventional sensor axes: hold only map-frame height
-  // while preserving the external odometry's full relative rotation.
-  bool constrain_odom_tf_prediction_height_only_{false};
   bool level_map_to_odom_{false};
   // Opt-in output continuity: while a scan is rejected/lost, /pcl_pose (the
   // benchmark's coverage/RMSE source) otherwise goes silent (only accepted
@@ -483,11 +471,6 @@ public:
   // prediction state, etc.), so it cannot change what the next scan seeds
   // from. Off by default.
   bool publish_bridge_pose_when_lost_{false};
-  // Opt-in confidence gate for replacing the frozen map -> odom anchor from
-  // an ordinary accepted scan. Initial-pose/reset anchors remain unconditional.
-  bool enable_map_odom_anchor_fitness_gate_{false};
-  double map_odom_anchor_max_fitness_{1.5};
-  double map_odom_anchor_max_correction_rotation_deg_{10.0};
   bool viz_downsample_{false};
   double viz_voxel_leaf_size_{0.5};
   bool predict_pose_from_previous_delta_{true};
@@ -725,10 +708,7 @@ public:
   void setCurrentPoseFromMatrix(
     const Eigen::Matrix4f & pose_matrix,
     const builtin_interfaces::msg::Time & stamp);
-  void publishCurrentPose(
-    const builtin_interfaces::msg::Time & stamp,
-    double fitness_score,
-    double correction_rotation_deg);
+  void publishCurrentPose(const builtin_interfaces::msg::Time & stamp);
   void publishPoseMessage(
     const geometry_msgs::msg::PoseWithCovarianceStamped & pose);
   void appendCurrentPoseToPath(

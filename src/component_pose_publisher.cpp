@@ -9,10 +9,7 @@ void PCLLocalization::setCurrentPoseFromMatrix(
     lidar_localization::poseFromMatrix(pose_matrix);
 }
 
-void PCLLocalization::publishCurrentPose(
-  const builtin_interfaces::msg::Time & stamp,
-  double fitness_score,
-  double correction_rotation_deg)
+void PCLLocalization::publishCurrentPose(const builtin_interfaces::msg::Time & stamp)
 {
   if (
     shutting_down_.load(std::memory_order_acquire) ||
@@ -20,27 +17,8 @@ void PCLLocalization::publishCurrentPose(
   {
     return;
   }
-  const bool freeze_as_last_good = lidar_localization::shouldFreezeMapToOdomAnchor(
-    enable_map_odom_anchor_fitness_gate_, map_odom_anchor_max_fitness_, fitness_score,
-    map_odom_anchor_max_correction_rotation_deg_, correction_rotation_deg);
-  if (
-    !freeze_as_last_good && publish_bridge_pose_when_lost_ &&
-    has_last_good_map_to_odom_)
-  {
-    // This accepted scan is useful to the estimator but not trustworthy
-    // enough to move the public odometry anchor. Do not inject its transient
-    // pose into /pcl_pose or TF; emit the confidence-bounded bridge at the
-    // same scan stamp instead.
-    publishBridgePoseAsRejectedOutput(stamp);
-    geometry_msgs::msg::TransformStamped frozen = last_good_map_to_odom_;
-    frozen.header.stamp = stamp;
-    broadcastTransform(frozen);
-    return;
-  }
   publishPoseMessage(*current_pose_with_cov_stamped_ptr_);
-  if (!publishPoseTransform(
-      stamp, current_pose_with_cov_stamped_ptr_->pose.pose, freeze_as_last_good))
-  {
+  if (!publishPoseTransform(stamp, current_pose_with_cov_stamped_ptr_->pose.pose)) {
     return;
   }
 
@@ -131,15 +109,6 @@ bool PCLLocalization::publishMapToOdomTransform(
   if (freeze_as_last_good) {
     last_good_map_to_odom_ = map_to_odom;
     has_last_good_map_to_odom_ = true;
-    geometry_msgs::msg::Pose anchor_pose;
-    anchor_pose.position.x = map_to_base_link_stamped.transform.translation.x;
-    anchor_pose.position.y = map_to_base_link_stamped.transform.translation.y;
-    anchor_pose.position.z = map_to_base_link_stamped.transform.translation.z;
-    anchor_pose.orientation = map_to_base_link_stamped.transform.rotation;
-    Eigen::Affine3d anchor_affine;
-    tf2::fromMsg(anchor_pose, anchor_affine);
-    odom_tf_constraint_anchor_pose_matrix_ = anchor_affine.matrix().cast<float>();
-    has_odom_tf_constraint_anchor_pose_ = true;
   }
   return true;
 }
@@ -207,24 +176,6 @@ void PCLLocalization::publishOdomBridgePose(
   composed_pose.position.y = composed_transform.translation.y;
   composed_pose.position.z = composed_transform.translation.z;
   composed_pose.orientation = composed_transform.rotation;
-  Eigen::Affine3d composed_affine;
-  tf2::fromMsg(composed_pose, composed_affine);
-  Eigen::Matrix4f bridge_matrix = composed_affine.matrix().cast<float>();
-  if (
-    constrain_odom_tf_prediction_height_only_ &&
-    has_odom_tf_constraint_anchor_pose_)
-  {
-    bridge_matrix = lidar_localization::constrainOdomPredictionHeightOnly(
-      bridge_matrix, odom_tf_constraint_anchor_pose_matrix_);
-    composed_pose = lidar_localization::poseFromMatrix(bridge_matrix);
-  } else if (
-    constrain_odom_tf_prediction_to_planar_ &&
-    has_odom_tf_constraint_anchor_pose_)
-  {
-    bridge_matrix = lidar_localization::constrainOdomPredictionToPlanarMotion(
-      bridge_matrix, odom_tf_constraint_anchor_pose_matrix_);
-    composed_pose = lidar_localization::poseFromMatrix(bridge_matrix);
-  }
 
   geometry_msgs::msg::PoseWithCovarianceStamped msg;
   msg.header.stamp = stamp;
@@ -316,19 +267,6 @@ bool PCLLocalization::lookupOdomBridgePoseMatrix(
   Eigen::Affine3d affine;
   tf2::fromMsg(pose, affine);
   out_pose_matrix = affine.matrix().cast<float>();
-  if (
-    constrain_odom_tf_prediction_height_only_ &&
-    has_odom_tf_constraint_anchor_pose_)
-  {
-    out_pose_matrix = lidar_localization::constrainOdomPredictionHeightOnly(
-      out_pose_matrix, odom_tf_constraint_anchor_pose_matrix_);
-  } else if (
-    constrain_odom_tf_prediction_to_planar_ &&
-    has_odom_tf_constraint_anchor_pose_)
-  {
-    out_pose_matrix = lidar_localization::constrainOdomPredictionToPlanarMotion(
-      out_pose_matrix, odom_tf_constraint_anchor_pose_matrix_);
-  }
   return true;
 }
 

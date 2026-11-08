@@ -37,7 +37,6 @@ void exercise(bool early_tf, int invalid)
   node.initialPoseReceived(reset);
   assert(node.prediction_state_.last_accepted_pose_matrix(0, 3) == (invalid ? 1 : 10));
   assert(node.has_last_good_map_to_odom_ == (invalid || early_tf));
-  assert(node.has_odom_tf_constraint_anchor_pose_ == (invalid || early_tf));
   assert(node.odom_bridge_transform_history_.empty() == !invalid);
   assert(node.has_last_odom_bridge_source_advance_node_stamp_ == bool(invalid));
   if (!early_tf) {assert(node.tfbuffer_.setTransform(tf, "fixture", false));}
