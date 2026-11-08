@@ -187,20 +187,9 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       break;
     }
     case lidar_localization::RegistrationSeedSource::kPreviousDelta:
-      if (latest_localizability_guard_active_) {
-        selected_seed.source =
-          lidar_localization::RegistrationSeedSource::kLocalizabilityGuard;
-        RCLCPP_WARN_THROTTLE(
-          get_logger(), *get_clock(), 5000,
-          "Suppressing previous-delta seed: horizontal localizability ratio %.4f < %.4f.",
-          latest_horizontal_localizability_.eigenvalue_ratio,
-          localizability_min_xy_eigen_ratio_);
-      } else {
-        selected_seed.init_guess =
-          prediction_state_.predicted_pose_matrix * previousDeltaMotionAt(scan_stamp_sec);
-      }
+      selected_seed.init_guess =
+        prediction_state_.predicted_pose_matrix * previousDeltaMotionAt(scan_stamp_sec);
       break;
-    case lidar_localization::RegistrationSeedSource::kLocalizabilityGuard:
     case lidar_localization::RegistrationSeedSource::kCurrentPose:
       break;
     case lidar_localization::RegistrationSeedSource::kOdomTfPrediction:

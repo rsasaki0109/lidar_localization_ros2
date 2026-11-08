@@ -100,10 +100,6 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("enable_post_reject_strict_score_threshold", false);
   declare_parameter("post_reject_strict_min_rejections", 100);
   declare_parameter("post_reject_strict_score_threshold", 5.5);
-  declare_parameter("enable_open_loop_strict_score_threshold", false);
-  declare_parameter("open_loop_strict_min_accepted_gap_sec", 15.0);
-  declare_parameter("open_loop_strict_min_seed_translation_m", 100.0);
-  declare_parameter("open_loop_strict_score_threshold", 5.25);
   declare_parameter("enable_borderline_seed_rejection_gate", false);
   declare_parameter("borderline_seed_gate_score_threshold", 5.25);
   declare_parameter("borderline_seed_gate_min_seed_translation_m", 1.0);

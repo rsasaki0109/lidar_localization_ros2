@@ -296,10 +296,6 @@ PCLLocalization::PreparedScanCloud PCLLocalization::prepareScanForRegistration(
   latest_horizontal_localizability_ = prepared_scan.cloud ?
     lidar_localization::evaluateHorizontalLocalizability(*prepared_scan.cloud) :
     lidar_localization::HorizontalLocalizability{};
-  latest_localizability_guard_active_ =
-    lidar_localization::shouldSuppressPreviousDeltaSeed(
-    enable_localizability_guard_, latest_horizontal_localizability_,
-    localizability_min_xy_eigen_ratio_);
   return prepared_scan;
 }
 

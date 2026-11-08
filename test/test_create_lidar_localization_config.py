@@ -43,10 +43,6 @@ def args(**overrides):
         "enable_continuous_time_deskew": False,
         "deskew_reference_time_sec": 0.0,
         "score_threshold": None,
-        "enable_open_loop_strict_score_threshold": False,
-        "open_loop_strict_min_accepted_gap_sec": 15.0,
-        "open_loop_strict_min_seed_translation_m": 100.0,
-        "open_loop_strict_score_threshold": 5.25,
         "reinitialization_trigger_threshold": 0.95,
         "reinitialization_trigger_gap_scale_sec": 30.0,
         "reinitialization_trigger_seed_translation_scale_m": 100.0,
@@ -184,21 +180,6 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
         self.assertTrue(params["set_initial_pose"])
         self.assertEqual(params["initial_pose_x"], 1.0)
         self.assertEqual(params["initial_pose_qz"], 0.707)
-
-    def test_open_loop_strict_gate_can_be_enabled(self):
-        params = config_tool.make_params(
-            args(
-                enable_open_loop_strict_score_threshold=True,
-                open_loop_strict_min_accepted_gap_sec=1.0,
-                open_loop_strict_min_seed_translation_m=0.5,
-                open_loop_strict_score_threshold=2.0,
-            )
-        )
-
-        self.assertTrue(params["enable_open_loop_strict_score_threshold"])
-        self.assertEqual(params["open_loop_strict_min_accepted_gap_sec"], 1.0)
-        self.assertEqual(params["open_loop_strict_min_seed_translation_m"], 0.5)
-        self.assertEqual(params["open_loop_strict_score_threshold"], 2.0)
 
     def test_reinitialization_request_output_is_explicit_in_generated_params(self):
         params = config_tool.make_params(args())

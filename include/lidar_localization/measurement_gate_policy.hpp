@@ -23,11 +23,6 @@ struct MeasurementGateParams
   int post_reject_strict_min_rejections{100};
   double post_reject_strict_score_threshold{5.5};
 
-  bool enable_open_loop_strict_score_threshold{false};
-  double open_loop_strict_min_accepted_gap_sec{15.0};
-  double open_loop_strict_min_seed_translation_m{100.0};
-  double open_loop_strict_score_threshold{5.25};
-
   bool enable_borderline_seed_rejection_gate{false};
   double borderline_seed_gate_score_threshold{5.25};
   double borderline_seed_gate_min_seed_translation_m{1.0};
@@ -83,7 +78,6 @@ struct EffectiveScoreThresholdDecision
 {
   double effective_score_threshold{0.0};
   bool post_reject_strict_active{false};
-  bool open_loop_strict_active{false};
 };
 
 struct MeasurementGateDecision
@@ -92,7 +86,6 @@ struct MeasurementGateDecision
   std::string status_message{"ok"};
   bool reject_measurement{false};
   bool post_reject_strict_active{false};
-  bool open_loop_strict_active{false};
   bool borderline_seed_gate_active{false};
   bool rejected_seed_update_applied{false};
   double effective_score_threshold{0.0};
@@ -133,11 +126,6 @@ inline EffectiveScoreThresholdDecision computeEffectiveScoreThreshold(
     static_cast<int>(input.consecutive_rejected_updates) >=
     params.post_reject_strict_min_rejections &&
     params.post_reject_strict_score_threshold < params.score_threshold;
-  decision.open_loop_strict_active =
-    params.enable_open_loop_strict_score_threshold &&
-    input.accepted_gap_sec >= params.open_loop_strict_min_accepted_gap_sec &&
-    input.seed_translation_since_accept_m >= params.open_loop_strict_min_seed_translation_m &&
-    params.open_loop_strict_score_threshold < params.score_threshold;
 
   decision.effective_score_threshold = params.score_threshold;
   if (
@@ -145,12 +133,6 @@ inline EffectiveScoreThresholdDecision computeEffectiveScoreThreshold(
     params.post_reject_strict_score_threshold < decision.effective_score_threshold)
   {
     decision.effective_score_threshold = params.post_reject_strict_score_threshold;
-  }
-  if (
-    decision.open_loop_strict_active &&
-    params.open_loop_strict_score_threshold < decision.effective_score_threshold)
-  {
-    decision.effective_score_threshold = params.open_loop_strict_score_threshold;
   }
   return decision;
 }
@@ -217,7 +199,6 @@ inline MeasurementGateDecision evaluateMeasurementGate(
   const auto threshold_decision = computeEffectiveScoreThreshold(params, input);
   gate.effective_score_threshold = threshold_decision.effective_score_threshold;
   gate.post_reject_strict_active = threshold_decision.post_reject_strict_active;
-  gate.open_loop_strict_active = threshold_decision.open_loop_strict_active;
   if (!std::isfinite(input.fitness_score)) {
     gate.status_level = kMeasurementGateWarn;
     gate.status_message = "registration_fitness_non_finite";
@@ -252,13 +233,6 @@ inline MeasurementGateDecision evaluateMeasurementGate(
     gate.status_message = params.reject_above_score_threshold ?
       "fitness_score_over_borderline_seed_gate_rejected" :
       "fitness_score_over_borderline_seed_gate";
-  } else if (
-    gate.open_loop_strict_active &&
-    gate.effective_score_threshold == params.open_loop_strict_score_threshold)
-  {
-    gate.status_message = params.reject_above_score_threshold ?
-      "fitness_score_over_open_loop_strict_threshold_rejected" :
-      "fitness_score_over_open_loop_strict_threshold";
   } else if (gate.post_reject_strict_active) {
     gate.status_message = params.reject_above_score_threshold ?
       "fitness_score_over_post_reject_strict_threshold_rejected" :
