@@ -13,6 +13,8 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
     std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
     bool dual_queue_prediction_ready = false;
     Eigen::Matrix4f dual_queue_prediction = Eigen::Matrix4f::Identity();
+    bool bridged_prediction_ready = false;
+    Eigen::Matrix4f bridged_prediction = Eigen::Matrix4f::Identity();
     if (imu_dual_queue_enabled_ && imu_smoother_.isInitialized()) {
       std::vector<lidar_localization::TimestampedImuSample> optimization_samples;
       if (imu_optimization_anchor_sample_.has_value()) {
@@ -62,6 +64,23 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
         dual_queue_prediction = imu_prediction_smoother_.predictedPoseMatrix();
         dual_queue_prediction_ready = dual_queue_prediction.allFinite();
         latest_dual_queue_integrated_stamp_ = scan_stamp_sec;
+      } else if (!prediction_plan.complete_coverage) {
+        // While the node is stopped, the IMU samples queued for it overflow. The gap
+        // stays in every window from the last accepted scan, so no prediction is made
+        // again and the retry below never runs. For that retry only, hold the sample
+        // before a gap across it, as the motion then.
+        const auto bridged_plan = lidar_localization::planCausalImuIntervals(
+          last_scan_stamp_for_imu_, scan_stamp_sec, prediction_samples,
+          lidar_localization::kMaximumImuPreintegrationSampleDtSec,
+          lidar_localization::kMaximumImuRetrySeedWindowSec);
+        if (bridged_plan.complete_coverage && !bridged_plan.intervals.empty()) {
+          for (const auto & interval : bridged_plan.intervals) {
+            imu_prediction_smoother_.integrateImu(
+              interval.gyro, interval.accel, interval.dt());
+          }
+          bridged_prediction = imu_prediction_smoother_.predictedPoseMatrix();
+          bridged_prediction_ready = bridged_prediction.allFinite();
+        }
       }
     }
     snapshotImuPreintegrationSampleCountersForScan();
@@ -116,13 +135,14 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
           use_imu_preintegration_,
           imu_preintegration_fallback_mode,
           imu_smoother_initialized,
-          imu_has_new_samples,
-          imu_window_too_large,
+          imu_has_new_samples || bridged_prediction_ready,
+          imu_window_too_large || bridged_prediction_ready,
           latest_imu_seed_integration_window_sec_,
           imu_seed_allowed}))
     {
-      const Eigen::Matrix4f imu_retry_guess = imu_dual_queue_enabled_ ?
-        dual_queue_prediction : imu_smoother_.predictedPoseMatrix();
+      const Eigen::Matrix4f imu_retry_guess = !imu_dual_queue_enabled_ ?
+        imu_smoother_.predictedPoseMatrix() :
+        (dual_queue_prediction_ready ? dual_queue_prediction : bridged_prediction);
       if (imu_retry_guess.allFinite()) {
         selected_seed.imu_retry_guess = imu_retry_guess;
       }
