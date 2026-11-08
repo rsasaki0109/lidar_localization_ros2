@@ -123,11 +123,8 @@ class ReplaySession:
             (self.output / "alignment.jsonl").open("w")
         )
 
-        pose_wall = self._files.enter_context((self.output / "pose_wall.csv").open("w"))
-
         def pose_received(message):
             stamp = stamp_ns(message.header.stamp)
-            pose_wall.write(f"{stamp},{time.monotonic():.6f}\n")
             if accept_stamp is not None and not accept_stamp(stamp):
                 return
             p, q = message.pose.pose.position, message.pose.pose.orientation

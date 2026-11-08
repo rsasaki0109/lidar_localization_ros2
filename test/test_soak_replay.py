@@ -57,6 +57,33 @@ def test_laps_are_scored_against_the_unshifted_reference():
     assert laps[1]["rmse_m"] == 0.5
     assert laps[1]["accepted"] == 1
     assert laps[1]["align_ms_median"] == 10.0
+    assert laps[0]["latency_ms_median"] is None
+    assert laps[0]["late_poses"] == 0
+
+
+def test_pose_latency_is_scored_per_lap():
+    reference = _reference()
+    # Clouds published at 0.1 s intervals; lap 1's poses arrive 0.3 s after theirs.
+    stamps_ns = [
+        round((100.0 + lap * PERIOD + 0.1 * i) * 1e9)
+        for lap in range(2)
+        for i in range(5)
+    ]
+    published = {stamp: 1000.0 + 0.1 * n for n, stamp in enumerate(stamps_ns)}
+    received = {
+        stamp: published[stamp] + (0.3 if n >= 5 else 0.02)
+        for n, stamp in enumerate(stamps_ns)
+    }
+    # The pose after /initialpose has no cloud.
+    received[round(99.5e9)] = 999.0
+    latencies = soak.pose_latencies(published, received)
+    assert len(latencies) == 10
+    laps = soak.score_laps(np.empty((0, 8)), reference, PERIOD, [], 2, latencies)
+    assert laps[0]["latency_ms_median"] == 20.0
+    assert laps[0]["late_poses"] == 0
+    assert laps[1]["latency_ms_p95"] == 300.0
+    assert laps[1]["latency_ms_max"] == 300.0
+    assert laps[1]["late_poses"] == 5
 
 
 def test_memory_trend_skips_the_warm_up():
