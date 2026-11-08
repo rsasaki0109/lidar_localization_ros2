@@ -553,5 +553,25 @@ into the cgroup's `cgroup.procs` and runs the node, on 2026-11-08, with
 - **The lowest memory of each lap rises over the hour**, by 50-100 MB, from 600-610
   to 660-710 MB with the 100 m crop and from 574 to 609-628 MB with the 80 m one.
 
+Since then the node frees a replaced registration target before it builds the next
+one, and returns the freed memory to the OS:
+
+- **Three crops were alive during a rebuild.** heaptrack over one lap with the 80 m crop
+  put 110 MB of crops in the 547 MiB peak: the one in use, the replaced one, still held
+  by the spare registration objects with its search tree, and the new one. The next
+  target is now built on fresh objects, and the replaced one is freed before the crop.
+- **glibc kept what was freed.** It returns only the top of each heap, and a target is
+  freed in the middle of it. With `malloc_trim` every 5 s (an `LD_PRELOAD` shim) the
+  lowest memory of each lap stayed at 378-400 MB for an hour. The node now trims once
+  a target change freed memory, at the end of that scan's callback: a trim takes 1.4 ms
+  at the median and 15 ms at most.
+- **An hour under 800 MB:** 29 laps at 0.127 m, 576 MiB at most (765 MiB before), the
+  lowest memory of each lap 329-339 MB (580-632 MB before), and the limit never reached
+  (4070 times before).
+- **One lap each, alternated with the build before, three times:** 525-539 against
+  613-652 MiB at the peak, the same alignment time (9.5-9.8 against 9.4-10.0 ms at the
+  median) and RMSE, and pose latency 58-59 against 55-57 ms at p95: once per target
+  change, the next scan waits for the trim.
+
 `summary.json` also holds each lap's pose latency: from publishing a cloud to receiving
 its pose, at the median, p95 and most, and how many poses came over 200 ms late.
