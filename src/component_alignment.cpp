@@ -450,6 +450,8 @@ bool PCLLocalization::setInputTargetForPose(const Eigen::Matrix4f & center_pose_
   local_map_target_cached_ = true;
   local_map_target_center_x_ = cx;
   local_map_target_center_y_ = cy;
+  // The previous crop and NDT voxel grid were freed when the target was replaced.
+  lidar_localization::releaseFreedHeapMemory();
 
   const auto success_decision = lidar_localization::handleLocalMapTargetSuccess();
   consecutive_crop_failures_ = success_decision.consecutive_crop_failures;
@@ -498,6 +500,8 @@ void PCLLocalization::startLocalMapRebuild(float center_x, float center_y)
       registration->setInputSource(rebuild.warm_up_source);
       pcl::PointCloud<pcl::PointXYZI> output;
       registration->align(output, Eigen::Matrix4f::Identity());
+      // The previous target in these objects was freed by the build above.
+      lidar_localization::releaseFreedHeapMemory();
       return rebuild;
     });
 }
