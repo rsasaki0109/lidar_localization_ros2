@@ -1,0 +1,67 @@
+{
+  "date": "2026-11-10",
+  "localizer_source_commit": "8dc235f",
+  "localizer_source_note": "release/v1.9.0 at 8dc235f: main at 028a0e2 plus the version bump in package.xml and CMakeLists.txt (the version is not compiled in); the branch adds only docs after it",
+  "localizer_build": "colcon build --symlink-install --packages-up-to lidar_localization_ros2, no CMAKE_BUILD_TYPE (as in AGENTS.md), MAKEFLAGS=-j2; ndt_omp_ros2 also without a build type (it now defaults to Release)",
+  "localizer_sha256": "bba3e9debfe3d8f47a5903c1c42860abe9b6527832351e2009df547ad7cb8faa",
+  "ndt_omp_source_commit": "9f5567e3ffab76cce44a3881cbe7a1dac7887e67",
+  "ndt_omp_source_note": "humble at the 0.2.0 release (#17)",
+  "rko_source": "https://github.com/rsasaki0109/rko_lio",
+  "rko_source_commit": "7e91814a8abbfce6641526e03667966fcad01d0f",
+  "rko_pinned_by": "lidar_slam_ros2 d13d9e7 (Thirdparty/rko_lio)",
+  "rko_version": "0.3.2",
+  "rko_build": "Release",
+  "rko_sha256": "0e9411f6c6f3436e2e6fd52865e0a0c9c9deb0b0d59ac87dc15bf91060db9f73",
+  "profile": "tools/readme_media/koide_outdoor_hard_02b_online.yaml: NDT_OMP, 75 m local map built in the background, 60 m scan range, gyro-only imu_pose_history deskew, min_inlier_ratio 0.8",
+  "ros_distro": "jazzy",
+  "architecture": "x86_64",
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.30GHz",
+  "cpu_count": 4,
+  "command": "ros2 run lidar_localization_ros2 run_koide_public_bag.py --data-dir /home/user/koide-data --output /home/user/koide-runs/v190_N --rko-executable /home/user/rko_ws/install/rko_lio/lib/rko_lio/online_node",
+  "command_exit_code": 0,
+  "repeat_count": 2,
+  "rko_insufficient_icp_keypoint_drops": [
+    20,
+    20
+  ],
+  "alignment_ms": {
+    "median": [
+      13,
+      13
+    ],
+    "p95": [
+      33,
+      34
+    ]
+  },
+  "previous_release": {
+    "version": "v1.8.0",
+    "evidence": "docs/validation/v1.8.0-koide-20261107",
+    "rmse_m": [
+      0.242,
+      0.245
+    ],
+    "rmse_on_map_m": [
+      0.171,
+      0.171
+    ],
+    "diagnostic_coverage": [
+      1.0,
+      1.0
+    ],
+    "alignment_ms": {
+      "median": [
+        12,
+        13
+      ],
+      "p95": [
+        32,
+        33
+      ]
+    },
+    "note": "the same RKO binary, RKO and QoS configuration, profile (less the removed enable_soft_odom_correction_gate line), ndt_omp_ros2 release and container type",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.30GHz"
+  },
+  "hardware_validation": false,
+  "notes": "Full public sequence at 1x, one cloud container, ROS 2 Jazzy, 4 vCPUs, the same RKO binary as v1.6.0 to v1.8.0 and the same host CPU model as v1.8.0. localizer.yaml differs from v1.8.0's only by the line enable_soft_odom_correction_gate: false, which 1.9.0 no longer writes; rko.yaml and points-qos.yaml are identical."
+}
