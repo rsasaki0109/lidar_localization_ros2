@@ -113,6 +113,45 @@ python3 tools/readme_media/initial_pose_from_tum.py \
 
 Ground truth supplies only that initial pose and evaluation; it is not an odometry input. Record `/pcl_pose` and `/alignment_status` before playing the bag. For the 150 m comparison, change only `local_map_radius` in the generated localizer YAML.
 
+## v1.9.0 release verification (2026-11-10)
+
+Two full `outdoor_hard_02b` replays at 1x passed on `release/v1.9.0` at `8dc235f`:
+`main` at `028a0e2` plus the version bump, which is not compiled in.
+
+- **Build:** both this package and `ndt_omp_ros2` were built as in `AGENTS.md`, without
+  a build type. `ndt_omp_ros2` was at its 0.2.0 release (`9f5567e`), as for v1.8.0.
+- **Setup:** ROS 2 Jazzy in one 4-vCPU cloud container with a 2.30 GHz CPU, as for
+  v1.8.0, and the same RKO-LIO 0.3.2 binary (`7e91814`, Release) as for v1.6.0 to
+  v1.8.0.
+- **The profile is unchanged.** `localizer.yaml` differs from v1.8.0's only by the line
+  `enable_soft_odom_correction_gate: false`, an option 1.9.0 removed. RKO's and the
+  QoS file's hashes are identical.
+
+| Metric | Run 1 | Run 2 | Demo acceptance |
+| --- | --- | --- | --- |
+| Position RMSE | 0.242 m | 0.240 m | <= 0.35 m |
+| on / off the map (163.3-259.0 s) | 0.170 / 0.351 m | 0.170 / 0.347 m | — |
+| Diagnostic cloud stamps | 2,209 / 2,209 (100.0%) | 2,209 / 2,209 (100.0%) | >= 97% |
+| Distinct GT-matched pose stamps / expected clouds | 2,201 / 2,209 (99.6%) | 2,201 / 2,209 (99.6%) | >= 95% |
+| Position error p95 | 0.539 m | 0.531 m | — |
+| Maximum output timestamp gap | 0.90 s | 0.90 s | — |
+| Alignment median / p95 | 13 / 33 ms | 13 / 34 ms | — |
+| Command / RKO / localizer / player exit codes | all 0 | all 0 | successful exit |
+
+RKO dropped 20 frames per run for too few ICP keypoints, as before. Against the v1.8.0
+check, on the same CPU model:
+
+- **Accuracy:** 0.240-0.242 m overall and 0.170 m on the map, against 0.242-0.245 m
+  and 0.171 m.
+- **Alignment:** 13 ms at the median and 33-34 ms at p95, against 12-13 and 32-33 ms.
+
+Machine-readable summaries and receipts of [run 1](validation/v1.9.0-koide-20261110/run1/summary.json)
+and [run 2](validation/v1.9.0-koide-20261110/run2/summary.json), and the
+[provenance](validation/v1.9.0-koide-20261110/provenance.json) record the result,
+configuration and executable hashes.
+[Download the logs, trajectories and receipts of both runs](validation/v1.9.0-koide-20261110/evidence.tar.gz).
+Archive SHA-256: `93c419c21875ec069396e9879fce44385ec2ad3e55dbb7bc7e42a266e49bc499`. It contains no bag or map files.
+
 ## v1.8.0 release verification (2026-11-07)
 
 Two full `outdoor_hard_02b` replays at 1x passed on `release/v1.8.0` at `d853fbd`:

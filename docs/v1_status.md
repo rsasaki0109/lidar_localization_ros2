@@ -42,40 +42,43 @@ for benchmark and regression commands.
 
 ## Current Public Snapshot
 
-Latest release verification (`2026-11-07`):
+Latest release verification (`2026-11-10`):
+
+- release: `v1.9.0`, verified on `release/v1.9.0` at `8dc235f` (`main` at `028a0e2` plus
+  the version bump), with `ndt_omp_ros2` at its 0.2.0 release (`9f5567e`)
+- Koide `outdoor_hard_02b`, the release check: two full replays at 1x in ROS 2 Jazzy on
+  4 vCPUs, built without a build type as in `AGENTS.md`, with the v1.8.0 profile
+- both passed: `0.242 m` and `0.240 m` map-frame RMSE (`0.170 m` on the map, against
+  `0.171 m` for v1.8.0), `100.0%` diagnostic coverage; alignment `13 ms` at the median
+  and `33-34 ms` at p95, against `12-13` and `32-33 ms`, on the same CPU model
+- Boreas `boreas-2021-09-02-11-42`, `param/boreas_ndt_velodyne.yaml` (now an 80 m crop
+  and `min_inlier_ratio: 0.8`): `0.132 m` RMSE over the first 120 s, `0.127 m` with
+  `use_imu_preintegration`, every scan accepted, on the release build. Over the first
+  600 s (4.3 km), `0.105 m` and `0.098-0.099 m` with the 1.8.0 preset, not re-run.
+- Boreas fixture looped for an hour (`tools/benchmark/soak_replay.py`, with
+  `use_imu_preintegration`): `576 MiB` at most, under an 800 MB memory limit; after a
+  2 s stop the node is back within 0.06 s, and after a 10 s stop it requests
+  reinitialization without accepting a wrong pose
+- Istanbul, `param/istanbul_gtsam_smoother.yaml`, three windows: `0.24-0.27`,
+  `0.74-0.77` and `0.45-0.47 m` horizontal RMSE at `8.9-10 Hz` (measured for v1.8.0,
+  not re-run)
+
+See [the v1.9.0 verification](koide-online-replay.md#v190-release-verification-2026-11-10),
+[docs/benchmark.md](benchmark.md#boreas-vehicle-preset-replay) and
+[docs/benchmark.md](benchmark.md#under-a-memory-limit). This does not validate automatic
+initialization, recovery, physical hardware, or multi-hour operation.
+
+Previous release verification (`2026-11-07`):
 
 - release: `v1.8.0`, verified on `release/v1.8.0` at `d853fbd` (`main` at `64a14db` plus
   the version bump), with `ndt_omp_ros2` at its 0.2.0 release (`9f5567e`)
 - Koide `outdoor_hard_02b`, the release check: two full replays at 1x in ROS 2 Jazzy on
-  4 vCPUs, built without a build type as in `AGENTS.md`; the online profile now sets
+  4 vCPUs, built without a build type as in `AGENTS.md`; the online profile set
   `min_inlier_ratio: 0.8`
-- both passed: `0.242 m` and `0.245 m` map-frame RMSE (`0.171 m` on the map, against
-  `0.181 m` for v1.7.0), `100.0%` diagnostic coverage; alignment `12-13 ms` at the
-  median and `32-33 ms` at p95 (on a faster host CPU than v1.7.0's)
-- Boreas `boreas-2021-09-02-11-42`, `param/boreas_ndt_velodyne.yaml`: `0.132 m` RMSE over
-  the first 120 s, `0.105 m` over the first 600 s (4.3 km); with
-  `use_imu_preintegration`, `0.127 m` and `0.098-0.099 m`. With two cores kept busy
-  and the IMU on, the pose lags `0.12-0.16 s` at p95, against `0.58-0.77 s` before
-  ndt_omp_ros2 #15
-- Istanbul, `param/istanbul_gtsam_smoother.yaml`, three windows: `0.24-0.27`,
-  `0.74-0.77` and `0.45-0.47 m` horizontal RMSE at `8.9-10 Hz` (three runs each,
-  2026-11-04 to 11-07, every one starting within 0.05 s of the window start)
+- both passed: `0.242 m` and `0.245 m` map-frame RMSE (`0.171 m` on the map), `100.0%`
+  diagnostic coverage; alignment `12-13 ms` at the median and `32-33 ms` at p95
 
-See [the v1.8.0 verification](koide-online-replay.md#v180-release-verification-2026-11-07)
-and [docs/benchmark.md](benchmark.md#boreas-vehicle-preset-replay). This does not
-validate automatic initialization, recovery, physical hardware, or multi-hour
-operation.
-
-Previous release verification (`2026-11-03`):
-
-- release: `v1.7.0`, verified on `main` at `6b1e693` (the release branch adds only the
-  version bump and docs), with `ndt_omp_ros2` at `24c5df3` (the 0.2.0 content)
-- Koide `outdoor_hard_02b`, the release check: two full replays at 1x in ROS 2 Jazzy on
-  4 vCPUs, built without a build type as in `AGENTS.md`
-- both passed: `0.233 m` map-frame RMSE (`0.181 m` on the map), `100.0%` diagnostic
-  coverage; alignment `17 ms` at the median and `45-46 ms` at p95
-
-See [the v1.7.0 verification](koide-online-replay.md#v170-release-verification-2026-11-03).
+See [the v1.8.0 verification](koide-online-replay.md#v180-release-verification-2026-11-07).
 It does not validate automatic initialization, recovery, physical hardware, or
 multi-hour operation.
 
@@ -191,7 +194,7 @@ fixtures, but it did not win the replay of 2026-10-11:
 A fix needs a confirmation that does not lean on intermittent odometry, and a replay
 that reproduces the reset.
 
-Open items after v1.8.0:
+Open items after v1.9.0:
 
 - **Koide `outdoor_hard_01a` without odometry holds to 140-151 s, not to the end.**
   With the background map rebuild and `min_inlier_ratio` 0.8, the localizer alone stays
@@ -201,6 +204,13 @@ Open items after v1.8.0:
   ([experiments/inlier_ratio_gate](../experiments/inlier_ratio_gate/README.md#without-odometry-to-140-151-s)).
   The earlier stop at 107-111 s came from rebuilding the map in the scan callback. With
   RKO-LIO odometry the sequence is tracked.
+- **A node stopped for 10 s without odometry does not recover by itself.** On the
+  looped Boreas fixture it requests reinitialization and accepts no wrong pose, but
+  neither the IMU prediction (26-94 m off by then) nor the global localization nodes
+  (18-21 s per answer, too ambiguous to pass) find the track again
+  ([docs/global_localization.md](global_localization.md#on-the-boreas-fixture-after-a-10-s-stop)).
+  It needs an odometry source that keeps running (`use_odom_tf_prediction`); the
+  fixture has none, so that is not measured.
 
 Other work remains:
 

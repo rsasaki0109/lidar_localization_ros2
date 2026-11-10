@@ -2,63 +2,15 @@
 
 ## Unreleased
 
-### Removed
+## 1.9.0 - 2026-11-10
 
-- **Three odometry-bridge options that no preset turned on:**
-  `constrain_odom_tf_prediction_to_planar`, `constrain_odom_tf_prediction_height_only`
-  and `enable_map_odom_anchor_fitness_gate` (with `map_odom_anchor_max_fitness` and
-  `map_odom_anchor_max_correction_rotation_deg`). No preset, launch file, script or doc
-  set them.
-  - The three switches stay declared, so configuring with one of them `true` now fails
-    with a message that says so, as `use_imu` does since 1.8.0
-    (`include/lidar_localization/removed_parameters.hpp`). The two thresholds are no
-    longer declared, and ROS ignores them.
-  - `level_map_to_odom` stays: `docs/troubleshooting.md` measures it on Koide.
-  - With the defaults nothing changes: the Boreas trajectory is byte-identical.
-- **Four measurement-gate options that no preset turned on:**
-  - `enable_odom_tf_prediction_correction_guard` (with
-    `odom_tf_prediction_correction_guard_translation_m` and `_yaw_deg`): rejected a scan
-    whose correction from the odometry seed was too large.
-  - `enable_odom_tf_prediction_recovery_correction_guard` (with
-    `odom_tf_prediction_recovery_min_rejections`, `_max_fitness`,
-    `_guard_translation_m` and `_guard_yaw_deg`): widened that guard after a rejection
-    streak.
-  - `enable_soft_odom_correction_gate`: blended a scan that guard rejected with the
-    odometry prediction. `docs/imu_estimation.md` called it experimental and untested
-    on real data.
-  - `enable_consistency_recovery_gate` (with `consistency_recovery_min_rejections`,
-    `_score_margin`, `_max_translation_m` and `_max_yaw_deg`): accepted a scan over the
-    score threshold after a rejection streak when its correction was small.
-  - Their switches are refused when `true`, like the three above. `/alignment_status`
-    no longer reports `soft_odom_correction_gate_enabled`.
-  - `enable_seed_correction_guard` stays: the quickstart turns it on with odometry
-    prediction.
-- **The twist EKF** (`use_twist_ekf`, with the seven `ekf_sigma_*` and three
-  `ekf_fitness_*` parameters): a constant-velocity EKF on the twist that seeded NDT and
-  set the published covariance.
-  - **Why:** the docs called it experimental. On the graded and fast Istanbul windows
-    it lost track in three of six runs, where `use_gtsam_smoother` kept all of them, and
-    they recommended the smoother instead. No preset turned it on; four set it to
-    `false`.
-  - It took its 369-line filter, a seed source, a pose backend and a covariance mode with
-    it. `use_twist_ekf: true` is refused at configure.
-- **Two more gates that no preset turned on:**
-  - `enable_localizability_guard` (with `localizability_min_xy_eigen_ratio`): dropped the
-    previous-delta seed when the scan's XY spread was narrow. The docs called it an
-    experimental proxy. `horizontal_localizability_eigenvalue_ratio` stays in
-    `/alignment_status`; `localizability_guard_enabled`, `localizability_guard_active`
-    and the `localizability_guard_current_pose` seed source go.
-  - `enable_open_loop_strict_score_threshold` (with
-    `open_loop_strict_min_accepted_gap_sec`, `_min_seed_translation_m` and
-    `_score_threshold`): lowered the score threshold once no scan had been accepted for a
-    while and the seed had moved far. No doc mentioned it. `/alignment_status` no longer
-    reports `open_loop_strict_score_threshold_active`, and
-    `create_lidar_localization_config.py` drops its four `--open-loop-strict-*` flags.
-  - Both switches are refused when `true`.
-  - `enable_registration_localizability_diagnostics` stays: it only reports, and
-    `tools/benchmark/record_pose.py` records its output. `enable_local_reacquisition`
-    stays: `docs/troubleshooting.md` gives it as the fix for a lost odometry-bridged
-    pose and measures it on Koide.
+**Upgrading:** 1.9.0 removes ten features that no preset turned on, among them the
+twist EKF (see Removed). Their switches stay declared, and configuring one of them
+`true` now fails with a message that names it; their thresholds are no longer
+declared, and ROS ignores them. A configuration that left them off is unaffected.
+`lidar_localization_node` now limits glibc to two malloc arenas unless
+`MALLOC_ARENA_MAX` is set; a component loaded into another container needs it set in
+that container's environment.
 
 ### Changed
 
@@ -146,6 +98,80 @@
     odometry, with a handheld MID-360's IMU and the gate, it lost the track at 48.6 s
     instead of 140.7 s: after short rejection streaks its prediction had drifted where
     the previous scan's motion recovers. With the retry the track holds to 148.9 s.
+
+### Removed
+
+- **Three odometry-bridge options that no preset turned on:**
+  `constrain_odom_tf_prediction_to_planar`, `constrain_odom_tf_prediction_height_only`
+  and `enable_map_odom_anchor_fitness_gate` (with `map_odom_anchor_max_fitness` and
+  `map_odom_anchor_max_correction_rotation_deg`). No preset, launch file, script or doc
+  set them.
+  - The three switches stay declared, so configuring with one of them `true` now fails
+    with a message that says so, as `use_imu` does since 1.8.0
+    (`include/lidar_localization/removed_parameters.hpp`). The two thresholds are no
+    longer declared, and ROS ignores them.
+  - `level_map_to_odom` stays: `docs/troubleshooting.md` measures it on Koide.
+  - With the defaults nothing changes: the Boreas trajectory is byte-identical.
+- **Four measurement-gate options that no preset turned on:**
+  - `enable_odom_tf_prediction_correction_guard` (with
+    `odom_tf_prediction_correction_guard_translation_m` and `_yaw_deg`): rejected a scan
+    whose correction from the odometry seed was too large.
+  - `enable_odom_tf_prediction_recovery_correction_guard` (with
+    `odom_tf_prediction_recovery_min_rejections`, `_max_fitness`,
+    `_guard_translation_m` and `_guard_yaw_deg`): widened that guard after a rejection
+    streak.
+  - `enable_soft_odom_correction_gate`: blended a scan that guard rejected with the
+    odometry prediction. `docs/imu_estimation.md` called it experimental and untested
+    on real data.
+  - `enable_consistency_recovery_gate` (with `consistency_recovery_min_rejections`,
+    `_score_margin`, `_max_translation_m` and `_max_yaw_deg`): accepted a scan over the
+    score threshold after a rejection streak when its correction was small.
+  - Their switches are refused when `true`, like the three above. `/alignment_status`
+    no longer reports `soft_odom_correction_gate_enabled`.
+  - `enable_seed_correction_guard` stays: the quickstart turns it on with odometry
+    prediction.
+- **The twist EKF** (`use_twist_ekf`, with the seven `ekf_sigma_*` and three
+  `ekf_fitness_*` parameters): a constant-velocity EKF on the twist that seeded NDT and
+  set the published covariance.
+  - **Why:** the docs called it experimental. On the graded and fast Istanbul windows
+    it lost track in three of six runs, where `use_gtsam_smoother` kept all of them, and
+    they recommended the smoother instead. No preset turned it on; four set it to
+    `false`.
+  - It took its 369-line filter, a seed source, a pose backend and a covariance mode with
+    it. `use_twist_ekf: true` is refused at configure.
+- **Two more gates that no preset turned on:**
+  - `enable_localizability_guard` (with `localizability_min_xy_eigen_ratio`): dropped the
+    previous-delta seed when the scan's XY spread was narrow. The docs called it an
+    experimental proxy. `horizontal_localizability_eigenvalue_ratio` stays in
+    `/alignment_status`; `localizability_guard_enabled`, `localizability_guard_active`
+    and the `localizability_guard_current_pose` seed source go.
+  - `enable_open_loop_strict_score_threshold` (with
+    `open_loop_strict_min_accepted_gap_sec`, `_min_seed_translation_m` and
+    `_score_threshold`): lowered the score threshold once no scan had been accepted for a
+    while and the seed had moved far. No doc mentioned it. `/alignment_status` no longer
+    reports `open_loop_strict_score_threshold_active`, and
+    `create_lidar_localization_config.py` drops its four `--open-loop-strict-*` flags.
+  - Both switches are refused when `true`.
+  - `enable_registration_localizability_diagnostics` stays: it only reports, and
+    `tools/benchmark/record_pose.py` records its output. `enable_local_reacquisition`
+    stays: `docs/troubleshooting.md` gives it as the fix for a lost odometry-bridged
+    pose and measures it on Koide.
+
+### Validation
+
+- The release check: two full Koide `outdoor_hard_02b` replays at 1x passed on
+  `release/v1.9.0` at `8dc235f` (`main` at `028a0e2` plus the version bump), built
+  without a build type, with ndt_omp_ros2 at its 0.2.0 release.
+  - **Accuracy:** 0.242 and 0.240 m RMSE (0.170 m on the map), against 0.242-0.245 m
+    (0.171 m) for v1.8.0.
+  - **Coverage:** 100.0% diagnostic coverage in both.
+  - **Alignment:** 13 ms at the median and 33-34 ms at p95, against 12-13 and 32-33 ms,
+    on the same CPU model
+    ([docs/koide-online-replay.md](docs/koide-online-replay.md#v190-release-verification-2026-11-10),
+    `docs/validation/v1.9.0-koide-20261110`).
+- Boreas, `param/boreas_ndt_velodyne.yaml` on the release build: 0.132 m RMSE over the
+  first 120 s, 0.127 m with `use_imu_preintegration: true`, every scan accepted, as on
+  1.8.0.
 
 ## 1.8.0 - 2026-11-07
 
