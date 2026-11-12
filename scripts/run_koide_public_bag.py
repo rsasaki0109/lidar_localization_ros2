@@ -5,14 +5,64 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import shutil
+import signal
 import sys
 import time
 import zipfile
 from pathlib import Path
 
 import koide_public_bag as data_tool
+
+
+def parse_stall(text):
+    """A START_SEC:DURATION_SEC stall as a soak_replay fault dict; START_SEC counts
+    from the first scored cloud (the origin of OFF_MAP_SEC)."""
+    try:
+        start, duration = (float(v) for v in text.split(":"))
+        if not (0 <= start < math.inf and 0 < duration < math.inf):
+            raise ValueError
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"expected START_SEC:DURATION_SEC with a duration above 0, got {text!r}"
+        ) from None
+    return {"kind": "stall", "lap": 0, "start_sec": start, "duration_sec": duration}
+
+
+def due_stall_signals(stalls, state, elapsed_sec, now):
+    """The (signal, index) pairs to send now, updating STATE (per stall: "stopped_at",
+    a monotonic time or None, and "done"). ELAPSED_SEC is replay time, NOW monotonic."""
+    due = []
+    for i, (stall, item) in enumerate(zip(stalls, state, strict=True)):
+        if item["done"]:
+            continue
+        if item["stopped_at"] is None:
+            if elapsed_sec >= stall["start_sec"]:
+                item["stopped_at"] = now
+                due.append((signal.SIGSTOP, i))
+        elif now - item["stopped_at"] >= stall["duration_sec"]:
+            item["done"] = True
+            due.append((signal.SIGCONT, i))
+    return due
+
+
+def score_stalls(poses, reference, first_scored_sec, stalls):
+    """Score each stall as tools/benchmark/soak_replay.py scores a stall fault."""
+    import numpy as np
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/benchmark"))
+    try:
+        import soak_replay
+    except ImportError as exc:
+        raise ValueError(
+            f"--stall needs tools/benchmark/soak_replay.py: {exc}"
+        ) from exc
+    rows = np.asarray(poses, dtype=float).reshape(-1, 8)
+    period_sec = 1e9  # one "lap": the replay is not looped
+    errors = soak_replay.pose_errors(rows, reference, period_sec, 1)
+    return soak_replay.score_faults(errors, first_scored_sec, period_sec, stalls)
 
 
 def parser():
@@ -43,6 +93,17 @@ def parser():
         "--rko-executable",
         type=Path,
         help="RKO online_node path; otherwise use the sourced rko_lio package",
+    )
+    result.add_argument(
+        "--stall",
+        action="append",
+        default=[],
+        type=parse_stall,
+        metavar="START_SEC:DURATION_SEC",
+        help="freeze only the localizer process (SIGSTOP, then SIGCONT) for DURATION_SEC "
+        "starting START_SEC after the first scored cloud, while RKO and the player run; "
+        "repeatable. Scores each stall with tools/benchmark/soak_replay.py into "
+        "summary.json under 'stalls'",
     )
     result.add_argument(
         "--dry-run",
@@ -186,7 +247,7 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
                 ],
                 "rko",
             )
-            session.spawn(
+            localizer_process = session.spawn(
                 [
                     str(localizer),
                     "--ros-args",
@@ -243,9 +304,30 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
             duration = (max(clouds.values()) - start_ns) * 1e-9
             deadline = time.monotonic() + duration + 90
             next_progress = time.monotonic() + 30
+            # Replay time zero for --stall: the record time of the first scored cloud.
+            first_scored = min(expected)
+            origin_ns = clouds[first_scored]
+            stall_state = [{"stopped_at": None, "done": False} for _ in args.stall]
+            stall_log = []
             while player.poll() is None:
                 check_nodes()
                 session.spin_for(0.05)
+                elapsed = (clock_ns[0] - origin_ns) * 1e-9
+                for sig, i in due_stall_signals(
+                    args.stall, stall_state, elapsed, time.monotonic()
+                ):
+                    os.kill(localizer_process.pid, sig)
+                    stall_log.append(
+                        {
+                            "stall": i,
+                            "signal": signal.Signals(sig).name,
+                            "replay_sec": round(elapsed, 3),
+                        }
+                    )
+                    print(
+                        f"{signal.Signals(sig).name} localizer at replay {elapsed:.1f} s",
+                        flush=True,
+                    )
                 if not sent and clock_ns[0] >= initialization_ns:
                     message = PoseWithCovarianceStamped()
                     message.header.frame_id = "map"
@@ -278,6 +360,11 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
             result = data_tool.evaluate(
                 session.poses, reference, expected, session.diagnostic_stamps
             )
+            if args.stall:
+                result["stalls"] = score_stalls(
+                    session.poses, reference, first_scored * 1e-9, args.stall
+                )
+                result["stall_signals"] = stall_log
             result.update(
                 {
                     "source": data_tool.SOURCE,
