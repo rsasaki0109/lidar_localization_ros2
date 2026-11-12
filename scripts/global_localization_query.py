@@ -102,8 +102,14 @@ class GlobalLocalizationConfig:
     ndt_search_method: str = "direct7"
     ndt_scan_voxel_leaf_size: float = 1.0
     ndt_target_voxel_leaf_size: float = 0.2
+    # A radius <= 0 scores every candidate against the whole map, whose NDT target
+    # is then prepared once at startup instead of a crop per candidate and query.
     ndt_local_map_radius: float = 150.0
     ndt_min_target_points: int = 100
+    # Opt-in (0 = off): score only scan points within this range (m) of the base
+    # frame. Returns from beyond where the map was built have no map point near
+    # them, and their squared distances outweigh the rest of the fitness score.
+    ndt_scan_max_range: float = 0.0
     # Opt-in (WP3): seed candidates from a reference trajectory near the query
     # stamp instead of map-wide BBS. Requires reference_csv and scan_stamp_sec
     # on each query; pair with registration scoring for ranking.
@@ -160,6 +166,14 @@ def level_attitude(rotation: np.ndarray) -> tuple[float, float, np.ndarray]:
     rx = np.array([[1.0, 0.0, 0.0], [0.0, cr, -sr], [0.0, sr, cr]])
     ry = np.array([[cp, 0.0, sp], [0.0, 1.0, 0.0], [-sp, 0.0, cp]])
     return roll, pitch, ry @ rx
+
+
+def registration_scan_points(points_xyz, max_range_m: float):
+    """Scan points the registration scores: those within max_range_m, if positive."""
+    if max_range_m <= 0.0 or not math.isfinite(max_range_m) or not len(points_xyz):
+        return points_xyz
+    points = np.asarray(points_xyz, dtype=np.float64)
+    return points[np.einsum("ij,ij->i", points, points) <= max_range_m * max_range_m]
 
 
 def normalize_candidate_source(value: str) -> str:
@@ -373,6 +387,9 @@ class GlobalLocalizationEngine:
             refine = self.config.registration_refine_candidates
 
         score_zs = [self._registration_seed_z(candidate) for candidate in candidates]
+        points_xyz = registration_scan_points(
+            points_xyz, self.config.ndt_scan_max_range
+        )
         # One call, so the scorer can share a map crop among nearby candidates.
         results = self.registration_scorer.score_candidates(
             points_xyz,

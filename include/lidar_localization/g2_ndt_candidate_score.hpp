@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -23,6 +24,9 @@
 #include <pclomp/ndt_omp.h>
 #include <pclomp/ndt_omp_impl.hpp>
 #include <pclomp/voxel_grid_covariance_omp_impl.hpp>
+
+#include "lidar_localization/registration_fitness.hpp"
+#include "lidar_localization/registration_target_search_tree.hpp"
 
 namespace lidar_localization
 {
@@ -258,12 +262,28 @@ constexpr double kSharedTargetMarginM = 10.0;
 class G2NdtCandidateScorer
 {
 public:
+  // With local_map_radius <= 0 every candidate is scored against the whole map, so
+  // its NDT target (voxel filter, cells and search tree) is prepared once, here, and
+  // kept for every later query. A crop around each candidate is prepared per query.
   G2NdtCandidateScorer(const std::string & map_path, G2NdtScoreParams params)
   : params_(params), full_map_(load_cloud_xyzi(map_path)), ground_(*full_map_)
   {
+    if (params_.local_map_radius <= 0.0) {
+      whole_map_ = prepare_target(full_map_);
+      // Nothing is cropped from the map any more.
+      full_map_.reset();
+    }
   }
 
   double ground_z(double x, double y) const {return ground_.ground_z(x, y);}
+
+  // Threads of one alignment and of its fitness score. pclomp's KDTREE neighbour
+  // search is not safe to share between threads, so it aligns on one.
+  int threads() const
+  {
+    return params_.search_method == static_cast<int>(pclomp::KDTREE) ?
+           1 : std::max(1, params_.num_threads);
+  }
 
   // Scores several poses of one scan. Preparing the NDT target (crop, voxel
   // filter, cells and k-d tree) costs several times the alignment, so a crop is
@@ -280,6 +300,19 @@ public:
       return results;
     }
 
+    if (whole_map_) {
+      // The prepared target is shared by every query: one alignment at a time.
+      std::lock_guard<std::mutex> lock(whole_map_mutex_);
+      whole_map_->ndt->setInputSource(source);
+      for (std::size_t i = 0; i < poses.size(); ++i) {
+        results[i].target_point_count = whole_map_->target_point_count;
+        if (whole_map_->usable) {
+          align(*whole_map_->ndt, poses[i], results[i]);
+        }
+      }
+      return results;
+    }
+
     double scan_extent = 0.0;
     for (const auto & point : source->points) {
       scan_extent = std::max(scan_extent, std::hypot(double{point.x}, double{point.y}));
@@ -293,12 +326,10 @@ public:
       if (scored[i]) {
         continue;
       }
-      CloudPtr target = crop_map_xy(full_map_, poses[i].x, poses[i].y, params_.local_map_radius);
-      const std::size_t target_point_count = target->size();
-      Ndt ndt;
-      const bool usable = target_point_count >= params_.min_target_points;
-      if (usable) {
-        configure(ndt, voxel_downsample(target, params_.target_voxel_leaf_size), source);
+      const std::unique_ptr<PreparedTarget> target = prepare_target(
+        crop_map_xy(full_map_, poses[i].x, poses[i].y, params_.local_map_radius));
+      if (target->usable) {
+        target->ndt->setInputSource(source);
       }
       for (std::size_t j = i; j < poses.size(); ++j) {
         if (scored[j] || (j != i && std::hypot(
@@ -307,9 +338,9 @@ public:
           continue;
         }
         scored[j] = true;
-        results[j].target_point_count = target_point_count;
-        if (usable) {
-          align(ndt, poses[j], results[j]);
+        results[j].target_point_count = target->target_point_count;
+        if (target->usable) {
+          align(*target->ndt, poses[j], results[j]);
         }
       }
     }
@@ -338,26 +369,42 @@ private:
     return result;
   }
 
-  void configure(Ndt & ndt, const CloudPtr & target, const CloudPtr & source) const
+  struct PreparedTarget
   {
-    ndt.setResolution(params_.ndt_resolution);
-    ndt.setStepSize(params_.ndt_step_size);
-    ndt.setTransformationEpsilon(params_.transform_epsilon);
-    ndt.setMaximumIterations(params_.max_iterations);
-    ndt.setNumThreads(std::max(1, params_.num_threads));
-    ndt.setNeighborhoodSearchMethod(
-      static_cast<pclomp::NeighborSearchMethod>(params_.search_method));
-    ndt.setInputTarget(target);
-    ndt.setInputSource(source);
+    std::unique_ptr<Ndt> ndt{std::make_unique<Ndt>()};
+    std::size_t target_point_count{0};
+    bool usable{false};
+  };
+
+  // The NDT cells and the search tree for the fitness score of a map crop (or of
+  // the whole map), built side by side.
+  std::unique_ptr<PreparedTarget> prepare_target(const CloudPtr & crop) const
+  {
+    auto target = std::make_unique<PreparedTarget>();
+    target->target_point_count = crop->size();
+    target->usable = target->target_point_count >= params_.min_target_points;
+    if (target->usable) {
+      Ndt & ndt = *target->ndt;
+      ndt.setResolution(params_.ndt_resolution);
+      ndt.setStepSize(params_.ndt_step_size);
+      ndt.setTransformationEpsilon(params_.transform_epsilon);
+      ndt.setMaximumIterations(params_.max_iterations);
+      ndt.setNumThreads(threads());
+      ndt.setNeighborhoodSearchMethod(
+        static_cast<pclomp::NeighborSearchMethod>(params_.search_method));
+      setNdtTargetWithSearchTree<pcl::PointXYZI>(
+        ndt, voxel_downsample(crop, params_.target_voxel_leaf_size));
+    }
+    return target;
   }
 
-  static void align(Ndt & ndt, const G2NdtPose & pose, G2NdtScoreResult & result)
+  void align(Ndt & ndt, const G2NdtPose & pose, G2NdtScoreResult & result) const
   {
     const Eigen::Matrix4f init = pose_matrix(pose.x, pose.y, pose.z, pose.yaw);
     Cloud output;
     ndt.align(output, init);
     result.converged = ndt.hasConverged();
-    const double fitness = ndt.getFitnessScore();
+    const double fitness = parallelFitnessScore(ndt, threads());
     result.fitness = std::isfinite(fitness) ? fitness : std::numeric_limits<double>::infinity();
     if (result.converged) {
       const Eigen::Matrix4f final = ndt.getFinalTransformation();
@@ -373,6 +420,8 @@ private:
   G2NdtScoreParams params_;
   CloudPtr full_map_;
   GroundHeightIndex ground_;
+  std::unique_ptr<PreparedTarget> whole_map_;
+  mutable std::mutex whole_map_mutex_;
 };
 
 }  // namespace g2_ndt

@@ -338,6 +338,21 @@ def generate_launch_description():
             'g2_ndt_target_voxel_leaf_size', default_value='0.2',
             description='G2 NDT scoring map voxel size (match localizer target).'),
         DeclareLaunchArgument(
+            'g2_ndt_local_map_radius', default_value='150.0',
+            description='G2 NDT scoring map crop radius (m) around each candidate. '
+                        '0 scores against the whole map, prepared once at startup '
+                        'instead of a crop per candidate and query: much faster, '
+                        'but the whole map target is held in memory.'),
+        DeclareLaunchArgument(
+            'g2_ndt_scan_max_range', default_value='0.0',
+            description='G2 NDT scoring uses only scan points within this range (m); '
+                        '0 keeps them all. Returns from beyond the mapped area '
+                        'dominate the fitness score otherwise.'),
+        DeclareLaunchArgument(
+            'g2_ndt_num_threads', default_value='1',
+            description='Threads of each G2 NDT scoring alignment and fitness score '
+                        '(the KDTREE neighbour search always uses one).'),
+        DeclareLaunchArgument(
             'g2_angular_resolution_deg', default_value='10.0',
             description='G2 BBS yaw sampling step; coarser = faster query, fresher '
                         'seed (e.g. 10.0).'),
@@ -457,11 +472,16 @@ def generate_launch_description():
                 LaunchConfiguration('g2_enable_registration_scoring'), value_type=bool),
             'registration_score_gate': ParameterValue(
                 LaunchConfiguration('g2_registration_score_gate'), value_type=float),
-            # ndt_num_threads deliberately not exposed: pclomp NDT_OMP scoring
-            # with its default KDTREE neighborhood search is not thread-safe
-            # (4 threads degraded HDL fixes from fitness 0.03-0.9 to 5-12 with
-            # no runtime gain). The node param stays at its safe default of 1;
-            # revisit after wiring setNeighborhoodSearchMethod(DIRECT7).
+            # pclomp's KDTREE neighbour search is not thread-safe (4 threads
+            # degraded HDL fixes from fitness 0.03-0.9 to 5-12 with no runtime
+            # gain), so the scorer aligns on one thread with it whatever
+            # g2_ndt_num_threads says. The default search is DIRECT7.
+            'ndt_num_threads': ParameterValue(
+                LaunchConfiguration('g2_ndt_num_threads'), value_type=int),
+            'ndt_local_map_radius': ParameterValue(
+                LaunchConfiguration('g2_ndt_local_map_radius'), value_type=float),
+            'ndt_scan_max_range': ParameterValue(
+                LaunchConfiguration('g2_ndt_scan_max_range'), value_type=float),
             'registration_refine_candidates': ParameterValue(
                 LaunchConfiguration('g2_registration_refine_candidates'),
                 value_type=bool),
