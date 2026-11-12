@@ -294,7 +294,9 @@ latency roughly halved by scoring 8 candidates in the Koide harness. (G2's
 `ndt_num_threads` param is deliberately not exposed as a launch arg and stays 1
 until `setNeighborhoodSearchMethod(DIRECT7)` is wired: pclomp NDT_OMP scoring is
 not thread-safe with its default KDTREE search — 4 threads silently broke every
-HDL fix.) The HDL regression was re-validated under the full new localizer stack
+HDL fix. Since 2026-11-12 it is the launch arg `g2_ndt_num_threads`, default 1: the
+default search is DIRECT7, and the scorer keeps KDTREE on one thread. The HDL replay
+has not been re-run with threads.) The HDL regression was re-validated under the full new localizer stack
 (pass, and now with a kidnap that genuinely sticks).
 
 Status: **the Koide kidnap recovery itself is now GT-validated** — canonical 120 s

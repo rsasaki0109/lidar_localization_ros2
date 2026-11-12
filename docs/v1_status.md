@@ -207,7 +207,8 @@ Open items after v1.9.0:
 - **A node stopped for 10 s without odometry does not recover by itself.** On the
   looped Boreas fixture it requests reinitialization and accepts no wrong pose, but
   neither the IMU prediction (26-94 m off by then) nor the global localization nodes
-  (18-21 s per answer, too ambiguous to pass) find the track again
+  (18-21 s per answer then; 2 s with the fast scoring settings, right for half the
+  scans and silent for the rest) find the track again
   ([docs/global_localization.md](global_localization.md#on-the-boreas-fixture-after-a-10-s-stop)).
   With an odometry source that keeps running (`use_odom_tf_prediction`) it does: on
   Koide `outdoor_hard_02b` with RKO-LIO, the first scan is accepted 0.2-1.0 s after a

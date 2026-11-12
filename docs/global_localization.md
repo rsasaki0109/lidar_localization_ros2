@@ -70,6 +70,23 @@ times the alignment. Candidates whose scan, plus 10 m, fits inside one crop shar
 on the Koide outdoor maps this scored 8 candidates 2.9x and 16 candidates 3.7x
 faster, with identical fitness.
 
+Three settings make the scoring fast on a map the scan reaches across (launch
+arguments `g2_ndt_local_map_radius`, `g2_ndt_num_threads` and `g2_ndt_scan_max_range`;
+node parameters without the `g2_` prefix). Their defaults keep the behavior above:
+
+- **`ndt_local_map_radius: 0.0`** (default 150) scores every candidate against the
+  whole map. Its NDT target is prepared once, when the node starts, instead of a crop
+  per candidate on every query. The node holds that target: about 240 MiB more on the
+  3.1 million-point Boreas map.
+- **`ndt_num_threads`** (default 1) threads each alignment and its fitness score. The
+  KDTREE neighbour search always runs on one thread; the default search is DIRECT7.
+- **`ndt_scan_max_range`** (default 0 = off) scores only the scan points within this
+  range. Returns from beyond the mapped area otherwise dominate the fitness: on Boreas
+  the true pose scored 300-770 with every point and 0.05-0.08 within 80 m.
+
+[On Boreas](#on-the-boreas-fixture-map-wide-queries) they bring a query from 19 s to
+2 s.
+
 While a query runs, the node publishes JSON progress on
 `/global_localization_node/status` (`std_msgs/String`: `query_id`, `phase`
 `started`/`search`/`scoring`/`done`, `done`/`total` counts (`total` is the
@@ -212,7 +229,7 @@ launch defaults. Two laps with a 10 s stop, 50 s and 30 s into the lap, with
   and 10 or 5 deg: tree-lined stretches score 0.86-0.93 at wrong places. At 20 and 100 s
   the right pose ranks first with the band at -1-3 m.
 - **The registration scoring takes the rest.** At 6 m/s the vehicle has moved 110-130 m
-  by the time an answer comes.
+  by the time an answer comes. The next section profiles it and cuts it to 2 s.
 - **A search near a close prediction works, but after 10 s none is close.**
   - Over the grid cropped to 40 m around a prediction 15 m and 20 deg off the truth,
     the BBS takes 0.4-0.7 s and ranks the right pose first at 40 and 50 s and second
@@ -230,6 +247,44 @@ launch defaults. Two laps with a 10 s stop, 50 s and 30 s into the lap, with
   publishing clouds and IMU from one participant. Without an odometry source that
   keeps running (`use_odom_tf_prediction`), a 10 s stop of a moving vehicle ends in a
   reinitialization request. With one it recovers: see the next section.
+
+### On the Boreas fixture, map-wide queries
+
+Sixteen queries with no prior, on scans 5 to 115 s into the fixture, on 2026-11-12
+with 4 vCPUs. An answer counts as published when it passes the supervisor's score and
+ambiguity checks, and as right within 2 m and 10 deg of the ground truth.
+
+| Settings | Median | Worst | Right / wrong / none published |
+| --- | --- | --- | --- |
+| Launch defaults | 19.0 s | 24.0 s | 0 / 0 / 16 |
+| `g2_ndt_local_map_radius:=0.0 g2_ndt_num_threads:=4 g2_ndt_scan_max_range:=80.0` | 1.8 s | 3.2 s | 6 / 2 / 8 |
+| and `g2_registration_refine_candidates:=true` | 2.0 s | 3.2-3.6 s | 8 / 0 / 8 |
+
+- **Where the 19 s went** (one query, 16 candidates): 13-14 s prepared a scoring
+  target for each candidate (crop 0.8 s, voxel filter 3.3 s, NDT cells 3.4 s, the
+  fitness search tree 6.0 s), 3-5 s aligned, and the BBS took 0.9-1.0 s. The scan
+  reaches 234 m, so no two candidates could share a 150 m crop, and each crop held
+  45-66% of the map.
+- **Why nothing was published before:** with every scan point the true pose's fitness
+  was 300-770, the worst of the 16 at 20 s. Within 80 m it is 0.05-0.21, against
+  0.9-5.2 at wrong places.
+- **The two wrong answers without refinement** were the right place, 2.1-2.9 m off:
+  the BBS cell pose, not yet aligned. With refinement they are within 0.74 m.
+- **The search still misses half the scans.** The right pose is among the 16 BBS
+  candidates for 8 of the 16 scans, before and after; at 28, 35, 40, 50, 55, 61, 90
+  and 115 s it is not, and no answer is published there. At those places the best
+  wrong candidate scores 0.13-0.85 and only the ambiguity check stops it.
+- **One scan is fragile:** the scan 0.1 s later flipped 20 s and 70 s between right
+  and none.
+- **Accumulating scans did not help.** Matching the last 10 or 21 scans (1-2 s),
+  even placed by their ground-truth motion, never put the right pose among the
+  candidates at 40, 50 or 61 s, and took 2.7-3.5 s.
+- **On Koide** (`outdoor_hard_01a`, 10 scans) the fast settings give the same answers
+  as the defaults, 2 right, 1 wrong and 7 none, in 0.82 s instead of 2.57 s at the
+  median. The wrong one, 193 m off at 95 s, is published with the defaults too.
+
+Not measured: the fast settings in the closed loop with the supervisor, range caps
+other than 80 m, and the HDL replay with threads.
 
 ### On Koide, with odometry, after a 10 s stop
 
