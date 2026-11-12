@@ -303,11 +303,11 @@ public:
     if (whole_map_) {
       // The prepared target is shared by every query: one alignment at a time.
       std::lock_guard<std::mutex> lock(whole_map_mutex_);
-      whole_map_->ndt->setInputSource(source);
+      whole_map_->ndt.setInputSource(source);
       for (std::size_t i = 0; i < poses.size(); ++i) {
         results[i].target_point_count = whole_map_->target_point_count;
         if (whole_map_->usable) {
-          align(*whole_map_->ndt, poses[i], results[i]);
+          align(whole_map_->ndt, poses[i], results[i]);
         }
       }
       return results;
@@ -329,7 +329,7 @@ public:
       const std::unique_ptr<PreparedTarget> target = prepare_target(
         crop_map_xy(full_map_, poses[i].x, poses[i].y, params_.local_map_radius));
       if (target->usable) {
-        target->ndt->setInputSource(source);
+        target->ndt.setInputSource(source);
       }
       for (std::size_t j = i; j < poses.size(); ++j) {
         if (scored[j] || (j != i && std::hypot(
@@ -340,7 +340,7 @@ public:
         scored[j] = true;
         results[j].target_point_count = target->target_point_count;
         if (target->usable) {
-          align(*target->ndt, poses[j], results[j]);
+          align(target->ndt, poses[j], results[j]);
         }
       }
     }
@@ -371,7 +371,7 @@ private:
 
   struct PreparedTarget
   {
-    std::unique_ptr<Ndt> ndt{std::make_unique<Ndt>()};
+    Ndt ndt;
     std::size_t target_point_count{0};
     bool usable{false};
   };
@@ -384,7 +384,7 @@ private:
     target->target_point_count = crop->size();
     target->usable = target->target_point_count >= params_.min_target_points;
     if (target->usable) {
-      Ndt & ndt = *target->ndt;
+      Ndt & ndt = target->ndt;
       ndt.setResolution(params_.ndt_resolution);
       ndt.setStepSize(params_.ndt_step_size);
       ndt.setTransformationEpsilon(params_.transform_epsilon);
