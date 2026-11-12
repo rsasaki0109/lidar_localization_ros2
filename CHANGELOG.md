@@ -4,6 +4,23 @@
 
 ### Added
 
+- **Three settings answer a global localization query in 2 s instead of 19 s** on the
+  Boreas fixture: `g2_ndt_local_map_radius:=0.0`, `g2_ndt_num_threads:=4` and
+  `g2_ndt_scan_max_range:=80.0` on `global_localization_recovery.launch.py` (node
+  parameters `ndt_local_map_radius`, `ndt_num_threads` and the new
+  `ndt_scan_max_range`). The defaults are unchanged.
+  - **Radius 0** prepares the whole map's scoring target once at startup instead of a
+    crop per candidate on every query, which took 13-14 of the 19 s. The node holds
+    about 240 MiB more on Boreas.
+  - **The range cap** scores only scan points within it. With every point the true
+    pose's fitness was 300-770, so no answer was ever published; within 80 m it is
+    0.05-0.21.
+  - **Over 16 scans with no prior**, with `g2_registration_refine_candidates:=true`: 8
+    right answers, none wrong and 8 not published, where the defaults published none.
+    The map-wide search still misses the right pose for those 8
+    (`docs/global_localization.md`).
+  - The fitness score of the default crop path is unchanged, and it is now threaded
+    too.
 - **`run_koide_public_bag.py --stall START_SEC:DURATION_SEC`** freezes only the
   localizer for DURATION_SEC, while RKO-LIO and the player run, and scores the stop
   into `summary.json` as `tools/benchmark/soak_replay.py` scores a stall.

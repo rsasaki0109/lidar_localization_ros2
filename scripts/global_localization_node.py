@@ -117,6 +117,8 @@ class GlobalLocalizationNode(Node):
         self.declare_parameter("ndt_target_voxel_leaf_size", 0.2)
         self.declare_parameter("ndt_local_map_radius", 150.0)
         self.declare_parameter("ndt_min_target_points", 100)
+        # Opt-in (0 = off): score only scan points within this range (m).
+        self.declare_parameter("ndt_scan_max_range", 0.0)
         self.declare_parameter("registration_seed_z_m", 0.0)
         self.declare_parameter("registration_sensor_height_m", -1.0)
         self.declare_parameter("candidate_source", "bbs")
@@ -192,6 +194,7 @@ class GlobalLocalizationNode(Node):
             ndt_min_target_points=int(
                 self.get_parameter("ndt_min_target_points").value
             ),
+            ndt_scan_max_range=float(self.get_parameter("ndt_scan_max_range").value),
             registration_seed_z_m=float(
                 self.get_parameter("registration_seed_z_m").value
             ),
@@ -231,7 +234,10 @@ class GlobalLocalizationNode(Node):
                 )
             else:
                 self.get_logger().info(
-                    f"registration scoring enabled: map={map_path} gate={config.registration_score_gate:.2f}"
+                    f"registration scoring enabled: map={map_path} gate={config.registration_score_gate:.2f} "
+                    f"local_map_radius={config.ndt_local_map_radius:g} m "
+                    f"({'whole map, prepared once' if config.ndt_local_map_radius <= 0.0 else 'crop per candidate'}) "
+                    f"scan_max_range={config.ndt_scan_max_range:g} m threads={config.ndt_num_threads}"
                 )
         if self.engine.candidate_source == "route_crop":
             self.get_logger().info(

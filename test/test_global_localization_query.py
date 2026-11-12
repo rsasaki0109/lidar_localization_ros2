@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 from PIL import Image
@@ -722,6 +723,107 @@ def test_registration_scorer_shares_map_crops_without_changing_scores():
         assert together[2].target_point_count == alone[2].target_point_count
 
 
+def test_registration_scorer_prepares_the_whole_map_once():
+    try:
+        glq._append_module_dirs("g2_ndt_score")
+        import g2_ndt_score
+    except ImportError:
+        print("skipping: g2_ndt_score is not built")
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        map_path = Path(tmp) / "walls.pcd"
+        _write_wall_map_pcd(map_path)
+        map_points = np.loadtxt(map_path, skiprows=10)
+        sensor = np.array([40.0, 0.0, 0.0])
+        offsets = map_points - sensor
+        scan = offsets[np.hypot(offsets[:, 0], offsets[:, 1]) < 25.0]
+        poses = [(40.0, 0.0, 0.0, 0.0), (41.0, 0.5, 0.0, 0.05), (-40.0, 0.0, 0.0, 0.0)]
+
+        # A crop wider than the map holds every map point, as the whole map does.
+        cropped = g2_ndt_score.MapNdtScorer(
+            str(map_path), target_voxel_leaf_size=0.2, local_map_radius=1000.0
+        ).score_candidates(scan, poses)
+        whole_map = g2_ndt_score.MapNdtScorer(
+            str(map_path), target_voxel_leaf_size=0.2, local_map_radius=0.0
+        )
+        first = whole_map.score_candidates(scan, poses)
+        # A later query reuses the prepared target, and finds the same.
+        again = whole_map.score_candidates(scan, poses[::-1])[::-1]
+        threaded = g2_ndt_score.MapNdtScorer(
+            str(map_path),
+            num_threads=4,
+            target_voxel_leaf_size=0.2,
+            local_map_radius=0.0,
+        ).score_candidates(scan, poses)
+
+        for crop, whole, repeat, parallel in zip(
+            cropped, first, again, threaded, strict=True
+        ):
+            assert whole.converged == crop.converged
+            assert whole.target_point_count == crop.target_point_count
+            assert math.isclose(whole.fitness, crop.fitness, rel_tol=1e-6)
+            assert math.isclose(whole.refined_x, crop.refined_x, abs_tol=1e-6)
+            assert math.isclose(repeat.fitness, whole.fitness, rel_tol=1e-6)
+            assert math.isclose(repeat.refined_x, whole.refined_x, abs_tol=1e-6)
+            assert math.isclose(parallel.fitness, whole.fitness, rel_tol=1e-4)
+            assert math.isclose(parallel.refined_x, whole.refined_x, abs_tol=1e-3)
+        assert first[0].fitness < 0.05
+        assert first[0].fitness < first[2].fitness
+
+
+def test_registration_scan_points_drop_returns_beyond_the_range():
+    points = np.array(
+        [[1.0, 0.0, 0.0], [0.0, 59.0, 10.0], [70.0, 0.0, 0.0], [0.0, 0.0, -80.0]]
+    )
+
+    assert glq.registration_scan_points(points, 0.0) is points
+    kept = glq.registration_scan_points(points, 60.0)
+    np.testing.assert_array_equal(kept, points[:2])
+
+
+def test_score_with_registration_scores_only_points_within_the_scan_max_range():
+    class RecordingScorer:
+        def __init__(self):
+            self.scans = []
+
+        def score_candidates(self, points_xyz, poses):
+            self.scans.append(np.asarray(points_xyz))
+            return [
+                SimpleNamespace(
+                    fitness=0.5,
+                    converged=True,
+                    refined_x=x,
+                    refined_y=y,
+                    refined_z=z,
+                    refined_yaw=yaw,
+                )
+                for x, y, z, yaw in poses
+            ]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        grid_yaml = write_occupancy_map(Path(tmp))
+        engine = glq.GlobalLocalizationEngine(
+            glq.GlobalLocalizationConfig(ndt_scan_max_range=50.0), grid_yaml
+        )
+        engine.registration_scorer = RecordingScorer()
+        points = np.array([[10.0, 0.0, 1.0], [0.0, -49.0, 0.0], [120.0, 5.0, 2.0]])
+        candidate = glq.GlobalLocalizationCandidate(
+            x_m=1.0,
+            y_m=2.0,
+            z_m=0.5,
+            yaw_rad=0.0,
+            score=0.9,
+            hit_count=9,
+            point_count=10,
+            bbs_score=0.9,
+        )
+
+        ranked = engine._score_with_registration(points, [candidate])
+
+        np.testing.assert_array_equal(engine.registration_scorer.scans[0], points[:2])
+        assert ranked[0].registration_fitness == 0.5
+
+
 if __name__ == "__main__":
     test_query_recovers_known_pose()
     test_query_handles_empty_scan()
@@ -737,4 +839,7 @@ if __name__ == "__main__":
     test_default_candidate_source_is_bbs()
     test_query_progress_callback_reports_phases()
     test_registration_scorer_shares_map_crops_without_changing_scores()
+    test_registration_scorer_prepares_the_whole_map_once()
+    test_registration_scan_points_drop_returns_beyond_the_range()
+    test_score_with_registration_scores_only_points_within_the_scan_max_range()
     print("test_global_localization_query: all tests passed")
