@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- **`run_koide_public_bag.py --stall START_SEC:DURATION_SEC`** freezes only the
+  localizer for DURATION_SEC, while RKO-LIO and the player run, and scores the stop
+  into `summary.json` as `tools/benchmark/soak_replay.py` scores a stall.
+  - **With odometry a 10 s stop recovers.** On `outdoor_hard_02b`, the first scan is
+    accepted 0.2-1.0 s after a 10 s stop, in a turn and on a straight, seeded from the
+    odometry transform 13-18 m from the last accepted pose. No run requested
+    reinitialization, and no pose was more than 0.54 m off
+    (`docs/global_localization.md`).
+  - A replay that ends while a process is frozen now resumes it before stopping it.
+
 ## 1.9.0 - 2026-11-10
 
 **Upgrading:** 1.9.0 removes ten features that no preset turned on, among them the

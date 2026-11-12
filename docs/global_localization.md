@@ -229,7 +229,37 @@ launch defaults. Two laps with a 10 s stop, 50 s and 30 s into the lap, with
   16384-entry port queue, a 128 MB segment) did not keep them either, with the replay
   publishing clouds and IMU from one participant. Without an odometry source that
   keeps running (`use_odom_tf_prediction`), a 10 s stop of a moving vehicle ends in a
-  reinitialization request.
+  reinitialization request. With one it recovers: see the next section.
+
+### On Koide, with odometry, after a 10 s stop
+
+The same stop with an odometry source that keeps running:
+`run_koide_public_bag.py --stall START_SEC:DURATION_SEC` freezes only the localizer
+while RKO-LIO and the player run. On `outdoor_hard_02b` with the online profile
+(`use_odom_tf_prediction: true`), one stop per run, on 2026-11-11:
+
+| Stop | Where | Runs | First accepted scan after it | Largest error in the next 30 s |
+| --- | --- | --- | --- | --- |
+| 10 s from 30 s | in a turn of 13 deg/s | 2 | 0.19 and 0.27 s | 0.19 m |
+| 10 s from 110 s | on a straight | 2 | 1.02 and 0.94 s | 0.39 and 0.53 m |
+| 2 s from 30 s | in a turn | 1 | 0.02 s | 0.15 m |
+| 2 s from 110 s | on a straight | 1 | 0.79 s | 0.54 m |
+
+- **Every run recovered by itself.** No run requested reinitialization, and no pose
+  was more than 0.54 m off. The whole-run RMSE is 0.239-0.249 m, against 0.240-0.242 m
+  without a stop.
+- **The odometry carries the gap.** The first accepted scan was seeded from the
+  odometry transform 13.0 m (turn) and 18.1-18.2 m (straight) from the last accepted
+  pose, and corrected by 0.12-0.37 m.
+- **What is rejected first:** on the straight, one or two clouds queued during the stop
+  and seeded from the previous motion (fitness above 11), and the first scan from the
+  odometry seed (fitness 8.15 against the threshold of 6). The stretch from 112 s
+  rejects 10-12 scans per 10 s without a stop too, and reaches 0.56 m there.
+- A 10 s stop loses 3% of the diagnostic stamps, so the check's coverage gate (97%)
+  reports FAIL at 96.8-96.9%. A stalled run is not a release check.
+
+Not measured: a stop with the odometry source stopped too, and a stop off the map
+(163-259 s).
 
 ### Replaying a bag through the recovery stack
 

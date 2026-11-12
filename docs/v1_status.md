@@ -209,8 +209,10 @@ Open items after v1.9.0:
   neither the IMU prediction (26-94 m off by then) nor the global localization nodes
   (18-21 s per answer, too ambiguous to pass) find the track again
   ([docs/global_localization.md](global_localization.md#on-the-boreas-fixture-after-a-10-s-stop)).
-  It needs an odometry source that keeps running (`use_odom_tf_prediction`); the
-  fixture has none, so that is not measured.
+  With an odometry source that keeps running (`use_odom_tf_prediction`) it does: on
+  Koide `outdoor_hard_02b` with RKO-LIO, the first scan is accepted 0.2-1.0 s after a
+  10 s stop, within 0.54 m
+  ([docs/global_localization.md](global_localization.md#on-koide-with-odometry-after-a-10-s-stop)).
 
 Other work remains:
 
