@@ -45,9 +45,12 @@ def initial_pose_parameters(pose) -> dict:
 
 
 def stop_process(process: subprocess.Popen) -> None:
-    """SIGINT the process group, then SIGTERM, then SIGKILL."""
+    """SIGCONT (in case it is stopped), SIGINT the process group, then SIGTERM, then
+    SIGKILL."""
     if process.poll() is not None:
         return
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGCONT)
     for sig, timeout in ((signal.SIGINT, 10), (signal.SIGTERM, 5), (signal.SIGKILL, 5)):
         with contextlib.suppress(ProcessLookupError):
             os.killpg(process.pid, sig)

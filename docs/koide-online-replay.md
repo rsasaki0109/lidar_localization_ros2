@@ -66,7 +66,16 @@ ros2 run lidar_localization_ros2 run_koide_public_bag.py --dry-run
 # Reuse cached data and choose a new results directory.
 ros2 run lidar_localization_ros2 run_koide_public_bag.py \
   --data-dir /absolute/path/to/koide-data --output /absolute/path/to/new-run
+
+# Freeze only the localizer for 10 s, 30 s after the first scored cloud (repeatable).
+ros2 run lidar_localization_ros2 run_koide_public_bag.py --stall 30:10
 ```
+
+`--stall` writes each stop's score to `summary.json` under `stalls`. Its
+`recovered_after_sec` is when the error stays under 0.5 m for the rest of the run, and
+this sequence exceeds 0.5 m at 82-86 s and off the map without any stop, so read the
+error after the stop from `estimate.tum` instead
+([results](global_localization.md#on-koide-with-odometry-after-a-10-s-stop)).
 
 The default ROS domain is 83; an occupied domain is refused to avoid mixing other
 publishers into the evaluation. Use `--ros-domain-id 84` if it is in use. An unsourced
