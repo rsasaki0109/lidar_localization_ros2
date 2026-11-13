@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 1.10.0 - 2026-11-13
+
+**Upgrading:** no configuration needs changing, and every new setting defaults to the
+old behaviour. One behaviour differs for a deployment that runs the reinitialization
+supervisor (`global_localization_recovery.launch.py`): it now ends its episode on an
+`/initialpose` that it did not publish, so a reset by an operator or another node
+stops a pending recovery instead of being followed by the supervisor's own reset.
+
 ### Added
 
 - **Three settings answer a global localization query in 2 s instead of 19 s** on the
@@ -50,6 +58,25 @@
   scans.** The pose the localizer republishes on `/initialpose` counted as tracking,
   so five stops after which no scan was accepted scored as recovered in 21-50 s. The
   fault scores in `docs/benchmark.md` do not change: 24 saved runs re-score the same.
+
+### Validation
+
+- The release check: two full Koide `outdoor_hard_02b` replays at 1x passed on
+  `release/v1.10.0` at `8d7183e` (`main` at `f4f5213` plus the version bump), built
+  without a build type, with ndt_omp_ros2 at its 0.2.0 release. The localizer
+  executable is byte-identical to 1.9.0's.
+  - **Accuracy:** 0.242 m RMSE in both (0.170-0.171 m on the map), against 0.240-0.242 m
+    (0.170 m) for v1.9.0.
+  - **Coverage:** 100.0% diagnostic coverage in both.
+  - **Alignment:** 16 ms at the median and 39-41 ms at p95, against 13 and 33-34 ms,
+    **on a host CPU at 2.10 GHz where v1.9.0's was 2.30 GHz**, so the times are not
+    like-for-like
+    ([docs/koide-online-replay.md](docs/koide-online-replay.md#v1100-release-verification-2026-11-13),
+    `docs/validation/v1.10.0-koide-20261113`).
+- Boreas, `param/boreas_ndt_velodyne.yaml` on the release build: 0.132 m RMSE over the
+  first 120 s, 0.127 m with `use_imu_preintegration: true`, every scan accepted, as on
+  1.9.0.
+
 ## 1.9.0 - 2026-11-10
 
 **Upgrading:** 1.9.0 removes ten features that no preset turned on, among them the

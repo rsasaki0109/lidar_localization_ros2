@@ -122,6 +122,51 @@ python3 tools/readme_media/initial_pose_from_tum.py \
 
 Ground truth supplies only that initial pose and evaluation; it is not an odometry input. Record `/pcl_pose` and `/alignment_status` before playing the bag. For the 150 m comparison, change only `local_map_radius` in the generated localizer YAML.
 
+## v1.10.0 release verification (2026-11-13)
+
+Two full `outdoor_hard_02b` replays at 1x passed on `release/v1.10.0` at `8d7183e`:
+`main` at `f4f5213` plus the version bump, which is not compiled in.
+
+- **Build:** both this package and `ndt_omp_ros2` were built as in `AGENTS.md`, without
+  a build type, in the existing release workspace, so the build was incremental.
+  `ndt_omp_ros2` was at its 0.2.0 release (`9f5567e`), as for v1.9.0.
+  `lidar_localization_node` was not relinked: its SHA-256 is v1.9.0's, as the changes
+  since touch only scripts, launch files and the global localization scoring module.
+- **Setup:** ROS 2 Jazzy in one 4-vCPU cloud container, and the same RKO-LIO 0.3.2
+  binary (`7e91814`, Release) as for v1.6.0 to v1.9.0. **The host CPU differs:** a
+  2.10 GHz Xeon, where v1.9.0 ran on a 2.30 GHz one, so the alignment times below are
+  not like-for-like.
+- **The profile is unchanged.** `localizer.yaml`, RKO's and the QoS file's hashes are
+  identical to v1.9.0's.
+
+| Metric | Run 1 | Run 2 | Demo acceptance |
+| --- | --- | --- | --- |
+| Position RMSE | 0.242 m | 0.242 m | <= 0.35 m |
+| on / off the map (163.3-259.0 s) | 0.170 / 0.353 m | 0.171 / 0.353 m | — |
+| Diagnostic cloud stamps | 2,209 / 2,209 (100.0%) | 2,209 / 2,209 (100.0%) | >= 97% |
+| Distinct GT-matched pose stamps / expected clouds | 2,201 / 2,209 (99.6%) | 2,201 / 2,209 (99.6%) | >= 95% |
+| Position error p95 | 0.533 m | 0.533 m | — |
+| Maximum output timestamp gap | 0.90 s | 0.90 s | — |
+| Alignment median / p95 | 16 / 41 ms | 16 / 39 ms | — |
+| Command / RKO / localizer / player exit codes | all 0 | all 0 | successful exit |
+
+RKO dropped 20 frames per run for too few ICP keypoints, as before. Against the v1.9.0
+check:
+
+- **Accuracy:** 0.242 m overall in both and 0.170-0.171 m on the map, against
+  0.240-0.242 m and 0.170 m.
+- **Alignment:** 16 ms at the median and 39-41 ms at p95, against 13 and 33-34 ms, on a
+  host CPU with a lower clock (2.10 against 2.30 GHz). The executable and the inputs are
+  the same, so the difference comes from the host; it is not a change in the code, and
+  this check cannot separate it from the clock.
+
+Machine-readable summaries and receipts of [run 1](validation/v1.10.0-koide-20261113/run1/summary.json)
+and [run 2](validation/v1.10.0-koide-20261113/run2/summary.json), and the
+[provenance](validation/v1.10.0-koide-20261113/provenance.json) record the result,
+configuration and executable hashes.
+[Download the logs, trajectories and receipts of both runs](validation/v1.10.0-koide-20261113/evidence.tar.gz).
+Archive SHA-256: `e8e1d63b46cf1006c40edc1facc9f3cd7e74993f7749c5dfbee83a6a9979a9f9`. It contains no bag or map files.
+
 ## v1.9.0 release verification (2026-11-10)
 
 Two full `outdoor_hard_02b` replays at 1x passed on `release/v1.9.0` at `8dc235f`:
