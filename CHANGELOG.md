@@ -21,6 +21,9 @@
     (`docs/global_localization.md`).
   - The fitness score of the default crop path is unchanged, and it is now threaded
     too.
+  - **In the closed loop they do not recover a 10 s stop on Boreas,** 0 of 10: every
+    published answer was right for its scan and 12.6-134 m behind the vehicle when
+    applied. They stay opt-in.
 - **`run_koide_public_bag.py --stall START_SEC:DURATION_SEC`** freezes only the
   localizer for DURATION_SEC, while RKO-LIO and the player run, and scores the stop
   into `summary.json` as `tools/benchmark/soak_replay.py` scores a stall.
@@ -31,6 +34,22 @@
     (`docs/global_localization.md`).
   - A replay that ends while a process is frozen now resumes it before stopping it.
 
+### Fixed
+
+- **The reinitialization supervisor no longer resets a localizer that is tracking**
+  after someone else's `/initialpose`. It ends its episode on an `/initialpose` it did
+  not publish (reason `external_reset` in the event log), as the localizer already
+  treats that reset as authoritative.
+  - **What happened:** on the looped Boreas fixture, a check query answered on a scan
+    from before an operator's reset set `alias_confirmed`. The episode kept querying
+    with no request raised, and 28 s later reset a localizer tracking at 96% inliers
+    to a pose 12.6 m behind it; the track was lost for the rest of the lap.
+  - A request still raised after the operator's reset starts a new, debounced episode
+    with a fresh attempt count.
+- **`tools/benchmark/soak_replay.py` scores a fault only on the poses of aligned
+  scans.** The pose the localizer republishes on `/initialpose` counted as tracking,
+  so five stops after which no scan was accepted scored as recovered in 21-50 s. The
+  fault scores in `docs/benchmark.md` do not change: 24 saved runs re-score the same.
 ## 1.9.0 - 2026-11-10
 
 **Upgrading:** 1.9.0 removes ten features that no preset turned on, among them the

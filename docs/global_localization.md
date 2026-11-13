@@ -192,6 +192,15 @@ dropped, alignment results seeded before it are discarded (generation counter),
 and every anchor (`last_accepted_pose`, prediction state, smoothers) moves with
 it — otherwise an in-flight scan can silently undo the reset.
 
+An `/initialpose` the supervisor did not publish (an operator's, in the map frame
+with a finite pose) ends its episode, with the reason `external_reset` in the event
+log: the reset it was settling or checking is no longer the localizer's pose. A
+request still raised afterwards starts a new, debounced episode with a fresh attempt
+count. Before, the supervisor carried the old episode on: on Boreas a check query
+answered on a scan from before the operator's reset set `alias_confirmed`, and 28 s
+later the supervisor reset a localizer that was tracking at 96% inliers to a pose
+12.6 m behind it.
+
 After any terminal outcome (recovery or give-up) the supervisor waits for
 `/reinitialization_requested` to de-assert before it will act again, so a request
 line that stays (or is stuck) high cannot re-fire it — it is edge-triggered on the
@@ -283,8 +292,37 @@ ambiguity checks, and as right within 2 m and 10 deg of the ground truth.
   as the defaults, 2 right, 1 wrong and 7 none, in 0.82 s instead of 2.57 s at the
   median. The wrong one, 193 m off at 95 s, is published with the defaults too.
 
-Not measured: the fast settings in the closed loop with the supervisor, range caps
-other than 80 m, and the HDL replay with threads.
+Not measured: range caps other than 80 m, and the HDL replay with threads.
+
+### On the Boreas fixture, the closed loop with the fast settings
+
+The same 10 s stop as above, with the supervisor and the fast settings
+(`g2_ndt_local_map_radius:=0.0 g2_ndt_num_threads:=4 g2_ndt_scan_max_range:=80.0
+g2_registration_refine_candidates:=true`), `use_imu_preintegration: true`, ten stops
+at 10, 30, 50, 60 and 70 s into the lap, on 2026-11-12:
+
+- **No stop recovered**, 0 of 10. With the launch defaults the one stop run did not
+  either: two answers in 16.8 and 20.2 s, both withheld.
+- **The answers were right, and too old.** All 14 resets the supervisor published were
+  0.02-0.50 m from the truth at their scan's stamp. They reached the localizer 2.5-24 s
+  later, 12.6-134 m behind a vehicle at 5-8 m/s. The localizer restarts at the reset's
+  stamp with velocity 0 and no IMU history, so every later scan was seeded at the reset
+  pose and rejected (fitness 14-23 against 6, 22-59% inliers).
+- **No wrong pose was accepted,** and no aliased answer was published: the ambiguity
+  check withheld every wrong top answer (42-280 m off).
+- **Answers are slower in the loop:** 3.7 s at the median and up to 14.4 s while the
+  localizer is lost and uses 1.3-3.2 cores, against 2.0 s when it tracks.
+- **Walking to the next candidate reuses the old answer:** after the 20 s settle
+  timeout the second candidate was published 24 s old, 134 m off.
+- **`supervisor_enable_seed_motion_compensation:=true` made it worse:** 0 of 5
+  recovered, with resets up to 653 m off. It takes a velocity from any two consecutive
+  answers, withheld wrong ones included (20.8 and 25.6 m/s from a pair 214 m apart).
+- With the `external_reset` handling, a repeat of five stops published 7 resets, all
+  with a request active and no scan accepted in the 3 s before. None recovered.
+
+So the fast settings stay opt-in. A reset from a moving vehicle has to be brought to
+the moment it is applied, or aligned again on the newest scan, before it can recover a
+track without odometry.
 
 ### On Koide, with odometry, after a 10 s stop
 

@@ -386,6 +386,10 @@ class ReinitializationSupervisorNode(Node):
         # across episode boundaries by _clear_wall_seed_motion_history.
         self._pose_history = deque()
         self._pending_cross_check_mismatch = None
+        # Resets this node published, to tell them from someone else's
+        # /initialpose; one the localizer would admit ends the episode.
+        self._own_initialposes = deque(maxlen=32)
+        self._external_reset_pending = False
 
         reliable = QoSProfile(depth=1)
         reliable.reliability = ReliabilityPolicy.RELIABLE
@@ -432,6 +436,15 @@ class ReinitializationSupervisorNode(Node):
             PoseWithCovarianceStamped,
             self.get_parameter("initialpose_topic").value,
             reliable,
+        )
+        # The localizer subscribes with the system default QoS; match it so an
+        # operator's (e.g. RViz) reset reaches this node whenever it reaches the
+        # localizer.
+        self.create_subscription(
+            PoseWithCovarianceStamped,
+            self.get_parameter("initialpose_topic").value,
+            self._on_initialpose,
+            10,
         )
         self.query_client = self.create_client(
             Trigger, self.get_parameter("query_service").value
@@ -606,6 +619,44 @@ class ReinitializationSupervisorNode(Node):
         ):
             self._pose_history.popleft()
 
+    @staticmethod
+    def _initialpose_key(msg: PoseWithCovarianceStamped):
+        p = msg.pose.pose
+        return (
+            msg.header.stamp.sec,
+            msg.header.stamp.nanosec,
+            p.position.x,
+            p.position.y,
+            p.position.z,
+            p.orientation.x,
+            p.orientation.y,
+            p.orientation.z,
+            p.orientation.w,
+        )
+
+    def _publish_initialpose(self, msg: PoseWithCovarianceStamped) -> None:
+        self._own_initialposes.append(self._initialpose_key(msg))
+        self.initialpose_pub.publish(msg)
+
+    def _on_initialpose(self, msg: PoseWithCovarianceStamped) -> None:
+        """Note an /initialpose this node did not publish, if the localizer takes it.
+
+        Mirrors the localizer's admission (frame and finite pose): an admitted
+        reset is authoritative there, so it supersedes the episode here.
+        """
+        key = self._initialpose_key(msg)
+        if key in self._own_initialposes:
+            return
+        if msg.header.frame_id != self.global_frame_id or not all(
+            math.isfinite(v) for v in key[2:]
+        ):
+            return
+        self.get_logger().info(
+            "external /initialpose to (%.2f, %.2f) stamped %d.%09d"
+            % (key[2], key[3], key[0], key[1])
+        )
+        self._external_reset_pending = True
+
     def _on_odom_bridge_pose(self, msg: PoseWithCovarianceStamped) -> None:
         """Latest map -> odom(last accepted) x odom -> base_link(now) pose.
 
@@ -715,7 +766,9 @@ class ReinitializationSupervisorNode(Node):
             stable_tracking=stable_tracking,
             cross_check_mismatch_m=cross_check_mismatch_m,
             odom_bridge_available=odom_bridge_pose is not None,
+            external_reset=self._external_reset_pending,
         )
+        self._external_reset_pending = False
         decision = rsp.decide(self.params, self.state, obs)
         if decision.reason == "query_issued" and self._odometry_out():
             # segment_defer: an answer from now could not be confirmed, so keep the
@@ -743,6 +796,7 @@ class ReinitializationSupervisorNode(Node):
             "request_cleared",
             "standdown_cleared",
             "exhausted_cleared",
+            "external_reset",
         ):
             self._clear_wall_seed_motion_history()
 
@@ -766,6 +820,7 @@ class ReinitializationSupervisorNode(Node):
             "cross_check_reseed",
             "odom_bridge_reset_published",
             "odom_bridge_unconfirmed",
+            "external_reset",
         ):
             self._log_event(decision.reason)
 
@@ -1370,7 +1425,7 @@ class ReinitializationSupervisorNode(Node):
         cov[7] = self.position_std**2  # y
         cov[35] = self.yaw_std**2  # yaw
         msg.pose.covariance = cov
-        self.initialpose_pub.publish(msg)
+        self._publish_initialpose(msg)
         comp_note = ""
         if (seed_x, seed_y) != (raw_x, raw_y):
             comp_note = f" (motion-compensated from {raw_x:.2f}, {raw_y:.2f}; {self._last_seed_motion_status})"
@@ -1423,7 +1478,7 @@ class ReinitializationSupervisorNode(Node):
         cov[7] = self.odom_bridge_position_std**2  # y
         cov[35] = self.odom_bridge_yaw_std**2  # yaw
         msg.pose.covariance = cov
-        self.initialpose_pub.publish(msg)
+        self._publish_initialpose(msg)
         self.get_logger().warn(
             "published /initialpose reset from odom bridge to (%.2f, %.2f, z=%.2f) "
             "[map -> odom(last accepted) x odom -> base_link(now), stamp=%d.%09d]"

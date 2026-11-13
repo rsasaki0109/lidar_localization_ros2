@@ -125,6 +125,14 @@ def pose_latencies(published, received):
     ]
 
 
+def scan_poses(poses, stamps_ns, published):
+    """The rows of POSES whose stamp (STAMPS_NS, in the same order) is a published
+    cloud's, a key of PUBLISHED: the poses of aligned scans. A pose the localizer
+    republishes after /initialpose carries that pose's stamp and is left out."""
+    keep = [stamp in published for stamp in stamps_ns]
+    return np.asarray(poses, dtype=float).reshape(-1, 8)[keep]
+
+
 def score_laps(poses, reference, period_sec, statuses, lap_count, latencies=()):
     """Per lap: poses, RMSE and max error against the reference, accepted share,
     alignment time and pose latency. STATUSES are (stamp_sec, values) of
@@ -207,7 +215,8 @@ def score_faults(errors, start_sec, period_sec, faults):
     """Per fault: the poses published during it, the largest error from its start to
     SETTLE_SEC after its end, the seconds from its end until the error stays under
     RECOVERED_M for the rest of the lap (None if it does not), and the RMSE after the
-    settling time. ERRORS are pose_errors() rows; START_SEC is the first lap's start."""
+    settling time. ERRORS are pose_errors() rows of scan_poses(), so a republished
+    /initialpose does not count as tracking; START_SEC is the first lap's start."""
     result = []
     for fault in faults:
         begin = start_sec + fault["lap"] * period_sec + fault["start_sec"]
@@ -376,9 +385,12 @@ def main():
     samples = []
     # Monotonic times a cloud was published and its pose arrived, by stamp in ns.
     published_wall, received_wall = {}, {}
+    # The stamp in ns of each recorded pose, in the order of session.poses.
+    pose_stamps_ns = []
 
     def note_pose(stamp):
         received_wall.setdefault(stamp, time.monotonic())
+        pose_stamps_ns.append(stamp)
         return True
 
     with ReplaySession(args.out, os.environ.copy(), "soak_replay") as session:
@@ -558,7 +570,12 @@ def main():
         pose_latencies(published_wall, received_wall),
     )
     faults = score_faults(
-        pose_errors(poses, reference, period_ns * 1e-9, lap_count),
+        pose_errors(
+            scan_poses(poses, pose_stamps_ns, published_wall),
+            reference,
+            period_ns * 1e-9,
+            lap_count,
+        ),
         start_sec,
         period_ns * 1e-9,
         args.fault,
