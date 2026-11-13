@@ -140,3 +140,54 @@ def test_faults_are_scored_by_recovery(monkeypatch):
     assert stall["max_error_m"] == 1.0
     assert stall["recovered_after_sec"] is None
     assert stall["rmse_settled_m"] is None
+
+
+def test_a_republished_reset_pose_does_not_score_as_recovered(monkeypatch):
+    # Boreas soak gl3_fast_a: after each 10 s stall no scan was accepted again,
+    # but the localizer republished each supervisor reset, stamped at the scan G2
+    # had fixed (and 0.02-0.25 m from the reference there), so the stall scored
+    # as recovered 21-50 s later with a settled RMSE of 0.03-0.23 m.
+    monkeypatch.setattr(soak, "SETTLE_SEC", 2.0)
+    reference = _reference()
+    period_ns = round(PERIOD * 1e9)
+    poses, stamps_ns, published = [], [], set()
+    for row in reference:
+        stamp_ns = round(row[0] * 1e9) + period_ns
+        published.add(stamp_ns)
+        if row[0] - 100.0 < 3.0:
+            pose = row.copy()
+            pose[0] = stamp_ns * 1e-9
+            poses.append(pose)
+            stamps_ns.append(stamp_ns)
+    # Two resets after the stall, echoed at their fix's stamp less a few ns, as
+    # the supervisor's float stamp lands.
+    for into_lap in (6.0, 8.0):
+        row = reference[round(into_lap * 10)].copy()
+        stamp_ns = round(row[0] * 1e9) + period_ns - 48
+        row[0] = stamp_ns * 1e-9
+        poses.append(row)
+        stamps_ns.append(stamp_ns)
+    poses = np.array(poses)
+    fault = [soak.parse_fault("stall@1:3+2")]
+
+    everything = soak.score_faults(
+        soak.pose_errors(poses, reference, PERIOD, 2), 100.0, PERIOD, fault
+    )[0]
+    assert everything["recovered_after_sec"] is not None  # the reported bug
+
+    scans = soak.scan_poses(poses, stamps_ns, published)
+    assert len(scans) == 30
+    (stall,) = soak.score_faults(
+        soak.pose_errors(scans, reference, PERIOD, 2), 100.0, PERIOD, fault
+    )
+    assert stall["poses_during"] == 0
+    assert stall["recovered_after_sec"] is None
+    assert stall["rmse_settled_m"] is None
+    assert stall["max_error_m"] is None
+
+
+def test_scan_poses_keeps_every_pose_of_a_published_cloud():
+    poses = np.array([[1.0, 0, 0, 0, 0, 0, 0, 1], [2.0, 0, 0, 0, 0, 0, 0, 1]])
+    assert len(soak.scan_poses(poses, [10, 20], {10, 20})) == 2
+    assert soak.scan_poses(poses, [10, 21], {10, 20}).tolist() == [poses[0].tolist()]
+    assert soak.scan_poses(np.zeros((0, 8)), [], {10}).shape == (0, 8)
