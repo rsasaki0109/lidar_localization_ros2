@@ -902,3 +902,94 @@ def test_recovery_confirmation_requires_post_reset_fitness(monkeypatch):
     finally:
         sup.destroy_node()
         rclpy.shutdown()
+
+
+def _foreign_initialpose(stamp_sec):
+    msg = PoseWithCovarianceStamped()
+    msg.header.frame_id = "map"
+    msg.header.stamp.sec = stamp_sec
+    msg.pose.pose.position.x = -5.03
+    msg.pose.pose.position.y = 0.36
+    msg.pose.pose.orientation.w = 1.0
+    return msg
+
+
+def test_foreign_initialpose_ends_the_episode_but_its_own_reset_does_not(
+    monkeypatch,
+):
+    # Boreas soak gl3_fast_b: the soak's lap-start /initialpose arrived while the
+    # episode cooled down after an unconfirmed reset. The supervisor must end the
+    # episode instead of checking the localizer against a scan from before it.
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    published = []
+
+    class Publisher:
+        def publish(self, message):
+            published.append(message)
+
+    try:
+        sup.initialpose_pub = Publisher()
+        sup._candidates = [{"x": -72.98, "y": -9.06, "yaw_deg": 10.0, "score": 0.9}]
+        sup._current_query_scan_stamp_sec = 1630597788.455
+        sup._publish_reset()
+        assert len(published) == 1
+        sup._on_initialpose(published[0])
+        assert sup._external_reset_pending is False
+
+        sup._requested = False
+        sup.state = replace(
+            sup.state,
+            name=rsn.rsp.STATE_COOLDOWN,
+            attempts=1,
+            last_reset_sec=90.0,
+            cooldown_since_sec=100.0,
+        )
+        monkeypatch.setattr(rsn.time, "monotonic", lambda: 102.0)
+        sup._tick()
+        assert sup.state.name == rsn.rsp.STATE_COOLDOWN
+
+        sup._on_initialpose(_foreign_initialpose(1630597819))
+        assert sup._external_reset_pending is True
+        monkeypatch.setattr(rsn.time, "monotonic", lambda: 103.0)
+        sup._tick()
+        assert sup.state.name == rsn.rsp.STATE_IDLE
+        assert sup._external_reset_pending is False
+
+        # The cooldown would have ended here and issued the self-clear check.
+        monkeypatch.setattr(rsn.time, "monotonic", lambda: 106.0)
+        sup._tick()
+        assert sup.state.name == rsn.rsp.STATE_IDLE
+        assert len(published) == 1
+    finally:
+        sup.destroy_node()
+        rclpy.shutdown()
+
+
+def test_supervisor_hears_a_foreign_initialpose_over_ros():
+    rclpy.init()
+    sup = rsn.ReinitializationSupervisorNode()
+    other = Node("g3_test_operator")
+    pub = other.create_publisher(PoseWithCovarianceStamped, "/initialpose", _REL)
+    executor = SingleThreadedExecutor()
+    executor.add_node(sup)
+    executor.add_node(other)
+    spin = threading.Thread(target=executor.spin, daemon=True)
+    spin.start()
+    try:
+        sup.state = replace(
+            sup.state,
+            name=rsn.rsp.STATE_AWAIT_CANDIDATES,
+            attempts=1,
+            query_issued_sec=time.monotonic(),
+        )
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and sup.state.name != rsn.rsp.STATE_IDLE:
+            pub.publish(_foreign_initialpose(100))
+            time.sleep(0.2)
+        assert sup.state.name == rsn.rsp.STATE_IDLE
+    finally:
+        executor.shutdown()
+        sup.destroy_node()
+        other.destroy_node()
+        rclpy.shutdown()

@@ -99,6 +99,14 @@ STATE_COOLDOWN = "cooldown"
 # that clean edge; this state also protects us if it does not.
 STATE_STANDDOWN = "standdown"
 STATE_EXHAUSTED = "exhausted"
+# States inside an episode, which an external /initialpose ends.
+_EPISODE_STATES = (
+    STATE_AWAIT_QUERY,
+    STATE_AWAIT_CANDIDATES,
+    STATE_SETTLING,
+    STATE_VERIFYING,
+    STATE_COOLDOWN,
+)
 
 # Actions the node must carry out for a decision.
 ACTION_NONE = "none"
@@ -232,6 +240,12 @@ class SupervisorObservation:
     # BBS candidate list stays node-side -- this flag is all decide() needs to
     # choose the bridge over a query.
     odom_bridge_available: bool = False
+    # True on the tick after an /initialpose the supervisor did not publish (an
+    # operator's, or a test harness's). The localizer treats any accepted
+    # /initialpose as authoritative, so it supersedes the episode: the reset under
+    # settle or check is no longer the localizer's pose, and an answer on a scan
+    # from before it says nothing about the localizer after it.
+    external_reset: bool = False
 
 
 @dataclass(frozen=True)
@@ -356,6 +370,23 @@ def decide(
     state = replace(state, request_since_sec=request_since)
 
     name = state.name
+
+    if obs.external_reset and name in _EPISODE_STATES:
+        # Someone else reset the localizer: end the episode as if the request had
+        # cleared. A request still raised after it starts a new, debounced
+        # episode. STANDDOWN and EXHAUSTED keep waiting for the request edge.
+        return SupervisorDecision(
+            ACTION_NONE,
+            "external_reset",
+            _reset_to_idle(
+                state,
+                request_since_sec=None,
+                query_issued_sec=None,
+                cooldown_since_sec=None,
+                candidate_scores=(),
+                candidate_index=0,
+            ),
+        )
 
     if name == STATE_IDLE:
         if not requested:

@@ -1348,6 +1348,205 @@ def test_cooldown_request_deassert_cross_check_disabled_goes_idle():
     assert dec.state.name == rsp.STATE_IDLE
 
 
+# --- Gate: an /initialpose the supervisor did not publish ends the episode ----
+#
+# Boreas soak gl3_fast_b, lap 3 -> 4 (and gl3_fast_comp, lap 1 -> 2): the
+# supervisor's reset 96 s into lap 3 cleared the request but never settled
+# (recovery_unconfirmed). Before the cooldown ended, the soak gave the localizer
+# its ground-truth pose for the next lap, as an operator would. The supervisor
+# did not see that reset: its self-clear check queried a scan from before it,
+# found no localizer pose near that stamp (mismatch inf) on an answer withheld
+# as ambiguous, set alias_confirmed, kept querying a localizer tracking at
+# fitness 1.1 with no request, and 28 s into the lap published an answer 2.5 s
+# stale that put the localizer 12.6 m behind the vehicle.
+
+
+def _unconfirmed_cooldown_state():
+    return rsp.SupervisorState(
+        name=rsp.STATE_COOLDOWN,
+        attempts=1,
+        last_reset_sec=90.0,
+        cooldown_since_sec=100.0,
+    )
+
+
+def test_external_reset_ends_episode_before_self_clear_check():
+    params = rsp.SupervisorParams()
+    state = _unconfirmed_cooldown_state()
+    dec = rsp.decide(
+        params,
+        state,
+        rsp.SupervisorObservation(
+            now_sec=103.0, reinitialization_requested=False, external_reset=True
+        ),
+    )
+    assert dec.action == rsp.ACTION_NONE
+    assert dec.reason == "external_reset"
+    assert dec.state.name == rsp.STATE_IDLE
+    assert dec.state.alias_confirmed is False
+    assert dec.state.attempts == 0
+    # The supervisor's own spacing stays anchored on its last reset.
+    assert dec.state.last_reset_sec == 90.0
+
+    # The localizer tracks after the operator's reset and requests nothing:
+    # no check query, no reset, whatever stale answers would say.
+    state = dec.state
+    for i in range(120):
+        now = 104.0 + 0.5 * i
+        dec = rsp.decide(
+            params,
+            state,
+            rsp.SupervisorObservation(
+                now_sec=now,
+                reinitialization_requested=False,
+                candidate_scores=(0.0, 0.0) if i % 10 == 0 else None,
+                cross_check_mismatch_m=math.inf if i % 10 == 0 else None,
+                best_fitness=1.1,
+                fitness_observed_sec=now,
+                stable_tracking=True,
+            ),
+        )
+        state = dec.state
+        assert dec.action == rsp.ACTION_NONE, (now, dec.reason)
+        assert state.name == rsp.STATE_IDLE
+        assert state.alias_confirmed is False
+
+
+def test_external_reset_abandons_an_in_flight_check():
+    # gl3_fast_comp: the self-clear check was issued 0.2 s before the lap-start
+    # reset; its answer, on a scan from before that reset, must not resume the
+    # episode.
+    params = rsp.SupervisorParams()
+    dec = rsp.decide(
+        params,
+        _verifying_state(attempts=1, last_reset_sec=90.0),
+        rsp.SupervisorObservation(
+            now_sec=100.5, reinitialization_requested=False, external_reset=True
+        ),
+    )
+    assert dec.reason == "external_reset"
+    assert dec.state.name == rsp.STATE_IDLE
+    dec = rsp.decide(
+        params,
+        dec.state,
+        rsp.SupervisorObservation(
+            now_sec=103.0,
+            reinitialization_requested=False,
+            candidate_scores=(0.0, 0.0, 0.0),
+            cross_check_mismatch_m=math.inf,
+        ),
+    )
+    assert dec.action == rsp.ACTION_NONE
+    assert dec.state.name == rsp.STATE_IDLE
+    assert dec.state.alias_confirmed is False
+
+
+def test_external_reset_ends_every_active_episode_state():
+    params = rsp.SupervisorParams()
+    for name in (
+        rsp.STATE_AWAIT_QUERY,
+        rsp.STATE_AWAIT_CANDIDATES,
+        rsp.STATE_SETTLING,
+        rsp.STATE_VERIFYING,
+        rsp.STATE_COOLDOWN,
+    ):
+        state = rsp.SupervisorState(
+            name=name,
+            attempts=2,
+            request_since_sec=50.0,
+            query_issued_sec=99.0,
+            last_reset_sec=90.0,
+            cooldown_since_sec=95.0,
+            candidate_scores=(0.9, 0.8),
+            candidate_index=1,
+            recovery_evidence_count=2,
+            alias_confirmed=True,
+        )
+        dec = rsp.decide(
+            params,
+            state,
+            rsp.SupervisorObservation(
+                now_sec=100.0, reinitialization_requested=False, external_reset=True
+            ),
+        )
+        assert dec.action == rsp.ACTION_NONE, name
+        assert dec.reason == "external_reset", name
+        assert dec.state.name == rsp.STATE_IDLE, name
+        assert dec.state.alias_confirmed is False, name
+        assert dec.state.candidate_scores == (), name
+        assert dec.state.query_issued_sec is None, name
+        assert dec.state.recovery_evidence_count == 0, name
+
+
+def test_request_still_raised_after_external_reset_debounces_a_new_episode():
+    params = rsp.SupervisorParams(request_debounce_sec=1.0)
+    state = rsp.SupervisorState(
+        name=rsp.STATE_AWAIT_CANDIDATES,
+        attempts=1,
+        request_since_sec=50.0,
+        query_issued_sec=99.0,
+        last_reset_sec=90.0,
+    )
+    dec = rsp.decide(
+        params,
+        state,
+        rsp.SupervisorObservation(
+            now_sec=100.0, reinitialization_requested=True, external_reset=True
+        ),
+    )
+    assert dec.state.name == rsp.STATE_IDLE
+    dec = rsp.decide(
+        params,
+        dec.state,
+        rsp.SupervisorObservation(now_sec=100.5, reinitialization_requested=True),
+    )
+    assert dec.reason == "request_debouncing"
+    dec = rsp.decide(
+        params,
+        dec.state,
+        rsp.SupervisorObservation(now_sec=101.5, reinitialization_requested=True),
+    )
+    assert dec.reason == "request_armed"
+
+
+def test_external_reset_leaves_latched_outcomes_to_the_request_edge():
+    params = rsp.SupervisorParams()
+    for name in (rsp.STATE_STANDDOWN, rsp.STATE_EXHAUSTED):
+        state = rsp.SupervisorState(name=name, attempts=3, request_since_sec=50.0)
+        dec = rsp.decide(
+            params,
+            state,
+            rsp.SupervisorObservation(
+                now_sec=100.0, reinitialization_requested=True, external_reset=True
+            ),
+        )
+        assert dec.state.name == name
+        assert dec.action == rsp.ACTION_NONE
+
+
+def test_alias_check_still_resumes_episode_while_localizer_reports_tracking():
+    # Without an external reset, the cross-check keeps its purpose: a localizer
+    # that settled on an aliased place reports stable tracking and no request,
+    # and only the global fix shows it is elsewhere.
+    params = rsp.SupervisorParams(cross_check_mismatch_m=5.0)
+    dec = rsp.decide(
+        params,
+        _verifying_state(attempts=1, last_reset_sec=90.0),
+        rsp.SupervisorObservation(
+            now_sec=101.0,
+            reinitialization_requested=False,
+            candidate_scores=(0.9,),
+            cross_check_mismatch_m=25.0,
+            best_fitness=1.1,
+            fitness_observed_sec=101.0,
+            stable_tracking=True,
+        ),
+    )
+    assert dec.action == rsp.ACTION_PUBLISH_RESET
+    assert dec.reason == "cross_check_reseed"
+    assert dec.state.alias_confirmed is True
+
+
 if __name__ == "__main__":
     import pytest
 
