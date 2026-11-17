@@ -67,6 +67,7 @@
 
 #include "lidar_localization/causal_twist_history.hpp"
 #include "lidar_localization/local_reacquisition_policy.hpp"
+#include "lidar_localization/stale_reset_replay_policy.hpp"
 #include "lidar_localization/twist_gtsam_smoother.hpp"
 #include "lidar_localization/imu_gtsam_smoother.hpp"
 #include "lidar_localization/imu_pose_history_deskew.hpp"
@@ -205,6 +206,11 @@ public:
   void initializeRegistration();
   void releaseRuntimeResources(bool leak_target_clouds_for_shutdown = false);
   void initialPoseReceived(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
+  // Restarts tracking at an admitted reset, with the IMU state at the given velocity
+  // (map frame); announce publishes the reset as the pose too.
+  void applyInitialPose(
+    const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr & msg, bool announce,
+    const Eigen::Vector3d & velocity = Eigen::Vector3d::Zero());
   void mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
   void switchMapCallback(const std_msgs::msg::String::ConstSharedPtr msg);
   bool loadMapFromPath(const std::string & path, bool reject_empty_map = false);
@@ -463,6 +469,21 @@ public:
   bool local_reacquisition_confirmation_scan_{false};
   // True while the current scan is seeded from a proposal (never search on it).
   bool scan_seeded_from_reacquisition_{false};
+  // Bringing a stale reset up to the newest scan (opt-in): the prepared scans of the
+  // last stale_reset_replay_max_age_sec, and whether the next scan is the first
+  // after an /initialpose.
+  lidar_localization::StaleResetReplayParams stale_reset_replay_params_;
+  std::deque<std::pair<double, pcl::PointCloud<pcl::PointXYZI>::Ptr>> stale_reset_scans_;
+  bool stale_reset_replay_pending_{false};
+  struct StaleResetReplay
+  {
+    lidar_localization::PredictionState track;
+    lidar_localization::StaleResetReplayProgress progress;
+    double reset_stamp_sec{0.0};
+    double last_replayed_sec{0.0};
+    std::chrono::steady_clock::time_point started;
+  };
+  std::optional<StaleResetReplay> stale_reset_replay_;
   bool has_last_good_map_to_odom_{false};
   std::deque<geometry_msgs::msg::TransformStamped> odom_bridge_transform_history_;
   builtin_interfaces::msg::Time last_odom_bridge_source_advance_node_stamp_;
@@ -629,6 +650,17 @@ public:
     lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
     std::uint64_t seed_generation);
   void finishLocalReacquisitionConfirmation(bool accepted);
+  void keepScanForStaleReset(
+    double scan_stamp_sec, const pcl::PointCloud<pcl::PointXYZI>::Ptr & cloud);
+  // Tracks from a reset older than this scan through the kept scans, for about a
+  // replay budget per call; true when the scan was used up (kept for the replay,
+  // the reset moved up to it, or a newer /initialpose arrived meanwhile).
+  bool advanceStaleResetReplay(
+    const builtin_interfaces::msg::Time & stamp,
+    double scan_stamp_sec,
+    const pcl::PointCloud<pcl::PointXYZI>::Ptr & cloud,
+    lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
+    std::uint64_t seed_generation);
   void setRegistrationSourceCloud(const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud);
   void printAlignmentDebugInfo(
     const Eigen::Matrix4f & init_guess,

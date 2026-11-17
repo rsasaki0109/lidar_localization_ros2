@@ -289,6 +289,16 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
       get_logger(),
       "initial pose accepted before map is ready; scans will wait until map load completes");
   }
+  applyInitialPose(msg, true);
+  stale_reset_replay_pending_ = stale_reset_replay_params_.enable;
+  stale_reset_replay_.reset();
+  RCLCPP_INFO(get_logger(), "initialPoseReceived end");
+}
+
+void PCLLocalization::applyInitialPose(
+  const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr & msg, bool announce,
+  const Eigen::Vector3d & velocity)
+{
   // An admitted reset supersedes the old track even if its TF is not available yet.
   has_last_good_map_to_odom_ = false;
   odom_bridge_transform_history_.clear();
@@ -348,7 +358,7 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
         msg->pose.pose.position.y,
         msg->pose.pose.position.z,
         roll_i, pitch_i, yaw_i,
-        0.0, 0.0, 0.0,  // initial velocity = 0
+        velocity.x(), velocity.y(), velocity.z(),
         stamp_to_sec(msg->header.stamp));
       last_scan_stamp_for_imu_ = stamp_to_sec(msg->header.stamp);
       imu_seed_consistency_state_ = {};
@@ -363,6 +373,9 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
       latest_dual_queue_integrated_stamp_ = last_scan_stamp_for_imu_;
       RCLCPP_INFO(get_logger(), "IMU preintegration smoother initialized from initial pose");
     }
+  }
+  if (!announce) {
+    return;
   }
   pose_pub_->publish(*current_pose_with_cov_stamped_ptr_);
   if (publishPoseTransform(msg->header.stamp, current_pose_with_cov_stamped_ptr_->pose.pose)) {
@@ -390,8 +403,6 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
       odom_frame_id_.c_str(),
       base_frame_id_.c_str());
   }
-
-  RCLCPP_INFO(get_logger(), "initialPoseReceived end");
 }
 
 void PCLLocalization::switchMapCallback(const std_msgs::msg::String::ConstSharedPtr msg)
@@ -778,6 +789,16 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
 
   const std::uint64_t seed_generation =
     callback_state_coordinator_.initialPoseGeneration();
+  keepScanForStaleReset(scan_stamp_sec, tmp_ptr);
+  if (
+    (stale_reset_replay_pending_ || stale_reset_replay_) &&
+    advanceStaleResetReplay(
+      msg->header.stamp, scan_stamp_sec, tmp_ptr, state_lock, seed_generation))
+  {
+    // Kept for the replay, or the reset moved up to it; the next scan after the
+    // replay is seeded there and gated as usual.
+    return;
+  }
   const SelectedRegistrationSeed selected_seed =
     selectRegistrationSeed(msg->header.stamp, scan_stamp_sec);
   const bool imu_prediction_ready = selected_seed.imu_prediction_ready;

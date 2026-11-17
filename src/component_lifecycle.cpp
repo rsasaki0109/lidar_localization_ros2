@@ -111,6 +111,9 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("local_reacquisition_search_radius_m", 15.0);
   declare_parameter("local_reacquisition_yaw_window_deg", 20.0);
   declare_parameter("local_reacquisition_max_candidates", 6);
+  declare_parameter("enable_stale_reset_replay", false);
+  declare_parameter("stale_reset_replay_min_age_sec", 0.5);
+  declare_parameter("stale_reset_replay_max_age_sec", 20.0);
   declare_parameter("seed_correction_guard_translation_m", 0.5);
   declare_parameter("seed_correction_guard_yaw_deg", 15.0);
   declare_parameter("seed_correction_guard_release_rejections", 10);
@@ -459,6 +462,9 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   pending_reacquisition_map_to_odom_.reset();
   local_reacquisition_confirmation_scan_ = false;
   scans_since_local_reacquisition_attempt_ = 0;
+  stale_reset_scans_.clear();
+  stale_reset_replay_pending_ = false;
+  stale_reset_replay_.reset();
   odom_bridge_transform_history_.clear();
   last_odom_bridge_source_advance_node_stamp_ = builtin_interfaces::msg::Time{};
   has_last_odom_bridge_source_advance_node_stamp_ = false;

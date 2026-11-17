@@ -349,6 +349,9 @@ void PCLLocalization::initializeParameters()
     "local_reacquisition_yaw_window_deg", local_reacquisition_params_.yaw_window_deg);
   get_parameter(
     "local_reacquisition_max_candidates", local_reacquisition_params_.max_candidates);
+  get_parameter("enable_stale_reset_replay", stale_reset_replay_params_.enable);
+  get_parameter("stale_reset_replay_min_age_sec", stale_reset_replay_params_.min_age_sec);
+  get_parameter("stale_reset_replay_max_age_sec", stale_reset_replay_params_.max_age_sec);
   local_reacquisition_map_.reset();
   if (local_reacquisition_params_.enable) {
     std::string occupancy_yaml;

@@ -320,9 +320,70 @@ at 10, 30, 50, 60 and 70 s into the lap, on 2026-11-12:
 - With the `external_reset` handling, a repeat of five stops published 7 resets, all
   with a request active and no scan accepted in the 3 s before. None recovered.
 
-So the fast settings stay opt-in. A reset from a moving vehicle has to be brought to
-the moment it is applied, or aligned again on the newest scan, before it can recover a
-track without odometry.
+So the fast settings stay opt-in. Without odometry, a reset from a moving vehicle
+recovers a track only once it is brought up to the scan it is applied to: answering
+faster, or compensating the answer's motion, leaves it too old (next section).
+`enable_stale_reset_replay` does it in the localizer, from the scans it kept.
+
+### On the Boreas fixture, a stale reset replayed through the kept scans
+
+With `enable_stale_reset_replay: true` (a localizer parameter, default `false`) the
+localizer keeps its prepared scans of the last `stale_reset_replay_max_age_sec`
+(20 s). An `/initialpose` stamped `stale_reset_replay_min_age_sec` (0.5 s) or more
+before the scan it is applied to is tracked through the kept scans from its stamp on,
+as in normal tracking:
+
+- The first three scans, then one per 0.2 s, each seeded from the one before with
+  the motion tracked so far, and kept only under `score_threshold`.
+- Each scan callback replays for about 0.2 s and keeps its own scan, so the replay
+  catches up with the newest scan. The reset then moves there, with the tracked motion
+  as the next seed and the tracked velocity in the IMU smoother. That next scan goes
+  through the normal measurement gate. Nothing is published during the replay.
+- The reset is applied as before when its own scan, or one within 0.25 s after it,
+  was not kept, or when the replay rejects more than 3 scans in a row, accepts fewer
+  than 90%, rejects the last scan, or falls 20 s behind.
+
+The closed loop of the previous section (fast settings, `use_imu_preintegration:
+true`, ten stops at 10, 30, 50, 60 and 70 s into the lap), on 2026-11-17 with 4 vCPUs
+shared with another job:
+
+| Localizer | Stops recovered | Wrong pose accepted | Largest error after recovery |
+| --- | --- | --- | --- |
+| main, three stops at 30, 70 and 10 s | 0 of 3 | none | - |
+| `enable_stale_reset_replay: true` | 5 of 10 | none | 0.34 m (0.36 m in the lap without a stop) |
+
+- **Each recovered stop tracked to the end of its lap**, every scan accepted. The
+  replays took resets 1.2-9.2 s older than the scan through 7-39 scans in 0.21-3.6 s,
+  and moved them 3.8-82 m.
+- **The time to recover is the time to an answer.** From the end of the stop to the
+  first accepted scan took 30-58 s: the reinitialization request comes 15-27 s after
+  the stop, and the first right answer 2-34 s after the request.
+- **No wrong pose was accepted.** The supervisor published one wrong reset in each
+  run, 98 m off on main and 35 m off with the replay, at registration fitness 1.51
+  and 1.00 with nothing within half of it elsewhere. The replay rejected the first 4
+  scans after the second and applied it as before; the localizer rejected every scan
+  after both.
+- **Not recovered:** two replays lost track in the 20 deg/s turn after 95 s, with
+  resets 10.4 and 11.9 s old (11 of 15 and 34 of 38 scans accepted); one reset 12.7 s
+  old came without its scan kept (the lost localizer had dropped it); the answer of one
+  stop came after the lap ended; and the wrong reset.
+- **Why not answer faster or search:** offline, NDT on a scan from the pose 0.1 s
+  earlier (0.3-0.8 m behind) converged on 21 of 21 scans, from 0.25 s earlier
+  (0.7-2.0 m) on 20, from 0.5 s earlier on 5, from 1 s earlier on none. An answer
+  aligned again on the newest scan is still as old as that query when it is applied.
+  A BBS search around the reset over 10 m/s times its age, refined by NDT, proposed the
+  right pose for 24 of 33 scans 2.5-10 s on and one 2.3 m off, but took 0.8-39 s over
+  every heading at 2 deg.
+- **Steps:** replaying every scan took 44 ms per scan; steps of 0.5 s lost track in a
+  tightening turn (55 to 66 deg of heading in a second), 0.2 s held. With one long
+  replay instead of 0.2 s per callback, the next scan came 3.4 s after the replayed
+  one even with `cloud_queue_depth: 50`, and was rejected.
+- **No regression without a stop:** one lap on its own gives an RMSE of 0.132 m with
+  the preset, the same with the replay on, and 0.127 m with
+  `use_imu_preintegration: true` and the replay on.
+
+Not measured: odometry (`use_odom_tf_prediction`) together with the replay, other
+datasets, and the memory the kept scans take (about 2000 points each on Boreas).
 
 ### On Koide, with odometry, after a 10 s stop
 
