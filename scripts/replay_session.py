@@ -39,8 +39,9 @@ def initial_pose_parameters(pose) -> dict:
     values = [float(value) for value in pose]
     if len(values) != len(names):
         raise ValueError(f"expected x y z qx qy qz qw, got {len(values)} values")
-    return {"set_initial_pose": True} | {
-        f"initial_pose_{name}": value for name, value in zip(names, values, strict=True)
+    return {
+        "set_initial_pose": True,
+        **{f"initial_pose_{name}": value for name, value in zip(names, values)},
     }
 
 

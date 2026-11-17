@@ -1,6 +1,6 @@
 [tool.ruff]
-# The local overlay tracks ROS 2 Humble (Python 3.10); Jazzy (3.12) is also supported.
-target-version = "py310"
+# Foxy (Python 3.8) is the oldest supported distro; Humble (3.10) and Jazzy (3.12) too.
+target-version = "py38"
 
 [tool.ruff.lint]
 select = [

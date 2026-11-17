@@ -121,8 +121,8 @@ def main():
             # 38 of 97 scans of the 10 s window arrived.
             f"qos_overrides.{POINTS}.subscription.reliability": "reliable",
         }
-        | initial_pose_parameters(reference[0, 1:8])
     )
+    params.update(initial_pose_parameters(reference[0, 1:8]))
     apply_overrides(params, args.set)
     config_path = args.out / "localizer.yaml"
     config_path.write_text(yaml.safe_dump(config))

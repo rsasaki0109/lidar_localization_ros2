@@ -209,7 +209,8 @@ def test_compare_alternates_variants_and_skips_finished_runs(tmp_path, monkeypat
         ("C_climb_2300", "base_0"),
         ("C_climb_2300", "cand_0"),
     ]
-    for command, (window, variant) in zip(commands, runs, strict=True):
+    assert len(commands) == len(runs)
+    for command, (window, variant) in zip(commands, runs):
         start, duration = compare.WINDOWS[window]
         assert float(_option(command, "--start")) == start
         assert float(_option(command, "--duration")) == duration

@@ -15,6 +15,8 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
+from argparse_compat import BooleanOptionalAction
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 
@@ -301,7 +303,7 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     )
     start.add_argument(
         "--odom-tf-prediction",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=None,
         help="use an external odom -> base TF (e.g. a LIO front end) to predict "
         "motion between scans; needed for fast or handheld motion (default: on "
@@ -309,7 +311,7 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     )
     start.add_argument(
         "--use-sim-time",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=None,
         help="follow /clock (default: on when /clock is published, as during "
         "ros2 bag play --clock)",
@@ -331,14 +333,14 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     sensors.add_argument("--global-frame", default="map", help="map frame")
     sensors.add_argument(
         "--publish-lidar-tf",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=None,
         help="publish a static identity base -> LiDAR TF (default: on unless the "
         "frames are the same or already linked in TF)",
     )
     sensors.add_argument(
         "--publish-imu-tf",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=False,
         help="publish a static base -> IMU TF",
     )
@@ -346,20 +348,20 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     session = parser.add_argument_group("session")
     session.add_argument(
         "--rviz",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=True,
         help="start RViz (turn off on a headless robot)",
     )
     session.add_argument(
         "--status",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=True,
         help="print one line when tracking starts, weakens, is lost or recovers, "
         "and show the status above the robot in RViz",
     )
     session.add_argument(
         "--bringup-check",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=True,
         help="check topics and TF five seconds after launch",
     )
@@ -377,7 +379,7 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     session.add_argument("--state-file", type=Path, help=advanced("saved pose file"))
     session.add_argument(
         "--auto-initialize",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=True,
         help=advanced(
             "Restore a verified saved pose, then use global search when configured."
@@ -385,7 +387,7 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     )
     session.add_argument(
         "--restore-saved-pose",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=True,
         help=advanced(),
     )
@@ -394,13 +396,13 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     )
     session.add_argument(
         "--discover-topics",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=True,
         help=advanced(),
     )
     session.add_argument(
         "--auto-occupancy-map",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=True,
         help=advanced(
             "without a pose or grid, generate (and cache) an occupancy grid from the "
@@ -457,19 +459,19 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     )
     tuning.add_argument(
         "--global-cpp-backend",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=True,
         help=advanced(),
     )
     tuning.add_argument(
         "--global-registration-scoring",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=True,
         help=advanced("Use the 3D NDT scorer to validate and rank G2 candidates."),
     )
     tuning.add_argument(
         "--require-global-registration-scoring",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=True,
         help=advanced(
             "Refuse automatic global pose publication if 3D scoring is unavailable."
@@ -477,7 +479,7 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     )
     tuning.add_argument(
         "--refine-global-candidates",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=False,
         help=advanced(),
     )
@@ -492,7 +494,7 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
     )
     tuning.add_argument(
         "--g3-recovery",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=True,
         help=advanced(
             "Launch guarded G3 reinitialization when global search is configured."

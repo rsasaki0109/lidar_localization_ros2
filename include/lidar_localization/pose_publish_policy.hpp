@@ -14,7 +14,7 @@
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <tf2/transform_datatypes.h>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include "lidar_localization/tf2_compat.hpp"
 
 namespace lidar_localization
 {

@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 import argparse
 import sys
 import time
 from collections.abc import Sequence
+
+from argparse_compat import BooleanOptionalAction
 
 from lidar_localization_mid360.bringup_model import (
     BringupCheckConfig,
@@ -28,7 +32,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--require-imu", action="store_true")
     parser.add_argument(
         "--require-cloud-time-field",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=False,
         help=(
             "Require a per-point timing field on PointCloud2 for continuous-time "
@@ -37,7 +41,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--require-imu-base-tf",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=False,
         help="Require base_frame <- imu_frame TF when IMU preintegration uses base-frame rotation.",
     )

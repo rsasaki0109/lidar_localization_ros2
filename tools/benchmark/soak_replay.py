@@ -229,8 +229,8 @@ def score_faults(errors, start_sec, period_sec, faults):
         bad = [t for t, e in after if e >= RECOVERED_M]
         later = [t for t, _ in after if not bad or t > bad[-1]]
         result.append(
-            fault
-            | {
+            {
+                **fault,
                 "poses_during": sum(1 for t, _ in lap if begin <= t < end),
                 "max_error_m": round(max(window), 3) if window else None,
                 "recovered_after_sec": round(later[0] - end, 2) if later else None,
@@ -341,8 +341,8 @@ def main():
             "use_odom": False,
             f"qos_overrides.{POINTS}.subscription.reliability": "reliable",
         }
-        | initial_pose_parameters(reference[0, 1:8])
     )
+    params.update(initial_pose_parameters(reference[0, 1:8]))
     apply_overrides(params, args.set)
     config_path = args.out / "localizer.yaml"
     config_path.write_text(yaml.safe_dump(config))

@@ -61,22 +61,16 @@ class TestKoidePublicBag(unittest.TestCase):
     def test_corrupt_download_is_not_promoted_to_the_cache(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            with (
-                patch.object(
-                    MODULE.urllib.request,
-                    "urlopen",
-                    return_value=io.BytesIO(b"corrupt"),
-                ),
-                self.assertRaisesRegex(ValueError, "checksum mismatch"),
-            ):
+            with patch.object(
+                MODULE.urllib.request, "urlopen", return_value=io.BytesIO(b"corrupt")
+            ), self.assertRaisesRegex(ValueError, "checksum mismatch"):
                 MODULE.prepare_assets(root, True)
             self.assertFalse((root / "outdoor_hard_02b.zip").exists())
             self.assertFalse((root / "outdoor_hard_02b.zip.partial").exists())
 
     def test_missing_data_points_to_download_option(self):
-        with (
-            tempfile.TemporaryDirectory() as directory,
-            self.assertRaisesRegex(ValueError, "--download"),
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(
+            ValueError, "--download"
         ):
             MODULE.prepare_assets(Path(directory), False)
 

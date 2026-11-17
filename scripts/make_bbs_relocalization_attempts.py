@@ -299,7 +299,7 @@ def branch_and_bound_candidates(
             top_grid
         )
         hit_map = np.zeros((len(block_tys), len(block_txs)), dtype=np.int64)
-        for offset_y, offset_x, count in zip(qy, qx, cell_counts, strict=True):
+        for offset_y, offset_x, count in zip(qy, qx, cell_counts):
             row = pad_top + int(offset_y)
             col = pad_left + int(offset_x)
             hit_map += (

@@ -27,7 +27,6 @@ Wiring::
 
 import contextlib
 import csv
-import itertools
 import json
 import math
 import time
@@ -1059,7 +1058,7 @@ class ReinitializationSupervisorNode(Node):
             return None
         if stamp_sec - stamps[-1] > self.odometry_max_gap_sec:
             return stamps[-1]
-        for earlier, later in reversed(list(itertools.pairwise(stamps))):
+        for earlier, later in reversed(list(zip(stamps, stamps[1:]))):
             if later - earlier > self.odometry_max_gap_sec:
                 return earlier
         return None
@@ -1072,7 +1071,7 @@ class ReinitializationSupervisorNode(Node):
             return False
         return all(
             later - earlier <= self.odometry_max_gap_sec
-            for earlier, later in itertools.pairwise(stamps)
+            for earlier, later in zip(stamps, stamps[1:])
         )
 
     def _odometry_continuous_between(self, start_sec: float, end_sec: float) -> bool:
@@ -1090,7 +1089,7 @@ class ReinitializationSupervisorNode(Node):
             return False
         return all(
             later - earlier <= self.odometry_max_gap_sec
-            for earlier, later in itertools.pairwise(stamps)
+            for earlier, later in zip(stamps, stamps[1:])
         )
 
     def _odometry_out(self, stamp_sec=None) -> bool:

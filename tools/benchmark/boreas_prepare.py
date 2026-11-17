@@ -261,7 +261,7 @@ def write_bag(path, rows, keys, leaf, jobs, imu):
 
     points_total = 0
     with ThreadPoolExecutor(jobs) as pool:
-        for row, points in zip(rows, pool.map(downsampled, keys), strict=True):
+        for row, points in zip(rows, pool.map(downsampled, keys)):
             cloud = np.zeros(len(points), dtype=dtype)
             for name, column in (
                 ("x", 0),
@@ -323,7 +323,7 @@ def main():
     rows, keys = lidar_poses(cache, args.loc_seq)
     t = (rows[:, 0] - rows[0, 0]) * 1e-6
     window = (t >= args.start) & (t < args.start + args.duration)
-    rows, keys = rows[window], [k for k, w in zip(keys, window, strict=True) if w]
+    rows, keys = rows[window], [k for k, w in zip(keys, window) if w]
 
     with (args.out / "reference.tum").open("w") as stream:
         for row in rows:

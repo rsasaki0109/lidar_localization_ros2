@@ -712,7 +712,8 @@ def test_registration_scorer_shares_map_crops_without_changing_scores():
         together = scorer.score_candidates(scan, poses)
         alone = [scorer.score_candidate(scan, *pose) for pose in poses]
 
-        for shared, single in zip(together, alone, strict=True):
+        assert len(together) == len(alone)
+        for shared, single in zip(together, alone):
             assert shared.converged == single.converged
             assert math.isclose(shared.fitness, single.fitness, rel_tol=1e-6)
             assert math.isclose(shared.refined_x, single.refined_x, abs_tol=1e-6)
@@ -756,9 +757,8 @@ def test_registration_scorer_prepares_the_whole_map_once():
             local_map_radius=0.0,
         ).score_candidates(scan, poses)
 
-        for crop, whole, repeat, parallel in zip(
-            cropped, first, again, threaded, strict=True
-        ):
+        assert len(cropped) == len(first) == len(again) == len(threaded)
+        for crop, whole, repeat, parallel in zip(cropped, first, again, threaded):
             assert whole.converged == crop.converged
             assert whole.target_point_count == crop.target_point_count
             assert math.isclose(whole.fitness, crop.fitness, rel_tol=1e-6)

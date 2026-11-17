@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
 SCRIPT_PATH = REPO_ROOT / "scripts" / "create_lidar_localization_config.py"
 spec = importlib.util.spec_from_file_location(
     "create_lidar_localization_config", SCRIPT_PATH

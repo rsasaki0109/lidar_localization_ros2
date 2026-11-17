@@ -15,7 +15,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-import itertools
 
 import reinitialization_supervisor_policy as rsp
 
@@ -386,7 +385,7 @@ def test_resets_respect_minimum_spacing():
     )
     events = run(params, 300, requested=True, candidate_score=0.99, fitness=9.0, dt=1.0)
     times = reset_times(events)
-    gaps = [b - a for a, b in itertools.pairwise(times)]
+    gaps = [b - a for a, b in zip(times, times[1:])]
     assert all(g >= 5.0 for g in gaps), gaps
 
 
@@ -665,7 +664,7 @@ def test_odom_bridge_respects_reset_spacing():
         params, 30, requested=True, odom_bridge_available=True, fitness=fitness
     )
     reset_times_local = [e[0] for e in events if e[1] == rsp.ACTION_PUBLISH_RESET]
-    for a, b in itertools.pairwise(reset_times_local):
+    for a, b in zip(reset_times_local, reset_times_local[1:]):
         assert b - a >= params.min_seconds_between_attempts
 
 
