@@ -22,6 +22,18 @@
     `ros2 bag play --clock`, which Foxy's rosbag2 lacks, and Foxy cannot read the
     metadata of bags written by newer rosbag2 releases.
 
+- **A reset older than the scan it is applied to is tracked up to that scan**, opt-in
+  with the localizer parameter `enable_stale_reset_replay` (default `false`; also
+  `stale_reset_replay_min_age_sec`, `0.5`, and `stale_reset_replay_max_age_sec`,
+  `20.0`). A global localization answer reaches the localizer seconds after its scan,
+  metres behind a moving vehicle, which restarted there with no velocity and rejected
+  every later scan. The localizer now keeps its recent scans, tracks from the reset
+  through them as in normal tracking, and moves the reset to the newest scan with the
+  velocity tracked on the way; a replay that loses track leaves the reset as it was.
+  On the Boreas closed loop with the fast settings, 5 of 10 stops of 10 s recovered,
+  against none before, with no wrong pose accepted
+  ([global_localization.md](docs/global_localization.md)).
+
 ### Changed
 
 - The `foxy`, `humble` and `jazzy` branches are removed: every supported

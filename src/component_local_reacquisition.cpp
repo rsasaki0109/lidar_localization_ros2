@@ -118,3 +118,160 @@ void PCLLocalization::maybeRunLocalReacquisition(
     std::hypot(proposal(0, 3) - bridged(0, 3), proposal(1, 3) - bridged(1, 3)),
     prediction_state_.consecutive_rejected_updates);
 }
+
+void PCLLocalization::keepScanForStaleReset(
+  double scan_stamp_sec, const pcl::PointCloud<pcl::PointXYZI>::Ptr & cloud)
+{
+  if (!stale_reset_replay_params_.enable || !cloud) {
+    return;
+  }
+  stale_reset_scans_.emplace_back(scan_stamp_sec, cloud);
+  while (
+    !stale_reset_scans_.empty() &&
+    stale_reset_scans_.front().first <
+    scan_stamp_sec - stale_reset_replay_params_.max_age_sec - 1.0)
+  {
+    stale_reset_scans_.pop_front();
+  }
+}
+
+bool PCLLocalization::advanceStaleResetReplay(
+  const builtin_interfaces::msg::Time & stamp,
+  double scan_stamp_sec,
+  const pcl::PointCloud<pcl::PointXYZI>::Ptr & cloud,
+  lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
+  std::uint64_t seed_generation)
+{
+  const auto & params = stale_reset_replay_params_;
+  const auto now = std::chrono::steady_clock::now();
+  if (stale_reset_replay_pending_) {
+    stale_reset_replay_pending_ = false;
+    const double reset_stamp_sec = last_initial_pose_stamp_sec_;
+    double first_kept_sec = std::numeric_limits<double>::quiet_NaN();
+    for (const auto & kept : stale_reset_scans_) {
+      if (kept.first >= reset_stamp_sec) {
+        first_kept_sec = kept.first;
+        break;
+      }
+    }
+    const auto plan = lidar_localization::planStaleResetReplay(
+      params, reset_stamp_sec, scan_stamp_sec, first_kept_sec);
+    if (!plan.replay || !current_pose_with_cov_stamped_ptr_) {
+      if (plan.reason != "fresh" && plan.reason != "disabled") {
+        RCLCPP_WARN(
+          get_logger(), "reset %.1f s older than the scan applied as it is (%s)",
+          scan_stamp_sec - reset_stamp_sec, plan.reason.c_str());
+      }
+      return false;
+    }
+    StaleResetReplay replay;
+    replay.track = lidar_localization::resetPredictionState(currentPoseMatrix(), reset_stamp_sec);
+    replay.reset_stamp_sec = reset_stamp_sec;
+    replay.last_replayed_sec = std::nextafter(reset_stamp_sec, -1.0);
+    replay.started = now;
+    stale_reset_replay_ = replay;
+  }
+  if (!stale_reset_replay_) {
+    return false;
+  }
+  auto & replay = *stale_reset_replay_;
+  const auto give_up = [&](const std::string & why) {
+      RCLCPP_WARN(
+        get_logger(),
+        "reset %.1f s older than the scan applied as it is: replay %s "
+        "(%d of %d scans accepted) in %.2f s",
+        scan_stamp_sec - replay.reset_stamp_sec, why.c_str(), replay.progress.accepted,
+        replay.progress.steps,
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - replay.started).count());
+      stale_reset_replay_.reset();
+      setRegistrationSourceCloud(cloud);
+      return false;
+    };
+  if (lidar_localization::staleResetReplayFallenBehind(
+      params, replay.last_replayed_sec, scan_stamp_sec))
+  {
+    return give_up("fell behind");
+  }
+
+  std::vector<double> stamps_sec;
+  stamps_sec.reserve(stale_reset_scans_.size());
+  for (const auto & kept : stale_reset_scans_) {
+    stamps_sec.push_back(kept.first);
+  }
+  for (int next = lidar_localization::nextStaleResetReplayScan(
+      params, stamps_sec, replay.last_replayed_sec, replay.progress.steps);
+    next >= 0;
+    next = lidar_localization::nextStaleResetReplayScan(
+      params, stamps_sec, replay.last_replayed_sec, replay.progress.steps))
+  {
+    if (std::chrono::duration<double>(std::chrono::steady_clock::now() - now).count() >
+      params.budget_sec)
+    {
+      // Go on with the next scan, which keeps its own scan for the replay.
+      return true;
+    }
+    const auto & [replay_stamp_sec, replay_cloud] =
+      stale_reset_scans_[static_cast<std::size_t>(next)];
+    const Eigen::Matrix4f seed = replay.track.predicted_pose_matrix *
+      lidar_localization::previousDeltaMotionAt(
+      replay.track, replay_stamp_sec, previous_delta_max_extrapolation_sec_);
+    setRegistrationSourceCloud(replay_cloud);
+    const auto attempt =
+      runAlignmentAttempt(seed, seed, replay_stamp_sec, state_lock, seed_generation);
+    if (!callback_state_coordinator_.initialPoseGenerationMatches(seed_generation)) {
+      stale_reset_replay_.reset();
+      return true;
+    }
+    const bool accepted = lidar_localization::staleResetReplayStepAccepted(
+      attempt.target_ready && attempt.has_converged,
+      attempt.final_transformation.allFinite(), attempt.fitness_score,
+      measurement_gate_config_.score_threshold);
+    replay.progress = lidar_localization::recordStaleResetReplayStep(replay.progress, accepted);
+    replay.last_replayed_sec = replay_stamp_sec;
+    if (accepted) {
+      replay.track = lidar_localization::updatePredictionStateFromAcceptedMeasurement(
+        replay.track, attempt.final_transformation, replay_stamp_sec, false);
+    } else {
+      replay.track = lidar_localization::advancePredictionWithoutMeasurement(
+        replay.track, replay_stamp_sec, lidar_localization::PredictionAdvanceMode::kPreviousDelta,
+        Eigen::Matrix4f::Identity(),
+        lidar_localization::previousDeltaMotionAt(
+          replay.track, replay_stamp_sec, previous_delta_max_extrapolation_sec_));
+    }
+    if (lidar_localization::staleResetReplayLost(params, replay.progress)) {
+      return give_up("lost_track");
+    }
+  }
+  const std::string failure = lidar_localization::staleResetReplayFailure(params, replay.progress);
+  if (!failure.empty()) {
+    return give_up(failure);
+  }
+
+  const auto & track = replay.track;
+  const Eigen::Matrix4f & pose = track.last_accepted_pose_matrix;
+  Eigen::Vector3d velocity = Eigen::Vector3d::Zero();
+  if (track.last_relative_motion_spans_scans && track.last_relative_motion_duration_sec > 0.0) {
+    // The last scan-to-scan motion, from the scan before into the map frame.
+    const Eigen::Matrix4f before = pose * track.last_relative_motion_matrix.inverse();
+    velocity = (pose.block<3, 1>(0, 3) - before.block<3, 1>(0, 3)).cast<double>() /
+      track.last_relative_motion_duration_sec;
+  }
+  RCLCPP_WARN(
+    get_logger(),
+    "reset %.1f s older than the scan replayed through %d scans (%d accepted) in %.2f s: "
+    "moved %.2f m to (%.2f, %.2f) at %.1f m/s",
+    scan_stamp_sec - replay.reset_stamp_sec, replay.progress.steps, replay.progress.accepted,
+    std::chrono::duration<double>(std::chrono::steady_clock::now() - replay.started).count(),
+    (pose.block<3, 1>(0, 3) - currentPoseMatrix().block<3, 1>(0, 3)).norm(), pose(0, 3),
+    pose(1, 3), velocity.norm());
+  auto moved = std::make_shared<geometry_msgs::msg::PoseWithCovarianceStamped>(
+    *current_pose_with_cov_stamped_ptr_);
+  moved->header.stamp = stamp;
+  moved->pose.pose = tf2::toMsg(Eigen::Affine3d(pose.cast<double>()));
+  const auto moved_track = track;
+  stale_reset_replay_.reset();
+  applyInitialPose(moved, false, velocity);
+  // Keep the motion tracked on the way, so the next scan is seeded with it.
+  prediction_state_ = moved_track;
+  return true;
+}

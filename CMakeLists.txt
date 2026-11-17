@@ -675,6 +675,10 @@ if(BUILD_TESTING)
   target_include_directories(test_local_reacquisition_policy PRIVATE include)
   add_test(NAME local_reacquisition_policy COMMAND test_local_reacquisition_policy)
 
+  add_executable(test_stale_reset_replay_policy test/test_stale_reset_replay_policy.cpp)
+  target_include_directories(test_stale_reset_replay_policy PRIVATE include)
+  add_test(NAME stale_reset_replay_policy COMMAND test_stale_reset_replay_policy)
+
   add_executable(test_occupancy_map_generation test/test_occupancy_map_generation.cpp)
   target_include_directories(test_occupancy_map_generation PRIVATE include)
   add_test(NAME occupancy_map_generation COMMAND test_occupancy_map_generation)
