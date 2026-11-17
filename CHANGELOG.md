@@ -9,8 +9,12 @@
   On Foxy:
   - ndt_omp_ros2 builds with Foxy's PCL 1.10 from its `humble` branch since
     rsasaki0109/ndt_omp_ros2#18.
-  - The cloud subscription keeps the best-effort sensor QoS: Foxy has no
-    `qos_overrides.<topic>.subscription.reliability` parameter.
+  - The cloud subscription keeps the best-effort sensor QoS by default: Foxy has no
+    `qos_overrides.<topic>.subscription.reliability` parameter. The ~1 MB clouds of the
+    Boreas replay then lose fragments in transport, and only about 970 of 1158 scans
+    reach the node. Set the new `cloud_reliable_qos: true` to subscribe reliably there
+    (all 1158 scans arrive, same RMSE). Humble and Jazzy ignore the parameter, with a
+    warning, and keep using `qos_overrides`.
   - The node uses a small TF listener of its own in place of Foxy's, which can crash
     or hang when the node is destroyed.
   - `run_koide_public_bag.py` and the other helpers that read bags need `rosbag2_py`,

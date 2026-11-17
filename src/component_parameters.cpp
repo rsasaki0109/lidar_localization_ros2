@@ -195,6 +195,7 @@ void PCLLocalization::initializeParameters()
     RCLCPP_WARN(
       get_logger(), "cloud_queue_depth must be positive; using %d", cloud_queue_depth_);
   }
+  get_parameter("cloud_reliable_qos", cloud_reliable_qos_);
   int requested_imu_queue_depth = imu_queue_depth_;
   get_parameter("imu_queue_depth", requested_imu_queue_depth);
   const auto imu_queue_depth =
@@ -518,6 +519,7 @@ void PCLLocalization::initializeParameters()
     get_logger(), "scan_time_range_max_duration_ratio: %lf",
     scan_time_range_max_duration_ratio_);
   RCLCPP_INFO(get_logger(),"cloud_queue_depth: %d", cloud_queue_depth_);
+  RCLCPP_INFO(get_logger(),"cloud_reliable_qos: %d", cloud_reliable_qos_);
   RCLCPP_INFO(get_logger(),"imu_queue_depth: %d", imu_queue_depth_);
   RCLCPP_INFO(get_logger(),"min_scan_interval_sec: %lf", min_scan_interval_sec_);
   RCLCPP_INFO(get_logger(),"use_pcd_map: %d", use_pcd_map_);
