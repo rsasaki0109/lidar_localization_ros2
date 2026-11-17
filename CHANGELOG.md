@@ -7,7 +7,8 @@
 - **ROS 2 Foxy builds, passes its tests and runs**, as a best-effort target (Foxy is
   end-of-life); CI builds and tests it. Humble and Jazzy build and behave as before.
   On Foxy:
-  - ndt_omp_ros2 needs PCL 1.10 support: its `humble` branch asks for PCL 1.12.
+  - ndt_omp_ros2 builds with Foxy's PCL 1.10 from its `humble` branch since
+    rsasaki0109/ndt_omp_ros2#18.
   - The cloud subscription keeps the best-effort sensor QoS: Foxy has no
     `qos_overrides.<topic>.subscription.reliability` parameter.
   - The node uses a small TF listener of its own in place of Foxy's, which can crash
@@ -16,6 +17,13 @@
     which Foxy does not have. The `tools/benchmark` replays use
     `ros2 bag play --clock`, which Foxy's rosbag2 lacks, and Foxy cannot read the
     metadata of bags written by newer rosbag2 releases.
+
+### Changed
+
+- The `foxy`, `humble` and `jazzy` branches are removed: every supported
+  distribution builds from `main`. Their last commits are kept as the tags
+  `archive/foxy`, `archive/humble` and `archive/jazzy`. The frozen `dashing`
+  branch stays for ROS 2 Dashing.
 
 ## 1.10.0 - 2026-11-13
 

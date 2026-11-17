@@ -10,6 +10,7 @@
   </a>
   <img alt="ROS 2 Jazzy" src="https://img.shields.io/badge/ROS%202-Jazzy-2563eb">
   <img alt="ROS 2 Humble" src="https://img.shields.io/badge/ROS%202-Humble-compatible-1f5b99">
+  <img alt="ROS 2 Foxy" src="https://img.shields.io/badge/ROS%202-Foxy-best--effort-64748b">
   <img alt="License BSD 2 Clause" src="https://img.shields.io/badge/license-BSD--2--Clause-6b46c1">
 </p>
 
@@ -39,6 +40,11 @@ you have them, and works standalone or as the localization source for Nav2.
 ROS 2 Jazzy is the main target; Humble is supported. Foxy is end-of-life and supported
 on a best-effort basis: CI builds and tests it, and its differences are listed in the
 [changelog](CHANGELOG.md) under Unreleased.
+
+All of them build from `main`. The old `foxy`, `humble` and `jazzy` branches are no
+longer kept; their last commits are the tags `archive/foxy`, `archive/humble` and
+`archive/jazzy`. ROS 2 Dashing, which `main` does not support, has the frozen
+`dashing` branch.
 
 ```bash
 mkdir -p ~/lidarloc_ws/src
