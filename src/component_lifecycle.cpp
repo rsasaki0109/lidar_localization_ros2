@@ -49,6 +49,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("scan_period", 0.1);
   declare_parameter("scan_time_range_max_duration_ratio", 2.0);
   declare_parameter("cloud_queue_depth", 1);
+  declare_parameter("cloud_reliable_qos", false);
   declare_parameter("imu_queue_depth", 2000);
   declare_parameter("min_scan_interval_sec", 0.0);
   declare_parameter("use_pcd_map", false);
