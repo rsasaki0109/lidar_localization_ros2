@@ -20,7 +20,6 @@ Run `python3 dropout_confirmation.py --json results.json` to regenerate the resu
 from __future__ import annotations
 
 import argparse
-import itertools
 import json
 import math
 import sys
@@ -28,13 +27,14 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Tuple
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import quickstart_model  # noqa: E402
 
-Pose = tuple[float, float, float]  # map x, y, yaw (rad)
+Pose = Tuple[float, float, float]  # map x, y, yaw (rad)
 
 
 # --- shared parameters (supervisor and startup-consensus defaults) ------------
@@ -119,7 +119,7 @@ def _carry_truth(t):
         return start
     if t <= 90.0:
         a = (t - 60.0) / 30.0
-        return tuple(s + a * (e - s) for s, e in zip(start, end, strict=True))
+        return tuple(s + a * (e - s) for s, e in zip(start, end))
     return (end[0], end[1] + 0.5 * (t - 90.0), end[2])
 
 
@@ -135,7 +135,7 @@ def _short_dropout_fixture(name, description, gap, wrong_stamp, correct_stamps):
     noise = ((0.4, -0.3, 0.02), (-0.3, 0.2, -0.01))
     correct = tuple(
         Answer(t, _offset(truth(t), *n), True, True)
-        for t, n in zip(correct_stamps, noise, strict=True)
+        for t, n in zip(correct_stamps, noise)
     )
     return Fixture(name, description, odometry, bridge, (wrong, *correct), 100.0, True)
 
@@ -154,7 +154,7 @@ def _correct_carry_answers(stamps):
     noise = ((0.3, 0.4, 0.02), (-0.2, 0.3, -0.02), (0.1, -0.4, 0.01))
     return tuple(
         Answer(t, _offset(_carry_truth(t), *n), True, True)
-        for t, n in zip(stamps, noise[: len(stamps)], strict=True)
+        for t, n in zip(stamps, noise[: len(stamps)])
     )
 
 
@@ -346,7 +346,7 @@ class Timeline:
 
     def _gapless(self, stamps) -> bool:
         gap = self.params.odometry_max_gap_sec
-        return all(b - a <= gap for a, b in itertools.pairwise(stamps))
+        return all(b - a <= gap for a, b in zip(stamps, stamps[1:]))
 
     def window_continuous(self, stamp: float) -> bool:
         """`_odometry_continuous`: no gap over the window before the answer."""

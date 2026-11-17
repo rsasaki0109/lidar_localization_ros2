@@ -23,7 +23,8 @@ source scripts/setup_local_env.sh
 ```
 
 - The setup script sources ROS 2 Humble for this workspace overlay, adds `../local_prefix`, and then sources `../build_ws/install/setup.bash` when present.
-- Upstream README/CI also track Jazzy builds; local overlay development here remains Humble-based unless explicitly migrated.
+- Upstream README/CI also track Jazzy builds, and Foxy (end-of-life, best effort) builds; local overlay development here remains Humble-based unless explicitly migrated.
+- Python under `scripts/` and `test/` must run on Python 3.8 (Foxy): ruff targets py38, so use `from __future__ import annotations` for newer annotation syntax.
 - Do not replace the local-prefix workflow with system-wide dependency installs unless explicitly requested.
 - Build from the overlay workspace, not from this repository directory:
 

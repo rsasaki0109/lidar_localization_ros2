@@ -11,6 +11,8 @@ reference trajectory window around the query scan stamp instead of a map-wide
 BBS search. Registration scoring ranks the route-local hypotheses.
 """
 
+from __future__ import annotations
+
 import math
 import os
 import sys
@@ -395,13 +397,15 @@ class GlobalLocalizationEngine:
             points_xyz,
             [
                 (candidate.x_m, candidate.y_m, score_z, candidate.yaw_rad)
-                for candidate, score_z in zip(candidates, score_zs, strict=True)
+                for candidate, score_z in zip(candidates, score_zs)
             ],
         )
+        if len(results) != len(candidates):
+            raise ValueError(
+                f"scorer returned {len(results)} results for {len(candidates)} candidates"
+            )
         ranked = []
-        for candidate, score_z, result in zip(
-            candidates, score_zs, results, strict=True
-        ):
+        for candidate, score_z, result in zip(candidates, score_zs, results):
             fitness = (
                 float(result.fitness)
                 if result.converged and math.isfinite(result.fitness)

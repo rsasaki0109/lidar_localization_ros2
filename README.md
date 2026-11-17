@@ -36,7 +36,9 @@ you have them, and works standalone or as the localization source for Nav2.
 
 ## Install
 
-ROS 2 Jazzy is the main target; Humble is supported.
+ROS 2 Jazzy is the main target; Humble is supported. Foxy is end-of-life and supported
+on a best-effort basis: CI builds and tests it, and its differences are listed in the
+[changelog](CHANGELOG.md) under Unreleased.
 
 ```bash
 mkdir -p ~/lidarloc_ws/src

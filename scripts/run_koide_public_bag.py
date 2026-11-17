@@ -35,7 +35,7 @@ def due_stall_signals(stalls, state, elapsed_sec, now):
     """The (signal, index) pairs to send now, updating STATE (per stall: "stopped_at",
     a monotonic time or None, and "done"). ELAPSED_SEC is replay time, NOW monotonic."""
     due = []
-    for i, (stall, item) in enumerate(zip(stalls, state, strict=True)):
+    for i, (stall, item) in enumerate(zip(stalls, state)):
         if item["done"]:
             continue
         if item["stopped_at"] is None:

@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
+
 import argparse
 import json
 import shlex
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+
+from argparse_compat import BooleanOptionalAction
 
 PROFILE_DEFAULTS: dict[str, dict[str, object]] = {
     "standalone": {
@@ -341,7 +345,7 @@ def launch_command(args: argparse.Namespace, output_path: Path) -> str:
         extras.append("set_initial_pose:=true")
         extras.extend(
             f"{key}:={value}"
-            for key, value in zip(initial_pose_keys, args.initial_pose, strict=True)
+            for key, value in zip(initial_pose_keys, args.initial_pose)
         )
     if args.no_publish_lidar_tf or args.base_frame == lidar_frame:
         extras.append("publish_lidar_tf:=false")
@@ -354,9 +358,7 @@ def launch_command(args: argparse.Namespace, output_path: Path) -> str:
             "lidar_tf_pitch",
             "lidar_tf_yaw",
         ]
-        extras.extend(
-            f"{key}:={value}" for key, value in zip(tf_keys, args.lidar_tf, strict=True)
-        )
+        extras.extend(f"{key}:={value}" for key, value in zip(tf_keys, args.lidar_tf))
     if args.no_publish_imu_tf or args.base_frame == imu_frame:
         extras.append("publish_imu_tf:=false")
     elif args.imu_tf is not None:
@@ -374,9 +376,7 @@ def launch_command(args: argparse.Namespace, output_path: Path) -> str:
             "imu_tf_pitch",
             "imu_tf_yaw",
         ]
-        extras.extend(
-            f"{key}:={value}" for key, value in zip(tf_keys, args.imu_tf, strict=True)
-        )
+        extras.extend(f"{key}:={value}" for key, value in zip(tf_keys, args.imu_tf))
     elif args.imu_frame is not None:
         extras.append(f"imu_frame_id:={imu_frame}")
     extras.extend(
@@ -532,7 +532,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--enable-continuous-time-deskew",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=None,
         help=(
             "Enable continuous-time deskew (default for IMU preintegration profiles). "

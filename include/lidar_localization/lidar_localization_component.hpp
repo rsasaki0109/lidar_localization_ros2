@@ -30,9 +30,18 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/transform_broadcaster.h>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#if __has_include(<tf2_sensor_msgs/tf2_sensor_msgs.hpp>)
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
+#else
+#include <tf2_sensor_msgs/tf2_sensor_msgs.h>
+#endif
+#if __has_include(<tf2_eigen/tf2_eigen.hpp>)
 #include <tf2_eigen/tf2_eigen.hpp>
+#else
+#include <tf2_eigen/tf2_eigen.h>
+#endif
+#include "lidar_localization/tf2_compat.hpp"
+#include "lidar_localization/transform_listener_compat.hpp"
 #include <pcl_conversions/pcl_conversions.h>
 #include "builtin_interfaces/msg/time.hpp"
 #include "diagnostic_msgs/msg/diagnostic_array.hpp"
@@ -212,7 +221,7 @@ public:
   tf2_ros::TransformBroadcaster broadcaster_;
   rclcpp::Clock clock_;
   tf2_ros::Buffer tfbuffer_;
-  tf2_ros::TransformListener tflistener_;
+  lidar_localization::TransformListener tflistener_;
 
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::ConstSharedPtr
     initial_pose_sub_;

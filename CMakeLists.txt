@@ -94,6 +94,12 @@ if(small_gicp_FOUND)
   message(STATUS "small_gicp support enabled (SMALL_GICP, SMALL_VGICP)")
 endif()
 
+# Foxy ships tf2_ros 0.13, whose buffer-only TransformListener races its own
+# teardown; transform_listener_compat.hpp replaces it there (Galactic+: 0.17+).
+if(tf2_ros_VERSION VERSION_LESS 0.14)
+  target_compile_definitions(lidar_localization_component PUBLIC LIDAR_LOCALIZATION_FOXY_TF_LISTENER=1)
+endif()
+
 if(nav2_util_FOUND AND bondcpp_FOUND)
   target_compile_definitions(lidar_localization_component PUBLIC LIDAR_LOCALIZATION_HAVE_NAV2_BOND=1)
   ament_target_dependencies(lidar_localization_component nav2_util bondcpp)
@@ -203,6 +209,7 @@ install(PROGRAMS
 # Shared pure-Python helper module imported by installed scripts and the
 # runtime global-localization nodes from the same directory.
 install(FILES
+  scripts/argparse_compat.py
   scripts/relocalization_attempt_common.py
   scripts/koide_public_bag.py
   scripts/replay_session.py
@@ -226,8 +233,16 @@ install(DIRECTORY
 # pybind11's new-tools pybind11_add_module() needs FindPython's
 # python3_add_library, which is only defined when the Development.Module
 # component is found (the top-level find_package above asks for Interpreter only).
-find_package(Python3 QUIET COMPONENTS Interpreter Development.Module)
-if(pybind11_FOUND AND Python3_Development.Module_FOUND)
+# CMake before 3.18 (3.16 on Foxy) has no Development.Module component; the
+# pybind11 2.5 there uses its classic tools, which only need the headers.
+if(CMAKE_VERSION VERSION_LESS 3.18)
+  find_package(Python3 QUIET COMPONENTS Interpreter Development)
+  set(lidar_localization_python_dev_FOUND ${Python3_Development_FOUND})
+else()
+  find_package(Python3 QUIET COMPONENTS Interpreter Development.Module)
+  set(lidar_localization_python_dev_FOUND ${Python3_Development.Module_FOUND})
+endif()
+if(pybind11_FOUND AND lidar_localization_python_dev_FOUND)
   pybind11_add_module(bbs_cpp src/bbs_pybind.cpp)
   target_include_directories(bbs_cpp PRIVATE include)
   target_compile_features(bbs_cpp PRIVATE cxx_std_17)

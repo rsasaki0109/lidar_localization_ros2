@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Added
+
+- **ROS 2 Foxy builds, passes its tests and runs**, as a best-effort target (Foxy is
+  end-of-life); CI builds and tests it. Humble and Jazzy build and behave as before.
+  On Foxy:
+  - ndt_omp_ros2 needs PCL 1.10 support: its `humble` branch asks for PCL 1.12.
+  - The cloud subscription keeps the best-effort sensor QoS: Foxy has no
+    `qos_overrides.<topic>.subscription.reliability` parameter.
+  - The node uses a small TF listener of its own in place of Foxy's, which can crash
+    or hang when the node is destroyed.
+  - `run_koide_public_bag.py` and the other helpers that read bags need `rosbag2_py`,
+    which Foxy does not have. The `tools/benchmark` replays use
+    `ros2 bag play --clock`, which Foxy's rosbag2 lacks, and Foxy cannot read the
+    metadata of bags written by newer rosbag2 releases.
+
 ## 1.10.0 - 2026-11-13
 
 **Upgrading:** no configuration needs changing, and every new setting defaults to the

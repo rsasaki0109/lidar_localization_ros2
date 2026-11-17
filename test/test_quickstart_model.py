@@ -507,7 +507,8 @@ class TestStartupPolicy(unittest.TestCase):
         end = (14.0, 5.0, math.radians(-120.0))
         motion = MODEL.planar_motion_between(start, end)
         moved = MODEL.apply_planar_motion(start, motion)
-        for actual, expected in zip(moved, end, strict=True):
+        self.assertEqual(len(moved), len(end))
+        for actual, expected in zip(moved, end):
             self.assertAlmostEqual(actual, expected)
         self.assertAlmostEqual(motion[2], math.radians(-150.0))
 

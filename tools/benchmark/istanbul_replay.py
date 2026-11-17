@@ -100,10 +100,9 @@ def run_window(args):
     (out / "params.yaml").write_text(yaml.safe_dump(params))
 
     env = dict(os.environ, ROS_DOMAIN_ID=str(args.domain), RCUTILS_COLORIZED_OUTPUT="0")
-    with (
-        open(out / "node.log", "w") as node_log,
-        open(out / "recorder.log", "w") as recorder_log,
-    ):
+    with open(out / "node.log", "w") as node_log, open(
+        out / "recorder.log", "w"
+    ) as recorder_log:
         play_sec = replay(args, out, env, node_log, recorder_log)
 
     score = evaluate(out / "est.tum", ref, t_start, t_start + args.duration)

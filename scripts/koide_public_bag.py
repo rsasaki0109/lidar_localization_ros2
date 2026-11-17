@@ -44,7 +44,8 @@ def extract_archive(archive: Path, destination: Path) -> None:
     with zipfile.ZipFile(archive) as zipped:
         for name in zipped.namelist():
             target = (destination / name).resolve()
-            if not target.is_relative_to(destination.resolve()):
+            root = destination.resolve()
+            if target != root and root not in target.parents:
                 raise ValueError(
                     f"archive member is outside the data directory: {name}"
                 )
@@ -62,12 +63,9 @@ def prepare_assets(data: Path, download: bool) -> tuple[Path, Path, Path]:
                 )
             print(f"Downloading {name} from {SOURCE}", flush=True)
             partial = path.with_name(name + ".partial")
-            with (
-                urllib.request.urlopen(
-                    f"{SOURCE}/files/{name}?download=1", timeout=60
-                ) as response,
-                partial.open("wb") as stream,
-            ):
+            with urllib.request.urlopen(
+                f"{SOURCE}/files/{name}?download=1", timeout=60
+            ) as response, partial.open("wb") as stream:
                 received, next_report = 0, time.monotonic() + 10
                 for chunk in iter(lambda: response.read(1024 * 1024), b""):
                     stream.write(chunk)

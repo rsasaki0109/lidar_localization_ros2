@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
+
 import argparse
 import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
 
+from argparse_compat import BooleanOptionalAction
 from lidar_localization_mid360.bringup_model import (
     BringupCheckConfig,
     evaluate_snapshot,
@@ -73,7 +76,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--require-imu", action="store_true")
     parser.add_argument(
         "--require-cloud-time-field",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=None,
         help=(
             "Require a per-point timing field on PointCloud2 for continuous-time "
@@ -82,19 +85,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--require-imu-base-tf",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=None,
         help="Require base_frame <- imu_frame TF. Enable when IMU preintegration transforms samples into base_frame.",
     )
     parser.add_argument(
         "--require-odom-base-tf",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=None,
         help="Require odom <- base_link TF. Disable for standalone map -> base_link mode.",
     )
     parser.add_argument(
         "--require-map-odom-tf",
-        action=argparse.BooleanOptionalAction,
+        action=BooleanOptionalAction,
         default=None,
         help="Require map <- odom TF. Enable for Nav2 map->odom integration.",
     )

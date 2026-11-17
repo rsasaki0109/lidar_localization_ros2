@@ -84,6 +84,71 @@ jobs:
           colcon test-result --verbose
         shell: bash
 
+  foxy_build:
+    name: Build on Foxy
+    runs-on: ubuntu-22.04
+    # Foxy is end-of-life: ros:foxy already points apt at the final snapshot
+    # (snapshots.ros.org/foxy/final) with its key, and rosdep needs
+    # --include-eol-distros to resolve foxy keys.
+    container: ros:foxy
+    timeout-minutes: 60
+    env:
+      # Without it a package's debconf prompt (keyboard-configuration) waits for input.
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+      - name: Copy repository
+        run: |
+          mkdir -p ~/ros2_ws/src/lidar_localization_ros2
+          cp -rf . ~/ros2_ws/src/lidar_localization_ros2
+      - name: Install dependencies
+        run: |
+          source /opt/ros/foxy/setup.bash
+          # The container runs as root; sudo would drop DEBIAN_FRONTEND.
+          apt-get update
+          apt-get install -y python3-rosdep python3-colcon-common-extensions python3-pytest ccache
+          rosdep update --include-eol-distros
+          cd ~/ros2_ws/src
+          git clone https://github.com/rsasaki0109/ndt_omp_ros2.git -b humble
+          rosdep install -r -y --from-paths . --ignore-src
+        shell: bash
+      - name: Run Python tests
+        run: |
+          source /opt/ros/foxy/setup.bash
+          cd ~/ros2_ws/src/lidar_localization_ros2
+          python3 -m pytest test/ -q
+        shell: bash
+      - name: Restore compiler cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: ccache-g0-foxy-${{ github.sha }}
+          restore-keys: ccache-g0-foxy-
+      - name: Build packages
+        run: |
+          source /opt/ros/foxy/setup.bash
+          export CCACHE_DIR="$HOME/.ccache" CCACHE_MAXSIZE=1G
+          cd ~/ros2_ws
+          ccache -z
+          # -g0: with debug info an object is up to 60x larger, and the 1 GB
+          # compiler cache evicted itself on every build.
+          colcon build --cmake-args -DCMAKE_CXX_FLAGS=-g0 \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          source ~/ros2_ws/install/setup.bash
+          ccache --show-stats
+        shell: bash
+      - name: Run C++ tests
+        run: |
+          source /opt/ros/foxy/setup.bash
+          cd ~/ros2_ws
+          # Foxy's Fast DDS 2.1 can crash while a participant is torn down (about
+          # 1 run in 200 of a test that builds the node six times); rerun a failure once.
+          colcon test --packages-select lidar_localization_ros2 --retest-until-pass 1
+          colcon test-result --verbose
+        shell: bash
+
   jazzy_build:
     name: Build on Jazzy
     runs-on: ubuntu-24.04
