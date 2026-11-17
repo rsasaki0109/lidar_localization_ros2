@@ -2,7 +2,8 @@
 #include <pcl/registration/gicp.h>
 #include <pcl/registration/ndt.h>
 // QoS overriding parameters arrived after Foxy; there the cloud subscription keeps
-// its SensorDataQoS reliability without a qos_overrides parameter.
+// its SensorDataQoS reliability without a qos_overrides parameter; the cloud_reliable_qos
+// parameter makes it reliable there.
 #if __has_include(<rclcpp/qos_overriding_options.hpp>)
 #include <rclcpp/qos_overriding_options.hpp>
 #define LIDAR_LOCALIZATION_HAS_QOS_OVERRIDING_OPTIONS 1
@@ -86,9 +87,21 @@ void PCLLocalization::initializePubSub()
 #ifdef LIDAR_LOCALIZATION_HAS_QOS_OVERRIDING_OPTIONS
   cloud_subscription_options.qos_overriding_options =
     rclcpp::QosOverridingOptions({rclcpp::QosPolicyKind::Reliability});
+  if (cloud_reliable_qos_) {
+    RCLCPP_WARN(
+      get_logger(),
+      "cloud_reliable_qos is only used where QoS overriding is unavailable (ROS 2 Foxy); "
+      "set qos_overrides.<cloud topic>.subscription.reliability instead");
+  }
+  const rclcpp::QoS cloud_qos = rclcpp::SensorDataQoS().keep_last(cloud_queue_depth_);
+#else
+  rclcpp::QoS cloud_qos = rclcpp::SensorDataQoS().keep_last(cloud_queue_depth_);
+  if (cloud_reliable_qos_) {
+    cloud_qos.reliable();
+  }
 #endif
   cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-    "cloud", rclcpp::SensorDataQoS().keep_last(cloud_queue_depth_),
+    "cloud", cloud_qos,
     std::bind(&PCLLocalization::cloudReceived, this, std::placeholders::_1),
     cloud_subscription_options);
 

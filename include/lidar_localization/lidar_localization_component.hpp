@@ -416,6 +416,7 @@ public:
   double scan_period_;
   double scan_time_range_max_duration_ratio_{2.0};
   int cloud_queue_depth_{1};
+  bool cloud_reliable_qos_{false};
   int imu_queue_depth_{2000};
   double min_scan_interval_sec_{0.0};
   rclcpp::Time last_cloud_process_time_{0, 0, RCL_ROS_TIME};
