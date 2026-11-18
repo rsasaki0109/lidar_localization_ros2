@@ -45,9 +45,11 @@ neither column alone separates lost poses from good ones.
 | Koide outdoor_kidnap (a, b) | 6 | 6 | 0 | 0.04-0.12 | 15.85-60.50 |
 | JEPLO EIL_*, lidar_slam_ros2 map | 12 | 12 | 0 | 0.03 | 0.09-0.13 |
 | JEPLO wide maps and EIL_*, rebuilt inputs, low-sensor settings | 18 | 18 | 0 | 0.02-0.03 | - |
+| JEPLO cross-session (map from another run), low-sensor settings | 24 | 23 | 5 | 0.02-0.22 | 0.04-1.81 |
 
 Ranges are over cases. The kidnap p95 comes from the poses while the sensor is
-carried, before recovery. The sections below have the per-case tables and what went wrong.
+carried, before recovery. The cross-session medians and p95 are over the runs that
+started at the right place. The sections below have the per-case tables and what went wrong.
 
 ### Per case
 
@@ -131,6 +133,102 @@ EIL_Mask1 three times 1.1-2.0 m off, EIL_Mask2 once turned 180 degrees, and EIL_
 See [experiments/go2_wide_map_global_init](../experiments/go2_wide_map_global_init/README.md)
 for the diagnosis, the compared settings, and the EIL_Box start that falls on the
 Go2 stepping off a box.
+
+### Cross-session (Go2, JEPLO)
+
+Measured 2026-11-18 on `main` at `6303352`, Jazzy, replay at 1x,
+two runs per pair, the [Large maps](go2_mid360_quickstart.md#large-maps) settings, no
+initial pose ([`go2_jeplo_cross_session.yaml`](../tools/benchmark/suites/go2_jeplo_cross_session.yaml)).
+Each map is built from one run only (RKO-LIO offline odometry,
+`build_map_from_odometry.py`, `align_map_to_ground_truth.py`, residual 0.034-0.075 m)
+and the scans come from another run. Ground truth covers only the capture room.
+
+| map → scans | initialized / wrong / manual pose | first pose (s) | first-pose error (m) | queries | median / p95 / max xy (m) |
+|---|---|---|---|---|---|
+| Long_Stairs → Outdoor2 (0-165 s) | 2 / 0 / 0 | 13.3, 13.3 | 0.02, 0.02 | 2, 2 | 0.02 / 0.04 / 0.07 |
+| Outdoor2 (0-165 s) → Long_Stairs | 2 / 0 / 0 | 12.6, 12.3 | 0.02, 0.02 | 2, 2 | 0.02 / 0.04 / 0.10-0.14 |
+| EIL_Mix → EIL_Box | 2 / 0 / 0 | 8.8, 9.6 | 0.01, 0.01 | 2, 2 | 0.03 / 0.09 / 0.65 |
+| EIL_Mix → EIL_Stairs | 2 / 0 / 0 | 7.6, 9.4 | 0.01, 0.03 | 2, 2 | 0.02-0.03 / 0.84 / 1.30 |
+| EIL_Mix → EIL_Mask1 | 2 / 0 / 0 | 10.0, 8.8 | 0.01, 0.05 | 2, 2 | 0.02 / 0.06 / 0.15-0.20 |
+| EIL_Mix → EIL_Mask2 | 2 / 0 / 0 | 9.8, 9.5 | 0.02, 0.02 | 2, 2 | 0.02 / 0.04 / 0.07-0.16 |
+| EIL_Box → EIL_Mix | 2 / **2** / 0 | 14.6, 9.3 | **5.50, 1.72** | 6, 2 | 4.22 and 0.03 / 7.37 and 1.50 / 8.36 and 2.05 |
+| EIL_Box → EIL_Stairs | 2 / **2** / 0 | 10.4, 10.4 | **1.05, 1.05** | 4, 3 | 1.94 / 3.92 / 5.24 |
+| EIL_Box → EIL_Mask1 | 2 / 0 / 0 | 10.0, 10.0 | 0.03, 0.03 | 3, 4 | 0.03 / 0.08-0.10 / 0.28-0.46 |
+| Long_Stairs → EIL_Box | 2 / 0 / 0 | 18.1, 11.1 | 0.16, 0.04 | 6, 2 | 0.15-0.19 / 1.54-1.72 / 1.77-2.55 |
+| Long_Stairs → EIL_Stairs | 2 / 0 / 0 | 12.1, 12.1 | 0.01, 0.01 | 3, 3 | 0.11-0.22 / 0.75-1.81 / 1.05-2.24 |
+| Long_Stairs → EIL_Mask1 | 1 / **1** / **1** | -, 18.0 | -, **1.73** | 6, 5 | 1.77 / 3.11 / 3.30 (run 2) |
+| *controls, own map:* EIL_Box → EIL_Box | 1 / 0 / **1** | -, 8.8 | -, 0.02 | 6, 2 | 0.02 / 0.05 / 0.31 |
+| EIL_Stairs → EIL_Stairs | 2 / 0 / 0 | 9.4, 9.4 | 0.03, 0.03 | 2, 2 | 0.02 / 0.06 / 0.56 |
+| EIL_Mix → EIL_Mix | 2 / 0 / 0 | 7.1, 7.8 | 0.02, 0.02 | 2, 2 | 0.02 / 0.05-0.06 / 0.28 |
+
+"Wrong" is a first pose more than 1 m from the truth; "manual pose" is a run that
+used up its six global attempts and asked for a pose (`needs_operator`). Values are
+per run (run 1, run 2) or the range over both. Ground truth covers the capture room
+only; on the Long_Stairs pair the whole run, corridor and staircase included, was also
+compared with the test run's own offline odometry fitted to its ground truth (a
+reference, not ground truth): median 0.02-0.03 m, max 0.19-0.22 m.
+
+What differs between the sessions, and what it did:
+
+- **Long_Stairs and Outdoor2** were recorded 1.5 h apart on one day along the same
+  route (room, corridor, long staircase). The room was not rearranged: 99-100% of the
+  room points of each map lie within 0.1-0.2 m of the other's. Both directions
+  localized in every run with the two queries ranked #1 at 0.01-0.08 m, and tracked
+  down the staircase. This is the
+  [README GIF](readme-media.md#global-localization-on-a-go2).
+- **The EIL runs move props** (boxes, a stair module) around the same room, on other
+  days (2026-08-23 to 08-26; EIL_Mix has no date). 73-85% of one room map's points lie
+  within 0.1-0.2 m of another's. The EIL_Mix map holds two props in the middle of the
+  room; the EIL_Box map a box platform about 3.8 m x 1.7 m.
+- **EIL_Mask1 and EIL_Mask2 have part of the sensor covered**: in EIL_Mask2 a
+  60 degree sector of the scan holds about a third of its usual points, in EIL_Mask1
+  the front 60 degrees about four fifths.
+- **On the EIL_Mix map** every start was right. EIL_Box jumped 0.65 m for about 1 s
+  at 31 s, and EIL_Stairs ran 0.5-1.3 m off along the room for 18 s (111-129 s), in both
+  runs. On their own maps neither happened (max 0.31 m and 0.56 m).
+- **On the EIL_Box map** the global search was unreliable even for its own run: one of
+  the two self-map runs saw top candidates 1.5-9.3 m off in six queries and asked for a
+  manual pose. On the other runs it published four wrong first poses (1.05-5.50 m off,
+  one of them after six queries) whose two queries had agreed; one EIL_Mix run then
+  converged back to 0.03 m (median). In EIL_Mask1 the consensus check rejected the wrong
+  answers and both runs started right.
+- **On the Long_Stairs map** (a room without the EIL props, plus the corridor and the
+  staircase), five of six starts were right, but tracking slid 1-2.5 m along the room's
+  long axis (y within 0.1 m) for up to 40 s while the Go2 walked on the floor between
+  the props it climbs in these runs, and came back when it was on them. EIL_Mask1 once
+  asked for a manual pose after six ambiguous queries (top candidates 3-14 m off) and
+  once started 1.73 m off and stayed there.
+
+**Map-change probe** on the EIL_Mix map (edited copies, two runs each): deleting every
+map point 0.2-1.6 m high in the room interior (the props, 12,730 of 579,717 points) or
+adding a 3 m x 2 m wall across the room that the scans do not see.
+
+| map edit → scans | initialized / wrong / manual pose | first pose (s) | first-pose error (m) | queries | median / p95 / max xy (m) |
+|---|---|---|---|---|---|
+| props deleted → EIL_Box | 2 / 0 / 0 | 10.1, 9.8 | 0.01, 0.01 | 2, 2 | 0.02 / 0.10 / 0.24-0.26 |
+| props deleted → EIL_Stairs | 2 / 0 / 0 | 11.4, 11.4 | 0.02, 0.02 | 4, 4 | 0.02 / 0.60 / 0.81 |
+| wall added → EIL_Box | 2 / 0 / 0 | 9.6, 9.8 | 0.01, 0.01 | 2, 2 | 0.03 / 0.09-0.11 / 0.38-0.39 |
+| wall added → EIL_Stairs | 2 / 0 / 0 | 9.4, 9.4 | 0.03, 0.03 | 2, 2 | 0.03 / 0.72 / 0.98 |
+
+Neither edit caused a wrong start. Without the EIL_Mix props, EIL_Box and EIL_Stairs
+tracked closer than on the unedited map (max 0.26 m and 0.81 m against 0.65 m and
+1.30 m), i.e. props that are somewhere else in the test run hurt more than missing ones.
+With props deleted, EIL_Stairs needed four queries (one consensus mismatch rejected a
+candidate 1.22 m off).
+
+Not verified: two runs per pair, one machine. JEPLO has one Long_Stairs recording and
+one other run on its route (Outdoor2, used up to 165 s, converted from the first 1.5 GB
+of the bag). The EIL_Box map's failure on its own run suggests that map, not only the
+session change, is a weak case; other room maps of the EIL runs were not tried. The
+probe edits are synthetic.
+
+To reproduce, build the maps as in [Rebuilding the JEPLO bags and self maps](#rebuilding-the-jeplo-bags-and-self-maps)
+(Outdoor2: `jeplo_to_pc2_bag.py ... bags_pc2_merged/Outdoor2_0-165s --duration 165`,
+its map under `maps_loc/Outdoor2_0-165s`; the EIL_Mix, EIL_Box and EIL_Stairs maps from
+their own runs), then run
+`python3 tools/benchmark/run_benchmark.py tools/benchmark/suites/go2_jeplo_cross_session.yaml --out results/go2_cross`.
+Query counts and manual-pose requests are read from each run's `quickstart.log`
+(`query answered:` lines) and `status.jsonl` (`needs_operator`).
 
 ## Running it
 
