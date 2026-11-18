@@ -18,6 +18,10 @@
 
 <p><em>Handheld Livox MID-360, ~390 m outdoors on a prior map, including stretches where the scans do not match the map and a section outside it. Each scan is matched to the map with NDT; RKO-LIO odometry predicts the motion between scans and carries the pose where matching fails. The error is 0.26 m RMSE for the whole run, in an offline replay started from the ground-truth pose (<a href="https://zenodo.org/records/10122133">Koide Hard Point Cloud Localization Dataset</a> <code>outdoor_hard_02b</code>, CC BY 4.0). <a href="./docs/readme-media.md">How this was made</a> · <a href="./docs/koide_gif_gallery.md">more runs</a></em></p>
 
+<img src="./images/readme/global_localization_jeplo_long_stairs.gif" alt="A Unitree Go2 starts with no pose; ranked candidates appear all over the map, the best one is accepted, the scan snaps onto the map and the robot is tracked down the stairs and back" width="720">
+
+<p><em>Global localization on a Unitree Go2 (upside-down Livox MID-360), started with no initial pose. The quickstart searches the whole map: each query returns 32 ranked places (circles sized by score) in 1.5-2.2 s, and the answer is accepted when two queries agree after the odometry motion. The first pose came 11.3 s into the run, 4.5 s after the first search, 0.02 m from the motion-capture ground truth. Tracking then follows the robot out of the capture room, down the stairs and back, within 0.02 m (median) of the ground truth where it exists. Offline replay at 1× on a map built from the same recording (<a href="https://huggingface.co/datasets/ASIG-Lab/JEPLO-Dataset">JEPLO dataset</a> <code>Long_Stairs</code>, GPL-3.0; this GIF is derived from it and shared under the same licence). <a href="./docs/readme-media.md#global-localization-on-a-go2">How this was made</a></em></p>
+
 </div>
 
 Give it a point cloud map (`.pcd` or `.ply`) and a LiDAR stream; it publishes the
