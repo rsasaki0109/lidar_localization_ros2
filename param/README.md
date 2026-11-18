@@ -11,6 +11,7 @@ paths for launch-file and downstream compatibility.
 | `nav2_ndt_urban.yaml` | Recommended conservative Nav2 localizer preset |
 | `nav2_humble_pointcloud.yaml` | Companion Nav2 stack configuration |
 | `mid360_legged.yaml` | Jetson + Livox MID-360 legged-robot preset |
+| `mid360_legged_low_resource.yaml` | The same with about a quarter less CPU, for a small Jetson; needs odometry |
 | `nav2_replay_safe.yaml` | Single-thread NDT replay/debug fallback |
 
 The localizer and Nav2 configurations are separate. A normal Nav2 launch uses

@@ -4,6 +4,32 @@
 
 ### Added
 
+- **`param/mid360_legged_low_resource.yaml`**, for a Jetson Orin Nano/NX on a
+  Unitree Go2 or G1-class robot with a MID-360: `mid360_legged.yaml` with a 0.5 m
+  scan voxel, two NDT threads, 15 iterations, odometry TF seeds, no pose timer and
+  the MID-360's acceleration in g. It needs odometry. With the localizer pinned to two
+  x86 cores and RKO-LIO beside it, on JEPLO EIL_Stairs (Go2, motion capture) it took
+  about 0.2 cores instead of 0.27 at the same error (0.067 m against 0.077 m), and on
+  Koide outdoor_hard_02b 0.45-0.50 cores instead of 0.70 (0.23 m against 0.25 m).
+  Without odometry the coarse scan locked onto the wrong stair level, so keep
+  `mid360_legged.yaml` there
+  ([mid360_legged_jetson.md](docs/mid360_legged_jetson.md#low-resource-preset),
+  [benchmark.md](docs/benchmark.md#low-resource-budget-go2-mid-360)).
+- **`imu_smoother_window_size`** (default `50`, as before): the scans the IMU smoother
+  re-optimizes on every update, a quarter of the node's CPU with a 0.5 m scan. 20
+  saved 18% of the CPU on the Go2 bag, but 20 and 30 lost the pose for 40 s or more
+  on the Koide outdoor bag, so no preset lowers it.
+- **The replay harnesses report CPU and memory**: `boreas_replay.py`,
+  `soak_replay.py` and `run_koide_public_bag.py` sample the localizer's CPU time
+  from `/proc` next to its memory, and `summary.json` gives the cores in use (mean
+  and p95), CPU per second of data and per scan, peak and steady resident and
+  anonymous memory, pose latency, and the scans processed and accepted.
+  `boreas_replay.py` replays any fixture of the same layout (`--points-topic`,
+  `--imu-topic`, `--base-frame`), runs the localizer under `--wrap COMMAND` (e.g.
+  `taskset` or a cgroup) and starts `--companion` nodes such as an odometry, whose
+  resources it samples too; `run_koide_public_bag.py` takes `--preset`, `--set` and
+  `--wrap`.
+
 - **ROS 2 Foxy builds, passes its tests and runs**, as a best-effort target (Foxy is
   end-of-life); CI builds and tests it. Humble and Jazzy build and behave as before.
   On Foxy:

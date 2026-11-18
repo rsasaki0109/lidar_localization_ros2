@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 import os
+import shlex
 import shutil
 import signal
 import sys
@@ -65,6 +66,16 @@ def score_stalls(poses, reference, first_scored_sec, stalls):
     return soak_replay.score_faults(errors, first_scored_sec, period_sec, stalls)
 
 
+def soak_latency_summary(latency_ms):
+    """Pose latency as tools/benchmark/soak_replay.py summarizes it."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/benchmark"))
+    try:
+        import soak_replay
+    except ImportError:
+        return {}
+    return soak_replay.latency_summary(latency_ms)
+
+
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument(
@@ -104,6 +115,26 @@ def parser():
         "starting START_SEC after the first scored cloud, while RKO and the player run; "
         "repeatable. Scores each stall with tools/benchmark/soak_replay.py into "
         "summary.json under 'stalls'",
+    )
+    result.add_argument(
+        "--preset",
+        type=Path,
+        help="localizer parameter file to replay instead of the installed "
+        "koide_outdoor_hard_02b_online.yaml (its map_path is replaced)",
+    )
+    result.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="override a localizer parameter (YAML value); repeatable",
+    )
+    result.add_argument(
+        "--wrap",
+        default="",
+        metavar="COMMAND",
+        help="run the localizer under COMMAND, e.g. 'taskset -c 2,3'; its memory and "
+        "CPU time are still sampled from the node itself",
     )
     result.add_argument(
         "--dry-run",
@@ -156,8 +187,14 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
     import yaml
     from geometry_msgs.msg import PoseWithCovarianceStamped
     from rclpy.qos import QoSProfile, ReliabilityPolicy
-    from replay_session import ReplaySession
+    from replay_session import (
+        ReplaySession,
+        ResourceMonitor,
+        apply_overrides,
+        find_process,
+    )
     from rosgraph_msgs.msg import Clock
+    from sensor_msgs.msg import PointCloud2
     from start_lifecycle_node import activate
 
     localizer, rko, profiles = paths
@@ -175,9 +212,10 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
     if abs(row[0] - initialization_ns * 1e-9) > 0.05:
         raise ValueError("ground truth has no initial pose within 0.05 s of bag + 4 s")
     config = yaml.safe_load(
-        (profiles / "koide_outdoor_hard_02b_online.yaml").read_text()
+        (args.preset or profiles / "koide_outdoor_hard_02b_online.yaml").read_text()
     )
     config["/**"]["ros__parameters"]["map_path"] = str(map_path)
+    apply_overrides(config["/**"]["ros__parameters"], args.set)
     config_path = output / "localizer.yaml"
     config_path.write_text(yaml.safe_dump(config))
     rko_config = output / "rko.yaml"
@@ -200,6 +238,9 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
         "full_sequence": True,
         "rate": 1.0,
         "initial_pose_offset_sec": 4.0,
+        "preset": str(args.preset) if args.preset else None,
+        "overrides": args.set,
+        "wrap": args.wrap,
         "bag": str(bag),
         "map": str(map_path),
         "ros_domain_id": args.ros_domain_id,
@@ -217,11 +258,31 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
     (output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     clock_ns = [0]
     session = None
+    # Monotonic times the control node received a cloud and its pose, by stamp in ns.
+    cloud_wall, pose_wall = {}, {}
+
+    def note_pose(stamp):
+        pose_wall.setdefault(stamp, time.monotonic())
+        return stamp >= initialization_ns
+
+    def note_cloud(data):
+        # A raw CDR PointCloud2: 4 bytes of encapsulation, then the header stamp.
+        sec = int.from_bytes(data[4:8], "little", signed=True)
+        nanosec = int.from_bytes(data[8:12], "little")
+        cloud_wall.setdefault(sec * 10**9 + nanosec, time.monotonic())
+
     try:
         with ReplaySession(output, environment, "koide_public_bag_control") as session:
             session.require_free_domain()
-            session.record(accept_stamp=lambda stamp: stamp >= initialization_ns)
+            session.record(accept_stamp=note_pose)
             node = session.node
+            node.create_subscription(
+                PointCloud2,
+                data_tool.POINTS,
+                note_cloud,
+                QoSProfile(depth=50, reliability=ReliabilityPolicy.RELIABLE),
+                raw=True,
+            )
             node.create_subscription(
                 Clock,
                 "/clock",
@@ -238,7 +299,7 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
                 session.require_running("rko", "localizer")
 
             print("Starting online RKO and activating localization", flush=True)
-            session.spawn(
+            rko_process = session.spawn(
                 [
                     str(rko),
                     "--ros-args",
@@ -249,6 +310,7 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
             )
             localizer_process = session.spawn(
                 [
+                    *shlex.split(args.wrap),
                     str(localizer),
                     "--ros-args",
                     "--params-file",
@@ -261,6 +323,20 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
                 "localizer",
             )
             activate(node, "/lidar_localization", 120.0)
+            monitors = {
+                "resources": ResourceMonitor(
+                    find_process(localizer_process.pid, "lidar_localization_node"),
+                    output / "resources.csv",
+                ),
+                "rko_resources": ResourceMonitor(
+                    rko_process.pid, output / "rko_resources.csv"
+                ),
+            }
+
+            def poll():
+                for monitor in monitors.values():
+                    monitor.poll()
+
             deadline = time.monotonic() + 30
             while True:
                 check_nodes()
@@ -269,6 +345,7 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
                     item.node_name
                     for item in subscriptions
                     if item.qos_profile.reliability == ReliabilityPolicy.RELIABLE
+                    and item.node_name != node.get_name()
                 }
                 if initialpose.get_subscription_count() and len(reliable) >= 2:
                     break
@@ -278,7 +355,8 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
                     )
                 session.spin_for(0.1)
             # Allow discovery of the diagnostic and pose readers before playback.
-            session.spin_for(2.0)
+            session.spin_for(2.0, poll)
+            began = {name: monitor.elapsed() for name, monitor in monitors.items()}
             print(
                 "Replaying the complete bag at 1x (~5 minutes); initial pose is supplied once at +4 s",
                 flush=True,
@@ -311,7 +389,7 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
             stall_log = []
             while player.poll() is None:
                 check_nodes()
-                session.spin_for(0.05)
+                session.spin_for(0.05, poll)
                 elapsed = (clock_ns[0] - origin_ns) * 1e-9
                 for sig, i in due_stall_signals(
                     args.stall, stall_state, elapsed, time.monotonic()
@@ -356,9 +434,33 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
                 raise RuntimeError(
                     f"playback failed (exit {player.returncode}, initial pose sent={sent}); see player.log"
                 )
-            session.spin_for(15.0, check_nodes)
+            # The CPU is averaged over the playback and the 2 s after it.
+            windows = {
+                name: (began[name], monitor.elapsed() + 2.0)
+                for name, monitor in monitors.items()
+            }
+
+            def check_and_poll():
+                check_nodes()
+                poll()
+
+            session.spin_for(15.0, check_and_poll)
+            for monitor in monitors.values():
+                monitor.close()
             result = data_tool.evaluate(
                 session.poses, reference, expected, session.diagnostic_stamps
+            )
+            # The window spans the whole playback, so the CPU is per second of the bag.
+            for name, monitor in monitors.items():
+                result[name] = monitor.summary(duration, len(expected), windows[name])
+            result.update(
+                soak_latency_summary(
+                    [
+                        1000.0 * (pose_wall[stamp] - cloud_wall[stamp])
+                        for stamp in sorted(pose_wall)
+                        if stamp in cloud_wall and stamp >= initialization_ns
+                    ]
+                )
             )
             if args.stall:
                 result["stalls"] = score_stalls(

@@ -88,3 +88,29 @@ class TestStallOption(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBudgetOptions(unittest.TestCase):
+    def test_preset_overrides_and_wrap(self):
+        args = MODULE.parser().parse_args(
+            [
+                "--preset",
+                "low.yaml",
+                "--set",
+                "ndt_num_threads=2",
+                "--set",
+                "voxel_leaf_size=0.5",
+                "--wrap",
+                "taskset -c 2,3",
+            ]
+        )
+        self.assertEqual(args.preset, Path("low.yaml"))
+        self.assertEqual(args.set, ["ndt_num_threads=2", "voxel_leaf_size=0.5"])
+        self.assertEqual(args.wrap, "taskset -c 2,3")
+        defaults = MODULE.parser().parse_args([])
+        self.assertEqual((defaults.preset, defaults.set, defaults.wrap), (None, [], ""))
+
+    def test_latency_is_summarized_like_the_soak(self):
+        summary = MODULE.soak_latency_summary([10.0, 20.0, 300.0])
+        self.assertEqual(summary["latency_ms_median"], 20.0)
+        self.assertEqual(summary["late_poses"], 1)
