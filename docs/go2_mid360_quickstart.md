@@ -113,6 +113,22 @@ lidar_slam_ros2 map of a separate run ([benchmark](benchmark.md)):
   settings localized all 12 runs correctly.
   These were measured on maps rebuilt from the raw bags, as the dataset no longer
   ships its own ([comparison](../experiments/go2_wide_map_global_init/README.md)).
+- **Map from a different recording** (2026-11-18, the [Large maps](#large-maps)
+  settings, two runs per pair, [cross-session table](benchmark.md#cross-session-go2-jeplo)).
+  The large-map results above used maps from the same recording as the scans.
+  - Long_Stairs map, Outdoor2 scans (1.5 h later, same route, room not rearranged), and
+    the reverse: all 4 runs localized by themselves after 12-13 s, 0.02 m off, and
+    tracked down the staircase within 0.02 m (median) of the ground truth in the room.
+  - EIL_Mix map (capture room), EIL_Box, Stairs, Mask1 and Mask2 scans (props moved,
+    part of the sensor covered in the Mask runs): all 8 runs started right after
+    7.6-10.0 s. Tracking stayed at 0.02-0.03 m (median) but EIL_Stairs ran up to 1.3 m off
+    for 18 s, which it did not on its own map.
+  - Failures: on the EIL_Box map (a large box platform in the middle of the
+    near-symmetric room) 4 of 6 starts on other runs were 1.05-5.50 m off, and even its
+    own run once asked for a manual pose. On the Long_Stairs map, which lacks the props,
+    the EIL runs mostly started right (5 of 6) but tracking slid 1-2.5 m along the room
+    for up to 40 s, and EIL_Mask1 once asked for a manual pose and once started 1.7 m
+    off. If the room has changed, check the first pose, or rebuild the map.
 
 More: [quickstart and automatic initialization](quickstart.md),
 [troubleshooting](troubleshooting.md), [frames](frame_contract.md).

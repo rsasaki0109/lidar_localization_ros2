@@ -37,7 +37,10 @@ lidar_slam_ros2 map).
 The Long_Stairs and Outdoor starts do not match the EIL_Mix map in the ground-truth frame:
 NDT fitness at the true pose is 3.7-13.5 there, against 0.01 for EIL_Mask2. They were
 recorded on other days, so the room or the motion-capture frame differs. They are
-therefore only searched on their own maps.
+therefore only searched on their own maps. (2026-11-18: the frames do agree. The
+Long_Stairs map started EIL_Box and EIL_Stairs 0.01-0.16 m from their ground truth, and in the
+room 81-85% of the Long_Stairs and EIL_Mix map points lie within 0.1-0.2 m of each other;
+see [cross-session](../../docs/benchmark.md#cross-session-go2-jeplo).)
 
 ## What fails
 
