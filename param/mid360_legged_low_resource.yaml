@@ -1,0 +1,122 @@
+# Preset: Jetson + Livox MID-360 for quadruped/biped robots, low CPU and memory.
+# Status: replay-validated on a Unitree Go2 bag (JEPLO EIL_Stairs) under an emulated
+# budget of two pinned x86 cores and 256 MB; not yet run on a Jetson.
+# See docs/mid360_legged_jetson.md#low-resource-preset.
+# mid360_legged.yaml with a coarser scan, two NDT threads, fewer iterations and a
+# shorter IMU smoother window. It needs odometry: odom -> base_link from the robot's
+# state estimator or a LiDAR-inertial odometry. Without it the 0.5 m scan voxel
+# locked onto the wrong stair level on EIL_Stairs; use mid360_legged.yaml then.
+# Set map_path here or pass map_path:=... to the launch; set the measured sensor
+# extrinsics with the launch TF arguments.
+/**:
+  ros__parameters:
+    registration_method: NDT_OMP
+    score_threshold: 6.0
+    ndt_resolution: 1.0
+    ndt_step_size: 0.1
+    ndt_num_threads: 2
+    ndt_max_iterations: 15
+    gicp_corr_randomness: 20
+    gicp_max_correspondence_distance: 2.0
+    vgicp_voxel_resolution: 1.0
+    transform_epsilon: 0.01
+
+    voxel_leaf_size: 0.5
+    enable_scan_voxel_filter: true
+    scan_max_range: 60.0
+    scan_min_range: 0.8
+    scan_period: 0.1
+    cloud_queue_depth: 1
+    # 0.19 aligns every other 10 Hz scan (5 Hz) for about 30% less CPU, but one of two
+    # EIL_Stairs replays at 5 Hz slipped 1.3 m for a second: keep 10 Hz if it fits.
+    min_scan_interval_sec: 0.0
+
+    use_pcd_map: true
+    map_path: "/map/map.pcd"
+    set_initial_pose: false
+    initial_pose_x: 0.0
+    initial_pose_y: 0.0
+    initial_pose_z: 0.0
+    initial_pose_qx: 0.0
+    initial_pose_qy: 0.0
+    initial_pose_qz: 0.0
+    initial_pose_qw: 1.0
+
+    use_odom: false
+    # Seed each scan from the odom -> base_link TF; publish that bridge while lost.
+    use_odom_tf_prediction: true
+    publish_bridge_pose_when_lost: true
+    use_twist_prediction: true
+    twist_prediction_use_angular_velocity: false
+    max_twist_prediction_dt: 0.25
+    use_gtsam_smoother: false
+
+    # IMU preintegration backend and input units
+    use_imu_preintegration: true
+    imu_preintegration_use_base_frame_transform: true
+    # livox_ros_driver2 publishes the MID-360 acceleration in g; 1.0 for m/s^2.
+    imu_accel_scale: 9.80665
+    imu_dual_queue_enabled: true
+    imu_smoother_window_size: 20
+
+    # IMU seed safety gates
+    imu_prediction_correction_guard_translation_m: 1.0
+    imu_prediction_correction_guard_yaw_deg: 6.0
+    imu_prediction_correction_guard_warmup_accepts: 5
+    imu_seed_consistency_gate_enabled: true
+    imu_seed_consistency_max_translation_error_m: 0.5
+    imu_seed_consistency_max_rotation_error_deg: 5.0
+    imu_seed_consistency_required_consecutive_passes: 5
+
+    # Preintegration noise and factor model
+    imu_gyro_noise_density: 0.01
+    imu_accel_noise_density: 0.1
+    imu_gyro_random_walk: 0.0001
+    imu_accel_random_walk: 0.001
+    imu_bias_prior_sigma_gyro: 0.01
+    imu_bias_prior_sigma_accel: 0.1
+    imu_ndt_sigma_z: 0.1
+    imu_ndt_sigma_roll: 0.05
+    imu_ndt_sigma_pitch: 0.05
+
+    # Falls back to the original scan until point timing and motion are ready.
+    use_continuous_time_deskew: true
+
+    gtsam_ndt_sigma_x: 0.1
+    gtsam_ndt_sigma_y: 0.1
+    gtsam_ndt_sigma_yaw: 0.02
+    gtsam_fitness_nominal: 1.0
+    gtsam_fitness_scale_factor: 2.0
+    gtsam_fitness_reject: 50.0
+    gtsam_huber_k: 1.345
+
+    enable_debug: false
+    predict_pose_from_previous_delta: true
+    enable_local_map_crop: false
+    local_map_radius: 80.0
+    local_map_update_distance: 20.0
+    local_map_min_points: 100
+    reject_above_score_threshold: true
+    enable_borderline_seed_rejection_gate: true
+    borderline_seed_gate_score_threshold: 5.25
+    borderline_seed_gate_min_seed_translation_m: 0.8
+    enable_rejected_seed_update: false
+    enable_recovery_retry_from_last_pose: false
+
+    enable_reinitialization_request_output: true
+    enable_reinitialization_request_latch: true
+    reinitialization_trigger_threshold: 0.95
+    reinitialization_trigger_gap_scale_sec: 15.0
+    reinitialization_trigger_seed_translation_scale_m: 30.0
+    reinitialization_trigger_reject_streak_scale: 50.0
+    reinitialization_trigger_fitness_explosion_threshold: 1000.0
+
+    enable_map_odom_tf: true
+    global_frame_id: map
+    odom_frame_id: odom
+    base_frame_id: base_link
+    # map -> odom per aligned scan; the odometry carries the pose in between.
+    enable_timer_publishing: false
+    pose_publish_frequency: 20.0
+    viz_downsample: true
+    viz_voxel_leaf_size: 0.5
