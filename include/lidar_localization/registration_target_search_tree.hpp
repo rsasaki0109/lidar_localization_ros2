@@ -7,6 +7,8 @@
 
 #include <future>
 
+#include "lidar_localization/compact_kdtree.hpp"
+
 namespace lidar_localization
 {
 
@@ -16,6 +18,10 @@ namespace lidar_localization
 // that tree only for getFitnessScore(), so the two builds overlap: an 80 m crop of
 // the dense Koide outdoor map (753k points) took 0.25 s instead of 0.52 s, with the
 // same fitness score (experiments/istanbul_ndt_tracking).
+//
+// The tree is a CompactKdTree: the same distances as PCL's FLANN tree, without a copy
+// of the target points. On the 2.0M-point Koide outdoor map the FLANN tree took about
+// 100 MB of heap at its peak, this one 14 MB.
 //
 // The tree is handed over with force_no_recompute, which pcl::Registration keeps
 // for later targets as well. Once a registration got a target from this function,
@@ -28,14 +34,14 @@ void setNdtTargetWithSearchTree(
   // A fresh tree without force_no_recompute: align() builds it as it would.
   const auto build_tree_in_align = [&registration]() {
       registration.setSearchMethodTarget(
-        typename pcl::search::KdTree<PointT>::Ptr(new pcl::search::KdTree<PointT>()), false);
+        typename pcl::search::KdTree<PointT>::Ptr(new CompactKdTree<PointT>()), false);
     };
   if (!target || target->empty()) {
     build_tree_in_align();
     registration.setInputTarget(target);
     return;
   }
-  typename pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
+  typename pcl::search::KdTree<PointT>::Ptr tree(new CompactKdTree<PointT>());
   std::future<void> tree_built = std::async(
     std::launch::async, [&tree, &target]() {tree->setInputCloud(target);});
   try {

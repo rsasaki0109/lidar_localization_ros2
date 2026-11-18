@@ -233,6 +233,18 @@ void test_imu_retry_seed_only_past_the_seed_window()
   assert(!ll::isImuRetrySeedReady(off));
 }
 
+void test_no_imu_retry_seed_after_an_odometry_seed()
+{
+  assert(!ll::keepsImuRetrySeed(ll::RegistrationSeedSource::kOdomTfPrediction));
+  for (const auto source : {
+      ll::RegistrationSeedSource::kCurrentPose, ll::RegistrationSeedSource::kImuPreintegration,
+      ll::RegistrationSeedSource::kGtsamSmoother, ll::RegistrationSeedSource::kTwistPrediction,
+      ll::RegistrationSeedSource::kPreviousDelta})
+  {
+    assert(ll::keepsImuRetrySeed(source));
+  }
+}
+
 void test_bridged_retry_yaw_sweep()
 {
   assert(ll::shouldSweepBridgedRetryYaw(true, 1.0));
@@ -259,6 +271,7 @@ void test_bridged_retry_yaw_sweep()
 int main()
 {
   test_imu_retry_seed_only_past_the_seed_window();
+  test_no_imu_retry_seed_after_an_odometry_seed();
   test_bridged_retry_yaw_sweep();
   test_imu_preintegration_has_highest_priority_when_finite();
   test_non_finite_imu_prediction_blocks_lower_priority_sources();

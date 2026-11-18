@@ -176,7 +176,8 @@ accelerometer bias.
 
 ### Measured on replays
 
-Replayed at 1x on 2026-11-18, the localizer pinned to two cores of a 4-vCPU x86 host
+Replayed at 1x on 2026-11-18 (after the memory and CPU changes of that day), the
+localizer pinned to two cores of a 4-vCPU x86 host
 (Xeon, 2.3 GHz), RKO-LIO beside it on the other two. CPU is in cores (CPU seconds per
 second of data); memory is resident (with about 53 MB of shared-library pages) and
 anonymous.
@@ -187,12 +188,12 @@ a 580k-point map.
 
 | | `mid360_legged.yaml` | low resource |
 | --- | --- | --- |
-| RMSE / largest error | 0.077 / 0.82 m | 0.067 / 0.26 m |
-| scans aligned | 1359 of 1370 | 1370 of 1370 |
-| CPU, mean / p95 | 0.27 / 0.36 cores | 0.19-0.21 / 0.26-0.28 cores |
-| CPU per scan | 27 ms | 20-22 ms |
-| memory: resident / anonymous | 132 / 78 MB | 121-132 / 67-77 MB |
-| pose latency, median / p95 | 24 / 34 ms | 20 / 27 ms |
+| RMSE / largest error | 0.066 / 0.25 m | 0.067 / 0.26 m |
+| scans aligned | 1364 of 1370 | 1370 of 1370 |
+| CPU, mean / p95 | 0.21 / 0.28 cores | 0.145 / 0.18 cores |
+| CPU per scan | 21 ms | 14.5 ms |
+| memory: resident / anonymous | 100 / 46 MB | 98 / 44 MB |
+| pose latency, median / p95 | 18 / 25 ms | 15.5 / 20 ms |
 | RKO-LIO alongside | 0.07 cores, 40 MB (13 MB anonymous) | the same |
 
 **Handheld MID-360 outdoors, Koide outdoor_hard_02b**: 298 s, partly off the map; a
@@ -200,10 +201,10 @@ a 580k-point map.
 
 | | `mid360_legged.yaml` | low resource |
 | --- | --- | --- |
-| RMSE (on the map) | 0.245 m (0.193 m) | 0.228-0.237 m (0.203 m) |
-| CPU, mean / p95 | 0.70 / 1.57 cores | 0.45-0.50 / 0.88-1.01 cores |
-| memory: resident / anonymous | 360 / 306 MB | 354 / 300 MB |
-| pose latency, median / p95 | 43 / 183 ms | 30-36 / 109-119 ms |
+| RMSE (on the map) | 0.238 m (0.193 m) | 0.227-0.235 m (0.201-0.203 m) |
+| CPU, mean / p95 | 0.59 / 0.96 cores | 0.40-0.41 / 0.70-0.71 cores |
+| memory: resident / anonymous | 280 / 225 MB | 272-275 / 218-221 MB |
+| pose latency, median / p95 | 37 / 137 ms | 26-27 / 90-93 ms |
 | RKO-LIO alongside | 0.31 cores, 170 MB | the same |
 
 Under tighter budgets on EIL_Stairs (a CFS CPU quota on the two cores, or a memory
@@ -214,26 +215,29 @@ cgroup):
 | 0.25 cores | 87-91% of scans aligned, latency p95 252-261 ms, at most 562-765 ms | every scan, latency p95 97 ms |
 | 0.15 cores | - | 77% of scans, latency median 112 ms; RMSE still 0.069 m |
 | 256 MB | passes | passes |
+| 224 MB, Koide's 2.0M-point map | - | passes (0.235 m); killed at 256 MB before |
 
 When the CPU runs short the node drops scans (`cloud_queue_depth: 1`) instead of
 building up lag, and the odometry carries the pose, so the error did not grow.
 
-**Memory is set by the map, not by the preset.** The 2.0M-point Koide map needs
-about 350 MB: in 256 MB and 192 MB the node was killed while it built the NDT target.
-Of the 292 MB heap peak (heaptrack), about 63 MB are the map points, 58 MB the NDT
-voxel grid, 24 MB the map file as read, and about 100 MB FLANN kd-trees, mostly the
-one over the map that scores the fitness. Resident memory came to about 120 MB with
-the 580k-point map and 350 MB with the 2.0M-point one, roughly 160 bytes per map
-point. Voxelizing the map saves memory but costs accuracy: on EIL_Stairs a 0.1 m map
-took 35 MB less and raised the error by 23%.
+**Memory is set by the map, not by the preset.** The map points take 32 bytes each
+and the NDT voxel grid about 30 bytes per map point at `ndt_resolution: 1.0`; the
+fitness score's kd-tree, once about 50 bytes per point (FLANN), takes 7. Resident
+memory comes to about 100 MB with the 580k-point map and 275 MB with the 2.0M-point
+one, which runs in a 224 MB memory cgroup (it was killed at 256 MB before the
+change; 192 MB is too little). Voxelizing the map saves memory but costs accuracy: on
+EIL_Stairs a 0.1 m map took 35 MB less and raised the error by 23%.
 
 **Five Hertz** (`min_scan_interval_sec: 0.19`) costs about 35% less (0.14 against
 0.21 cores on EIL_Stairs), but came up to 0.52 m off there (1.3 m with a 20-scan IMU
 window). Use it only when 10 Hz does not fit.
 
-**A shorter IMU smoother window** (`imu_smoother_window_size`, default 50) saved
-18-29% of the CPU on EIL_Stairs at 20-10 scans, but on the Koide bag 20 and 30 lost
-the pose by up to 14-38 m from 67 s on, in all three runs with them. Keep 50.
+**A shorter IMU smoother window** (`imu_smoother_window_size`, default 50) is no
+longer worth it: the window is now solved by blocks, about four times faster, and 20
+scans save about 0.01 cores (0.134 against 0.145 on EIL_Stairs, the same on Koide).
+It used to "lose the pose" on the Koide bag, but the cause was an IMU retry seed after
+a rejection streak, accepted 10-35 m off, which scans seeded from odometry no longer
+get; since then 20 scans held there too. Keep 50.
 
 **Not verified**: a Jetson, a live MID-360 and ROS 2 Humble. The Orin's Cortex-A78AE
 cores are slower than this host's for this code (Eigen and PCL on NEON instead of

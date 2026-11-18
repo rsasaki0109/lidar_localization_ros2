@@ -248,12 +248,17 @@ bool PCLLocalization::loadMapFromPath(const std::string & path, bool reject_empt
   map_min_pt_ = map_bounds.min_point;
   map_max_pt_ = map_bounds.max_point;
 
-  const auto map_msg = lidar_localization::makeInitialMapMessage(
-    raw_map_cloud, global_frame_id_, viz_downsample_, viz_voxel_leaf_size_);
-  if (initial_map_pub_) {
-    initial_map_pub_->publish(map_msg);
-    RCLCPP_INFO(get_logger(), "Initial Map Published");
+  {
+    const auto map_msg = lidar_localization::makeInitialMapMessage(
+      raw_map_cloud, global_frame_id_, viz_downsample_, viz_voxel_leaf_size_);
+    if (initial_map_pub_) {
+      initial_map_pub_->publish(map_msg);
+      RCLCPP_INFO(get_logger(), "Initial Map Published");
+    }
   }
+  // The file as read and the message are not needed any more: free them before the
+  // registration target is built, the node's memory peak (24 MB for a 2.0M-point map).
+  raw_map_cloud = pcl::PCLPointCloud2();
 
   // The map content changed: drop the crop guards and the cached local target.
   consecutive_crop_failures_ = 0;
@@ -293,7 +298,8 @@ bool PCLLocalization::loadMapFromPath(const std::string & path, bool reject_empt
       ndt_initializer_->setNumThreads(
         lidar_localization::resolveRegistrationThreadCount(
           ndt_num_threads_, omp_get_max_threads()));
-      ndt_initializer_->setInputTarget(map_cloud_ptr);
+      lidar_localization::setNdtTargetWithSearchTree<pcl::PointXYZI>(
+        *ndt_initializer_, map_cloud_ptr);
       RCLCPP_INFO(get_logger(), "NDT initializer created (%d scans before GICP switch)",
                   ndt_init_scans_required_);
     } else {

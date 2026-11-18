@@ -195,6 +195,10 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       odom_tf_bridge_available});
   selected_seed.source = seed_decision.source;
   selected_seed.imu_prediction_ready = seed_decision.imu_prediction_ready;
+  if (!lidar_localization::keepsImuRetrySeed(selected_seed.source)) {
+    selected_seed.imu_retry_guess.reset();
+    selected_seed.imu_retry_guess_bridged = false;
+  }
 
   switch (seed_decision.source) {
     case lidar_localization::RegistrationSeedSource::kImuPreintegration:

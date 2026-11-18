@@ -409,9 +409,19 @@ inline bool convertPclCloudToXyzi(
     return true;
   }
 
-  pcl::PointCloud<pcl::PointXYZ> xyz_cloud;
-  pcl::fromPCLPointCloud2(input, xyz_cloud);
-  copyXyzToXyzi(xyz_cloud, output);
+  // Read x, y and z straight into the XYZI points, whose first three floats they are
+  // as in PointXYZ, without an intermediate XYZ cloud (32 MB for a 2.0M-point map).
+  static_assert(
+    offsetof(pcl::PointXYZ, x) == offsetof(pcl::PointXYZI, x) &&
+    offsetof(pcl::PointXYZ, y) == offsetof(pcl::PointXYZI, y) &&
+    offsetof(pcl::PointXYZ, z) == offsetof(pcl::PointXYZI, z),
+    "PointXYZ and PointXYZI must share the x, y and z offsets");
+  pcl::MsgFieldMap xyz_mapping;
+  pcl::createMapping<pcl::PointXYZ>(input.fields, xyz_mapping);
+  pcl::fromPCLPointCloud2(input, output, xyz_mapping);
+  for (auto & point : output.points) {
+    point.intensity = 0.0f;
+  }
   return false;
 }
 

@@ -660,6 +660,12 @@ if(BUILD_TESTING)
   add_test(NAME registration_target_search_tree COMMAND test_registration_target_search_tree)
   set_tests_properties(registration_target_search_tree PROPERTIES TIMEOUT 60)
 
+  add_executable(test_compact_kdtree test/test_compact_kdtree.cpp)
+  target_include_directories(test_compact_kdtree PRIVATE include)
+  target_link_libraries(test_compact_kdtree ${PCL_LIBRARIES})
+  add_test(NAME compact_kdtree COMMAND test_compact_kdtree)
+  set_tests_properties(compact_kdtree PROPERTIES TIMEOUT 60)
+
   add_executable(test_registration_fitness test/test_registration_fitness.cpp)
   target_link_libraries(test_registration_fitness
     lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})

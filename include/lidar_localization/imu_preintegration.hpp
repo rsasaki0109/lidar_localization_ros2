@@ -134,7 +134,11 @@ public:
     Qc.block<3, 3>(0, 0) = na2 * Eigen::Matrix3d::Identity();
     Qc.block<3, 3>(3, 3) = ng2 * Eigen::Matrix3d::Identity();
 
-    covariance = A * covariance * A.transpose() + B * Qc * B.transpose();
+    // Coefficient-wise products: for these small fixed sizes they are faster than
+    // Eigen's blocked ones, and this runs for every IMU sample.
+    const Matrix9d A_covariance = A.lazyProduct(covariance);
+    const Eigen::Matrix<double, 9, 6> B_Qc = B.lazyProduct(Qc);
+    covariance = A_covariance.lazyProduct(A.transpose()) + B_Qc.lazyProduct(B.transpose());
 
     // --- Bias Jacobians ---
     // d_dp_d_ba
