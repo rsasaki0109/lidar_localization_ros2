@@ -1,8 +1,7 @@
 name: docker
 
-# Builds docker/Dockerfile and runs the quickstart status smoke test on a
-# synthetic map. Path-filtered: the image build takes ~15 min cold, and the
-# GitHub Actions layer cache skips the dependency layers when only sources change.
+# Builds the development and headless runtime images and runs quickstart
+# smoke tests on a synthetic map. Both images reuse the same build stage.
 on:
   pull_request:
     branches:
@@ -48,10 +47,23 @@ jobs:
           load: true
           cache-from: type=gha,scope=docker-jazzy
           cache-to: type=gha,scope=docker-jazzy,mode=max
-      - name: Status smoke test
+      - name: Build runtime image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: runtime
+          tags: lidar_localization_ros2:runtime-ci
+          load: true
+          cache-from: type=gha,scope=docker-jazzy
+      - name: Runtime status smoke test
         run: |
-          docker run --rm lidar_localization_ros2:ci \
+          docker run --rm lidar_localization_ros2:runtime-ci \
             /ws/src/lidar_localization_ros2/docker/smoke_status.sh
+      - name: Runtime global initialization smoke test
+        run: |
+          docker run --rm lidar_localization_ros2:runtime-ci \
+            /ws/src/lidar_localization_ros2/docker/smoke_status.sh --global
       - name: Status smoke test with RViz (Xvfb)
         run: |
           docker run --rm lidar_localization_ros2:ci \

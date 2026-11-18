@@ -8,6 +8,7 @@
 #
 #   docker/smoke_status.sh            # without RViz
 #   docker/smoke_status.sh --rviz     # RViz under Xvfb as well
+#   docker/smoke_status.sh --global   # cold start and tracking without a pose
 set -u
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,10 +16,13 @@ WORK="$(mktemp -d /tmp/lidarloc_smoke.XXXXXX)"
 LOG="${WORK}/quickstart.log"
 MODE="${WORK}/mode"
 RVIZ=(--no-rviz)
+POSE=(--initial-pose 0 0 1 0 0 0 1)
 if [[ "${1:-}" == "--rviz" ]]; then
   RVIZ=(--rviz)
   Xvfb :99 -screen 0 1280x800x24 >/dev/null 2>&1 &
   export DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1
+elif [[ "${1:-}" == "--global" ]]; then
+  POSE=(--no-restore-saved-pose)
 fi
 # Keep this run apart from any other ROS graph on the host network.
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-42}"
@@ -55,13 +59,20 @@ python3 "${HERE}/synthetic_lidar.py" --mode-file "${MODE}" >"${WORK}/lidar.log" 
 PIDS+=($!)
 sleep 2
 ros2 run lidar_localization_ros2 quickstart.py \
-  --map "${WORK}/map.pcd" --initial-pose 0 0 1 0 0 0 1 \
+  --map "${WORK}/map.pcd" "${POSE[@]}" \
   --state-file "${WORK}/pose.json" --output "${WORK}/params.yaml" \
   --no-bringup-check "${RVIZ[@]}" >"${LOG}" 2>&1 &
 PIDS+=($!)
 
 wait_for "discovery" "^Discovery: .*cloud=/cloud" 30
+if [[ "${1:-}" == "--global" ]]; then
+  wait_for "global initialization" "startup_initialization\]: Localized from a map search\." 90
+fi
 wait_for "tracking" "localization_status\]: Tracking\.$" 90
+if [[ "${1:-}" == "--global" ]]; then
+  echo "Global initialization and tracking checks passed (log: ${LOG})"
+  exit 0
+fi
 echo sparse > "${MODE}"
 wait_for "weak" "localization_status\]: Tracking is weak" 30
 echo ok > "${MODE}"
