@@ -10,7 +10,10 @@ seconds). Each cloud is stamped with its second sweep, i.e. mid-sweep, which is 
 
 The CustomMsg CDR is decoded here, so livox_ros_driver2 does not need to be built.
 
-usage: jeplo_to_pc2_bag.py RAW_BAG_DIR OUT_BAG_DIR [--sweeps-per-cloud 2]
+``--duration S`` keeps only the first S seconds (e.g. Outdoor2 up to where it
+leaves the Long_Stairs map, for the cross-session suite).
+
+usage: jeplo_to_pc2_bag.py RAW_BAG_DIR OUT_BAG_DIR [--sweeps-per-cloud 2] [--duration S]
 """
 
 from __future__ import annotations
@@ -122,7 +125,9 @@ def make_pointcloud2(points: np.ndarray, sec: int, nanosec: int, frame_id: str):
     return msg
 
 
-def convert(raw_bag: Path, out_bag: Path, sweeps_per_cloud: int) -> tuple[int, int]:
+def convert(
+    raw_bag: Path, out_bag: Path, sweeps_per_cloud: int, duration_sec: float = 0.0
+) -> tuple[int, int]:
     import rosbag2_py
     from rclpy.serialization import serialize_message
 
@@ -153,8 +158,12 @@ def convert(raw_bag: Path, out_bag: Path, sweeps_per_cloud: int) -> tuple[int, i
 
     pending = []
     clouds = imus = 0
+    first_ns = None
     while reader.has_next():
         topic, data, recv_ns = reader.read_next()
+        first_ns = recv_ns if first_ns is None else first_ns
+        if duration_sec > 0.0 and (recv_ns - first_ns) * 1.0e-9 > duration_sec:
+            break
         if topic == IMU_TOPIC:
             writer.write(IMU_TOPIC, data, recv_ns)
             imus += 1
@@ -179,11 +188,16 @@ def main(argv=None) -> int:
     parser.add_argument("raw_bag", type=Path)
     parser.add_argument("out_bag", type=Path)
     parser.add_argument("--sweeps-per-cloud", type=int, default=2)
+    parser.add_argument(
+        "--duration", type=float, default=0.0, help="keep the first S seconds"
+    )
     args = parser.parse_args(argv)
     if args.out_bag.exists():
         print(f"{args.out_bag} exists", file=sys.stderr)
         return 1
-    clouds, imus = convert(args.raw_bag, args.out_bag, max(1, args.sweeps_per_cloud))
+    clouds, imus = convert(
+        args.raw_bag, args.out_bag, max(1, args.sweeps_per_cloud), args.duration
+    )
     print(f"{args.out_bag}: {clouds} clouds, {imus} IMU messages")
     return 0
 
