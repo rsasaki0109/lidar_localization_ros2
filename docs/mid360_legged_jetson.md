@@ -147,7 +147,7 @@ perception, on a Unitree Go2 or G1-class robot: `mid360_legged.yaml` with
 
 | parameter | `mid360_legged.yaml` | low resource | why |
 | --- | --- | --- | --- |
-| `voxel_leaf_size` | `0.25` | `0.5` | about 400 instead of 1600 scan points indoors: the largest single saving |
+| `voxel_leaf_size` | `0.25` | `0.5` | about 550 instead of 1550 scan points on the Go2 bag: the largest single saving |
 | `ndt_num_threads` | `4` | `2` | no more threads than the cores it gets |
 | `ndt_max_iterations` | `30` | `15` | caps the slow scans |
 | `use_odom_tf_prediction`, `publish_bridge_pose_when_lost` | off | on | seeds every scan from odometry; required, see below |

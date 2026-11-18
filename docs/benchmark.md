@@ -671,7 +671,7 @@ change, then the combinations. 137 s, 1370 scans:
 | the same, window 20, 5 Hz | 0.127 / 1.26 | 682/1370 | 0.10 / 0.13 | 9.7 | 132 | 17 / 22 / 33 |
 | the same, 5 Hz | 0.072 / 0.52 | 685/1370 | 0.14 / 0.18 | 13.9 | 132 | 22 / 29 / 35 |
 
-- **The scan voxel is the largest single cut**: 0.5 m leaves about 400 of 1600 points
+- **The scan voxel is the largest single cut**: 0.5 m leaves about 550 of 1550 points
   and a third of the CPU, at the same error. The NDT resolution is not: 2.0 m
   quadrupled the error.
 - **The IMU smoother is the next largest cost.** perf with the 0.5 m voxel: the
