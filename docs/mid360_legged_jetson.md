@@ -240,7 +240,9 @@ cores are slower than this host's for this code (Eigen and PCL on NEON instead o
 AVX-512), so read these CPU figures as a lower bound: plan on two to three times as
 much of an Orin core until it is measured there. Walking was at most 1.0 m/s (the
 target is 1.5 m/s). EIL_Box, the other short indoor bag, is not a usable check yet:
-both presets lost 1-3 m there with a near-perfect fitness, and why was not found.
+with odometry both presets came 1-3 m off with a near-perfect fitness, and without
+it `mid360_legged.yaml` accepted 5% of the scans, so the fixture (the EIL_Mix map
+against this run, or its start pose) is suspect; it was not investigated further.
 The full measurements are in
 [benchmark.md](benchmark.md#low-resource-budget-go2-mid-360).
 
