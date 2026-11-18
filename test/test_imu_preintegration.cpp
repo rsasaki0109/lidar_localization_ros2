@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <limits>
 #include <random>
 #include <vector>
 
@@ -469,6 +470,61 @@ void test_smoother_converges_in_a_few_iterations_with_a_full_window()
   assert(std::abs(pose(0, 3) - 80.0) < 0.1);
 }
 
+// The block solve of the smoother's normal equations matches a dense solve of the same
+// system: a chain of 30 poses with random positive definite couplings and the biases.
+void test_block_solve_matches_dense_solve()
+{
+  using Equations = ImuGtsamSmoother::NormalEquations;
+  std::mt19937 rng(11);
+  std::normal_distribution<double> noise(0.0, 1.0);
+  const auto random = [&](auto & m) {
+      for (int r = 0; r < m.rows(); ++r) {
+        for (int c = 0; c < m.cols(); ++c) {
+          m(r, c) = noise(rng);
+        }
+      }
+    };
+  const int n = 30;
+  Equations eq;
+  eq.reset(n);
+  // H = sum of J^T J over factors between neighbours and the biases, plus priors.
+  for (int i = 1; i < n; ++i) {
+    Eigen::Matrix<double, 9, 9> Ji, Jj;
+    Eigen::Matrix<double, 9, 6> Jb;
+    random(Ji);
+    random(Jj);
+    random(Jb);
+    eq.pose_diag[i - 1] += Ji.transpose() * Ji;
+    eq.pose_next[i] += Ji.transpose() * Jj;
+    eq.pose_diag[i] += Jj.transpose() * Jj;
+    eq.pose_bias[i - 1] += Ji.transpose() * Jb;
+    eq.pose_bias[i] += Jj.transpose() * Jb;
+    eq.bias_diag += Jb.transpose() * Jb;
+  }
+  // The anchor, and a prior on every pose as the NDT factors give, so that the system
+  // is well posed and both solves agree to rounding.
+  eq.pose_diag[0].diagonal().array() += 1e6;
+  for (int i = 0; i < n; ++i) {
+    eq.pose_diag[i].diagonal().array() += 1.0;
+    random(eq.pose_b[i]);
+  }
+  eq.bias_diag.diagonal().array() += 100.0;
+  random(eq.bias_b);
+
+  Eigen::VectorXd delta;
+  assert(eq.solve(delta));
+  const Eigen::VectorXd dense = eq.denseH().ldlt().solve(-eq.denseB());
+  assert(delta.size() == dense.size());
+  assert((delta - dense).norm() <= 1e-9 * std::max(1.0, dense.norm()));
+  // It solves the system.
+  assert((eq.denseH() * delta + eq.denseB()).norm() <= 1e-8 * eq.denseB().norm());
+
+  // A block that cannot be factored is reported, for the dense fallback.
+  Equations broken = eq;
+  broken.pose_diag[5](0, 0) = std::numeric_limits<double>::quiet_NaN();
+  assert(!broken.solve(delta));
+}
+
 int main()
 {
   test_reset_is_identity();
@@ -489,5 +545,6 @@ int main()
   test_smoother_state_transfer_preserves_velocity_and_bias_for_repropagation();
   test_reset_pending_integration_prevents_duplicate_repropagation();
   test_smoother_converges_in_a_few_iterations_with_a_full_window();
+  test_block_solve_matches_dense_solve();
   return 0;
 }
