@@ -62,28 +62,33 @@ def find_process(group: int, name: str) -> int:
 
 
 def read_process(pid: int) -> tuple:
-    """(rss_mb, peak_rss_mb, cpu_sec) of PID from /proc: its resident memory now and
-    at most (VmHWM), and the CPU time it has used (utime + stime)."""
+    """(rss_mb, peak_rss_mb, cpu_sec, anon_rss_mb) of PID from /proc: its resident
+    memory now and at most (VmHWM), the CPU time it has used (utime + stime) and its
+    anonymous resident memory (RssAnon: the heap and stacks, without the shared
+    libraries' pages; what a memory cgroup charges it for beyond page cache)."""
     status = Path(f"/proc/{pid}/status").read_text()
     fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
     stat = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
     ticks = int(stat[11]) + int(stat[12])
+    anon = fields.get("RssAnon")
     return (
         int(fields["VmRSS"].split()[0]) / 1024.0,
         int(fields["VmHWM"].split()[0]) / 1024.0,
         ticks / os.sysconf("SC_CLK_TCK"),
+        int(anon.split()[0]) / 1024.0 if anon else None,
     )
 
 
 def resource_summary(samples, data_sec=None, scans=None, window=None) -> dict:
-    """CPU and memory of (wall_sec, rss_mb, peak_rss_mb, cpu_sec) SAMPLES: the cores
-    in use on average and at p95 of the sampling intervals, the CPU seconds per second
-    of data (DATA_SEC) and per scan (SCANS), the peak resident memory (VmHWM, so
-    including the map load before the first sample) and the steady one (the median
-    over the second half of the samples). WINDOW, a (first, last) wall_sec pair, limits
-    all but the peak to the samples inside it."""
+    """CPU and memory of (wall_sec, rss_mb, peak_rss_mb, cpu_sec[, anon_rss_mb])
+    SAMPLES: the cores in use on average and at p95 of the sampling intervals, the CPU
+    seconds per second of data (DATA_SEC) and per scan (SCANS), the peak resident
+    memory (VmHWM, so including the map load before the first sample) and the steady
+    one (the median over the second half of the samples), and with anon_rss_mb its
+    peak and steady values. WINDOW, a (first, last) wall_sec pair, limits all but the
+    peak resident memory to the samples inside it."""
     peak = max((row[2] for row in samples), default=None)
-    rows = sorted(samples)
+    rows = sorted(samples, key=lambda row: row[0])
     if window is not None:
         rows = [row for row in rows if window[0] <= row[0] <= window[1]]
     if len(rows) < 2:
@@ -97,6 +102,7 @@ def resource_summary(samples, data_sec=None, scans=None, window=None) -> dict:
     )
     used = cpu[-1] - cpu[0]
     steady = sorted(row[1] for row in rows[len(rows) // 2 :])
+    anon = [row[4] for row in rows if len(row) > 4 and row[4] is not None]
     result = {
         "cpu_sec": round(used, 2),
         "cpu_cores_mean": round(used / (wall[-1] - wall[0]), 3),
@@ -105,6 +111,10 @@ def resource_summary(samples, data_sec=None, scans=None, window=None) -> dict:
         "rss_mb_steady": round(steady[len(steady) // 2], 1),
         "rss_mb_last": round(rows[-1][1], 1),
     }
+    if anon:
+        later = sorted(anon[len(anon) // 2 :])
+        result["anon_rss_mb_peak"] = round(max(anon), 1)
+        result["anon_rss_mb_steady"] = round(later[len(later) // 2], 1)
     if data_sec:
         result["cpu_sec_per_data_sec"] = round(used / data_sec, 3)
     if scans:
@@ -114,8 +124,8 @@ def resource_summary(samples, data_sec=None, scans=None, window=None) -> dict:
 
 class ResourceMonitor:
     """Samples a process's memory and CPU time every INTERVAL_SEC into a CSV file
-    (wall_sec, rss_mb, peak_rss_mb, cpu_sec). Call poll() often; it reads /proc only
-    when a sample is due. A process that has exited is no longer sampled."""
+    (wall_sec, rss_mb, peak_rss_mb, cpu_sec, anon_rss_mb). Call poll() often; it reads
+    /proc only when a sample is due. A process that has exited is no longer sampled."""
 
     def __init__(self, pid: int, path: Path, interval_sec: float = 1.0):
         self.pid = pid
@@ -124,7 +134,7 @@ class ResourceMonitor:
         self._began = time.monotonic()
         self._next = self._began
         self.path = Path(path)
-        self.path.write_text("wall_sec,rss_mb,peak_rss_mb,cpu_sec\n")
+        self.path.write_text("wall_sec,rss_mb,peak_rss_mb,cpu_sec,anon_rss_mb\n")
         self._closed = False
 
     def poll(self) -> None:
@@ -133,13 +143,16 @@ class ResourceMonitor:
             return
         self._next = now + self.interval_sec
         try:
-            rss, peak, cpu = read_process(self.pid)
+            rss, peak, cpu, anon = read_process(self.pid)
         except (OSError, KeyError, IndexError, ValueError):
             return
-        row = (round(now - self._began, 3), rss, peak, cpu)
+        row = (round(now - self._began, 3), rss, peak, cpu, anon)
         self.samples.append(row)
         with self.path.open("a") as csv:
-            csv.write(f"{row[0]:.3f},{rss:.1f},{peak:.1f},{cpu:.2f}\n")
+            csv.write(
+                f"{row[0]:.3f},{rss:.1f},{peak:.1f},{cpu:.2f},"
+                f"{'' if anon is None else f'{anon:.1f}'}\n"
+            )
 
     def elapsed(self) -> float:
         """Seconds since the monitor started, on the clock of the samples' wall_sec."""

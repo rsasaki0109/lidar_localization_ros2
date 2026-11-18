@@ -11,12 +11,12 @@ map.pcd) and reference.tum, the ground-truth pose of the cloud frame; pass its t
 and frame with --points-topic, --imu-topic and --base-frame. A JEPLO Go2 fixture is a
 converted bag (jeplo_to_pc2_bag.py), a map in the motion-capture frame and gt/<run>.txt.
 
-While the bag plays, the localizer's resident memory, peak memory (VmHWM) and CPU time
-(utime + stime) are sampled from /proc every --sample-sec into resources.csv, and each
---companion's into companionN_resources.csv. summary.json adds the CPU in cores (mean
-and p95 of the intervals), CPU seconds per second of data and per scan, the peak and
-steady memory, and the pose latency: from the control node receiving a cloud to
-receiving its pose.
+While the bag plays, the localizer's resident memory, peak memory (VmHWM), anonymous
+memory (RssAnon, without the shared libraries' pages) and CPU time (utime + stime) are
+sampled from /proc every --sample-sec into resources.csv, and each --companion's into
+companionN_resources.csv. summary.json adds the CPU in cores (mean and p95 of the
+intervals), CPU seconds per second of data and per scan, the peak and steady memory,
+and the pose latency: from the control node receiving a cloud to receiving its pose.
 
 Writes into OUT_DIR: localizer.yaml, localizer.log, player.log, estimate.tum,
 alignment.jsonl, resources.csv and summary.json.

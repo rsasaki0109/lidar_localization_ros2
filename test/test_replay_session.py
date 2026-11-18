@@ -56,9 +56,10 @@ def test_stop_process_interrupts_the_process_group():
 
 
 def test_read_process_reports_memory_and_cpu_time():
-    rss, peak, cpu = replay_session.read_process(os.getpid())
+    rss, peak, cpu, anon = replay_session.read_process(os.getpid())
     assert 0 < rss <= peak
     assert cpu > 0
+    assert 0 < anon <= rss
 
 
 def test_find_process_falls_back_to_the_group():
@@ -94,6 +95,20 @@ def test_resource_summary_rates_cpu_per_interval_and_per_scan():
     assert window["cpu_cores_mean"] == 1.0
     assert window["rss_mb_peak"] == 300.0
     assert replay_session.resource_summary(samples[:1]) == {}
+    assert "anon_rss_mb_peak" not in summary
+
+
+def test_resource_summary_reports_anonymous_memory():
+    # (wall_sec, rss_mb, peak_rss_mb, cpu_sec, anon_rss_mb)
+    samples = [
+        (0.0, 100.0, 120.0, 1.0, 40.0),
+        (1.0, 110.0, 120.0, 1.1, 60.0),
+        (2.0, 110.0, 120.0, 1.2, 50.0),
+        (3.0, 110.0, 120.0, 1.3, 50.0),
+    ]
+    summary = replay_session.resource_summary(samples)
+    assert summary["anon_rss_mb_peak"] == 60.0
+    assert summary["anon_rss_mb_steady"] == 50.0
 
 
 def test_resource_monitor_samples_into_a_csv(tmp_path):
@@ -106,6 +121,6 @@ def test_resource_monitor_samples_into_a_csv(tmp_path):
     monitor.close()
     monitor.poll()  # closed: no more samples
     lines = (tmp_path / "resources.csv").read_text().splitlines()
-    assert lines[0] == "wall_sec,rss_mb,peak_rss_mb,cpu_sec"
+    assert lines[0] == "wall_sec,rss_mb,peak_rss_mb,cpu_sec,anon_rss_mb"
     assert len(lines) == 3 == len(monitor.samples) + 1
     assert monitor.summary()["rss_mb_peak"] > 0
