@@ -122,6 +122,59 @@ python3 tools/readme_media/initial_pose_from_tum.py \
 
 Ground truth supplies only that initial pose and evaluation; it is not an odometry input. Record `/pcl_pose` and `/alignment_status` before playing the bag. For the 150 m comparison, change only `local_map_radius` in the generated localizer YAML.
 
+## v1.11.0 release verification (2026-11-18)
+
+Two full `outdoor_hard_02b` replays at 1x passed on `release/v1.11.0`: `main` at
+`190099e` plus the version bump, which is not compiled in. The release commit adds only
+docs to the tree that was built and replayed.
+
+- **Build:** both this package and `ndt_omp_ros2` were built as in `AGENTS.md`, without
+  a build type, in the release workspace, rebuilt from scratch.
+  `lidar_localization_node` is a new executable, as the localizer changed since v1.10.0
+  (the compact fitness kd-tree, the block IMU smoother solve, no IMU retry seed when
+  odometry seeds). `ndt_omp_ros2` was at `17ce1e1` on `humble`: the 0.2.0 release plus
+  its PCL 1.10 (Foxy) build support.
+- **Setup:** ROS 2 Jazzy in one 4-vCPU cloud container, and the same RKO-LIO 0.3.2
+  binary (`7e91814`, Release) as for v1.6.0 to v1.10.0. **The host CPU differs:** a
+  2.30 GHz Xeon, the model v1.9.0 ran on, where v1.10.0 ran on a 2.10 GHz one, so the
+  alignment times are not like-for-like with v1.10.0.
+- **The profile is unchanged.** `localizer.yaml`, RKO's and the QoS file's hashes are
+  identical to v1.10.0's.
+- **The harness samples more:** `run_koide_public_bag.py` now records the localizer's
+  and RKO's CPU and memory and subscribes its control node to the clouds for the pose
+  latency.
+
+| Metric | Run 1 | Run 2 | Demo acceptance |
+| --- | --- | --- | --- |
+| Position RMSE | 0.244 m | 0.238 m | <= 0.35 m |
+| on / off the map (163.3-259.0 s) | 0.171 / 0.356 m | 0.171 / 0.343 m | — |
+| Diagnostic cloud stamps | 2,209 / 2,209 (100.0%) | 2,209 / 2,209 (100.0%) | >= 97% |
+| Distinct GT-matched pose stamps / expected clouds | 2,201 / 2,209 (99.6%) | 2,201 / 2,209 (99.6%) | >= 95% |
+| Position error p95 | 0.542 m | 0.525 m | — |
+| Maximum output timestamp gap | 0.90 s | 0.90 s | — |
+| Alignment median / p95 | 14 / 36 ms | 15 / 37 ms | — |
+| Localizer CPU, mean / p95 cores | 0.46 / 0.80 | 0.47 / 0.81 | — |
+| Localizer anonymous memory, steady / peak | 209 / 253 MB | 211 / 239 MB | — |
+| Command / RKO / localizer / player exit codes | all 0 | all 0 | successful exit |
+
+RKO dropped 20 frames per run for too few ICP keypoints, as before. Against the v1.10.0
+check:
+
+- **Accuracy:** 0.238-0.244 m overall and 0.171 m on the map, against 0.242 m and
+  0.170-0.171 m.
+- **Alignment:** 14-15 ms at the median and 36-37 ms at p95, against 16 and 39-41 ms on
+  a host CPU with a lower clock (2.10 against 2.30 GHz), so the drop is not evidence of
+  a faster alignment. On v1.9.0's 2.30 GHz host model the same check measured 13 and
+  33-34 ms; this check cannot separate the 1-3 ms between them from host-to-host
+  variation, the new executable or the harness's extra sampling.
+
+Machine-readable summaries and receipts of [run 1](validation/v1.11.0-koide-20261118/run1/summary.json)
+and [run 2](validation/v1.11.0-koide-20261118/run2/summary.json), and the
+[provenance](validation/v1.11.0-koide-20261118/provenance.json) record the result,
+configuration and executable hashes.
+[Download the logs, trajectories, resource samples and receipts of both runs](validation/v1.11.0-koide-20261118/evidence.tar.gz).
+Archive SHA-256: `0e9b71d0755292f907ab1c738cf894cd4fd9cabf51bafb3fc1ce011c55b357cd`. It contains no bag or map files.
+
 ## v1.10.0 release verification (2026-11-13)
 
 Two full `outdoor_hard_02b` replays at 1x passed on `release/v1.10.0` at `8d7183e`:
