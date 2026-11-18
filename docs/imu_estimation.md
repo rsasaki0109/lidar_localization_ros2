@@ -136,6 +136,7 @@ component that feeds itself must not be able to diverge unbounded.
 | `imu_bias_prior_sigma_gyro` | `0.01` | gyro bias prior σ |
 | `imu_bias_prior_sigma_accel` | `0.1` | accel bias prior σ |
 | `imu_ndt_sigma_z` / `_roll` / `_pitch` | `0.1` / `0.05` / `0.05` | NDT prior σ on the axes IMU constrains most |
+| `imu_smoother_window_size` | `50` | accepted scans the smoother re-optimizes on each update (at least 2); a smaller window costs less CPU (see [the low-resource preset](mid360_legged_jetson.md#low-resource-preset)) |
 
 Set the noise densities from your IMU datasheet (or an Allan-variance run) for
 best results; the defaults are MEMS-grade ballpark values.

@@ -26,6 +26,8 @@ void PCLLocalization::declareImuPreintegrationParameters()
   declare_parameter("imu_ndt_sigma_pitch", 0.05);
   declare_parameter("imu_bias_prior_sigma_gyro", 0.01);
   declare_parameter("imu_bias_prior_sigma_accel", 0.1);
+  // Accepted scans the smoother re-optimizes on each update; its cost grows with it.
+  declare_parameter("imu_smoother_window_size", 50);
 
   // Deskew is enabled by default and falls back to the unmodified scan until
   // per-point timing and a usable motion estimate are available.
@@ -139,6 +141,10 @@ void PCLLocalization::loadImuPreintegrationParameters()
   get_parameter("imu_accel_random_walk", imu_params.imu_params.accel_random_walk);
   get_parameter("imu_bias_prior_sigma_gyro", imu_params.bias_prior_sigma_gyro);
   get_parameter("imu_bias_prior_sigma_accel", imu_params.bias_prior_sigma_accel);
+  int window_size = imu_params.window_size;
+  get_parameter("imu_smoother_window_size", window_size);
+  // Two poses are the least the smoother optimizes.
+  imu_params.window_size = std::max(2, window_size);
   imu_smoother_.params_ = imu_params;
   imu_prediction_smoother_.params_ = imu_params;
   RCLCPP_INFO(get_logger(), "IMU preintegration smoother enabled");
