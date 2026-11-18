@@ -4,6 +4,15 @@
 
 ### Added
 
+- **Cross-session results on the Go2 (JEPLO)**: the map from one recording, the scans
+  from another, no initial pose ([benchmark.md](docs/benchmark.md#cross-session-go2-jeplo),
+  `tools/benchmark/suites/go2_jeplo_cross_session.yaml`). Long_Stairs and Outdoor2
+  (same route, 1.5 h apart) localized each other in all 4 runs, 0.02 m off. In the
+  capture room the EIL_Mix map localized four other runs in all 8 tries; the EIL_Box
+  map started 4 of 6 runs 1-5.5 m off, and the Long_Stairs map let tracking slide up to
+  2.5 m where the props had moved. The README GIF now uses the Long_Stairs map with
+  the Outdoor2 scans instead of a map from the same recording.
+  `jeplo_to_pc2_bag.py --duration` keeps the first seconds of a bag.
 - **`param/mid360_legged_low_resource.yaml`**, for a Jetson Orin Nano/NX on a
   Unitree Go2 or G1-class robot with a MID-360: `mid360_legged.yaml` with a 0.5 m
   scan voxel, two NDT threads, 15 iterations, odometry TF seeds, no pose timer and

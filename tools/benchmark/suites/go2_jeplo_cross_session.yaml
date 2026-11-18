@@ -1,0 +1,91 @@
+# Cross-session global localization on the JEPLO Go2 bags: the map is built from
+# one recording and the scans come from another, with no initial pose. Same
+# quickstart settings as go2_jeplo_low_sensor.yaml (the Go2 "Large maps" recipe).
+#
+# JEPLO_ROOT layout as for the other Go2 suites, with maps_loc/<run>/map.pcd built
+# by build_map_from_odometry.py + align_map_to_ground_truth.py from that run only:
+#   maps_loc/EIL_Mix, EIL_Box, EIL_Stairs   capture room only
+#   maps_loc/Long_Stairs                    room, corridor, long staircase (2026-08-25 16:33)
+#   maps_loc/Outdoor2_0-165s                Outdoor2 cut at 165 s: the same route, 1.5 h later
+# bags_pc2_merged/Outdoor2_0-165s is Outdoor2 cut at 165 s, before it leaves the
+# Long_Stairs map for the hall and the outdoors. Ground truth covers only the
+# capture room, so tracking is scored there.
+defaults:
+  repeats: 2
+  odometry_launch: lidarslam rko_lio_odometry.launch.py
+  odometry_args:
+    - lidar_topic:=/livox/lidar
+    - imu_topic:=/livox/imu
+    - rko_param_file:=${SUITE_DIR}/rko_lio_jeplo.yaml
+  topics: [/livox/lidar, /livox/imu]
+  quickstart_args:
+    - --occupancy-inflate-radius-m=0.2
+    - --global-z-min=0.0
+    - --global-max-scan-points=1024
+    - --global-max-candidates=16
+    - --refine-global-candidates
+cases:
+  # Long staircase: map from one run, scans from the other.
+  - name: Long_Stairs_map__Outdoor2
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/Outdoor2_0-165s
+    map: ${JEPLO_ROOT}/maps_loc/Long_Stairs/map.pcd
+    gt: ${JEPLO_ROOT}/gt/Outdoor2.txt
+  - name: Outdoor2_map__Long_Stairs
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/Long_Stairs
+    map: ${JEPLO_ROOT}/maps_loc/Outdoor2_0-165s/map.pcd
+    gt: ${JEPLO_ROOT}/gt/Long_Stairs.txt
+  # Capture room on a room-only map of another run.
+  - name: EIL_Mix_map__EIL_Box
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_ROOT}/maps_loc/EIL_Mix/map.pcd
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
+  - name: EIL_Mix_map__EIL_Stairs
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Stairs
+    map: ${JEPLO_ROOT}/maps_loc/EIL_Mix/map.pcd
+    gt: ${JEPLO_ROOT}/gt/EIL_Stairs.txt
+  - name: EIL_Mix_map__EIL_Mask1
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Mask1
+    map: ${JEPLO_ROOT}/maps_loc/EIL_Mix/map.pcd
+    gt: ${JEPLO_ROOT}/gt/EIL_Mask1.txt
+  - name: EIL_Mix_map__EIL_Mask2
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Mask2
+    map: ${JEPLO_ROOT}/maps_loc/EIL_Mix/map.pcd
+    gt: ${JEPLO_ROOT}/gt/EIL_Mask2.txt
+  - name: EIL_Box_map__EIL_Mix
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Mix
+    map: ${JEPLO_ROOT}/maps_loc/EIL_Box/map.pcd
+    gt: ${JEPLO_ROOT}/gt/EIL_Mix.txt
+  - name: EIL_Box_map__EIL_Stairs
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Stairs
+    map: ${JEPLO_ROOT}/maps_loc/EIL_Box/map.pcd
+    gt: ${JEPLO_ROOT}/gt/EIL_Stairs.txt
+  - name: EIL_Box_map__EIL_Mask1
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Mask1
+    map: ${JEPLO_ROOT}/maps_loc/EIL_Box/map.pcd
+    gt: ${JEPLO_ROOT}/gt/EIL_Mask1.txt
+  # Capture room on the Long_Stairs map (room plus corridor and staircase), other days.
+  - name: Long_Stairs_map__EIL_Box
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_ROOT}/maps_loc/Long_Stairs/map.pcd
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
+  - name: Long_Stairs_map__EIL_Stairs
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Stairs
+    map: ${JEPLO_ROOT}/maps_loc/Long_Stairs/map.pcd
+    gt: ${JEPLO_ROOT}/gt/EIL_Stairs.txt
+  - name: Long_Stairs_map__EIL_Mask1
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Mask1
+    map: ${JEPLO_ROOT}/maps_loc/Long_Stairs/map.pcd
+    gt: ${JEPLO_ROOT}/gt/EIL_Mask1.txt
+  # Controls: the same quickstart on each test run's own (self) map.
+  - name: EIL_Box_map__EIL_Box
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_ROOT}/maps_loc/EIL_Box/map.pcd
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
+  - name: EIL_Stairs_map__EIL_Stairs
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Stairs
+    map: ${JEPLO_ROOT}/maps_loc/EIL_Stairs/map.pcd
+    gt: ${JEPLO_ROOT}/gt/EIL_Stairs.txt
+  - name: EIL_Mix_map__EIL_Mix
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Mix
+    map: ${JEPLO_ROOT}/maps_loc/EIL_Mix/map.pcd
+    gt: ${JEPLO_ROOT}/gt/EIL_Mix.txt

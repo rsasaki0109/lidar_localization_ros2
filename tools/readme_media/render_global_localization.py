@@ -536,7 +536,7 @@ def build(args) -> list:
         if truth is not None
     ]
     summary = (
-        f"Error to the motion-capture truth: median {np.median(errors):.2f} m,"
+        f"Error where there is motion-capture truth: median {np.median(errors):.2f} m,"
         f" max {np.max(errors):.2f} m"
     )
     for _ in range(args.end_frames):
@@ -624,6 +624,9 @@ def main(argv=None) -> int:
 
     frames = build(args)
     for index in filter(None, args.stills.split(",")):
+        if int(index) >= len(frames):
+            print(f"no frame {index} ({len(frames)} frames)", file=sys.stderr)
+            continue
         frames[int(index)].save(args.out.with_name(f"{args.out.stem}_{index}.png"))
     encode(frames, args.out, args.colors)
     print(

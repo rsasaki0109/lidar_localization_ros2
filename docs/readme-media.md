@@ -119,37 +119,53 @@ commands. The comparison includes two runs per radius with live RKO odometry.
 ## Global localization on a Go2
 
 `images/readme/global_localization_jeplo_long_stairs.gif`: the quickstart starts with no
-initial pose, searches the whole map, and tracks from its first pose on.
+initial pose on a map built from another recording, searches the whole map, and tracks
+from its first pose on.
 
 **Data:** [JEPLO dataset](https://huggingface.co/datasets/ASIG-Lab/JEPLO-Dataset) (Yuan et al.).
 - The dataset card states the GPL-3.0 licence. The GIF is rendered from the
   dataset, so it is a derived work and is shared under GPL-3.0 as well. The data,
   the scripts and the commands below are its source.
-- Sequence `Long_Stairs` (249 s): a Unitree Go2 with a Livox MID-360 mounted upside down
-  walks out of a 10 m x 4 m motion-capture room, down a long staircase into a hall
-  (about 5 m lower), and back.
-- `bags/Long_Stairs/Long_Stairs_0.db3` (sha256 `54e88bb271ce40ab71a3c316ab91eacc7cbd877751a88f8103e895b21db51f20`,
-  the dataset's LFS id) and `gt/Long_Stairs.txt`.
-- Ground truth (motion capture, LiDAR frame) covers only the room, here 0-51 s and
-  198-249 s.
-- The dataset no longer ships maps, so the map was built from the same recording,
-  as for the [Go2 benchmark](../experiments/go2_wide_map_global_init/README.md). The
-  run therefore tests the start without a pose and the tracking, not a changed
-  environment.
+- **Map: run `Long_Stairs`** (2026-08-25 16:33 in the bag clock, 249 s): a Unitree Go2
+  with a Livox MID-360 mounted upside down walks out of a 10 m x 4 m motion-capture
+  room, down a long staircase into a hall (about 5 m lower), and back.
+  `bags/Long_Stairs/Long_Stairs_0.db3` (sha256 `54e88bb271ce40ab71a3c316ab91eacc7cbd877751a88f8103e895b21db51f20`,
+  the dataset's LFS id).
+- **Scans: run `Outdoor2`** (18:06 the same day, 639 s), its first 165 s: the same
+  route out of the room and along the corridor (0-80 s), a wait at the top of the
+  staircase (82-130 s), down the staircase (135-145 s) into the hall. After that it
+  leaves the area of the map (hall, then outdoors), so the bag is cut there. Only the
+  first 1.5 GB of `bags/Outdoor2/Outdoor2_0.db3` (LFS id
+  `359f01c3f53af970cad69bb15ade0e44e2b4af1e47a0415209097c6907cbb45c`, 3.0 GB) were
+  downloaded and read page by page (300 s of data), so the file's sha256 was not
+  checked; `gt/Outdoor2.txt` matches the dataset's git blob id. The same reader gave
+  clouds identical to `jeplo_to_pc2_bag.py` (headers, points, order) on the whole
+  EIL_Mask2 bag.
+- Ground truth (motion capture, LiDAR frame) covers only the room: 0-61 s of the
+  Outdoor2 cut. Both runs share the motion-capture frame: Outdoor2's odometry, fitted to
+  its own ground truth, runs within 0.01-0.17 m of the Long_Stairs path in the room
+  and along the corridor.
+- **What differs between the two runs:** the trajectory, the timing (Outdoor2 stops
+  for 48 s at the top of the stairs), and whoever was around. The room itself was not
+  rearranged: 99-100% of each map's room points (floor to 2.5 m) lie within 0.1-0.2 m of
+  the other run's map. So this pair tests a different recording, not a changed room.
+  Pairs with moved props, an occluded sensor and the symmetric room are in
+  [benchmark.md](benchmark.md#cross-session-go2-jeplo), failures included.
 
 ### How the GIF run was produced
 
-1. **Bag:** `tools/benchmark/jeplo_to_pc2_bag.py` (10 Hz `PointCloud2`, two sweeps per cloud).
-2. **Odometry for the map:** RKO-LIO `offline_node`
+1. **Bags:** `tools/benchmark/jeplo_to_pc2_bag.py` (10 Hz `PointCloud2`, two sweeps per
+   cloud); Outdoor2 with `--duration 165`.
+2. **Map from Long_Stairs only:** RKO-LIO `offline_node`
    ([rsasaki0109/rko_lio](https://github.com/rsasaki0109/rko_lio) at `7e91814`) with
-   `tools/benchmark/suites/rko_lio_jeplo.yaml`. Fitted to the ground truth on the first
-   40 s, its error after returning to the room is 3 cm (median).
-3. **Map:** `tools/benchmark/build_map_from_odometry.py` with its defaults (every second
+   `tools/benchmark/suites/rko_lio_jeplo.yaml`, then
+   `tools/benchmark/build_map_from_odometry.py` with its defaults (every second
    cloud, 0.8-40 m, 0.05 m voxels, 1.19 million points), moved into the ground-truth
    frame with `tools/benchmark/align_map_to_ground_truth.py` (trajectory residual 0.040 m).
-4. **Localization:** built from `main` at `a577148`.
-   - `tools/benchmark/run_benchmark.py` with the `Long_Stairs_self_map` case of
-     `tools/benchmark/suites/go2_jeplo_low_sensor.yaml`, one repeat. It starts the
+   This is the map of the earlier same-recording GIF; nothing of Outdoor2 went into it.
+3. **Localization:** built from `main` at `6303352` (the localizer is unchanged here).
+   - `tools/benchmark/run_benchmark.py` with the `Long_Stairs_map__Outdoor2` case of
+     `tools/benchmark/suites/go2_jeplo_cross_session.yaml`, two repeats. It starts the
      online RKO-LIO odometry (lidar_slam_ros2 `rko_lio_odometry.launch.py` at `d13d9e7`),
      plays the bag at 1×, starts the quickstart 3 s later with no pose, and records
      `/pcl_pose`, the startup states and the quickstart log.
@@ -158,9 +174,9 @@ initial pose, searches the whole map, and tracks from its first pose on.
      --global-max-candidates 16 --refine-global-candidates`. The scan band was sparse, so
      both queries ran the sparse-band search and returned 32 candidates.
    - One 4-core machine, ROS 2 Jazzy.
-5. **Render:** `tools/readme_media/render_global_localization.py`, 720 × 405 px, 12 fps,
+4. **Render:** `tools/readme_media/render_global_localization.py`, 720 × 405 px, 12 fps,
    128-colour palette (ffmpeg `palettegen` / `paletteuse` with Bayer dithering),
-   237 frames, 19.8 s, 1.0 MB.
+   201 frames, 16.8 s, 0.9 MB.
 
 **What the GIF shows, and what is drawn for display only:**
 - Every candidate of the two queries up to the accepted answer, at its position and
@@ -174,36 +190,42 @@ initial pose, searches the whole map, and tracks from its first pose on.
   pose) are real.
 - During tracking, the scan nearest to each frame time is drawn at `/pcl_pose`,
   interpolated linearly between two published poses. The cyan path is every published
-  pose; the white dashed path is the ground truth after the first pose.
+  pose; the white dashed path is the ground truth after the first pose (the room only).
 - The view is fitted to the candidates and the path with a 3 m margin; the map and the
   search extend beyond it. Map points above 2.5 m (the ceiling) are not drawn, and 80%
   of the map points are.
-- The clock is time since the start of the bag. The queries took 1.5 s and 2.2 s of
-  wall time each; the GIF does not show that wait.
+- The clock is time since the start of the bag. The queries took 2.6 s of wall time
+  each; the GIF does not show that wait.
 
-**Result** (map frame, against the motion-capture ground truth; `run_benchmark.py` scores):
+**Result** (map frame, against the motion-capture ground truth in the room;
+`run_benchmark.py` scores; the last column compares with Outdoor2's own offline
+RKO-LIO odometry, fitted to its ground truth, which is a reference and not ground truth):
 
-| Run | First pose | First-pose error | Candidates | Top candidate vs truth | Wrong pose | Median / p95 / max xy |
-| --- | --- | --- | --- | --- | --- | --- |
-| GIF run | 11.3 s (search started at 6.8 s) | 0.02 m | 2 queries × 32 | 0.05 m, 0.02 m; ranked #1 in both | none | 0.02 / 0.04 / 0.07 m |
-| Repeat | 12.1 s | 0.02 m | 2 queries × 32 | 0.05 m, 0.08 m; ranked #1 in both | none | 0.02 / 0.04 / 0.07 m |
+| Run | First pose | First-pose error | Candidates | Top candidate vs truth | Wrong pose | Median / p95 / max xy (room) | Corridor and stairs vs odometry: median / max |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| GIF run | 13.3 s (search started at 6.9 s) | 0.02 m (0.01 m for the first pose itself) | 2 queries × 32 | 0.01 m, 0.02 m; ranked #1 in both | none | 0.02 / 0.04 / 0.07 m | 0.02 / 0.19 m |
+| Repeat | 13.3 s | 0.02 m | 2 queries × 32 | 0.02 m, 0.02 m; ranked #1 in both | none | 0.02 / 0.04 / 0.07 m | 0.02 / 0.19 m |
 
-In both queries of the GIF run, NDT told the true place apart clearly: fitness 0.010
-and 0.011 against 0.059 and 0.087 for the second-best candidate. The quickstart
-generated the occupancy grid in the GIF run and reused the cached grid in the repeat.
+In both queries of the GIF run, NDT told the true place apart clearly: fitness 0.120
+and 0.033 against 0.753 and 0.658 for the second-best candidate. Neither run asked
+for a manual pose. The reverse pair (a map from the Outdoor2 cut, Long_Stairs scans)
+also localized in both runs, after 12.3-12.6 s, 0.02 m off, and tracked down the stairs
+and back with 0.02 m median and 0.10-0.14 m maximum error in the room.
 
 ### Reproduce the GIF
 
 From the [dataset](https://huggingface.co/datasets/ASIG-Lab/JEPLO-Dataset), take
-`bags/Long_Stairs` and `gt/Long_Stairs.txt`. `JEPLO_ROOT` holds `gt/`,
+`bags/Long_Stairs`, `bags/Outdoor2` (3.0 GB; only its first 165 s are used),
+`gt/Long_Stairs.txt` and `gt/Outdoor2.txt`. `JEPLO_ROOT` holds `gt/`,
 `bags_pc2_merged/` and `maps_loc/`, as the Go2 suites expect. The odometry needs
 [rko_lio](https://github.com/rsasaki0109/rko_lio), and the replay a
 [lidar_slam_ros2](https://github.com/rsasaki0109/lidar_slam_ros2) checkout for its
 odometry launch file.
 
 ```bash
-# 1. Bag, odometry and map
+# 1. Bags, odometry and the map (from Long_Stairs only)
 python3 tools/benchmark/jeplo_to_pc2_bag.py <raw>/bags/Long_Stairs $JEPLO_ROOT/bags_pc2_merged/Long_Stairs
+python3 tools/benchmark/jeplo_to_pc2_bag.py <raw>/bags/Outdoor2 $JEPLO_ROOT/bags_pc2_merged/Outdoor2_0-165s --duration 165
 ros2 run rko_lio offline_node --ros-args --params-file long_stairs_rko.yaml
 # long_stairs_rko.yaml: rko_lio_jeplo.yaml plus lidar_topic, imu_topic, base_frame: livox_frame,
 # bag_path, dump_results: true, results_dir, run_name: Long_Stairs
@@ -213,16 +235,16 @@ python3 tools/benchmark/align_map_to_ground_truth.py --map map_odom.pcd \
   --trajectory <results_dir>/Long_Stairs_0/Long_Stairs_tum_0.txt \
   --ground-truth $JEPLO_ROOT/gt/Long_Stairs.txt --out $JEPLO_ROOT/maps_loc/Long_Stairs/map.pcd
 
-# 2. Replay with no initial pose (1x)
-python3 tools/benchmark/run_benchmark.py tools/benchmark/suites/go2_jeplo_low_sensor.yaml \
-  --case Long_Stairs_self_map --repeats 1 --out /tmp/go2_gif
+# 2. Replay the Outdoor2 scans with no initial pose (1x)
+python3 tools/benchmark/run_benchmark.py tools/benchmark/suites/go2_jeplo_cross_session.yaml \
+  --case Long_Stairs_map__Outdoor2 --repeats 1 --out /tmp/go2_gif
 
 # 3. Render (needs Pillow, numpy and ffmpeg; source ROS 2 for rosbag2_py)
 python3 tools/readme_media/render_global_localization.py \
   --map $JEPLO_ROOT/maps_loc/Long_Stairs/map.pcd \
-  --bag $JEPLO_ROOT/bags_pc2_merged/Long_Stairs \
-  --run /tmp/go2_gif/Long_Stairs_self_map/run1 --gt $JEPLO_ROOT/gt/Long_Stairs.txt \
-  --caption "JEPLO Long_Stairs (GPL-3.0) · Unitree Go2, upside-down MID-360 · map built from the same recording" \
+  --bag $JEPLO_ROOT/bags_pc2_merged/Outdoor2_0-165s \
+  --run /tmp/go2_gif/Long_Stairs_map__Outdoor2/run1 --gt $JEPLO_ROOT/gt/Outdoor2.txt \
+  --caption "JEPLO (GPL-3.0) · Unitree Go2, upside-down MID-360 · map: run Long_Stairs · scans: run Outdoor2" \
   --out images/readme/global_localization_jeplo_long_stairs.gif
 ```
 
@@ -231,5 +253,8 @@ the path of its `lidarslam/launch/rko_lio_odometry.launch.py`, as was done here.
 different run gives different candidates (the search follows the scans the localizer
 happens to query), so the GIF differs in detail.
 
-**Not verified:** the GIF run and one repeat only; one machine (4 cores, Jazzy); no map
-from a separate recording of the same place (the dataset has none).
+**Not verified:** the GIF run and one repeat only; one machine (4 cores, Jazzy). The
+dataset has a single Long_Stairs recording; Outdoor2 is the only other run on that
+route. The room was not rearranged between the two runs, so the GIF does not show a
+changed environment, and outside the room there is no ground truth. The Outdoor2 bag
+was converted from its first 1.5 GB, not from the checked whole file.
