@@ -1,0 +1,57 @@
+{
+  "poses": 2202,
+  "matched_poses": 2202,
+  "unique_matched_pose_stamps": 2201,
+  "rmse_m": 0.2439376219748793,
+  "p95_error_m": 0.5421904055126535,
+  "max_output_gap_sec": 0.9012775421142578,
+  "diagnostic_clouds": 2209,
+  "expected_clouds": 2209,
+  "diagnostic_coverage": 1.0,
+  "off_map_window_sec": [
+    163.3,
+    259.0
+  ],
+  "off_map_matched_poses": 686,
+  "rmse_on_map_m": 0.1707141861560984,
+  "rmse_off_map_m": 0.3558137662574716,
+  "passed": true,
+  "resources": {
+    "cpu_sec": 138.86,
+    "cpu_cores_mean": 0.462,
+    "cpu_cores_p95": 0.798,
+    "rss_mb_peak": 306.9,
+    "rss_mb_steady": 262.6,
+    "rss_mb_last": 286.8,
+    "anon_rss_mb_peak": 253.4,
+    "anon_rss_mb_steady": 209.0,
+    "cpu_sec_per_data_sec": 0.465,
+    "cpu_ms_per_scan": 62.86
+  },
+  "rko_resources": {
+    "cpu_sec": 97.69,
+    "cpu_cores_mean": 0.325,
+    "cpu_cores_p95": 0.517,
+    "rss_mb_peak": 172.0,
+    "rss_mb_steady": 138.6,
+    "rss_mb_last": 142.8,
+    "anon_rss_mb_peak": 143.9,
+    "anon_rss_mb_steady": 112.1,
+    "cpu_sec_per_data_sec": 0.327,
+    "cpu_ms_per_scan": 44.22
+  },
+  "latency_ms_median": 25.6,
+  "latency_ms_p95": 80.8,
+  "latency_ms_max": 518.2,
+  "late_poses": 17,
+  "source": "https://zenodo.org/records/10122133",
+  "sequence": "outdoor_hard_02b",
+  "full_sequence": true,
+  "rate": 1.0,
+  "thresholds": {
+    "rmse_m": 0.35,
+    "diagnostic_coverage": 0.97,
+    "matched_pose_fraction": 0.95
+  },
+  "note": "Map-frame position error without spatial alignment. Poses include odometry bridge predictions; diagnostic coverage is not NDT acceptance. One public ~5-minute sequence, not real-robot or multi-hour validation."
+}

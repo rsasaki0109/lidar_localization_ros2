@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 1.11.0 - 2026-11-18
+
+**Upgrading:** no configuration needs changing on Humble or Jazzy, and every new
+setting defaults to the old behaviour: `cloud_reliable_qos` (`false`; Foxy only,
+ignored with a warning elsewhere), `enable_stale_reset_replay` (`false`) and
+`imu_smoother_window_size` (`50`). `param/mid360_legged_low_resource.yaml` is a new
+preset and needs odometry. ROS 2 Foxy is now a best-effort target that builds from
+`main` (ndt_omp_ros2 needs its `humble` branch at rsasaki0109/ndt_omp_ros2#18 or later
+for PCL 1.10). The fitness score's compact kd-tree gives the same scores with less
+memory. One behaviour differs: a scan seeded from the odometry TF is no longer aligned
+again from the IMU prediction after a rejection; scans without an odometry seed keep
+that retry. The `foxy`, `humble` and `jazzy` branches are gone: build every
+distribution from `main`, or check out the tags `archive/foxy`, `archive/humble` and
+`archive/jazzy` for their last commits.
+
 ### Added
 
 - **Cross-session results on the Go2 (JEPLO)**: the map from one recording, the scans
@@ -106,6 +121,25 @@
   more. This, not the window, was why a shorter `imu_smoother_window_size` "lost the
   pose" there: with the retry gone 20 scans held too. Scans without an odometry seed
   keep the retry.
+
+### Validation
+
+- The release check: two full Koide `outdoor_hard_02b` replays at 1x passed on
+  `release/v1.11.0` (`main` at `190099e` plus the version bump), built without a build
+  type, with ndt_omp_ros2 at `17ce1e1` (its 0.2.0 release plus PCL 1.10 support).
+  - **Accuracy:** 0.244 and 0.238 m RMSE (0.171 m on the map in both), against 0.242 m
+    (0.170-0.171 m) for v1.10.0.
+  - **Coverage:** 100.0% diagnostic coverage in both.
+  - **Alignment:** 14-15 ms at the median and 36-37 ms at p95, against 16 and 39-41 ms,
+    **on a host CPU at 2.30 GHz where v1.10.0's was 2.10 GHz**, so the times are not
+    like-for-like; v1.9.0 measured 13 and 33-34 ms on this CPU model
+    ([docs/koide-online-replay.md](docs/koide-online-replay.md#v1110-release-verification-2026-11-18),
+    `docs/validation/v1.11.0-koide-20261118`).
+  - **Resources:** the localizer used 0.46-0.47 cores on average and held 209-211 MB
+    anonymous memory in steady state.
+- Boreas, `param/boreas_ndt_velodyne.yaml` on the release build: 0.132 m RMSE over the
+  first 120 s, 0.127 m with `use_imu_preintegration: true`, every scan accepted, as on
+  1.10.0.
 
 ## 1.10.0 - 2026-11-13
 
