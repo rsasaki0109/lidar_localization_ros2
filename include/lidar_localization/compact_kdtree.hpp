@@ -11,6 +11,18 @@
 #include <utility>
 #include <vector>
 
+#include <pcl/pcl_config.h>
+
+#if !PCL_VERSION_COMPARE(>=, 1, 11, 0)
+// PCL 1.10 (ROS 2 Foxy) predates pcl::index_t and pcl::Indices; its search interface
+// takes std::vector<int>, which these aliases name.
+namespace pcl
+{
+using index_t = int;
+using Indices = std::vector<int>;
+}  // namespace pcl
+#endif
+
 namespace lidar_localization
 {
 
