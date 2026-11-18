@@ -156,7 +156,9 @@ inline sensor_msgs::msg::PointCloud2 makeInitialMapMessage(
   if (downsample) {
     pcl::PCLPointCloud2 filtered_map_cloud;
     pcl::VoxelGrid<pcl::PCLPointCloud2> voxel_filter;
-    voxel_filter.setInputCloud(pcl::make_shared<pcl::PCLPointCloud2>(raw_map_cloud));
+    // The filter only reads the map: hand it over without a copy.
+    voxel_filter.setInputCloud(
+      pcl::PCLPointCloud2::ConstPtr(&raw_map_cloud, [](const pcl::PCLPointCloud2 *) {}));
     voxel_filter.setLeafSize(voxel_leaf_size, voxel_leaf_size, voxel_leaf_size);
     voxel_filter.filter(filtered_map_cloud);
     pcl_conversions::moveFromPCL(filtered_map_cloud, map_msg);
