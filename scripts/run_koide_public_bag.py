@@ -450,9 +450,9 @@ def run_replay(args, output, bag, map_path, reference_path, paths):
             result = data_tool.evaluate(
                 session.poses, reference, expected, session.diagnostic_stamps
             )
-            data_sec = duration - 4.0
+            # The window spans the whole playback, so the CPU is per second of the bag.
             for name, monitor in monitors.items():
-                result[name] = monitor.summary(data_sec, len(expected), windows[name])
+                result[name] = monitor.summary(duration, len(expected), windows[name])
             result.update(
                 soak_latency_summary(
                     [
