@@ -370,7 +370,11 @@ lose track.
 ## Symptom: The Node Is Killed for Memory
 
 The node holds the full map, 32 bytes a point, and the registration target: the crop,
-the backend's search structure (the NDT voxel grid) and the inlier-ratio search tree.
+the backend's search structure (the NDT voxel grid, about 30 bytes per target point at
+`ndt_resolution: 1.0`) and the fitness and inlier-ratio search tree (about 7 bytes per
+target point; PCL's FLANN tree took about 50 before 2026-11-18). Without a crop the
+target is the full map: the 2.0M-point Koide outdoor map runs in a 224 MB memory cgroup
+with `mid360_legged_low_resource.yaml`.
 With `local_map_async_rebuild` it holds a second target while the next one is built.
 On the Boreas fixture (3.1 million points at a 0.3 m leaf, 60 m scans) the node peaked
 at 800 MiB with a 100 m crop. Under a memory limit of 768 MB it was killed in the

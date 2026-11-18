@@ -755,13 +755,73 @@ A handheld MID-360 outdoors, 298 s, about 100 s of it off the 2.0M-point map;
   replay's 97% threshold).
 - **A shorter IMU smoother window lost the pose**: from 67 s on, with 20 scans for
   about 40 s (up to 14-24 m off, both runs), with 30 scans for the rest of the bag
-  (up to 38 m). With 50 the same settings held. Why a shorter window diverges there
-  was not found; the preset keeps 50.
+  (up to 38 m). With 50 the same settings held. The cause was one IMU retry seed, not
+  the window; it is fixed ([below](#memory-and-cpu-in-code)).
 - **Memory is the map's**: about 350 MB resident and 300 MB anonymous whatever the
   preset. In 256 MB and in 192 MB the node was killed while it built the NDT target
   (192 MB: at 194 MB anonymous). heaptrack put the heap's peak at 292 MB: the map
   points (XYZI, 32 bytes each) 63 MB, the NDT voxel grid 58 MB, the map file as read
   24 MB, and about 100 MB in FLANN kd-trees, mostly the one over the map that scores
-  the fitness.
+  the fitness. Since then the node fits in 224 MB ([below](#memory-and-cpu-in-code)).
 - **RKO-LIO costs as much as the localizer outdoors**: 0.31-0.34 cores and 170 MB
   (136 MB anonymous) here, against 0.07 cores and 40 MB indoors.
+
+### Memory and CPU in code
+
+The same setup on 2026-11-18, `main` before these changes against after: the fitness
+kd-tree and map loading (memory), the IMU smoother's block solve (CPU) and no IMU
+retry after an odometry seed. CPU is CPU seconds per second of data and the p95 of
+1 s intervals; memory is peak / steady, anonymous then resident.
+
+| run | RMSE / largest (m) | aligned | CPU s/s, p95 | ms/scan | anonymous MB | resident MB | latency median / p95 (ms) |
+|---|---|---|---|---|---|---|---|
+| EIL_Stairs, low resource, before | 0.067 / 0.24-0.26 | 1363-1370 | 0.20-0.22, 0.26-0.28 | 20-22 | 68-77 | 121-132 | 21 / 28-29 |
+| EIL_Stairs, low resource, after | 0.067 / 0.26 | 1370 | 0.145, 0.18 | 14.5 | 44 | 98 | 15.5 / 20 |
+| EIL_Stairs, `mid360_legged.yaml`, before | 0.066 / 0.25 | 1370 | 0.29, 0.42 | 29 | 78 | 132 | 24 / 36 |
+| EIL_Stairs, `mid360_legged.yaml`, after | 0.066 / 0.25 | 1364 | 0.21, 0.28 | 21 | 46 | 100 | 18 / 25 |
+| Koide, low resource, before | 0.228-0.236 (0.201-0.203 on the map) | | 0.51-0.52, 1.01 | 69-70 | 300-302 / 295 | 354-356 | 35 / 119-124 |
+| Koide, low resource, after (3 runs) | 0.227-0.235 (0.201-0.203) | | 0.40-0.41, 0.70-0.71 | 54-55 | 218-221 / 215 | 272-275 | 26-27 / 90-93 |
+| Koide, `mid360_legged.yaml`, before | 0.245 (0.193) | | 0.70, 1.57 | 95 | 306 / 303 | 360 | 43 / 183 |
+| Koide, `mid360_legged.yaml`, after | 0.238 (0.193) | | 0.59, 0.96 | 80 | 225 / 219 | 280 | 37 / 137 |
+| Boreas 120 s, before | 0.132 / 0.41 | 1158 | 0.79, 1.37 | 82 | 496 / 389 | 554 / 442 | 28 / 75 |
+| Boreas 120 s, after | 0.132 / 0.41 | 1158 | 0.77, 1.41 | 80 | 397 / 272 | 456 / 326 | 26 / 77 |
+| Boreas, `use_imu_preintegration`, before (2 runs) | 0.127 / 0.36 | 1158 | 0.73, 1.47-1.48 | 75-76 | 468-482 / 383-384 | 538-540 / 436-437 | 25 / 76-83 |
+| Boreas, `use_imu_preintegration`, after (2 runs) | 0.127 / 0.36 | 1158 | 0.73-0.78, 1.55-1.59 | 76-81 | 375-377 / 305-313 | 434-438 / 359-366 | 23-25 / 90-110 |
+
+- **The fitness kd-tree was the largest single block of memory.** PCL's FLANN tree
+  copies the target's coordinates twice and adds an index mapping: 98 MB of heap for
+  the 2.0M-point Koide map in a micro-benchmark. `CompactKdTree` keeps a 4-byte
+  index per point and its nodes, 13 MB, and reads the points from the target; it
+  returns the same squared distances (all 200 000 test queries bit-identical,
+  near and up to 20 m off the map) and answered 23% faster. Freeing the map file as
+  read (24 MB) and the xyz-to-XYZI temporary (32 MB) before the target is built took
+  the load off the peak: the node's anonymous memory is now highest at the end of the
+  run, not while it builds the target.
+- **The 2.0M-point map now runs in a 224 MB cgroup** (low resource, 0.235 m); it was
+  killed at 256 MB before. 192 MB, tried with the kd-tree change only, was killed
+  during the run. The anonymous memory still grows by about 30 MB over the 298 s,
+  likely glibc keeping freed memory: fixed `MALLOC_MMAP_THRESHOLD_` and
+  `MALLOC_TRIM_THRESHOLD_` (4 and 8 MB) took 10-15 MB of it off; not adopted.
+- **The IMU smoother is about four times cheaper.** Its normal equations are block
+  tridiagonal over the poses plus the bias rows; they are now solved by blocks with a
+  6 x 6 Schur complement, instead of triplets and a general sparse LDLT. On a
+  synthetic 1500-scan walk an update took 0.46 instead of 2.0 ms (window 50), an IMU
+  sample 0.76 instead of 0.99 us, with the same poses and biases to 1e-15. On the
+  replays that is 0.055-0.06 cores, a quarter of the low-resource preset's CPU on
+  EIL_Stairs (0.20 with the kd-tree change alone, 0.145 with this). On Koide the
+  changes together took 0.51 to 0.40 cores.
+- **Why a shorter IMU window lost the Koide pose**: it did not, by itself. At 435.7 s
+  of the ground truth, 9.9 s into a streak of rejected scans whose odometry seeds were
+  0.2-0.3 m off, the node aligned the scan again from the IMU prediction dead-reckoned
+  over those 9.9 s. That alignment came 10-35 m off with a fitness of 2.9-4.3 (the
+  threshold is 6) and was accepted, in 8 of 13 runs: three of the study's four with a
+  20- or 30-scan window, and all five with the kd-tree change alone (their scans were
+  processed about 7 ms sooner, which likely changed the IMU data the retry saw; not
+  traced). A scan seeded from odometry no longer gets that retry; since then all six
+  Koide runs held, two of them with a 20-scan window (0.227-0.228 m). With the
+  smoother this cheap, 20 scans save only about 0.01 cores (0.134 against 0.145 on
+  EIL_Stairs, the same on Koide), so the preset keeps 50.
+- **Boreas** (`boreas_ndt_velodyne.yaml`, local map crops) gave a byte-identical
+  trajectory without the IMU and one within 1.5 cm with it; its memory fell by the
+  crops' kd-trees, about 100 MB. Its CPU did not change: the smoother is a small part
+  of its 75-80 ms per scan, and there is no odometry seed.

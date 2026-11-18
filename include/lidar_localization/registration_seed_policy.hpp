@@ -118,10 +118,11 @@ inline Eigen::Matrix4f yawTurnedSeed(const Eigen::Matrix4f & seed, double offset
 // pose through a rejection streak; the IMU prediction is dead-reckoned from the last
 // accepted scan, up to kMaximumImuRetrySeedWindowSec back. On Koide
 // outdoor_hard_02b with RKO-LIO odometry, 9.9 s into a streak of rejected scans whose
-// odometry seeds were 0.2-0.3 m off, the IMU retry seed's alignment came 10-21 m off
-// and passed the gate (fitness 3.2-4.3 against 6) in four of eight runs of the MID-360
+// odometry seeds were 0.2-0.3 m off, the IMU retry seed's alignment came 10-35 m off
+// and passed the gate (fitness 2.9-4.3 against 6) in 8 of 13 runs of the MID-360
 // presets; the pose then stayed metres off for 20-40 s or more. This one scan lost or
-// kept the pose, with imu_smoother_window_size 20, 30 and 50 alike.
+// kept the pose, with imu_smoother_window_size 20, 30 and 50 alike. Without the retry
+// all six runs held (0.227-0.238 m RMSE).
 inline bool keepsImuRetrySeed(RegistrationSeedSource primary_seed)
 {
   return primary_seed != RegistrationSeedSource::kOdomTfPrediction;

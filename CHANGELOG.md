@@ -62,10 +62,41 @@
 
 ### Changed
 
+- **The fitness score's search tree no longer copies the map.** The fitness and the
+  inlier ratio were scored on PCL's FLANN kd-tree over the registration target, which
+  holds two copies of its coordinates and an index mapping: about 100 MB for the
+  2.0M-point Koide outdoor map. `CompactKdTree` indexes the target in place (13 MB
+  there) and returns the same squared distances, so the scores, the gate and the
+  trajectories do not change. Map loading also frees the file as read before the target
+  is built and no longer copies it for `/initial_map` or converts an xyz map through a
+  temporary cloud. With the localizer pinned to two cores
+  ([benchmark](docs/benchmark.md#memory-and-cpu-in-code)): on Koide outdoor_hard_02b the
+  node holds 218 instead of 300 MB anonymous (272 instead of 356 MB resident) and runs
+  in a 224 MB memory cgroup, where it was killed at 256 MB before; on JEPLO EIL_Stairs
+  (a 580k-point map) 44 instead of 77 MB; on the Boreas fixture (local map crops) 272
+  instead of 389 MB anonymous after the start.
+- **The IMU smoother solves its window about four times faster**: by blocks along the
+  chain of poses with a Schur complement for the biases, instead of a general sparse
+  LDLT, with each IMU factor's information computed once. The poses and biases are the
+  same to rounding. For `mid360_legged_low_resource.yaml` on EIL_Stairs the node
+  needs 0.145 instead of 0.20-0.22 cores, on Koide outdoor_hard_02b 0.40 instead of
+  0.51 (with the change above).
 - The `foxy`, `humble` and `jazzy` branches are removed: every supported
   distribution builds from `main`. Their last commits are kept as the tags
   `archive/foxy`, `archive/humble` and `archive/jazzy`. The frozen `dashing`
   branch stays for ROS 2 Dashing.
+
+### Fixed
+
+- **A scan seeded from the odometry TF no longer retries from the IMU prediction.**
+  After a rejected alignment the node aligned the scan again from the IMU state
+  dead-reckoned since the last accepted scan, up to 10 s back. On Koide
+  outdoor_hard_02b, 9.9 s into a rejection streak whose odometry seeds were 0.2-0.3 m
+  off, that retry came 10-35 m off with a fitness under the threshold and was accepted
+  in 8 of 13 runs of the MID-360 presets; the pose then stayed metres off for 20 s or
+  more. This, not the window, was why a shorter `imu_smoother_window_size` "lost the
+  pose" there: with the retry gone 20 scans held too. Scans without an odometry seed
+  keep the retry.
 
 ## 1.10.0 - 2026-11-13
 

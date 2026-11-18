@@ -7,7 +7,8 @@
 # It needs odometry: odom -> base_link from the robot's state estimator or a
 # LiDAR-inertial odometry. Without it the 0.5 m scan voxel locked onto the wrong
 # stair level on EIL_Stairs; use mid360_legged.yaml then. Memory is set by the map:
-# about 120 MB resident with a 580k-point map, 350 MB with a 2.0M-point one.
+# about 100 MB resident with a 580k-point map, 275 MB with a 2.0M-point one (it ran
+# in a 224 MB cgroup).
 # Set map_path here or pass map_path:=... to the launch; set the measured sensor
 # extrinsics with the launch TF arguments.
 /**:
@@ -59,8 +60,8 @@
     # livox_ros_driver2 publishes the MID-360 acceleration in g; 1.0 for m/s^2.
     imu_accel_scale: 9.80665
     imu_dual_queue_enabled: true
-    # 20 saved 18% CPU on the Go2 bag, but lost the pose for about 50 s outdoors
-    # (Koide outdoor_hard_02b, both runs); keep the full window.
+    # 20 holds on both bags since the odometry-seeded scans lost their IMU retry,
+    # but saves only about 0.01 cores now that the window is solved by blocks.
     imu_smoother_window_size: 50
 
     # IMU seed safety gates
