@@ -1,11 +1,13 @@
-# Preset: Jetson + Livox MID-360 for quadruped/biped robots, low CPU and memory.
-# Status: replay-validated on a Unitree Go2 bag (JEPLO EIL_Stairs) under an emulated
-# budget of two pinned x86 cores and 256 MB; not yet run on a Jetson.
+# Preset: Jetson + Livox MID-360 for quadruped/biped robots, with less CPU.
+# Status: replay-validated on a Unitree Go2 bag (JEPLO EIL_Stairs) and a handheld
+# MID-360 outdoors (Koide outdoor_hard_02b) on two pinned x86 cores; not yet run on
+# a Jetson.
 # See docs/mid360_legged_jetson.md#low-resource-preset.
-# mid360_legged.yaml with a coarser scan, two NDT threads, fewer iterations and a
-# shorter IMU smoother window. It needs odometry: odom -> base_link from the robot's
-# state estimator or a LiDAR-inertial odometry. Without it the 0.5 m scan voxel
-# locked onto the wrong stair level on EIL_Stairs; use mid360_legged.yaml then.
+# mid360_legged.yaml with a coarser scan, two NDT threads and fewer iterations.
+# It needs odometry: odom -> base_link from the robot's state estimator or a
+# LiDAR-inertial odometry. Without it the 0.5 m scan voxel locked onto the wrong
+# stair level on EIL_Stairs; use mid360_legged.yaml then. Memory is set by the map:
+# about 120 MB resident with a 580k-point map, 350 MB with a 2.0M-point one.
 # Set map_path here or pass map_path:=... to the launch; set the measured sensor
 # extrinsics with the launch TF arguments.
 /**:
@@ -27,8 +29,8 @@
     scan_min_range: 0.8
     scan_period: 0.1
     cloud_queue_depth: 1
-    # 0.19 aligns every other 10 Hz scan (5 Hz) for about 30% less CPU, but one of two
-    # EIL_Stairs replays at 5 Hz slipped 1.3 m for a second: keep 10 Hz if it fits.
+    # 0.19 aligns every other 10 Hz scan (5 Hz) for about 35% less CPU, but EIL_Stairs
+    # then came up to 0.5 m off (0.26 m at 10 Hz): keep 10 Hz if it fits.
     min_scan_interval_sec: 0.0
 
     use_pcd_map: true
@@ -57,7 +59,9 @@
     # livox_ros_driver2 publishes the MID-360 acceleration in g; 1.0 for m/s^2.
     imu_accel_scale: 9.80665
     imu_dual_queue_enabled: true
-    imu_smoother_window_size: 20
+    # 20 saved 18% CPU on the Go2 bag, but lost the pose for about 50 s outdoors
+    # (Koide outdoor_hard_02b, both runs); keep the full window.
+    imu_smoother_window_size: 50
 
     # IMU seed safety gates
     imu_prediction_correction_guard_translation_m: 1.0

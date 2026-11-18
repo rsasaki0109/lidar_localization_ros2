@@ -138,7 +138,7 @@ Then increase `voxel_leaf_size` or reduce `scan_max_range` in a copied YAML if
 CPU is still saturated. For Jetson Orin-class devices with cooling, `4` to `6`
 threads is usually the first range to test before widening scan
 range. With odometry, `param/mid360_legged_low_resource.yaml` does this and more
-for about half the CPU ([below](#low-resource-preset)).
+for about a quarter less CPU ([below](#low-resource-preset)).
 
 ## Low-Resource Preset
 
@@ -147,10 +147,9 @@ perception, on a Unitree Go2 or G1-class robot: `mid360_legged.yaml` with
 
 | parameter | `mid360_legged.yaml` | low resource | why |
 | --- | --- | --- | --- |
-| `voxel_leaf_size` | `0.25` | `0.5` | about 400 instead of 1600 scan points: the largest single saving |
-| `imu_smoother_window_size` | `50` (built in) | `20` | the IMU smoother re-optimizes its whole window every scan |
+| `voxel_leaf_size` | `0.25` | `0.5` | about 400 instead of 1600 scan points indoors: the largest single saving |
 | `ndt_num_threads` | `4` | `2` | no more threads than the cores it gets |
-| `ndt_max_iterations` | `30` | `15` | caps the slow scans (p95 of the alignment time) |
+| `ndt_max_iterations` | `30` | `15` | caps the slow scans |
 | `use_odom_tf_prediction`, `publish_bridge_pose_when_lost` | off | on | seeds every scan from odometry; required, see below |
 | `enable_timer_publishing` | `20 Hz` | off | `map -> odom` per aligned scan; the odometry carries the pose in between |
 | `imu_accel_scale` | `1.0` | `9.80665` | `livox_ros_driver2` publishes the MID-360 acceleration in g |
@@ -160,7 +159,7 @@ estimator or a LiDAR-inertial odometry such as RKO-LIO
 (`ros2 launch lidarslam rko_lio_odometry.launch.py`, as in the
 [Go2 quickstart](go2_mid360_quickstart.md)). Without odometry the 0.5 m scan locked
 onto the wrong stair level of EIL_Stairs (1.5 m up, 12% of the scans rejected), and
-even the smaller cuts (two threads, 15 iterations, a 20-scan window at the 0.25 m
+even smaller cuts (two threads, 15 iterations, a 20-scan IMU window at the 0.25 m
 scan) lost the robot by 13 m. Without odometry, keep `mid360_legged.yaml`.
 
 ```bash
@@ -175,53 +174,73 @@ For RKO-LIO on a MID-360, set its `imu_acceleration_unit` to `g` (or `auto`): re
 as m/s^2, gravity has magnitude 1 and the odometry starts with an 8.8 m/s^2
 accelerometer bias.
 
-### Measured on a Go2 replay
+### Measured on replays
 
-JEPLO EIL_Stairs (Unitree Go2, upside-down MID-360, motion-capture ground truth;
-137 s with stairs, turns up to 2 rad/s, walking up to 1.0 m/s and 9% standing
-still), replayed at 1x on 2026-11-18. The localizer was pinned to two cores of a
-4-vCPU x86 host (Xeon, 2.3 GHz) and RKO-LIO ran next to it; the map has 580k points.
-CPU is in cores (CPU seconds per second of data):
+Replayed at 1x on 2026-11-18, the localizer pinned to two cores of a 4-vCPU x86 host
+(Xeon, 2.3 GHz), RKO-LIO beside it on the other two. CPU is in cores (CPU seconds per
+second of data); memory is resident (with about 53 MB of shared-library pages) and
+anonymous.
+
+**Unitree Go2, JEPLO EIL_Stairs**: upside-down MID-360, motion-capture ground truth,
+137 s with stairs, turns up to 2 rad/s, walking up to 1.0 m/s and 9% standing still;
+a 580k-point map.
 
 | | `mid360_legged.yaml` | low resource |
 | --- | --- | --- |
 | RMSE / largest error | 0.077 / 0.82 m | 0.067 / 0.26 m |
-| scans aligned | 1359 of 1370 | 1363 of 1370 |
-| CPU, mean / p95 | 0.27 / 0.36 cores | 0.14 / 0.19 cores |
-| CPU per scan | 27 ms | 14 ms |
-| memory: resident / anonymous | 132 / 78 MB | 121 / 67 MB |
-| pose latency, median / p95 | 24 / 34 ms | 16 / 21 ms |
+| scans aligned | 1359 of 1370 | 1370 of 1370 |
+| CPU, mean / p95 | 0.27 / 0.36 cores | 0.19-0.21 / 0.26-0.28 cores |
+| CPU per scan | 27 ms | 20-22 ms |
+| memory: resident / anonymous | 132 / 78 MB | 121-132 / 67-77 MB |
+| pose latency, median / p95 | 24 / 34 ms | 20 / 27 ms |
 | RKO-LIO alongside | 0.07 cores, 40 MB (13 MB anonymous) | the same |
 
-The resident memory includes about 53 MB of shared-library pages; the anonymous
-part is what grows with the map. In earlier runs of the same comparison
-`mid360_legged.yaml` scored 0.066 m at 0.24 cores.
+**Handheld MID-360 outdoors, Koide outdoor_hard_02b**: 298 s, partly off the map; a
+2.0M-point map.
 
-Under tighter budgets (CFS CPU quota on the two cores, then a memory cgroup):
+| | `mid360_legged.yaml` | low resource |
+| --- | --- | --- |
+| RMSE (on the map) | 0.245 m (0.193 m) | 0.228-0.237 m (0.203 m) |
+| CPU, mean / p95 | 0.70 / 1.57 cores | 0.45-0.50 / 0.88-1.01 cores |
+| memory: resident / anonymous | 360 / 306 MB | 354 / 300 MB |
+| pose latency, median / p95 | 43 / 183 ms | 30-36 / 109-119 ms |
+| RKO-LIO alongside | 0.31 cores, 170 MB | the same |
+
+Under tighter budgets on EIL_Stairs (a CFS CPU quota on the two cores, or a memory
+cgroup):
 
 | budget | `mid360_legged.yaml` | low resource |
 | --- | --- | --- |
-| 0.25 cores | 87-91% of scans aligned, latency p95 252-261 ms, at most 562-765 ms | every scan, latency p95 21 ms |
-| 0.15 cores | - | 98-99% of scans, latency p95 113-129 ms, at most 212-233 ms |
-| 0.10 cores | - | 78% of scans, latency median 136 ms; RMSE still 0.068 m |
-| 0.10 cores at 5 Hz | - | every second scan as intended, latency p95 116 ms |
-| memory cgroup | passes at 256 MB | passes at 256, 128 and 96 MB; 0.067-0.068 m |
+| 0.25 cores | 87-91% of scans aligned, latency p95 252-261 ms, at most 562-765 ms | every scan, latency p95 97 ms |
+| 0.15 cores | - | 77% of scans, latency median 112 ms; RMSE still 0.069 m |
+| 256 MB | passes | passes |
 
 When the CPU runs short the node drops scans (`cloud_queue_depth: 1`) instead of
-building up lag, and the odometry carries the pose, so the error did not grow: no
-10 Hz run with odometry on EIL_Stairs came more than 0.82 m off.
+building up lag, and the odometry carries the pose, so the error did not grow.
 
-**Five Hertz** (`min_scan_interval_sec: 0.19`) costs about 30% less again (0.10
-cores), but the 5 Hz run of the preset slipped 1.3 m for about a second (RMSE
-0.127 m), and with a 50-scan window it came 0.52 m off. Use it only when 10 Hz does
-not fit.
+**Memory is set by the map, not by the preset.** The 2.0M-point Koide map needs
+about 350 MB: in 256 MB and 192 MB the node was killed while it built the NDT target.
+Of the 292 MB heap peak (heaptrack), about 63 MB are the map points, 58 MB the NDT
+voxel grid, 24 MB the map file as read, and about 100 MB FLANN kd-trees, mostly the
+one over the map that scores the fitness. Resident memory came to about 120 MB with
+the 580k-point map and 350 MB with the 2.0M-point one, roughly 160 bytes per map
+point. Voxelizing the map saves memory but costs accuracy: on EIL_Stairs a 0.1 m map
+took 35 MB less and raised the error by 23%.
+
+**Five Hertz** (`min_scan_interval_sec: 0.19`) costs about 35% less (0.14 against
+0.21 cores on EIL_Stairs), but came up to 0.52 m off there (1.3 m with a 20-scan IMU
+window). Use it only when 10 Hz does not fit.
+
+**A shorter IMU smoother window** (`imu_smoother_window_size`, default 50) saved
+18-29% of the CPU on EIL_Stairs at 20-10 scans, but on the Koide bag 20 and 30 lost
+the pose by up to 14-38 m from 67 s on, in all three runs with them. Keep 50.
 
 **Not verified**: a Jetson, a live MID-360 and ROS 2 Humble. The Orin's Cortex-A78AE
 cores are slower than this host's for this code (Eigen and PCL on NEON instead of
 AVX-512), so read these CPU figures as a lower bound: plan on two to three times as
 much of an Orin core until it is measured there. Walking was at most 1.0 m/s (the
 target is 1.5 m/s). EIL_Box, the other short indoor bag, is not a usable check yet:
-both presets lost 1-2 m there with a near-perfect fitness, and why was not found.
+both presets lost 1-3 m there with a near-perfect fitness, and why was not found.
 The full measurements are in
 [benchmark.md](benchmark.md#low-resource-budget-go2-mid-360).
 
