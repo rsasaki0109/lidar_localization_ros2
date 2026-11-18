@@ -191,3 +191,11 @@ def test_scan_poses_keeps_every_pose_of_a_published_cloud():
     assert len(soak.scan_poses(poses, [10, 20], {10, 20})) == 2
     assert soak.scan_poses(poses, [10, 21], {10, 20}).tolist() == [poses[0].tolist()]
     assert soak.scan_poses(np.zeros((0, 8)), [], {10}).shape == (0, 8)
+
+
+def test_cpu_trend_skips_the_warm_up():
+    assert soak.cpu_trend([None, 50.0, 100.0, 150.0]) == {
+        "cpu_cores_mean": 1.0,
+        "cpu_cores_p95": 1.45,
+    }
+    assert soak.cpu_trend([None]) == {}

@@ -3,6 +3,7 @@
 A control node on a ROS domain no one else uses; child processes in their own
 sessions, one log each, stopped on exit; and the localizer's output recorded in the
 output directory: /pcl_pose to estimate.tum, /alignment_status to alignment.jsonl.
+ResourceMonitor samples a process's memory and CPU time from /proc.
 Used by scripts/run_koide_public_bag.py and tools/benchmark/boreas_replay.py.
 """
 
@@ -43,6 +44,113 @@ def initial_pose_parameters(pose) -> dict:
         "set_initial_pose": True,
         **{f"initial_pose_{name}": value for name, value in zip(names, values)},
     }
+
+
+def find_process(group: int, name: str) -> int:
+    """The process in process group GROUP whose name is NAME (as /proc shows it, cut
+    to 15 characters), or GROUP itself when there is none: the node a --wrap command
+    such as heaptrack started."""
+    for stat in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            head, tail = stat.read_text().rsplit(")", 1)
+        except OSError:
+            continue
+        comm = head.split("(", 1)[1]
+        if int(tail.split()[2]) == group and comm == name[:15]:
+            return int(stat.parent.name)
+    return group
+
+
+def read_process(pid: int) -> tuple:
+    """(rss_mb, peak_rss_mb, cpu_sec) of PID from /proc: its resident memory now and
+    at most (VmHWM), and the CPU time it has used (utime + stime)."""
+    status = Path(f"/proc/{pid}/status").read_text()
+    fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
+    stat = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+    ticks = int(stat[11]) + int(stat[12])
+    return (
+        int(fields["VmRSS"].split()[0]) / 1024.0,
+        int(fields["VmHWM"].split()[0]) / 1024.0,
+        ticks / os.sysconf("SC_CLK_TCK"),
+    )
+
+
+def resource_summary(samples, data_sec=None, scans=None, window=None) -> dict:
+    """CPU and memory of (wall_sec, rss_mb, peak_rss_mb, cpu_sec) SAMPLES: the cores
+    in use on average and at p95 of the sampling intervals, the CPU seconds per second
+    of data (DATA_SEC) and per scan (SCANS), the peak resident memory (VmHWM, so
+    including the map load before the first sample) and the steady one (the median
+    over the second half of the samples). WINDOW, a (first, last) wall_sec pair, limits
+    all but the peak to the samples inside it."""
+    peak = max((row[2] for row in samples), default=None)
+    rows = sorted(samples)
+    if window is not None:
+        rows = [row for row in rows if window[0] <= row[0] <= window[1]]
+    if len(rows) < 2:
+        return {}
+    wall = [row[0] for row in rows]
+    cpu = [row[3] for row in rows]
+    cores = sorted(
+        (c1 - c0) / (w1 - w0)
+        for w0, w1, c0, c1 in zip(wall, wall[1:], cpu, cpu[1:])
+        if w1 > w0
+    )
+    used = cpu[-1] - cpu[0]
+    steady = sorted(row[1] for row in rows[len(rows) // 2 :])
+    result = {
+        "cpu_sec": round(used, 2),
+        "cpu_cores_mean": round(used / (wall[-1] - wall[0]), 3),
+        "cpu_cores_p95": round(cores[min(len(cores) - 1, int(0.95 * len(cores)))], 3),
+        "rss_mb_peak": round(peak, 1),
+        "rss_mb_steady": round(steady[len(steady) // 2], 1),
+        "rss_mb_last": round(rows[-1][1], 1),
+    }
+    if data_sec:
+        result["cpu_sec_per_data_sec"] = round(used / data_sec, 3)
+    if scans:
+        result["cpu_ms_per_scan"] = round(1000.0 * used / scans, 2)
+    return result
+
+
+class ResourceMonitor:
+    """Samples a process's memory and CPU time every INTERVAL_SEC into a CSV file
+    (wall_sec, rss_mb, peak_rss_mb, cpu_sec). Call poll() often; it reads /proc only
+    when a sample is due. A process that has exited is no longer sampled."""
+
+    def __init__(self, pid: int, path: Path, interval_sec: float = 1.0):
+        self.pid = pid
+        self.interval_sec = interval_sec
+        self.samples: list[tuple] = []
+        self._began = time.monotonic()
+        self._next = self._began
+        self.path = Path(path)
+        self.path.write_text("wall_sec,rss_mb,peak_rss_mb,cpu_sec\n")
+        self._closed = False
+
+    def poll(self) -> None:
+        now = time.monotonic()
+        if now < self._next or self._closed:
+            return
+        self._next = now + self.interval_sec
+        try:
+            rss, peak, cpu = read_process(self.pid)
+        except (OSError, KeyError, IndexError, ValueError):
+            return
+        row = (round(now - self._began, 3), rss, peak, cpu)
+        self.samples.append(row)
+        with self.path.open("a") as csv:
+            csv.write(f"{row[0]:.3f},{rss:.1f},{peak:.1f},{cpu:.2f}\n")
+
+    def elapsed(self) -> float:
+        """Seconds since the monitor started, on the clock of the samples' wall_sec."""
+        return time.monotonic() - self._began
+
+    def close(self) -> None:
+        """Stop sampling."""
+        self._closed = True
+
+    def summary(self, data_sec=None, scans=None, window=None) -> dict:
+        return resource_summary(self.samples, data_sec, scans, window)
 
 
 def stop_process(process: subprocess.Popen) -> None:

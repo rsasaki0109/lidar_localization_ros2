@@ -16,7 +16,8 @@ ground-truth pose there, while moving. The laps without one are the control.
 Writes into OUT_DIR: localizer.yaml, localizer.log, estimate.tum, alignment.jsonl,
 resources.csv (wall_sec, sim_sec, rss_mb, cpu_percent, threads, state) and summary.json, with
 each lap's RMSE, acceptance, alignment time and pose latency (from publishing a cloud
-to receiving its pose), the memory trend, and per fault the
+to receiving its pose), the memory trend, the cores in use (mean and p95 of the
+samples), and per fault the
 poses published during it, the largest error from its start to SETTLE_SEC after its
 end, the time from its end until the error stays under RECOVERED_M for the rest of
 the lap, and the RMSE after the settling time.
@@ -258,6 +259,18 @@ def memory_trend(samples, skip_sec):
     }
 
 
+def cpu_trend(cpu_percent, skip=1):
+    """The cores in use on average and at p95 of the CPU_PERCENT samples (100 is one
+    core), leaving out the first SKIP (the warm-up)."""
+    values = np.array([v for v in cpu_percent[skip:] if v is not None], dtype=float)
+    if not len(values):
+        return {}
+    return {
+        "cpu_cores_mean": round(float(values.mean()) / 100.0, 3),
+        "cpu_cores_p95": round(float(np.percentile(values, 95)) / 100.0, 3),
+    }
+
+
 def process_sample(pid, previous):
     """(rss_mb, cpu_percent, threads, ticks, state) of PID; cpu over the time since
     PREVIOUS, a (wall_sec, ticks) pair or None; state as /proc shows it (R running,
@@ -274,20 +287,6 @@ def process_sample(pid, previous):
         wall = time.monotonic() - previous[0]
         cpu = 100.0 * (ticks - previous[1]) / os.sysconf("SC_CLK_TCK") / wall
     return rss_mb, cpu, threads, ticks, state
-
-
-def localizer_pid(group, name="lidar_localization_node"):
-    """The process in process group GROUP whose name is NAME (as /proc shows it, cut
-    to 15 characters), or GROUP itself when there is none."""
-    for stat in Path("/proc").glob("[0-9]*/stat"):
-        try:
-            head, tail = stat.read_text().rsplit(")", 1)
-        except OSError:
-            continue
-        comm = head.split("(", 1)[1]
-        if int(tail.split()[2]) == group and comm == name[:15]:
-            return int(stat.parent.name)
-    return group
 
 
 def main():
@@ -320,6 +319,7 @@ def main():
     from replay_session import (
         ReplaySession,
         apply_overrides,
+        find_process,
         initial_pose_parameters,
     )
     from rosgraph_msgs.msg import Clock
@@ -383,6 +383,7 @@ def main():
     os.environ["ROS_DOMAIN_ID"] = str(args.ros_domain_id)
     os.environ["ROS_LOG_DIR"] = str(args.out / "ros-logs")
     samples = []
+    cpu_samples = []
     # Monotonic times a cloud was published and its pose arrived, by stamp in ns.
     published_wall, received_wall = {}, {}
     # The stamp in ns of each recorded pose, in the order of session.poses.
@@ -413,7 +414,7 @@ def main():
         activate(session.node, "/lidar_localization", 180.0)
         for index, companion in enumerate(args.companion):
             session.spawn(shlex.split(companion), f"companion{index}")
-        pid = localizer_pid(process.pid)
+        pid = find_process(process.pid, "lidar_localization_node")
         node = session.node
         reliable = QoSProfile(depth=50, reliability=ReliabilityPolicy.RELIABLE)
         publishers = {
@@ -466,6 +467,7 @@ def main():
                     previous = (now, ticks)
                     elapsed = now - began
                     samples.append((elapsed, rss))
+                    cpu_samples.append(cpu)
                     resources.write(
                         f"{elapsed:.1f},{sim_ns * 1e-9:.3f},{rss:.1f},"
                         f"{'' if cpu is None else f'{cpu:.1f}'},{threads},{state}\n"
@@ -592,6 +594,7 @@ def main():
         # After SIGINT on exit: 0 for a clean shutdown, -11 for a crash in it.
         "localizer_exit_code": process.returncode,
         "memory": memory_trend(samples, skip_sec=period_ns * 1e-9),
+        "cpu": cpu_trend(cpu_samples),
         "per_lap": laps,
         "faults": faults,
     }

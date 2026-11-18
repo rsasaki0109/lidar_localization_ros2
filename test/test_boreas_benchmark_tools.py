@@ -128,3 +128,13 @@ def test_fetch_retries_a_transfer_cut_off_mid_body(monkeypatch):
     monkeypatch.setattr(prepare.time, "sleep", lambda seconds: None)
     assert prepare.fetch("https://example.invalid/key") == b"whole body"
     assert len(calls) == 2
+
+
+def test_score_counts_poses_over_a_metre():
+    reference = np.zeros((10, 8))
+    reference[:, 0] = np.arange(10)
+    poses = reference.copy()
+    poses[3, 1] = 2.0
+    result = replay.score(poses, reference, scans=10, diagnostics=set(), accepted=0)
+    assert result["poses_over_1_m"] == 1
+    assert result["median_error_m"] == 0.0
