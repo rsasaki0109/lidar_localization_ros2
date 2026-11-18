@@ -18,6 +18,18 @@ The build takes about 15 minutes on 4 cores. Dependencies are installed from
 `package.xml` before the sources are copied, so after a source edit only the colcon
 step runs again.
 
+### Headless runtime image
+
+For deployment without RViz, build the `runtime` target:
+
+```bash
+docker build --target runtime -f docker/Dockerfile -t lidar_localization_ros2:runtime .
+```
+
+The runtime image contains the installed ROS packages and their runtime libraries.
+Use it with `quickstart.py --no-rviz`. Use the default image for RViz, tests,
+or rebuilding the source inside a container.
+
 ## Check that it works
 
 ```bash
@@ -50,6 +62,13 @@ docker run --rm -w /ws/src/lidar_localization_ros2 lidar_localization_ros2 \
   python3 -m pytest -q test/
 ```
 
+To check global initialization from a synthetic scan without a known pose:
+
+```bash
+docker run --rm lidar_localization_ros2:runtime \
+  /ws/src/lidar_localization_ros2/docker/smoke_status.sh --global
+```
+
 ## Run on your data
 
 Share the host network so the container sees your LiDAR driver or `ros2 bag play`,
@@ -79,8 +98,8 @@ docker run --rm -it --network host \
 
 ## CI
 
-`.github/workflows/docker.yml` builds this image and runs the smoke test, with and
-without RViz, on pushes to `main` and on pull requests that touch the runtime,
-launch, parameter, RViz or Docker files. Layers are cached in GitHub Actions, so a
+`.github/workflows/docker.yml` builds both images and checks the headless runtime,
+global initialization, and RViz. It runs on pushes to `main` and pull requests that
+touch the runtime, launch, parameter, RViz or Docker files. Layers are cached in GitHub Actions, so a
 source-only change rebuilds just the colcon step. It can also be started by hand
 from the Actions tab (`workflow_dispatch`).
