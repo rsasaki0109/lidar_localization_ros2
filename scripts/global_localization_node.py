@@ -420,6 +420,8 @@ class GlobalLocalizationNode(Node):
                 entry["registration_fitness"] = round(candidate.registration_fitness, 4)
             if candidate.registration_converged is not None:
                 entry["registration_converged"] = candidate.registration_converged
+            if candidate.registration_refined:
+                entry["registration_refined"] = True
             ranked.append(entry)
         summary = {
             "candidate_count": len(result.candidates),

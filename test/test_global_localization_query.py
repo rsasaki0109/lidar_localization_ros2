@@ -223,6 +223,7 @@ def test_score_with_registration_rewrites_converged_candidate_pose():
         assert ranked[0].yaw_rad == math.radians(12.0)
         assert ranked[0].bbs_score == 0.99
         assert ranked[0].registration_fitness == 0.042
+        assert ranked[0].registration_refined
 
         unconverged = next(
             candidate
@@ -232,6 +233,7 @@ def test_score_with_registration_rewrites_converged_candidate_pose():
         assert unconverged.yaw_rad == math.radians(20.0)
         assert unconverged.z_m == 0.0
         assert not unconverged.registration_converged
+        assert not unconverged.registration_refined
 
 
 def test_score_with_registration_keeps_raw_pose_by_default():
@@ -272,6 +274,7 @@ def test_score_with_registration_keeps_raw_pose_by_default():
         assert ranked[0].y_m == 29.7
         assert ranked[0].yaw_rad == math.radians(10.0)
         assert ranked[0].registration_fitness == 0.042
+        assert not ranked[0].registration_refined
         # The 2D cell has no height; report the one registration converged to.
         assert ranked[0].z_m == 1.2
 

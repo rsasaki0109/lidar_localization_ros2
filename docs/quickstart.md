@@ -265,7 +265,12 @@ A candidate is published only when:
 - `candidate_age_sec` is present and no greater than `--max-candidate-age-sec`;
 - at least `--global-consensus-samples` results from distinct scan timestamps agree
   within the configured translation and yaw bounds (with odometry, after moving each
-  earlier result to the new scan time; see below);
+  earlier result to the new scan time; see below). Two results whose poses NDT refined
+  (`--refine-global-candidates`, or the sparse-band search) must agree within 0.5 m and
+  10 degrees instead of 2 m and 20 degrees;
+- a refined top candidate also registers at most half as well as the best refined
+  candidate 1 m or more away, or turned 20 degrees or more (see
+  `ambiguous_registration_retry` below);
 - the localizer subsequently reports acceptable fitness and stable tracking for
   `--verification-samples` fresh diagnostic messages.
 
@@ -367,7 +372,12 @@ the startup node uses it automatically:
 - a result is confirmed when it matches an earlier result from another scan, moved to
   the new scan time by odometry, and at least one of the two passed all gates. The
   match allows 2 m plus `global_consensus_translation_per_odom_m` (5%) of the distance
-  travelled, for the 5-degree heading quantization of each result;
+  travelled, for the 5-degree heading quantization of each result. Two NDT-refined
+  results are not quantized and must match within 0.5 m (plus the same 5%) and 10
+  degrees (`global_consensus_refined_translation_m`, `global_consensus_refined_yaw_deg`;
+  negative values use the wide bounds): on the Go2 cross-session replays the wide
+  bounds confirmed fixes 1.6-1.8 m apart along the room, and the published one was
+  the wrong one;
 - the published `/initialpose` is moved from the queried scan to the latest odometry,
   and the log reports how far (`moved the global candidate by odometry ...`).
 - a result whose scan is at least `global_attempt_refund_travel_m` (5 m) of odometry
@@ -417,7 +427,13 @@ Leave IMU TF publication off as appropriate.
   similar, mediocre poses; on the Koide outdoor map they scored 0.8–2.0 with a runner-up
   close behind, while the true pose scored 0.04 against 0.82 elsewhere. Tune with the
   startup node's `max_registration_fitness_ratio` (0 disables) and
-  `registration_alternative_min_separation_m`.
+  `registration_alternative_min_separation_m`. When the top's pose is NDT-refined, the
+  best refined candidate 1 m or more away or turned 20 degrees or more counts as
+  another place too (`registration_refined_alternative_min_separation_m`,
+  `registration_refined_alternative_min_yaw_deg`; negative disables): refined
+  candidates converge onto their own optimum, and a near-symmetric room turned by 180
+  degrees, or a place 1-2 m along it, registers almost as well as the right pose when
+  props have moved.
 - `global_attempts_exhausted`: automatic publication stopped; set the pose in RViz.
 - no detected sensor topic: start the driver or bag first, or pass the topic explicitly.
 

@@ -79,6 +79,8 @@ class StartupInitializationNode(Node):
         self.declare_parameter("registration_fitness_high_confidence_threshold", 1.0e9)
         self.declare_parameter("max_registration_fitness_ratio", 0.5)
         self.declare_parameter("registration_alternative_min_separation_m", 5.0)
+        self.declare_parameter("registration_refined_alternative_min_separation_m", 1.0)
+        self.declare_parameter("registration_refined_alternative_min_yaw_deg", 20.0)
         self.declare_parameter("save_interval_sec", 2.0)
         self.declare_parameter("position_std_m", 0.5)
         self.declare_parameter("yaw_std_rad", 0.25)
@@ -160,6 +162,14 @@ class StartupInitializationNode(Node):
             ),
             registration_alternative_min_separation_m=float(
                 self.get_parameter("registration_alternative_min_separation_m").value
+            ),
+            registration_refined_alternative_min_separation_m=float(
+                self.get_parameter(
+                    "registration_refined_alternative_min_separation_m"
+                ).value
+            ),
+            registration_refined_alternative_min_yaw_deg=float(
+                self.get_parameter("registration_refined_alternative_min_yaw_deg").value
             ),
         )
         parameter_error = model.validate_startup_params(self.params)
@@ -246,7 +256,9 @@ class StartupInitializationNode(Node):
         self.pending_scan_stamp_sec = None
         self.pending_top_registration_fitness = None
         self.pending_alternative_registration_fitness = None
+        self.pending_refined_alternative_registration_fitness = None
         self.pending_odom_pose = None
+        self.pending_top_refined = False
         self.latest_cloud_stamp_sec = None
         self.first_cloud_stamp_sec = None
         self.last_query_scan_stamp_sec = None
@@ -451,7 +463,11 @@ class StartupInitializationNode(Node):
             query_alternative_registration_fitness=(
                 self.pending_alternative_registration_fitness
             ),
+            query_refined_alternative_registration_fitness=(
+                self.pending_refined_alternative_registration_fitness
+            ),
             query_odom_pose=self.pending_odom_pose,
+            query_top_refined=self.pending_top_refined,
             diagnostic_fresh=self.diagnostic_fresh,
             tracking_good=self.latest_tracking_good,
             fitness=self.latest_fitness,
@@ -462,7 +478,9 @@ class StartupInitializationNode(Node):
         self.pending_scan_stamp_sec = None
         self.pending_top_registration_fitness = None
         self.pending_alternative_registration_fitness = None
+        self.pending_refined_alternative_registration_fitness = None
         self.pending_odom_pose = None
+        self.pending_top_refined = False
         self.diagnostic_fresh = False
         decision = model.decide_startup(self.params, self.state, observation)
         self.state = decision.state
@@ -548,6 +566,7 @@ class StartupInitializationNode(Node):
                 float(top["y"]),
                 math.radians(float(top["yaw_deg"])),
             )
+            self.pending_top_refined = bool(top.get("registration_refined", False))
             reg_fit = top.get("registration_fitness")
             self.pending_top_registration_fitness = (
                 float(reg_fit) if reg_fit is not None else None
@@ -555,6 +574,13 @@ class StartupInitializationNode(Node):
             self.pending_alternative_registration_fitness = (
                 model.alternative_registration_fitness(
                     candidates, self.params.registration_alternative_min_separation_m
+                )
+            )
+            self.pending_refined_alternative_registration_fitness = (
+                model.refined_alternative_registration_fitness(
+                    candidates,
+                    self.params.registration_refined_alternative_min_separation_m,
+                    self.params.registration_refined_alternative_min_yaw_deg,
                 )
             )
             odom = (
@@ -581,7 +607,9 @@ class StartupInitializationNode(Node):
             self.pending_scan_stamp_sec = None
             self.pending_top_registration_fitness = None
             self.pending_alternative_registration_fitness = None
+            self.pending_refined_alternative_registration_fitness = None
             self.pending_odom_pose = None
+            self.pending_top_refined = False
 
     def _new_initialpose(self) -> PoseWithCovarianceStamped:
         msg = PoseWithCovarianceStamped()

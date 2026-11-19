@@ -219,6 +219,8 @@ class GlobalLocalizationCandidate:
     bbs_score: float
     registration_fitness: float | None = None
     registration_converged: bool | None = None
+    # Whether the pose is the NDT-refined one rather than the BBS cell's.
+    registration_refined: bool = False
 
 
 @dataclass(frozen=True)
@@ -248,6 +250,7 @@ def _candidate_from_ranked(
         bbs_score=ranked.bbs_score,
         registration_fitness=ranked.registration_fitness,
         registration_converged=ranked.registration_converged,
+        registration_refined=ranked.registration_refined,
     )
 
 
@@ -411,6 +414,7 @@ class GlobalLocalizationEngine:
                 if result.converged and math.isfinite(result.fitness)
                 else float("inf")
             )
+            refined = refine and bool(result.converged) and math.isfinite(fitness)
             if refine:
                 pose_x, pose_y, pose_z, pose_yaw = (
                     g2_rank.candidate_pose_from_registration(
@@ -460,6 +464,7 @@ class GlobalLocalizationEngine:
                     hit_count=candidate.hit_count,
                     point_count=candidate.point_count,
                     registration_converged=bool(result.converged),
+                    registration_refined=refined,
                 )
             )
         reranked = g2_rank.apply_registration_ranking(
