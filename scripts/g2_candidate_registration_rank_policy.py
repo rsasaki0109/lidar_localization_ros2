@@ -25,6 +25,8 @@ class RankedG2Candidate:
     hit_count: int = 0
     point_count: int = 0
     registration_converged: bool | None = None
+    # Whether x/y/z/yaw are the NDT-refined pose rather than the BBS cell's.
+    registration_refined: bool = False
 
 
 def registration_fitness_to_supervisor_score(
@@ -94,6 +96,7 @@ def apply_registration_ranking(
                 hit_count=candidate.hit_count,
                 point_count=candidate.point_count,
                 registration_converged=candidate.registration_converged,
+                registration_refined=candidate.registration_refined,
             )
         )
     return rank_candidates_by_registration(updated)
