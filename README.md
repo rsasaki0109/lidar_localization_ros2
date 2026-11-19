@@ -12,6 +12,7 @@
   <img alt="ROS 2 Humble" src="https://img.shields.io/badge/ROS%202-Humble%20compatible-1f5b99">
   <img alt="ROS 2 Foxy" src="https://img.shields.io/badge/ROS%202-Foxy%20best--effort-64748b">
   <img alt="License BSD 2 Clause" src="https://img.shields.io/badge/license-BSD--2--Clause-6b46c1">
+  <a href="https://github.com/sponsors/rsasaki0109"><img alt="Sponsor on GitHub" src="https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-ea4aaa?logo=githubsponsors&logoColor=white"></a>
 </p>
 
 <img src="./images/readme/localization_koide_outdoor_hard_02b.gif" alt="Handheld outdoor run tracked on a prior point-cloud map; the estimate follows the ground truth for the whole run" width="720">
