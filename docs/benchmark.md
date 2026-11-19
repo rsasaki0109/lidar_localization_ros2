@@ -142,6 +142,8 @@ initial pose ([`go2_jeplo_cross_session.yaml`](../tools/benchmark/suites/go2_jep
 Each map is built from one run only (RKO-LIO offline odometry,
 `build_map_from_odometry.py`, `align_map_to_ground_truth.py`, residual 0.034-0.075 m)
 and the scans come from another run. Ground truth covers only the capture room.
+The table below is v1.11.0; its wrong starts no longer happen since the startup checks
+NDT-refined fixes more strictly ([why they passed, and the fix](#why-the-wrong-starts-passed-and-the-fix)).
 
 | map → scans | initialized / wrong / manual pose | first pose (s) | first-pose error (m) | queries | median / p95 / max xy (m) |
 |---|---|---|---|---|---|
@@ -221,6 +223,84 @@ one other run on its route (Outdoor2, used up to 165 s, converted from the first
 of the bag). The EIL_Box map's failure on its own run suggests that map, not only the
 session change, is a weak case; other room maps of the EIL runs were not tried. The
 probe edits are synthetic.
+
+#### Why the wrong starts passed, and the fix
+
+Measured 2026-11-19, same suite and settings, with the topics and frames pinned on the
+command line (one baseline run lost its sensor topics to a slow bag start; EIL_Box →
+EIL_Mix run 1 of the baseline is a rerun). The Long_Stairs scans for
+Outdoor2 → Long_Stairs were no longer on disk, so that pair was not rerun.
+
+Every wrong start came from NDT-refined G2 fixes (the Large maps settings refine, and so
+does the sparse-band search) that the startup accepted although they disagreed or
+were not distinctive:
+
+- **Two queries 1.6-1.8 m apart "agreed".** The agreement bound is 2 m plus 5% of the
+  distance travelled, sized for the 5-degree heading steps of unrefined fixes. In EIL_Box
+  → EIL_Mix the first fix was 0.07 m off, the second 1.83 m along the room (NDT fitness
+  0.085 against 0.096), they matched within the 2 m, and the second, wrong one was
+  published. Long_Stairs → EIL_Mask1 did the same (0.01 m, then 1.78 m).
+- **The room turned by 180 degrees.** In EIL_Box → EIL_Stairs both fixes were the
+  near-symmetric room the other way round, 0.1-1.9 m from the true position, and their
+  NDT fitness was as good as or better than the true pose's (the EIL_Box map holds a box
+  platform where EIL_Stairs has a stair module). The distinctiveness check compares the
+  top only with candidates at least 5 m away, so neither the turned pose at the same
+  place nor an aliased place 1-3 m along the room counted. NDT refinement makes such a
+  nearby candidate a separate optimum rather than a duplicate.
+- Not the occupancy band or the score margin: the truth was often not among the 32
+  candidates at all (3 m non-maximum suppression), and when it was, the BBS scores were
+  saturated near 1 for both.
+
+Offline, `g2_offline_probe.py` asked G2 about one scan per second of each test run
+(14 pairs, 1,057 queries, ground truth as odometry); 365 tops were wrong (> 1 m or
+> 20 degrees). A refined candidate 1 m or more away or turned 20 degrees or more with
+fitness within 2x of the top's flagged 315 of the wrong tops and 99 of the 692 right
+ones; the existing 5 m check flagged 238 and 60. Replaying the answers through
+`decide_startup` from every query as a start point:
+
+| startup rule (simulated, 889 start points) | wrong | right | manual pose |
+|---|---|---|---|
+| before | 154 | 706 | 29 |
+| refined fixes agree within 0.5 m and 10 degrees | 67 | 752 | 70 |
+| + a refined alternative within 5 m counts (1 m or 20 degrees away) | **41** | **750** | 98 |
+| both, with 1.5 m non-maximum suppression (not adopted; 6 of the pairs, 442 start points; both checks alone there: 36 / 329 / 77) | 4 | 278 | 160 |
+
+Both checks are on by default and only tighten the existing ones (for unrefined fixes
+nothing changes). The remaining simulated wrong starts are on EIL_Box → EIL_Stairs and
+Long_Stairs → EIL_Stairs, where consecutive answers agree tightly on the turned room or
+on a place 1.5-2 m along it. A narrower suppression radius removed most of them but
+cost a sixth of the right starts.
+
+Live, before → after (28 runs each):
+
+| map → scans | before: initialized / wrong / manual | after | first pose (s), after | first-pose error (m), after | queries, after |
+|---|---|---|---|---|---|
+| Long_Stairs → Outdoor2 (0-165 s) | 2 / 0 / 0 | 2 / 0 / 0 | 14.3, 13.8 | 0.01, 0.02 | 2, 2 |
+| EIL_Mix → EIL_Box | 2 / 0 / 0 | 1 / 0 / **1** | -, 10.3 | -, 0.01 | 6, 2 |
+| EIL_Mix → EIL_Stairs | 2 / 0 / 0 | 1 / 0 / **1** | 8.4, - | 0.02, - | 2, 6 |
+| EIL_Mix → EIL_Mask1 | 2 / 0 / 0 | 2 / 0 / 0 | 10.5, 10.3 | 0.01, 0.01 | 2, 2 |
+| EIL_Mix → EIL_Mask2 | 1 / 0 / **1** | 1 / 0 / **1** | 7.8, - | 0.03, - | 2, 6 |
+| EIL_Box → EIL_Mix | 2 / **1** / 0 | 2 / 0 / 0 | 11.3, 10.8 | 0.03, 0.03 | 3, 3 |
+| EIL_Box → EIL_Stairs | 2 / **2** / 0 | 2 / 0 / 0 | 13.1, 11.4 | 0.01, 0.02 | 5, 4 |
+| EIL_Box → EIL_Mask1 | 2 / 0 / 0 | 2 / 0 / 0 | 11.3, 8.8 | 0.02, 0.02 | 3, 2 |
+| Long_Stairs → EIL_Box | 0 / 0 / **2** | 2 / 0 / 0 | 11.3, 12.1 | 0.05, 0.09 | 2, 3 |
+| Long_Stairs → EIL_Stairs | 1 / 0 / **1** | 1 / 0 / **1** | 13.9, - | 0.02, - | 4, 6 |
+| Long_Stairs → EIL_Mask1 | 2 / **1** / 0 | 2 / 0 / 0 | 15.5, 17.5 | 0.13, 0.07 | 4, 6 |
+| *controls:* EIL_Box → EIL_Box | 2 / 0 / 0 | 2 / 0 / 0 | 4.6, 10.8 | 0.02, 0.02 | 2, 3 |
+| EIL_Stairs → EIL_Stairs | 2 / 0 / 0 | 2 / 0 / 0 | 10.4, 12.6 | 0.03, 0.01 | 3, 5 |
+| EIL_Mix → EIL_Mix | 2 / 0 / 0 | 2 / 0 / 0 | 10.1, 10.1 | 0.03, 0.04 | 2, 2 |
+| **total** | 24 / 4 / 4 | 24 / **0** / 4 | | | |
+
+Right starts went from 20 to 24 of 28 and wrong ones from 4 to 0; four runs still asked
+for a manual pose (other runs than before). In each of the four the top candidate was
+never right in its six queries (EIL_Mix → EIL_Box run 1 saw the room turned by 123-176
+degrees, EIL_Mix → EIL_Stairs run 2 and Long_Stairs → EIL_Stairs run 2 places
+1.1-2.8 m off), so none rejected a right answer. The first right pose came after a
+median 11.0 s (10.3 s before, max 17.5 s against 15.4 s): one or two more queries where
+the first answers were aliased. The README GIF pair (Long_Stairs → Outdoor2) localized
+in 2 queries both times, as before. Tracking after a right start is unchanged; the
+Long_Stairs map still lets EIL_Box and EIL_Stairs slide up to 2-2.4 m along the room,
+which the startup cannot see.
 
 To reproduce, build the maps as in [Rebuilding the JEPLO bags and self maps](#rebuilding-the-jeplo-bags-and-self-maps)
 (Outdoor2: `jeplo_to_pc2_bag.py ... bags_pc2_merged/Outdoor2_0-165s --duration 165`,
