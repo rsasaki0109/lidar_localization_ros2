@@ -126,9 +126,14 @@ use_imu_preintegration:=false
   stalls the output for about 2 s
 - timer publishing at `20 Hz` for stable `map -> odom`
 - twist prediction enabled, but angular twist prediction disabled
-- IMU preintegration enabled with correction guards
+- IMU preintegration enabled with correction guards, `imu_accel_scale: 9.80665`
+  because `livox_ros_driver2` publishes the acceleration in g (set `1.0` for a
+  driver or bag in m/s^2: at the wrong value the preintegration is wrong by a
+  factor 9.8, see [benchmark.md](benchmark.md#imu-acceleration-units))
 
-For a smaller Jetson or thermal-limited run, first reduce CPU cost:
+For a smaller Jetson or thermal-limited run, see
+[Running on small computers](troubleshooting.md#running-on-small-computers) for the
+knobs and where each holds, then first reduce CPU cost:
 
 ```bash
 ndt_num_threads:=2

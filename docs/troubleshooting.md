@@ -410,6 +410,69 @@ dense stretch; under 1 GB it ran an hour, 890 MiB at most
   the lowest resident memory of each lap also rose by 50-100 MB an hour; now it stays
   flat.
 
+## Running on small computers
+
+For a Jetson Orin Nano/NX or any small computer shared with perception and
+navigation, on a legged robot (Unitree Go2/G1), a wheeled robot or a
+vehicle. The knobs below are not specific to a platform, but where they hold is. Each
+row is one change to a working configuration; CPU is CPU seconds per second of data,
+with the localizer on two cores of a 4-vCPU Xeon (2.3 GHz). The Orin's cores are
+slower for this code, so read the figures as a lower bound. Replays at 1x, each
+alone; run-to-run noise is about 5% in CPU and 2% in RMSE
+([benchmark.md](benchmark.md#low-resource-budget-go2-mid-360)).
+
+| knob | legged, Go2 + MID-360, EIL_Stairs, with odometry | handheld MID-360, Koide, with odometry | vehicle, Velodyne HDL-32E, Boreas, no odometry |
+| --- | --- | --- | --- |
+| `voxel_leaf_size` coarser (0.25 to 0.5 m; 1.5 to 2.0 m) | 24.5 to 16.4 ms/scan, same RMSE (0.066 m); the largest saving | not measured alone | 83-87 to 67-79 ms/scan, p95 latency 85 to 55-73 ms, RMSE 0.132 to 0.135 m. Finer (1.0 m) costs 109 ms/scan and no accuracy |
+| `ndt_num_threads` down to the cores it gets | no saving (24.5 to 26.7 ms/scan), same RMSE | not measured alone | no saving, latency worse: p95 85 to 105-120 ms (the preset's 8 threads on two cores did better than 2 or 1) |
+| `ndt_max_iterations` 30 to 15 | 23.7 ms/scan, same RMSE; caps the slow scans | not measured alone | no saving (it converges well before 25), same RMSE |
+| odometry seeding (`use_odom_tf_prediction`, `publish_bridge_pose_when_lost`) | what makes the coarse scan safe | what makes the coarse scan safe | not measured: no wheel odometry in the dataset |
+| no pose timer (`enable_timer_publishing: false`) | 25.1 to 24.5 ms/scan | not measured alone | 77 against 83-87 ms/scan, but with the timer on and no odometry the poses between scans are extrapolated: RMSE 0.55 m |
+| all of the preset's knobs together | 0.21 to 0.145 cores | 0.59 to 0.40 cores, RMSE 0.238 to 0.227 m | not applicable: see below |
+
+What to take from it:
+
+- **The scan voxel is the knob that scales.** CPU follows the number of points
+  aligned. Start there, and stop when the score threshold begins to reject scans or
+  the RMSE moves by more than about 10%: on Boreas 2.0 m held (0.135 m against
+  0.132 m); `ndt_resolution` is a different knob and must not follow it (`2.0` took
+  EIL_Stairs from 0.066 to 0.293 m).
+- **Threads and iterations saved little on two cores.** On the legged and the vehicle
+  replays neither cut the CPU per scan measurably, and on Boreas fewer threads raised
+  the latency (1 thread: p95 148 ms; 2: 105-120 ms; the preset's 8: 84-88 ms). Their
+  value in the Go2 preset is a cap on the slow scans and no more threads than cores;
+  on a heavy-scan platform leave the preset's values and cut the voxel first.
+- **Odometry is what makes a coarse scan safe**, on any robot. With a wheel, legged
+  or LiDAR-inertial odometry (`use_odom_tf_prediction`, `publish_bridge_pose_when_lost`)
+  every scan starts a few centimetres from its answer, and the NDT has little to
+  decide. The seed needs only an `odom -> base_link` TF with its motion
+  held across dropped scans; a wheeled robot's wheel odometry has not been tested
+  here.
+- **It is unsafe without odometry.** The localizer then seeds from its own motion
+  model and the coarse scan locks onto structure that repeats: the 0.5 m scan took
+  EIL_Stairs 1.5 m up to the wrong stair level for seconds with a good fitness, and
+  two threads, 15 iterations and a 20-scan IMU window lost the robot 13 m off
+  ([benchmark.md](benchmark.md#eil_stairs-without-odometry)). Without odometry keep
+  the unreduced preset, or accept only the Boreas-style cut (a moderately coarser
+  voxel on a platform with plenty of structure per scan).
+- **The pose timer** (`enable_timer_publishing`) publishes `map -> odom` between
+  scans at `pose_publish_frequency`. It costs little (0.6 ms/scan), but without
+  odometry it extrapolates the pose, and a fast vehicle's error rises with it. Leave it
+  off when odometry carries the pose between scans, as in the preset.
+- **Check the IMU unit** (`imu_accel_scale`) before judging any of this:
+  `livox_ros_driver2` publishes the acceleration in g (`9.80665`), most other drivers
+  in m/s^2 (`1.0`). A wrong value costs more than any knob saves
+  ([benchmark.md](benchmark.md#imu-acceleration-units)).
+- **Memory** is set by the map, not by these knobs: see the previous section. A coarser
+  map costs accuracy.
+
+`param/mid360_legged_low_resource.yaml` collects the knobs for a Go2-class robot with
+odometry ([measured](mid360_legged_jetson.md#low-resource-preset)); for another
+platform copy its parameter file and change only the rows above that held for you,
+one at a time, against a replay with ground truth
+([benchmark.md](benchmark.md#boreas-with-the-small-computer-knobs) has the Boreas
+commands).
+
 ## Symptom: NDT Does Not Correct the Pose on a Large Map
 
 Without a crop, the NDT voxel grid spans the bounding box of the whole map, and NDT
