@@ -9,8 +9,8 @@
     <img alt="build" src="https://github.com/rsasaki0109/lidar_localization_ros2/actions/workflows/main.yml/badge.svg">
   </a>
   <img alt="ROS 2 Jazzy" src="https://img.shields.io/badge/ROS%202-Jazzy-2563eb">
-  <img alt="ROS 2 Humble" src="https://img.shields.io/badge/ROS%202-Humble-compatible-1f5b99">
-  <img alt="ROS 2 Foxy" src="https://img.shields.io/badge/ROS%202-Foxy-best--effort-64748b">
+  <img alt="ROS 2 Humble" src="https://img.shields.io/badge/ROS%202-Humble%20compatible-1f5b99">
+  <img alt="ROS 2 Foxy" src="https://img.shields.io/badge/ROS%202-Foxy%20best--effort-64748b">
   <img alt="License BSD 2 Clause" src="https://img.shields.io/badge/license-BSD--2--Clause-6b46c1">
 </p>
 
