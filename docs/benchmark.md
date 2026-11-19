@@ -526,6 +526,52 @@ What to keep in mind with this dataset (`boreas_prepare.py` handles the first th
   registration; it now has its own callback group
   ([imu_estimation.md](imu_estimation.md#validation-state-honest-limits)).
 
+### Global initialization on a 1 km square map
+
+This ROS 2 Jazzy run used the [Boreas dataset](https://www.boreas.utias.utoronto.ca/).
+The map used 521 scans from `boreas-2020-11-26-13-58`, selected at 8 m spacing
+along the route. Returns between 2 and 75 m were thinned to 0.35 m voxels and
+clipped to the local ENU bounds x = −1350 to −350 m, y = 900 to 1900 m. The
+binary PLY held 5,499,200 points along the surveyed roads. With the Boreas
+preset, the node reached `active` 2.1 s after process start, with a peak RSS of
+406 MiB. The 0.2 m occupancy grid was 5000 × 5000 cells.
+
+Query scans came from the separate `boreas-2021-09-02-11-42` run, at 344.402,
+368.979, 387.439, 415.854, 445.514, 470.506, and 491.351 s from its first LiDAR
+scan. Returns within 80 m were thinned to 0.25 m voxels and levelled using
+ground-truth roll and pitch. The local search used a 140 m square occupancy
+window centred 10 m east, west, north, or south of the true position, clipped at the map
+boundary. BBS used up to 512 points from −0.5 to 4 m in the levelled scan and
+searched all headings at 5° steps. NDT refined and ranked 16 candidates with a
+60 m scan range, and seeded their height at 1.66 m above the estimated ground.
+The direct NDT comparison used the true height and heading with the same four
+XY offsets.
+
+Success here means the single-scan result had position error below 2 m and yaw
+error below 0.05 rad (2.9°). The BBS rows use the highest-ranked candidate.
+
+| Method | Success | Position error | Median query time |
+| --- | ---: | --- | ---: |
+| Direct NDT from a 10 m offset | 0/28 | 9.45 m median over all trials | |
+| BBS near the 10 m offset, then NDT | 24/28 | 0.11 m median among successes | 8.3 s |
+| Full-map BBS with no prior, then NDT | 6/7 | 0.11 m median among successes | 59.4 s |
+
+All four local-search misses came from the same scan at 445.514 s. It was
+about 41 m from the map boundary, and about 11% of the points within the 60 m
+scoring range lay outside the map. BBS ranked a pose within 0.6 m horizontally
+of the truth first for all four offsets. NDT refined that pose to within 3 cm, but its
+fitness was about 13.2, so other poses ranked above it. The full-map query
+ranked a pose about 810 m away first. At the true pose, removing the points
+outside the map reduced the NDT fitness from 13.19 to 0.13. Rerunning the east
+offset with the scan capped at 35 m put the correct candidate first with
+0.12 m error.
+
+In a separate Quickstart check, the east-offset window at 415.854 s initialized
+from two distinct real scans with 0.08 m error. At the boundary site, Quickstart
+rejected the candidates and requested manual initialization after six
+queries. These checks used held scans and cover initialization. Continuous
+tracking after initialization was outside this run.
+
 ### Soak and fault injection
 
 `soak_replay.py` runs one localizer for an hour on the 120 s fixture, played lap after
