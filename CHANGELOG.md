@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+**Upgrading:** `param/mid360_legged.yaml` and the `mid360` quickstart profile now set
+`imu_accel_scale: 9.80665`. If your MID-360 driver publishes acceleration in m/s^2
+instead of g (`livox_ros_driver2` publishes g), set it back to `1.0`: the localizer does
+not detect the unit.
+
+### Fixed
+
+- **`mid360_legged.yaml` and the `mid360` quickstart profile read the MID-360 IMU as
+  m/s^2**: `livox_ros_driver2` publishes g, and only `mid360_legged_low_resource.yaml`
+  converted it. On EIL_Stairs (RKO-LIO running) the RMSE fell from 0.20-0.27 to
+  0.12-0.14 m; a bag already in m/s^2 (Koide) needs `1.0`
+  ([benchmark.md](docs/benchmark.md#imu-acceleration-units)).
+
+### Documentation
+
+- **Running on small computers** ([troubleshooting.md](docs/troubleshooting.md#running-on-small-computers)):
+  the low-resource knobs as a platform-neutral list with their measured effect on a
+  Go2, a handheld MID-360 and a Velodyne vehicle, and when they are unsafe. On Boreas
+  (no odometry) only a coarser scan voxel saved CPU (2.0 m: 10-20% for 2% RMSE); fewer
+  threads and iterations saved none, and the pose timer raised the RMSE to 0.55 m
+  ([benchmark.md](docs/benchmark.md#boreas-with-the-small-computer-knobs)).
+
 ## 1.11.0 - 2026-11-18
 
 **Upgrading:** no configuration needs changing on Humble or Jazzy, and every new

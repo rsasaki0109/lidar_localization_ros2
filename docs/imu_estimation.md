@@ -100,7 +100,7 @@ component that feeds itself must not be able to diverge unbounded.
 | `use_imu` | `false` | Removed in 1.8.0 with the legacy deskew; `true` makes configuration fail |
 | `use_imu_preintegration` | `true` | Use the guarded preintegration smoother from `/imu` |
 | `imu_preintegration_use_base_frame_transform` | `false` | Transform IMU samples into the base frame before integrating |
-| `imu_accel_scale` | `1.0` | Multiply incoming acceleration before integration; use `9.80665` only for drivers/bags that publish acceleration in `g` rather than m/s² |
+| `imu_accel_scale` | `1.0` | Multiply incoming acceleration before integration; the localizer does not detect the unit. Use `9.80665` for drivers/bags that publish acceleration in `g` rather than m/s² (`livox_ros_driver2` on the MID-360: the MID-360 presets and the `mid360` quickstart profile set it); at `1.0` such an IMU reads gravity as 0.1 m/s², and the preintegration drifts |
 | `imu_dual_queue_enabled` | `true` | LIO-SAM-style optimization/prediction queues with correction-time repropagation and velocity/bias retention; set `false` only for the legacy single-stream A/B baseline |
 
 ### Seed safety and correction guards

@@ -13,7 +13,9 @@ Requirements:
 
 The MID-360 may be mounted upside down, as on the JEPLO Go2. The odometry
 levels its frame with gravity at startup, and the IMU's acceleration in g is
-detected and converted.
+detected and converted. The localizer does not detect the unit: the `mid360`
+profile and the MID-360 presets set `imu_accel_scale: 9.80665` (the driver's
+acceleration is in g); with a driver that publishes m/s^2, set it to `1.0`.
 
 ## 1. Build a map (once)
 
