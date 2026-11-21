@@ -700,6 +700,137 @@ class TestStartupPolicy(unittest.TestCase):
         )
         self.assertEqual(fixed.reason, "global_consensus_mismatch_retry")
 
+    def _refined_pair(self, params, second_pose, refined=(True, True)):
+        """Two gated fixes 1 s apart while the robot stood still."""
+        gated = {
+            "query_candidate_scores": (0.95, 0.70),
+            "query_candidate_age_sec": 1.0,
+            "query_odom_pose": (0.0, 0.0, 0.0),
+        }
+        start = MODEL.decide_startup(params, MODEL.StartupState(), self.obs(0.0))
+        first = MODEL.decide_startup(
+            params,
+            start.state,
+            self.obs(
+                1.0,
+                query_top_pose=(1.44, 0.02, math.radians(-174.0)),
+                query_scan_stamp_sec=10.0,
+                query_top_refined=refined[0],
+                **gated,
+            ),
+        )
+        self.assertEqual(first.reason, "global_consensus_primed")
+        return MODEL.decide_startup(
+            params,
+            first.state,
+            self.obs(
+                2.0,
+                query_top_pose=second_pose,
+                query_scan_stamp_sec=11.0,
+                query_top_refined=refined[1],
+                **gated,
+            ),
+        )
+
+    def test_refined_fixes_must_agree_closely(self):
+        # Go2 on the EIL_Box map, scans of EIL_Mix: the second query's NDT-refined
+        # top was 1.8 m along the room from the first, right, one.
+        aliased = (-0.35, 0.10, math.radians(-176.0))
+        rejected = self._refined_pair(self.params, aliased)
+        self.assertEqual(rejected.reason, "global_consensus_mismatch_retry")
+        close = (1.10, 0.05, math.radians(-172.0))
+        self.assertEqual(
+            self._refined_pair(self.params, close).action, MODEL.ACTION_PUBLISH_GLOBAL
+        )
+        turned = (1.40, 0.05, math.radians(166.0))
+        self.assertEqual(
+            self._refined_pair(self.params, turned).reason,
+            "global_consensus_mismatch_retry",
+        )
+        # A fix NDT did not refine keeps the wide bound, as does turning it off.
+        self.assertEqual(
+            self._refined_pair(self.params, aliased, refined=(True, False)).action,
+            MODEL.ACTION_PUBLISH_GLOBAL,
+        )
+        wide = replace(
+            self.params,
+            global_consensus_refined_translation_m=-1.0,
+            global_consensus_refined_yaw_deg=-1.0,
+        )
+        self.assertEqual(
+            self._refined_pair(wide, aliased).action, MODEL.ACTION_PUBLISH_GLOBAL
+        )
+
+    def test_refined_bound_never_widens_the_consensus(self):
+        params = replace(
+            self.params,
+            global_consensus_refined_translation_m=5.0,
+            global_consensus_refined_yaw_deg=90.0,
+        )
+        self.assertEqual(MODEL.consensus_bounds(params, True), (2.0, 20.0))
+        self.assertEqual(MODEL.consensus_bounds(self.params, False), (2.0, 20.0))
+        self.assertIsNotNone(
+            MODEL.validate_startup_params(
+                replace(self.params, global_consensus_refined_yaw_deg=200.0)
+            )
+        )
+
+    def test_refined_alternative_counts_nearby_places_and_turns(self):
+        # Go2 on the EIL_Box map, scans of EIL_Stairs: the refined top is the room
+        # turned by 180 degrees; the right pose is the same place the other way.
+        top = {
+            "x": -0.14,
+            "y": -0.04,
+            "yaw_deg": 0.0,
+            "registration_fitness": 0.136,
+            "registration_refined": True,
+        }
+        same = dict(top, x=0.20, registration_fitness=0.10)
+        turned = dict(top, yaw_deg=178.0, registration_fitness=0.20)
+        along = dict(top, x=-3.40, registration_fitness=0.30)
+        unrefined = dict(along, registration_fitness=0.05, registration_refined=False)
+        alternative = MODEL.refined_alternative_registration_fitness
+        self.assertEqual(alternative([top, same, turned, along], 1.0, 20.0), 0.20)
+        self.assertEqual(alternative([top, along, unrefined], 1.0, 20.0), 0.30)
+        self.assertIsNone(alternative([top, same], 1.0, 20.0))
+        self.assertIsNone(alternative([top, turned], -1.0, 20.0))
+        self.assertIsNone(
+            alternative([dict(top, registration_refined=False), turned], 1.0, 20.0)
+        )
+        # Five metres away counts too: the 5 m check stays as it was.
+        self.assertIsNone(
+            MODEL.alternative_registration_fitness([top, turned, along], 5.0)
+        )
+
+    def test_nearby_refined_alternative_makes_a_fix_ambiguous(self):
+        gated = {
+            "query_candidate_scores": (0.97, 0.96),
+            "query_candidate_age_sec": 1.0,
+            "query_top_pose": (-0.14, -0.04, 0.0),
+            "query_scan_stamp_sec": 10.0,
+            "query_odom_pose": (0.0, 0.0, 0.0),
+            "query_top_refined": True,
+            "query_top_registration_fitness": 0.136,
+            "query_alternative_registration_fitness": 0.413,
+        }
+        start = MODEL.decide_startup(self.params, MODEL.StartupState(), self.obs(0.0))
+        clear = MODEL.decide_startup(self.params, start.state, self.obs(1.0, **gated))
+        self.assertEqual(clear.reason, "global_consensus_primed")
+        turned = MODEL.decide_startup(
+            self.params,
+            start.state,
+            self.obs(1.0, query_refined_alternative_registration_fitness=0.20, **gated),
+        )
+        self.assertEqual(turned.reason, "ambiguous_registration_retry")
+        # Still remembered, so a later gated fix of the same place can confirm it.
+        self.assertFalse(turned.state.consensus_odom_anchors[0].gated)
+        distinct = MODEL.decide_startup(
+            self.params,
+            start.state,
+            self.obs(1.0, query_refined_alternative_registration_fitness=0.40, **gated),
+        )
+        self.assertEqual(distinct.reason, "global_consensus_primed")
+
     def test_retry_waits_for_a_new_view_with_odometry(self):
         params = MODEL.StartupParams()
         sees = MODEL.retry_sees_new_view

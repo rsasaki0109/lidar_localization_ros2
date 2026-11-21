@@ -335,6 +335,13 @@ class StartupParams:
     # A fix's heading error (G2 searches in 5 degree steps) grows into a position
     # error along the distance travelled, so widen the match by this per metre.
     global_consensus_translation_per_odom_m: float = 0.05
+    # Two fixes whose poses NDT refined (G2 --refine-global-candidates, or its
+    # sparse-band search) are not quantized to the 5-degree yaw samples, so they
+    # must agree this closely instead: an aliased place 1-2 m along a room, or the
+    # room turned by 180 degrees, otherwise confirms a wrong fix (Go2, JEPLO, a map
+    # from another session). Negative values fall back to the bounds above.
+    global_consensus_refined_translation_m: float = 0.5
+    global_consensus_refined_yaw_deg: float = 10.0
     # An answer from a place at least this far (by odometry) from the previous
     # answer is new evidence, so it gives its attempt back; a stationary robot
     # still stops after max_global_attempts. max_global_queries bounds the total.
@@ -357,6 +364,13 @@ class StartupParams:
     # the same pose, so they are not alternatives. A ratio of 0 disables the gate.
     max_registration_fitness_ratio: float = 0.5
     registration_alternative_min_separation_m: float = 5.0
+    # Refined candidates converge onto their own optimum, so one this far from
+    # the top, or turned this much, is another place even within the separation
+    # radius: a nearby aliased place along a room or the room turned by 180
+    # degrees. The top must also register clearly better than those (by the same
+    # ratio). Negative values turn the check off.
+    registration_refined_alternative_min_separation_m: float = 1.0
+    registration_refined_alternative_min_yaw_deg: float = 20.0
 
 
 def validate_startup_params(params: StartupParams) -> str | None:
@@ -370,6 +384,8 @@ def validate_startup_params(params: StartupParams) -> str | None:
         params.global_consensus_translation_m,
         params.global_consensus_yaw_deg,
         params.global_consensus_translation_per_odom_m,
+        params.global_consensus_refined_translation_m,
+        params.global_consensus_refined_yaw_deg,
         params.global_attempt_refund_travel_m,
         params.global_retry_new_view_travel_m,
         params.global_retry_new_view_turn_deg,
@@ -377,6 +393,8 @@ def validate_startup_params(params: StartupParams) -> str | None:
         params.registration_fitness_high_confidence_threshold,
         params.max_registration_fitness_ratio,
         params.registration_alternative_min_separation_m,
+        params.registration_refined_alternative_min_separation_m,
+        params.registration_refined_alternative_min_yaw_deg,
     )
     if not _finite(finite_values):
         return "startup thresholds must be finite"
@@ -418,6 +436,8 @@ def validate_startup_params(params: StartupParams) -> str | None:
         return "global_consensus_translation_m must be non-negative"
     if not 0.0 <= params.global_consensus_yaw_deg <= 180.0:
         return "global_consensus_yaw_deg must be between 0 and 180"
+    if params.global_consensus_refined_yaw_deg > 180.0:
+        return "global_consensus_refined_yaw_deg must be at most 180"
     return None
 
 
@@ -430,6 +450,8 @@ class OdomAnchor:
     scan_stamp_sec: float
     # Whether the fix passed the score, margin, and distinctiveness gates itself.
     gated: bool
+    # Whether NDT refined the fix's pose.
+    refined: bool = False
 
 
 @dataclass(frozen=True)
@@ -445,6 +467,7 @@ class StartupState:
     consensus_samples: int = 0
     consensus_pose: tuple[float, float, float] | None = None
     consensus_scan_stamp_sec: float | None = None
+    consensus_refined: bool = False
     # Earlier fixes that had odometry, newest last.
     consensus_odom_anchors: tuple[OdomAnchor, ...] = ()
 
@@ -463,8 +486,13 @@ class StartupObservation:
     query_scan_stamp_sec: float | None = None
     query_top_registration_fitness: float | None = None
     query_alternative_registration_fitness: float | None = None
+    # Best fitness of a refined candidate at another pose near the refined top
+    # (refined_alternative_registration_fitness); None when the top is not refined.
+    query_refined_alternative_registration_fitness: float | None = None
     # odom -> base at this query's scan; None when odometry is unavailable.
     query_odom_pose: tuple[float, float, float] | None = None
+    # Whether NDT refined the top candidate's pose (G2 registration_refined).
+    query_top_refined: bool = False
     diagnostic_fresh: bool = False
     tracking_good: bool = False
     fitness: float | None = None
@@ -694,6 +722,46 @@ def alternative_registration_fitness(
     return best
 
 
+def refined_alternative_registration_fitness(
+    candidates: Sequence[dict],
+    min_separation_m: float,
+    min_yaw_deg: float,
+    index: int = 0,
+) -> float | None:
+    """Best finite NDT fitness among refined candidates at another pose than ``index``.
+
+    Only for a refined candidate ``index``; another pose is ``min_separation_m``
+    away or turned by ``min_yaw_deg``. A negative bound turns the check off.
+    """
+    if min_separation_m < 0.0 or min_yaw_deg < 0.0 or index >= len(candidates):
+        return None
+    reference = candidates[index]
+    if not reference.get("registration_refined"):
+        return None
+    best = None
+    for other_index, candidate in enumerate(candidates):
+        if other_index == index or not candidate.get("registration_refined"):
+            continue
+        fitness = candidate.get("registration_fitness")
+        if fitness is None or not math.isfinite(float(fitness)):
+            continue
+        separation = math.hypot(
+            float(candidate["x"]) - float(reference["x"]),
+            float(candidate["y"]) - float(reference["y"]),
+        )
+        turn = math.degrees(
+            _angle_error_rad(
+                math.radians(float(candidate["yaw_deg"])),
+                math.radians(float(reference["yaw_deg"])),
+            )
+        )
+        if separation < min_separation_m and turn < min_yaw_deg:
+            continue
+        if best is None or float(fitness) < best:
+            best = float(fitness)
+    return best
+
+
 def registration_distinctiveness_judged(
     params: StartupParams,
     top_fitness: float | None,
@@ -729,18 +797,32 @@ def registration_ambiguous(
     return top_fitness > ratio * alternative_fitness
 
 
+def consensus_bounds(params: StartupParams, refined: bool) -> tuple[float, float]:
+    """Translation (m, before the per-metre term) and yaw (deg) two fixes must meet."""
+    translation = params.global_consensus_translation_m
+    yaw = params.global_consensus_yaw_deg
+    if refined:
+        if params.global_consensus_refined_translation_m >= 0.0:
+            translation = min(
+                translation, params.global_consensus_refined_translation_m
+            )
+        if params.global_consensus_refined_yaw_deg >= 0.0:
+            yaw = min(yaw, params.global_consensus_refined_yaw_deg)
+    return translation, yaw
+
+
 def _consensus_consistent(
     params: StartupParams,
     pose: tuple[float, float, float],
     reference: tuple[float, float, float],
     travelled_m: float = 0.0,
+    refined: bool = False,
 ) -> bool:
+    translation, yaw = consensus_bounds(params, refined)
     return (
         math.hypot(pose[0] - reference[0], pose[1] - reference[1])
-        <= params.global_consensus_translation_m
-        + params.global_consensus_translation_per_odom_m * travelled_m
-        and math.degrees(_angle_error_rad(pose[2], reference[2]))
-        <= params.global_consensus_yaw_deg
+        <= translation + params.global_consensus_translation_per_odom_m * travelled_m
+        and math.degrees(_angle_error_rad(pose[2], reference[2])) <= yaw
     )
 
 
@@ -775,6 +857,7 @@ def _odom_agreements(
                 obs.query_odom_pose[0] - anchor.odom_pose[0],
                 obs.query_odom_pose[1] - anchor.odom_pose[1],
             ),
+            refined=anchor.refined and obs.query_top_refined,
         )
         for anchor in state.consensus_odom_anchors
     )
@@ -796,6 +879,7 @@ def _remember_odom_fix(
         odom_pose=obs.query_odom_pose,
         scan_stamp_sec=obs.query_scan_stamp_sec,
         gated=gated,
+        refined=obs.query_top_refined,
     )
     return replace(
         state,
@@ -935,10 +1019,17 @@ def decide_startup(
             and scores[0] - scores[1] < params.min_score_margin
         ):
             return _query(params, retry_state, obs.now_sec, "ambiguous_candidate_retry")
-        if not high_confidence and registration_ambiguous(
-            params,
-            obs.query_top_registration_fitness,
-            obs.query_alternative_registration_fitness,
+        if not high_confidence and (
+            registration_ambiguous(
+                params,
+                obs.query_top_registration_fitness,
+                obs.query_alternative_registration_fitness,
+            )
+            or registration_ambiguous(
+                params,
+                obs.query_top_registration_fitness,
+                obs.query_refined_alternative_registration_fitness,
+            )
         ):
             return _query(
                 params, retry_state, obs.now_sec, "ambiguous_registration_retry"
@@ -981,6 +1072,7 @@ def decide_startup(
                 consensus_samples=1,
                 consensus_pose=obs.query_top_pose,
                 consensus_scan_stamp_sec=obs.query_scan_stamp_sec,
+                consensus_refined=obs.query_top_refined,
             )
             if params.global_consensus_samples > 1:
                 return _query(params, primed, obs.now_sec, "global_consensus_primed")
@@ -991,13 +1083,17 @@ def decide_startup(
             ):
                 return StartupDecision(ACTION_WAIT, "awaiting_fresh_global_scan", state)
             if not _consensus_consistent(
-                params, obs.query_top_pose, state.consensus_pose
+                params,
+                obs.query_top_pose,
+                state.consensus_pose,
+                refined=state.consensus_refined and obs.query_top_refined,
             ):
                 restarted = replace(
                     state,
                     consensus_samples=1,
                     consensus_pose=obs.query_top_pose,
                     consensus_scan_stamp_sec=obs.query_scan_stamp_sec,
+                    consensus_refined=obs.query_top_refined,
                 )
                 return _query(
                     params, restarted, obs.now_sec, "global_consensus_mismatch_retry"
@@ -1007,6 +1103,7 @@ def decide_startup(
                 consensus_samples=state.consensus_samples + 1,
                 consensus_pose=obs.query_top_pose,
                 consensus_scan_stamp_sec=obs.query_scan_stamp_sec,
+                consensus_refined=obs.query_top_refined,
             )
             if agreed.consensus_samples < params.global_consensus_samples:
                 return _query(params, agreed, obs.now_sec, "global_consensus_pending")

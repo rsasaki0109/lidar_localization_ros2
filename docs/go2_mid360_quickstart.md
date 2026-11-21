@@ -125,12 +125,18 @@ lidar_slam_ros2 map of a separate run ([benchmark](benchmark.md)):
     part of the sensor covered in the Mask runs): all 8 runs started right after
     7.6-10.0 s. Tracking stayed at 0.02-0.03 m (median) but EIL_Stairs ran up to 1.3 m off
     for 18 s, which it did not on its own map.
-  - Failures: on the EIL_Box map (a large box platform in the middle of the
+  - Failures in v1.11.0: on the EIL_Box map (a large box platform in the middle of the
     near-symmetric room) 4 of 6 starts on other runs were 1.05-5.50 m off, and even its
     own run once asked for a manual pose. On the Long_Stairs map, which lacks the props,
     the EIL runs mostly started right (5 of 6) but tracking slid 1-2.5 m along the room
     for up to 40 s, and EIL_Mask1 once asked for a manual pose and once started 1.7 m
     off. If the room has changed, check the first pose, or rebuild the map.
+  - Since then two NDT-refined answers must agree within 0.5 m and 10 degrees, and one
+    must register clearly better than a refined candidate 1 m away or turned around.
+    Rerun on 2026-11-19: no wrong start in 28 runs (4 before), 24 right (20), 4 manual
+    poses (4), first pose after a median 11.0 s (10.3 s)
+    ([details](benchmark.md#why-the-wrong-starts-passed-and-the-fix)). Tracking can
+    still slide along the room on the Long_Stairs map.
 
 More: [quickstart and automatic initialization](quickstart.md),
 [troubleshooting](troubleshooting.md), [frames](frame_contract.md).

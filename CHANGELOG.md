@@ -7,6 +7,22 @@
 instead of g (`livox_ros_driver2` publishes g), set it back to `1.0`: the localizer does
 not detect the unit.
 
+### Changed
+
+- **Global initialization rejects aliased NDT-refined answers.** With
+  `--refine-global-candidates` or the sparse-band search (Unitree Go2), two answers must
+  agree within 0.5 m and 10 degrees instead of 2 m and 20
+  (`global_consensus_refined_translation_m`, `global_consensus_refined_yaw_deg`), and
+  the top must register at most half as well as the best refined candidate 1 m away or
+  turned 20 degrees, not only one 5 m away
+  (`registration_refined_alternative_min_separation_m`, `_min_yaw_deg`). G2 answers mark
+  such candidates `registration_refined`. On the Go2 cross-session replays this took
+  wrong starts from 4 of 28 runs to 0, with 24 right starts instead of 20, the same 4
+  manual poses, and the first pose after a median 11.0 s instead of 10.3 s; replaying
+  G2 answers from 889 start points, wrong starts fell from 154 to 41 and manual poses
+  rose from 29 to 98 ([benchmark.md](docs/benchmark.md#why-the-wrong-starts-passed-and-the-fix)).
+  Unrefined answers are checked as before; negative values turn either check off.
+
 ### Fixed
 
 - **`mid360_legged.yaml` and the `mid360` quickstart profile read the MID-360 IMU as
