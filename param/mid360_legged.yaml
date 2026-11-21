@@ -43,7 +43,8 @@
     # IMU preintegration backend and input units
     use_imu_preintegration: true
     imu_preintegration_use_base_frame_transform: true
-    imu_accel_scale: 1.0
+    # livox_ros_driver2 publishes the MID-360 acceleration in g; 1.0 for m/s^2.
+    imu_accel_scale: 9.80665
     imu_dual_queue_enabled: true
 
     # IMU seed safety gates

@@ -157,6 +157,14 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
         self.assertIn("--imu-frame livox_imu_frame", doctor_command)
         self.assertIn("--require-imu-base-tf", doctor_command)
 
+    def test_mid360_profile_converts_livox_acceleration_from_g(self):
+        params = config_tool.make_params(args(profile="mid360", output="/tmp/m.yaml"))
+        self.assertAlmostEqual(params["imu_accel_scale"], 9.80665)
+
+    def test_other_profiles_keep_acceleration_in_m_per_s2(self):
+        params = config_tool.make_params(args(profile="nav2", output="/tmp/n.yaml"))
+        self.assertEqual(params["imu_accel_scale"], 1.0)
+
     def test_mid360_preintegration_can_be_disabled_explicitly(self):
         tool_args = args(profile="mid360", imu_mode="off", output="/tmp/mid360.yaml")
         params = config_tool.make_params(tool_args)

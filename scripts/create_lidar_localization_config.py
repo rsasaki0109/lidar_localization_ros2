@@ -62,6 +62,8 @@ PROFILE_DEFAULTS: dict[str, dict[str, object]] = {
         "local_map_radius": 80.0,
         "imu_mode": "preintegration",
         "imu_preintegration_use_base_frame_transform": True,
+        # livox_ros_driver2 publishes the MID-360 acceleration in g.
+        "imu_accel_scale": 9.80665,
     },
 }
 SUPPORTED_MAP_SUFFIXES = {".pcd", ".ply"}
@@ -211,6 +213,7 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         "twist_prediction_use_angular_velocity": False,
         "max_twist_prediction_dt": _arg_or_profile(args, "max_twist_prediction_dt"),
         "use_imu_preintegration": imu_mode == "preintegration",
+        "imu_accel_scale": PROFILE_DEFAULTS[args.profile].get("imu_accel_scale", 1.0),
         "imu_preintegration_use_base_frame_transform": use_imu_preintegration_base_frame_transform(
             args
         ),

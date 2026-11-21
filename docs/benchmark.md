@@ -826,6 +826,46 @@ one, and returns the freed memory to the OS:
 its pose, at the median, p95 and most, and how many poses came over 200 ms late.
 
 
+## Boreas with the small-computer knobs
+
+The knobs of [the low-resource preset](mid360_legged_jetson.md#low-resource-preset) that
+need no odometry, on the vehicle case: the 120 s fixture of the Boreas section above,
+`boreas_ndt_velodyne.yaml` (no IMU, 1.5 m voxel, 8 NDT threads, 25 iterations, no pose
+timer), the localizer pinned to two cores with `taskset` as in the budget below, replays
+at 1x on 2026-11-19, 1158 scans, all aligned. Boreas has no wheel odometry, so the
+seed is the localizer's own motion model. CPU is CPU seconds per second of data and per
+scan; latency is the median / p95 / largest from the control node receiving a cloud to
+receiving its pose.
+
+```bash
+python3 tools/benchmark/boreas_replay.py FIXTURE OUT --ws WS \
+  --wrap "budget.sh 2,3 0" --set voxel_leaf_size=2.0
+```
+
+| setting | RMSE / max (m) | cores | CPU ms/scan | peak RSS (MB) | latency (ms) |
+|---|---|---|---|---|---|
+| preset (2 runs) | 0.132 / 0.41 | 0.81, 0.84 | 83, 87 | 438, 448 | 27-28 / 84-88 / 228-244 |
+| `ndt_num_threads: 2` | 0.132 / 0.41 | 0.88 | 91 | 432 | 31 / 119 / 299 |
+| `ndt_num_threads: 1` | 0.132 / 0.41 | 0.90 | 94 | 441 | 37 / 148 / 384 |
+| `ndt_max_iterations: 15` | 0.132 / 0.40 | 0.77 | 80 | 457 | 28 / 71 / 227 |
+| 2 threads, 15 iterations (2 runs) | 0.132 / 0.40 | 0.88, 0.93 | 91, 96 | 427-428 | 32-34 / 105-122 / 338-346 |
+| `voxel_leaf_size: 2.0` (2 runs) | 0.135 / 0.47 | 0.64, 0.76 | 67, 79 | 457, 466 | 21-25 / 55-73 / 203-269 |
+| 2 threads, 15 iterations, voxel 2.0 (2 runs) | 0.135 / 0.47 | 0.78, 0.81 | 81, 84 | 425-431 | 25-26 / 84-88 / 214-287 |
+| `voxel_leaf_size: 1.0` | 0.134 / 0.69 | 1.05 | 109 | 451 | 41 / 137 / 392 |
+| `enable_timer_publishing` (30 Hz) | 0.551 / 2.04 | 0.74 | 77 | 452 | |
+
+- **Only the scan voxel saved CPU**: 2.0 m took 10-20% off (the two runs differ by
+  more than the 5% of run-to-run noise on the shared host, but both are below both
+  baselines) for 2% RMSE. Threads and iterations saved none and fewer threads cost
+  latency: the localizer with 8 threads on two cores finished scans sooner than with 2
+  or 1.
+- **The pose timer is unsafe here**: with the timer, 4009 poses are published for the
+  1158 scans, the extrapolated ones scored against the ground truth (likely the cause),
+  RMSE 0.551 m. The preset's timer is off.
+- Within the 10% accuracy bound: voxel 2.0 (+2%), 1.0 (+2%), and threads or iterations
+  (0%). The latency columns are not comparable across hosts; the Orin has not been
+  measured.
+
 ## Low-resource budget (Go2, MID-360)
 
 For a Jetson Orin Nano/NX on a Unitree Go2 or G1, shared with perception: how much
@@ -933,6 +973,27 @@ Without odometry the localizer seeds from its own motion model. The 0.5 m scan t
 locked onto the wrong stair level (1.5 m up) for seconds, with a good fitness, and
 two threads, 15 iterations and a 20-scan window lost the robot (13 m off at 19 s).
 Do not cut below `mid360_legged.yaml` without odometry.
+
+### IMU acceleration units
+
+`livox_ros_driver2` publishes the MID-360 acceleration in g, and the localizer does not
+detect the unit: `imu_accel_scale` multiplies it. `mid360_legged.yaml` shipped
+`1.0` (as the low-resource preset shipped `9.80665`) until 2026-11-19. With
+`mid360_legged.yaml` on the JEPLO EIL_Stairs bag (IMU in g), RKO-LIO running as the
+odometry (its TF unused, `use_odom_tf_prediction` off), pinned to two cores, two runs each:
+
+| `imu_accel_scale` | RMSE / max (m) |
+|---|---|
+| `1.0` (before) | 0.197 / 1.64, 0.271 / 1.52 |
+| `9.80665` (after) | 0.117 / 0.33, 0.139 / 1.78 |
+
+CPU is the same (0.19-0.21 cores, 100 MB). Without the odometry's `odom` frame in the TF
+tree (the first attempt, which had no companion) both values did worse (5.4 and 1.0 m)
+because `enable_map_odom_tf` needs the frame; that is a harness issue, not the unit.
+On the Koide `outdoor_hard_02b` bag, whose IMU is in m/s^2, `mid360_legged.yaml` with
+odometry seeding and no pose timer gave 0.242 m at `1.0` and 0.873 m at `9.80665` (on the
+map 0.193 and 0.195 m, off it 0.32 and 1.55 m): a driver in m/s^2 needs `1.0`, so
+set it to match the driver, with `--set imu_accel_scale=1.0` for the Koide replays.
 
 ### Under a CPU quota and a memory limit
 
