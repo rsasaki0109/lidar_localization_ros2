@@ -458,6 +458,17 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
         ),
     )
     tuning.add_argument(
+        "--seed-correction-window-sec",
+        type=float,
+        default=0.0,
+        help=advanced(
+            "with odometry prediction, reject a scan when the corrections accepted "
+            "within this many seconds would move the pose more than 0.3 m from the "
+            "odometry; stops slides along a weakly constrained axis "
+            "(0: off; docs/benchmark.md)"
+        ),
+    )
+    tuning.add_argument(
         "--global-cpp-backend",
         action=BooleanOptionalAction,
         default=True,
@@ -635,6 +646,8 @@ def _config_args(args, cloud_topic: str, imu_topic: str):
         argv.append("--use-sim-time")
     if args.odom_tf_prediction:
         argv.append("--odom-tf-prediction")
+    if args.seed_correction_window_sec > 0.0:
+        argv.extend(["--seed-correction-window-sec", str(args.seed_correction_window_sec)])
     return config_tool.build_arg_parser().parse_args(argv)
 
 

@@ -112,6 +112,25 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
         self.assertFalse(default["use_odom_tf_prediction"])
         self.assertNotIn("--require-odom-base-tf", config_tool.doctor_command(args()))
 
+    def test_seed_correction_window_guard_is_opt_in_with_odometry(self):
+        self.assertFalse(
+            config_tool.make_params(args(odom_tf_prediction=True))[
+                "enable_seed_correction_window_guard"
+            ]
+        )
+        params = config_tool.make_params(
+            args(odom_tf_prediction=True, seed_correction_window_sec=2.0)
+        )
+        self.assertTrue(params["enable_seed_correction_window_guard"])
+        self.assertEqual(params["seed_correction_window_guard_sec"], 2.0)
+        self.assertEqual(params["seed_correction_window_guard_translation_m"], 0.3)
+        # Without odometry seeding there is nothing to hold the pose to.
+        self.assertFalse(
+            config_tool.make_params(args(seed_correction_window_sec=2.0))[
+                "enable_seed_correction_window_guard"
+            ]
+        )
+
     def test_relative_map_path_is_written_as_absolute_path(self):
         relative_path = "maps/site.pcd"
         params = config_tool.make_params(args(map_path=relative_path))
