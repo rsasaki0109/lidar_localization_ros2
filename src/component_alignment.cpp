@@ -159,6 +159,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
   if (odom_tf_bridge_available) {
     if (lidar_localization::isOdomSeedGap(last_odom_seed_stamp_sec_, scan_stamp_sec)) {
       settled_accepts_since_reset_ = 0;
+      seed_correction_window_.clear();
     }
     last_odom_seed_stamp_sec_ = scan_stamp_sec;
   }
@@ -689,6 +690,7 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
   lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
   std::uint64_t seed_generation)
 {
+  gate_scan_stamp_sec_ = scan_stamp_sec;
   const lidar_localization::AlignmentAttempt primary_attempt =
     runAlignmentAttempt(init_guess, init_guess, scan_stamp_sec, state_lock, seed_generation);
   if (!callback_state_coordinator_.initialPoseGenerationMatches(seed_generation)) {
@@ -765,16 +767,22 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
 lidar_localization::MeasurementGateDecision PCLLocalization::measurementGateDecisionFor(
   const lidar_localization::AlignmentAttempt & attempt) const
 {
-  return lidar_localization::evaluateMeasurementGate(
-    measurementGateParams(),
-    lidar_localization::makeMeasurementGateInput(
-      attempt.fitness_score,
-      attempt.accepted_gap_sec,
-      attempt.seed_translation_since_accept_m,
-      attempt.correction_translation_m,
-      attempt.correction_yaw_deg,
-      prediction_state_.consecutive_rejected_updates,
-      settled_accepts_since_reset_));
+  auto input = lidar_localization::makeMeasurementGateInput(
+    attempt.fitness_score,
+    attempt.accepted_gap_sec,
+    attempt.seed_translation_since_accept_m,
+    attempt.correction_translation_m,
+    attempt.correction_yaw_deg,
+    prediction_state_.consecutive_rejected_updates,
+    settled_accepts_since_reset_);
+  if (measurement_gate_config_.enable_seed_correction_window_guard && attempt.has_converged) {
+    input.window_correction_translation_m = seed_correction_window_.sumNormWith(
+      gate_scan_stamp_sec_,
+      attempt.final_transformation(0, 3) - attempt.init_guess(0, 3),
+      attempt.final_transformation(1, 3) - attempt.init_guess(1, 3),
+      measurement_gate_config_.seed_correction_window_guard_sec);
+  }
+  return lidar_localization::evaluateMeasurementGate(measurementGateParams(), input);
 }
 
 lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurementGateForAttempt(
@@ -783,6 +791,10 @@ lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurement
 {
   last_gated_correction_translation_m_ = attempt.correction_translation_m;
   last_gated_correction_yaw_deg_ = attempt.correction_yaw_deg;
+  last_gated_correction_map_dx_ = attempt.has_converged ?
+    attempt.final_transformation(0, 3) - attempt.init_guess(0, 3) : 0.0;
+  last_gated_correction_map_dy_ = attempt.has_converged ?
+    attempt.final_transformation(1, 3) - attempt.init_guess(1, 3) : 0.0;
   auto gate = measurementGateDecisionFor(attempt);
   if (gate.status_level == lidar_localization::kMeasurementGateWarn) {
     RCLCPP_WARN(

@@ -209,6 +209,7 @@ These keys are diagnostics only — they never change acceptance behavior.
 | `local_map_crop_too_small` | predicted pose is outside local map crop | wrong initial pose or map frame offset; re-send `/initialpose` |
 | `registration_not_converged` | NDT/GICP did not converge | initial pose too far from truth; try closer seed |
 | `fitness_score_over_threshold_rejected` | match quality too poor | fix initial pose, map alignment, or sensor frame |
+| `seed_correction_window_guard_rejected` | the corrections accepted within `seed_correction_window_guard_sec`, plus this scan's, would move the pose more than `seed_correction_window_guard_translation_m` from the odometry (opt-in) | expected while degraded scans pull the track along a weak axis; persistent streaks mean the odometry itself drifted |
 | `seed_correction_guard_rejected` | result jumped more than `seed_correction_guard_translation_m` / `_yaw_deg` from the seed (opt-in guard) | expected while an aliased match is suppressed; persistent streaks mean the seed itself drifted |
 | `recovery_retry_from_last_pose_recovered` | retry from last good pose succeeded | transient glitch; usually OK |
 | `gtsam_update_rejected` | backend smoother rejected the update | often follows repeated measurement rejects |
@@ -507,6 +508,14 @@ looks good; previous-delta prediction then extrapolates the jump.
   configs `0.1`) ends that warmup at once when the first accept after an initial pose
   corrected it by at most this much, so a known-good initial pose is held from the next scan
   ([experiments/post_init_jump](../experiments/post_init_jump/README.md)).
+- with external odometry, also enable `enable_seed_correction_window_guard` (quickstart:
+  `--seed-correction-window-sec 2`) when the slide happens over several scans, each one
+  within the guard: it rejects a scan when the corrections accepted within
+  `seed_correction_window_guard_sec` plus its own move the pose more than
+  `seed_correction_window_guard_translation_m` (horizontally) away from the prediction.
+  It shares the guard's warmup and release and reports
+  `seed_correction_window_guard_rejected`
+  ([benchmark.md](benchmark.md#why-tracking-slid-along-the-room-and-the-fix)).
 
 ## Symptom: Tracking Does Not Recover After Leaving the Map With External Odometry
 

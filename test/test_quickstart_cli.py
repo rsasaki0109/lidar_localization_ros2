@@ -736,6 +736,31 @@ class TestQuickstartCli(unittest.TestCase):
             generated = output.read_text(encoding="utf-8")
             self.assertIn("use_odom_tf_prediction: true", generated)
             self.assertIn("enable_map_odom_tf: true", generated)
+            self.assertIn("enable_seed_correction_window_guard: false", generated)
+
+    def test_seed_correction_window_reaches_generated_params(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            map_path = root / "site.pcd"
+            output = root / "generated.yaml"
+            map_path.write_bytes(b"pcd")
+            with contextlib.redirect_stdout(io.StringIO()):
+                result = QUICKSTART.main(
+                    [
+                        "--map",
+                        str(map_path),
+                        "--output",
+                        str(output),
+                        "--no-discover-topics",
+                        "--odom-tf-prediction",
+                        "--seed-correction-window-sec=2.0",
+                        "--dry-run",
+                    ]
+                )
+            self.assertEqual(result, 0)
+            generated = output.read_text(encoding="utf-8")
+            self.assertIn("enable_seed_correction_window_guard: true", generated)
+            self.assertIn("seed_correction_window_guard_sec: 2.0", generated)
 
     def test_next_step_mentions_stationary_search_with_route_crop(self):
         with tempfile.TemporaryDirectory() as directory:

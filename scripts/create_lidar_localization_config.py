@@ -280,6 +280,18 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         "seed_correction_guard_warmup_accepts": 5,
         "seed_correction_guard_exact_start_translation_m": 0.1,
         "seed_correction_guard_release_rejections": 30,
+        # Opt-in: also bound what the corrections accepted within this many
+        # seconds add up to (0.3 m), so degraded scans cannot slide the track
+        # away from the odometry a little at a time (docs/benchmark.md).
+        "enable_seed_correction_window_guard": bool(
+            getattr(args, "odom_tf_prediction", False)
+            and getattr(args, "seed_correction_window_sec", 0.0) > 0.0
+        ),
+        "seed_correction_window_guard_sec": max(
+            float(getattr(args, "seed_correction_window_sec", 0.0)), 0.0
+        )
+        or 1.0,
+        "seed_correction_window_guard_translation_m": 0.3,
         "global_frame_id": args.global_frame,
         "odom_frame_id": args.odom_frame,
         "base_frame_id": args.base_frame,
@@ -479,6 +491,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Seed scan matching from an external odom -> base TF (e.g. a LIO "
         "front end), publish map -> odom, and keep publishing the odometry-bridged "
         "pose while scan matching is rejected.",
+    )
+    parser.add_argument(
+        "--seed-correction-window-sec",
+        type=float,
+        default=0.0,
+        help="With --odom-tf-prediction: reject a scan when the corrections "
+        "accepted within this many seconds, plus its own, move the pose more than "
+        "0.3 m away from the odometry (0: off).",
     )
     parser.add_argument("--global-frame", default="map")
     parser.add_argument(

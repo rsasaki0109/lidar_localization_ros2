@@ -300,7 +300,110 @@ median 11.0 s (10.3 s before, max 17.5 s against 15.4 s): one or two more querie
 the first answers were aliased. The README GIF pair (Long_Stairs → Outdoor2) localized
 in 2 queries both times, as before. Tracking after a right start is unchanged; the
 Long_Stairs map still lets EIL_Box and EIL_Stairs slide up to 2-2.4 m along the room,
-which the startup cannot see.
+which the startup cannot see ([why, and the opt-in fix](#why-tracking-slid-along-the-room-and-the-fix)).
+
+#### Why tracking slid along the room, and the fix
+
+Measured 2026-11-21 and 22 on `fix/corridor-slide` (from `60adda3`), same machine and
+settings. To separate tracking from the startup, the slide was reproduced from a known
+pose: quickstart with `--initial-pose` set to the motion-capture pose 1 s into the bag,
+odometry and localizer started before the bag plays from there, and
+`enable_registration_localizability_diagnostics` on (it only reports the NDT Hessian).
+
+From the true pose, Long_Stairs → EIL_Box still slid to 1.8 and 2.7 m and
+Long_Stairs → EIL_Stairs to 1.3 and 2.2 m, so the startup was not the cause. What the
+runs show:
+
+- **The room is weak along its long axis everywhere, not only during the slide.** The
+  weakest direction of the NDT Hessian points along the room (x component 0.99 or more)
+  in every scan. With the pose right, its eigenvalue is 4-5 times below the next one and
+  about 1% of the strongest (median ratio 0.012, p5 0.006); once slid, 0.005. A
+  degeneracy threshold on that ratio flags the whole run or nothing, so it cannot tell a
+  slide from normal tracking.
+- **Degraded scans move the pose a little at a time, each within the guards.** In
+  EIL_Stairs at 15-17 s the Go2 walks past the stair module, which the Long_Stairs map
+  lacks: the scans fit worse (fitness 0.05-0.09 instead of 0.02, inlier ratio 0.89-0.94
+  instead of 0.98, 20-35% fewer NDT correspondences) and every one was accepted, each
+  moving the pose 0.03-0.17 m beyond the odometry prediction, all the same way. That is
+  under the 0.3 m seed correction guard and far under the fitness gate (6.0), and it
+  added up to 0.8 m in 1.2 s and 1.25 m in 2 s. In EIL_Box at 31 s and 50 s a burst of
+  scans with half the usual correspondences (23,000-30,000 instead of 52,000-66,000),
+  fitness 0.07-0.39 and an inlier ratio of 0.77-0.90 did the same faster.
+- **Then the guard holds the wrong pose.** The next well-fitting scans (fitness
+  0.005-0.02, inlier ratio 0.98-1.0) asked for the 0.4-0.9 m back, and the seed
+  correction guard rejected them as jumps; NDT then settled in a neighbouring optimum
+  1.2-1.6 m along the room (fitness 0.04-0.05 instead of 0.01) and stayed there until the
+  Go2 climbed a prop. When the slide was short (0.5 m at 31 s in EIL_Box) the guard
+  released after 30 rejections and the pose came back.
+- **The odometry mostly stayed right.** RKO-LIO's displacement over any 0.5, 1 or 3 s
+  window differed from the motion capture by 0.05-0.08 m (median) and 0.2 m (p95), so
+  it kept the pose that NDT left (also visible in the runs: while scans were rejected,
+  the error stayed where it was). It jumps by itself, though: in EIL_Box it went 0.9 m
+  along the room at 50 s, together with NDT, and about 1 m back at 62 s, and on the
+  stair module it moves 0.3-0.5 m back and forth now and then.
+
+**The fix** (opt-in): `enable_seed_correction_window_guard` bounds what the corrections
+accepted within `seed_correction_window_guard_sec`, plus the current one, add up to
+(horizontal norm of the map-frame sum, `seed_correction_window_guard_translation_m`,
+0.3 m). A pull back toward the odometry cancels earlier corrections and passes. It
+shares the seed correction guard's warmup and its release after 30 rejections in a row,
+and the quickstart turns it on with `--seed-correction-window-sec` when it seeds from
+odometry. The window length trades the two failure modes: a short one lets a sustained
+slide through at 0.3 m per window, a long one keeps NDT from following the odometry's
+own jumps.
+
+From the true pose (max / p95 xy, m; two runs, one for 3 s):
+
+| setting | Long_Stairs → EIL_Box | Long_Stairs → EIL_Stairs |
+|---|---|---|
+| before | 2.71, 1.82 / 1.76, 1.59 | 2.24, 1.31 / 1.68, 0.84 |
+| window 1 s | 0.69, 0.40 / 0.22, 0.21 | 1.02, 0.99 / 0.70, 0.65 |
+| **window 2 s** | **0.40, 0.40 / 0.21, 0.21** | **0.90, 0.55 / 0.27, 0.27** |
+| window 3 s | 0.97 / 0.61 | 0.55 / 0.29 |
+
+At 3 s EIL_Box could not follow the odometry's 1 m jump at 62 s. The remaining errors
+with 2 s are odometry jumps the per-scan guard holds for a moment.
+
+Live with global initialization and `--seed-correction-window-sec=2.0`, against the
+"after" runs of the previous section (median / p95 / max xy in m per run; "-" is a
+run that asked for a manual pose):
+
+| map → scans | before | window 2 s |
+|---|---|---|
+| Long_Stairs → EIL_Box | 0.09 / 0.70 / 0.94; 1.09 / 1.76 / 2.01 | 0.08 / 0.21 / 0.40; 0.08 / 0.21 / 0.40 |
+| Long_Stairs → EIL_Stairs | 0.81 / 1.90 / 2.40; - | -; 0.05 / 0.26 / 0.60 |
+| Long_Stairs → EIL_Mask1 | 0.08 / 0.39 / 0.80; 0.05 / 0.39 / 0.78 | 0.07 / 0.18 / 0.34; 0.05 / 0.27 / 0.36 |
+| Long_Stairs → Outdoor2 (0-165 s) | 0.02 / 0.04 / 0.07; 0.02 / 0.04 / 0.09 | 0.02 / 0.04 / 0.08; 0.02 / 0.04 / 0.07 |
+| EIL_Mix → EIL_Box | -; 0.03 / 0.09 / 0.65 | 0.03 / 0.09 / 0.45; 0.03 / 0.08 / 0.31 |
+| EIL_Mix → EIL_Stairs | 0.02 / 0.84 / 1.30; - | 0.02 / 0.12 / 0.54; 0.02 / 0.12 / 0.51 |
+| EIL_Mix → EIL_Mask1 | 0.02 / 0.06 / 0.17; 0.02 / 0.06 / 0.17 | 0.02 / 0.07 / 0.17; 0.02 / 0.06 / 0.17 |
+| EIL_Mix → EIL_Mask2 | 0.02 / 0.05 / 0.49; - | 0.02 / 0.04 / 0.23; 0.02 / 0.05 / 0.07 |
+| EIL_Box → EIL_Mix | 0.03 / 0.15 / 0.49; 0.03 / 0.17 / 0.75 | 0.03 / 0.10 / 0.43; 0.03 / 0.08 / 0.49 |
+| EIL_Box → EIL_Stairs | 0.02 / 0.60 / 0.79; 0.02 / 0.14 / 0.75; 0.02 / 0.24 / 0.69; 0.02 / 0.20 / 0.54 | 0.02 / 0.34 / 0.47; 0.03 / 2.87 / 3.12; 0.02 / 0.13 / 0.45; 0.02 / 0.14 / 0.45 |
+| EIL_Box → EIL_Mask1 | 0.03 / 0.11 / 0.79; 0.03 / 0.10 / 0.46 | 0.03 / 0.10 / 0.46; 0.03 / 0.08 / 0.17 |
+| *controls:* EIL_Box → EIL_Box | 0.02 / 0.05 / 0.20; 0.02 / 0.05 / 0.19 | 0.02 / 0.05 / 0.52; 0.02 / 0.05 / 0.33 |
+| EIL_Stairs → EIL_Stairs | 0.02 / 0.06 / 0.59; 0.02 / 0.06 / 0.30 | 0.02 / 0.06 / 0.35; 0.02 / 0.06 / 0.23 |
+| EIL_Mix → EIL_Mix | 0.02 / 0.06 / 0.27; 0.02 / 0.06 / 0.28 | 0.02 / 0.06 / 0.28; - |
+
+EIL_Box → EIL_Stairs has two more runs each way, run on the same day as the others. Every
+slide over 1 m is gone except one: in EIL_Box → EIL_Stairs run 2 RKO-LIO jumped 0.5 m
+at 105 s, the per-scan seed correction guard rejected 30 scans in a row while the
+window guard rejected one, and its release then accepted a 2.4 m aliased answer on the
+EIL_Box map (box platform where EIL_Stairs has the stair module). The other three runs
+of that pair stayed within 0.45-0.47 m (before: 0.54-0.79 m). On the own maps the
+window guard rejected no scan of EIL_Box and 16-19 of about 1,260 of EIL_Stairs; the
+EIL_Box control's max of 0.33-0.52 m against 0.19-0.20 m is therefore not the guard.
+Startups were not affected: 26 of 28 runs initialized, none wrong, two asked for a
+manual pose (four before, in other runs).
+
+Not verified: the window was chosen on the two Long_Stairs pairs it is measured on; two
+runs per pair, one machine, one robot and one odometry. It is off by default and only
+measured with RKO-LIO odometry seeding. The guard does not help when the odometry itself
+jumps, and it does not change the seed correction guard's release, which can still
+accept an aliased answer after 30 rejections in a row.
+To reproduce the live table, add `--seed-correction-window-sec=2.0` to the suite's
+`quickstart_args`; the start-from-truth runs used a scratch harness (quickstart
+`--dry-run --initial-pose`, then the printed launch command with the bag played from 1 s).
 
 To reproduce, build the maps as in [Rebuilding the JEPLO bags and self maps](#rebuilding-the-jeplo-bags-and-self-maps)
 (Outdoor2: `jeplo_to_pc2_bag.py ... bags_pc2_merged/Outdoor2_0-165s --duration 165`,

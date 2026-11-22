@@ -552,6 +552,12 @@ public:
   std::size_t settled_accepts_since_reset_{0};
   double last_gated_correction_translation_m_{std::numeric_limits<double>::infinity()};
   double last_gated_correction_yaw_deg_{std::numeric_limits<double>::infinity()};
+  // Windowed seed correction guard: map-frame horizontal correction of the last
+  // gated scan, the stamp of the scan being gated, and the accepted corrections.
+  double last_gated_correction_map_dx_{0.0};
+  double last_gated_correction_map_dy_{0.0};
+  double gate_scan_stamp_sec_{std::numeric_limits<double>::quiet_NaN()};
+  lidar_localization::SeedCorrectionWindow seed_correction_window_;
   double last_odom_seed_stamp_sec_{std::numeric_limits<double>::quiet_NaN()};
   // Lock order: localization state (when needed), then short twist history lock.
   std::mutex twist_history_mutex_;
