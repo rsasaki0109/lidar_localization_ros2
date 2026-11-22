@@ -6,6 +6,8 @@
   <description>ROS 2 LiDAR localization with Nav2 integration, replay helpers, and benchmarking tools.</description>
   <maintainer email="rsasaki0109@gmail.com">ryohei sasaki</maintainer>
   <license>BSD2.0</license>
+  <!-- third_party/bbs3d: 3D-BBS voxel maps, built into the optional bbs3d_cpp module. -->
+  <license file="third_party/bbs3d/LICENSE">MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

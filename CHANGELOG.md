@@ -25,6 +25,23 @@ not detect the unit.
 
 ### Added
 
+- **Opt-in 3D global search for multi-level maps** (`global_search_engine: bbs3d` on
+  the G2 node, default `bbs2d`; launch arg `g2_global_search_engine`; quickstart
+  `--global-search-engine bbs3d`). The map-wide search runs as a 3D branch-and-bound
+  over the voxel maps of [3D-BBS](https://github.com/KOKIAOKI/3d_bbs) (MIT, a small
+  CPU subset vendored in `third_party/bbs3d` with its licence) instead of on the 2D
+  occupancy grid, so a scan on the stairs or in the hall below a floor is not placed
+  on another level. It returns the 8 best poses at least 3 m apart
+  (`bbs3d_top_k`, `bbs3d_min_separation_m`), which the existing NDT refinement,
+  ranking and startup alternative checks then use; each search stops after 10 s
+  (`bbs3d_timeout_sec`) or 4 M open nodes (`bbs3d_max_queue_nodes`), and a query that
+  arrives while one runs is dropped. The voxel maps are built once per map load
+  (0.1 s and a few MB for the JEPLO maps; the node logs the build time and RSS). It
+  costs CPU (median 2-10 s per query on 4 threads against about 1-3 s for bbs2d) and
+  does not help with rooms aliased by 180 degrees. Built as the `bbs3d_cpp` module
+  whenever pybind11 is found (no new dependency); when the module or `map_path` is
+  missing the node logs an error and answers with bbs2d. Results and costs:
+  [global_localization.md](docs/global_localization.md#using-3d-bbs-global_search_engine-bbs3d).
 - **Opt-in windowed seed correction guard** (`enable_seed_correction_window_guard`,
   `seed_correction_window_guard_sec`, `seed_correction_window_guard_translation_m`;
   quickstart `--seed-correction-window-sec`, only with odometry prediction). It rejects

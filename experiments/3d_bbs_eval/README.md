@@ -6,7 +6,11 @@ the current G2 search, which runs branch-and-bound on a **2D** occupancy grid ma
 the 3D map and then refines and ranks the top candidates with NDT? The question comes
 from multi-level buildings (stairs, a room above a hall) where the 2D grid loses height.
 
-Nothing here is part of the package build or the runtime nodes. The results and the
+Nothing here is part of the package build or the runtime nodes. The engine that came out
+of it is the opt-in `global_search_engine: bbs3d` of the G2 node
+([docs](../../docs/global_localization.md#using-3d-bbs-global_search_engine-bbs3d));
+`eval_global_search.py --method g2 --config '{"global_search_engine": "bbs3d"}'` runs
+that path. The results and the
 recommendation are in
 [docs/global_localization.md](../../docs/global_localization.md#3d-bbs-as-a-g2-engine-evaluated-2026-11-21).
 

@@ -381,6 +381,23 @@ def generate_launch_description():
             description='Search again from the sensor plane up when the G2 height band '
                         'holds fewer 2D points than this (0 = off).'),
         DeclareLaunchArgument(
+            'g2_global_search_engine', default_value='bbs2d',
+            description='G2 map-wide search: bbs2d (2D occupancy grid) or bbs3d '
+                        '(3D-BBS voxel maps of map_path, for multi-level maps; '
+                        'docs/global_localization.md).'),
+        DeclareLaunchArgument(
+            'g2_bbs3d_top_k', default_value='8',
+            description='bbs3d: answers per query, each 3 m from a better one.'),
+        DeclareLaunchArgument(
+            'g2_bbs3d_timeout_sec', default_value='10.0',
+            description='bbs3d: hard time limit of one search.'),
+        DeclareLaunchArgument(
+            'g2_bbs3d_num_threads', default_value='4',
+            description='bbs3d: OpenMP threads of the search.'),
+        DeclareLaunchArgument(
+            'g2_bbs3d_min_level_res_m', default_value='0.5',
+            description='bbs3d: finest voxel edge (outdoor maps: 1.0).'),
+        DeclareLaunchArgument(
             'g2_use_cpp_backend', default_value='true',
             description='Use the compiled C++ BBS backend (bbs_cpp) when built; '
                         'falls back to the Python search if unavailable.'),
@@ -512,6 +529,15 @@ def generate_launch_description():
             'use_cpp_backend': ParameterValue(
                 LaunchConfiguration('g2_use_cpp_backend'), value_type=bool),
             'candidate_source': LaunchConfiguration('g2_candidate_source'),
+            'global_search_engine': LaunchConfiguration('g2_global_search_engine'),
+            'bbs3d_top_k': ParameterValue(
+                LaunchConfiguration('g2_bbs3d_top_k'), value_type=int),
+            'bbs3d_timeout_sec': ParameterValue(
+                LaunchConfiguration('g2_bbs3d_timeout_sec'), value_type=float),
+            'bbs3d_num_threads': ParameterValue(
+                LaunchConfiguration('g2_bbs3d_num_threads'), value_type=int),
+            'bbs3d_min_level_res_m': ParameterValue(
+                LaunchConfiguration('g2_bbs3d_min_level_res_m'), value_type=float),
             'reference_csv': LaunchConfiguration('g2_reference_csv'),
             'route_time_radius_sec': ParameterValue(
                 LaunchConfiguration('g2_route_time_radius_sec'), value_type=float),
