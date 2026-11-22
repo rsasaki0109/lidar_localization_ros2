@@ -1,6 +1,7 @@
 #include "lidar_localization/measurement_gate_policy.hpp"
 
 #include <cassert>
+#include <cmath>
 #include <limits>
 #include <string>
 
@@ -101,6 +102,67 @@ void test_seed_correction_guard_rejects_jumps_until_release()
   input.consecutive_rejected_updates = 10;
   gate = ll::evaluateMeasurementGate(params, input);
   assert(!gate.reject_measurement);
+}
+
+void test_seed_correction_window_guard_bounds_summed_corrections()
+{
+  auto params = default_params();
+  auto input = default_input();
+  input.window_correction_translation_m = 0.8;
+  auto gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);  // disabled by default
+
+  params.enable_seed_correction_window_guard = true;
+  params.seed_correction_window_guard_translation_m = 0.3;
+  params.seed_correction_guard_warmup_accepts = 5;
+  params.seed_correction_guard_release_rejections = 30;
+  input.accepted_updates_since_reset = 5;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(gate.reject_measurement);
+  assert(gate.status_level == ll::kMeasurementGateWarn);
+  assert(gate.status_message == "seed_correction_window_guard_rejected");
+
+  // Independent of the per-scan guard: each correction is small.
+  input.correction_translation_m = 0.1;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(gate.reject_measurement);
+
+  input.window_correction_translation_m = 0.3;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);
+
+  // Shares the per-scan guard's warmup and release.
+  input.window_correction_translation_m = 0.8;
+  input.accepted_updates_since_reset = 4;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);
+  input.accepted_updates_since_reset = 5;
+  input.consecutive_rejected_updates = 30;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);
+}
+
+void test_seed_correction_window_sums_within_window()
+{
+  ll::SeedCorrectionWindow window;
+  assert(window.sumNormWith(10.0, 0.1, 0.0, 1.0) == 0.1);
+  window.add(10.0, 0.2, 0.0, 1.0);
+  window.add(10.5, 0.2, 0.0, 1.0);
+  // Same direction adds up; the current correction counts too.
+  assert(std::abs(window.sumNormWith(10.6, 0.1, 0.0, 1.0) - 0.5) < 1e-9);
+  // Opposite corrections cancel: a pull back toward the prediction passes.
+  assert(std::abs(window.sumNormWith(10.6, -0.4, 0.0, 1.0)) < 1e-9);
+  // Horizontal norm of the vector sum.
+  assert(std::abs(window.sumNormWith(10.6, -0.4, 0.3, 1.0) - 0.3) < 1e-9);
+  // Entries older than the window no longer count, and are dropped on add.
+  assert(std::abs(window.sumNormWith(11.2, 0.0, 0.0, 1.0) - 0.2) < 1e-9);
+  window.add(11.2, 0.0, 0.0, 1.0);
+  assert(window.size() == 2);
+  window.add(12.0, std::numeric_limits<double>::quiet_NaN(), 0.0, 1.0);
+  assert(window.size() == 2);
+  window.clear();
+  assert(window.size() == 0);
+  assert(window.sumNormWith(12.0, 0.0, 0.0, 1.0) == 0.0);
 }
 
 void test_default_ok_gate()
@@ -284,6 +346,8 @@ int main()
   test_seed_guard_exact_start_completes_warmup();
   test_odom_seed_gap_detection();
   test_seed_correction_guard_rejects_jumps_until_release();
+  test_seed_correction_window_guard_bounds_summed_corrections();
+  test_seed_correction_window_sums_within_window();
   test_param_and_input_builders_map_fields();
   test_default_ok_gate();
   test_nonfinite_fitness_is_never_accepted_or_seeded();

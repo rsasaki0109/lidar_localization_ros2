@@ -51,6 +51,7 @@ void PCLLocalization::resetPredictionState(const Eigen::Matrix4f & pose_matrix, 
 {
   prediction_state_ = lidar_localization::resetPredictionState(pose_matrix, stamp_sec);
   settled_accepts_since_reset_ = 0;
+  seed_correction_window_.clear();
 }
 
 void PCLLocalization::updatePredictionState(
@@ -65,6 +66,11 @@ void PCLLocalization::updatePredictionState(
     settled_accepts_since_reset_, measurementGateParams(),
     last_gated_correction_translation_m_, last_gated_correction_yaw_deg_,
     prediction_state_.accepted_updates_since_reset == 1);
+  if (measurement_gate_config_.enable_seed_correction_window_guard) {
+    seed_correction_window_.add(
+      stamp_sec, last_gated_correction_map_dx_, last_gated_correction_map_dy_,
+      measurement_gate_config_.seed_correction_window_guard_sec);
+  }
 }
 
 void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
