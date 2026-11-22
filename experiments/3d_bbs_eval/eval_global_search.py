@@ -435,8 +435,8 @@ def main(argv=None) -> int:
         "--z-range", type=float, nargs=2, default=None, help="search z (default: map's)"
     )
     group.add_argument("--k", type=int, default=1)
-    group.add_argument("--nms-radius-m", type=float, default=1.0)
-    group.add_argument("--nms-yaw-deg", type=float, default=20.0)
+    group.add_argument("--nms-radius-m", type=float, default=3.0)
+    group.add_argument("--nms-yaw-deg", type=float, default=360.0)
     group.add_argument(
         "--relative-floor",
         type=float,
