@@ -125,7 +125,11 @@ A LIO front end advertises its `nav_msgs/Odometry` topic at startup but publishe
 TF only after its first scans (RKO-LIO on a cold Koide replay: 7 s after the bag
 started), so while an Odometry topic is published without that TF, quickstart waits up
 to 10 s more for it. If it still does not arrive, an `Input hint:` names the topic and
-quickstart starts without odometry prediction.
+quickstart starts without odometry prediction. DDS reports each running process to
+quickstart separately, so after the cloud and IMU appear it keeps looking up to 3 s for
+an odometry node (an Odometry topic or the odom TF) before deciding there is none; a
+robot without odometry starts up to 3 s later. Passing `--base-frame` together with
+`--odom-tf-prediction` or `--no-odom-tf-prediction` skips that wait.
 Scan matching is then seeded from that odometry, `map -> odom` is published, and the
 odometry-bridged pose keeps flowing while scans are rejected. Handheld or other fast motion needs it: on the
 Koide `outdoor_hard_02b` handheld sequence at 1x, seeded at the true start pose, the

@@ -5,6 +5,12 @@ Each run starts the suite's odometry, plays the bag, starts
 ``quickstart.py --map <map>`` with a fresh pose state, records ``/pcl_pose``
 and scores it with benchmark_eval.py in the map (= ground-truth) frame.
 
+With odometry, quickstart starts only once the odom TF is on /tf, gets the
+odometry settings explicitly (``--odom-tf-prediction --base-frame <child of
+odom>``) instead of discovering them, and a run whose configuration still has
+odometry off is marked invalid (``invalid.txt``), left out of the scores and
+makes the exit code 1.
+
 usage: run_benchmark.py SUITE.yaml --out DIR [--repeats N] [--case NAME ...]
        run_benchmark.py SUITE.yaml --out DIR --evaluate-only
 """
@@ -29,6 +35,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import benchmark_eval
 
 TOOL_DIR = Path(__file__).resolve().parent
+
+# How long a run waits for the odometry's first odom TF after the bag starts.
+ODOMETRY_TF_TIMEOUT_SEC = 30.0
+# Quickstart starts this long after the bag (or later, once the odom TF is seen).
+QUICKSTART_DELAY_SEC = 3.0
+INVALID_FILE = "invalid.txt"
 
 
 def expand(value, suite_dir: Path):
@@ -69,6 +81,48 @@ def bag_start_and_duration(bag: Path) -> tuple[float, float]:
     )
 
 
+def expects_odometry(case: dict) -> bool:
+    """Runs of this case must start with odometry (default: when it launches one)."""
+    return bool(case.get("expect_odometry", bool(case.get("odometry_launch"))))
+
+
+def odometry_quickstart_args(quickstart_args: list[str], base_frame: str) -> list[str]:
+    """quickstart_args plus the odometry settings, so they do not depend on discovery.
+
+    Settings the case already gives are kept.
+    """
+    flags = [arg.split("=", 1)[0] for arg in quickstart_args]
+    extra = []
+    if not {"--odom-tf-prediction", "--no-odom-tf-prediction"} & set(flags):
+        extra.append("--odom-tf-prediction")
+    if "--base-frame" not in flags:
+        extra.append(f"--base-frame={base_frame}")
+    return list(quickstart_args) + extra
+
+
+def quickstart_uses_odometry(config_text: str) -> bool | None:
+    """use_odom_tf_prediction of a quickstart configuration, None if not there."""
+    try:
+        params = yaml.safe_load(config_text)
+    except yaml.YAMLError:
+        return None
+    stack = [params]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            if "use_odom_tf_prediction" in item:
+                return bool(item["use_odom_tf_prediction"])
+            stack.extend(item.values())
+    return None
+
+
+def invalid_reason(run_dir: Path) -> str | None:
+    path = run_dir / INVALID_FILE
+    if not path.exists():
+        return None
+    return path.read_text(encoding="utf-8").strip() or "invalid"
+
+
 def start(command: list[str], log: Path, env: dict) -> subprocess.Popen:
     handle = log.open("w", encoding="utf-8")
     return subprocess.Popen(
@@ -101,10 +155,40 @@ def stop(process: subprocess.Popen | None, grace_sec: float = 10.0) -> None:
     process.wait()
 
 
+def wait_for_odometry_tf(case: dict, env: dict) -> tuple[str | None, str]:
+    """(child frame of the first odom TF, or None; the waiter's message)."""
+    timeout = float(case.get("odometry_tf_timeout_sec", ODOMETRY_TF_TIMEOUT_SEC))
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(TOOL_DIR / "wait_for_odometry.py"),
+                "--odom-frame",
+                str(case.get("odom_frame", "odom")),
+                "--timeout",
+                str(timeout),
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout + 30.0,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return None, f"odometry TF wait did not return within {timeout + 30.0:g} s"
+    frame = result.stdout.strip().splitlines()
+    if result.returncode == 0 and frame:
+        return frame[-1], ""
+    return None, (result.stderr or result.stdout).strip()
+
+
 def run_once(
     case: dict, run_dir: Path, domain_id: int, quickstart_cmd: list[str]
-) -> None:
+) -> str | None:
+    """Run the case once; return why the run is invalid, or None."""
     run_dir.mkdir(parents=True, exist_ok=True)
+    for stale in (INVALID_FILE, "quickstart.yaml"):
+        (run_dir / stale).unlink(missing_ok=True)
     env = dict(os.environ)
     env["ROS_DOMAIN_ID"] = str(domain_id)
     env.setdefault("ROS_AUTOMATIC_DISCOVERY_RANGE", "LOCALHOST")
@@ -137,29 +221,76 @@ def run_once(
         play_cmd += ["--start-offset", str(offset)]
     play_cmd += ["--topics", *case["topics"]]
     play = start(play_cmd, run_dir / "play.log", env)
-    time.sleep(3.0)
-    quickstart = start(
-        [
-            *quickstart_cmd,
-            "--map",
-            case["map"],
-            "--no-rviz",
-            "--state-file",
-            str(run_dir / "pose.json"),
-            "--output",
-            str(run_dir / "quickstart.yaml"),
-            *case["quickstart_args"],
-        ],
-        run_dir / "quickstart.log",
-        env,
-    )
-    try:
-        play.wait(timeout=(duration - offset) / rate + 120.0)
-    except subprocess.TimeoutExpired:
-        stop(play)
-    time.sleep(5.0)
-    for process in (quickstart, odometry, recorder):
+    play_started = time.monotonic()
+    quickstart_args = list(case["quickstart_args"])
+    expect_odometry = expects_odometry(case)
+    invalid = None
+    if expect_odometry:
+        # Quickstart's own discovery can miss an odometry node DDS has not
+        # reported to it yet; the benchmark must not depend on that.
+        base_frame, message = wait_for_odometry_tf(case, env)
+        if base_frame is None:
+            invalid = f"no odometry: {message}"
+        else:
+            quickstart_args = odometry_quickstart_args(quickstart_args, base_frame)
+    quickstart = None
+    if invalid is None:
+        time.sleep(max(0.0, play_started + QUICKSTART_DELAY_SEC - time.monotonic()))
+        quickstart = start(
+            [
+                *quickstart_cmd,
+                "--map",
+                case["map"],
+                "--no-rviz",
+                "--state-file",
+                str(run_dir / "pose.json"),
+                "--output",
+                str(run_dir / "quickstart.yaml"),
+                *quickstart_args,
+            ],
+            run_dir / "quickstart.log",
+            env,
+        )
+        invalid = supervise(
+            play,
+            quickstart,
+            run_dir / "quickstart.yaml",
+            expect_odometry,
+            (duration - offset) / rate + 120.0,
+        )
+    if invalid is None:
+        time.sleep(5.0)
+    for process in (play, quickstart, odometry, recorder):
         stop(process)
+    if invalid:
+        (run_dir / INVALID_FILE).write_text(invalid + "\n", encoding="utf-8")
+    return invalid
+
+
+def supervise(
+    play: subprocess.Popen,
+    quickstart: subprocess.Popen,
+    config: Path,
+    expect_odometry: bool,
+    timeout_sec: float,
+) -> str | None:
+    """Wait for the replay to end; stop early (and return why) if the run is invalid."""
+    deadline = time.monotonic() + timeout_sec
+    checked = not expect_odometry
+    while play.poll() is None and time.monotonic() < deadline:
+        if not checked and config.exists():
+            uses_odometry = quickstart_uses_odometry(config.read_text(encoding="utf-8"))
+            if uses_odometry is False:
+                return (
+                    "no odometry: quickstart configured use_odom_tf_prediction: false"
+                )
+            checked = uses_odometry is not None
+        if not checked and quickstart.poll() is not None:
+            return f"quickstart exited with {quickstart.returncode} before configuring"
+        time.sleep(0.5)
+    if not checked:
+        return "no odometry: quickstart wrote no configuration"
+    return None
 
 
 def score(case: dict, run_dir: Path) -> benchmark_eval.RunScore:
@@ -205,6 +336,7 @@ def main(argv=None) -> int:
         if not args.case or case["name"] in args.case
     ]
     results: dict[str, list[benchmark_eval.RunScore]] = {}
+    invalid: list[str] = []
     for case in cases:
         repeats = args.repeats or int(case.get("repeats", 1))
         scores = []
@@ -215,6 +347,11 @@ def main(argv=None) -> int:
                     f"[benchmark] {case['name']} run {repeat + 1}/{repeats}", flush=True
                 )
                 run_once(case, run_dir, args.domain_id, shlex.split(args.quickstart))
+            reason = invalid_reason(run_dir)
+            if reason:
+                invalid.append(f"{case['name']} run {repeat + 1}: {reason}")
+                print(f"[benchmark] INVALID {invalid[-1]}", flush=True)
+                continue
             if (run_dir / "est.tum").exists():
                 scores.append(score(case, run_dir))
         results[case["name"]] = scores
@@ -231,6 +368,10 @@ def main(argv=None) -> int:
     note = benchmark_eval.stalled_odometry_note(results)
     if note:
         table += "\n\n" + note
+    if invalid:
+        table += "\n\nInvalid runs, not scored (re-run them):\n" + "\n".join(
+            f"- {line}" for line in invalid
+        )
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "summary.md").write_text(table + "\n", encoding="utf-8")
     (args.out / "results.json").write_text(
@@ -242,7 +383,7 @@ def main(argv=None) -> int:
         encoding="utf-8",
     )
     print(table)
-    return 0
+    return 1 if invalid else 0
 
 
 if __name__ == "__main__":

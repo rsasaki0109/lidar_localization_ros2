@@ -608,9 +608,10 @@ Not verified: one site (the JEPLO capture room and its corridor); the rule's 3 a
 60 s of EIL_Stairs → EIL_Box: 0 wrong, 100 right, 8 manual of 108); two runs per pair. Not
 run: the other suites (the Large maps settings on self maps, Koide, Boreas, HDL), which
 keep quickstart's 3 m. The tracking failure of run 4 (a right start pulled 1.9 m onto
-the turned room in the first two scans) and the odometry discovery race are not
-addressed here. The tables before this section used 3 m: add `--global-nms-radius-m=3.0
---global-consensus-near-alias-samples=0` to the suite to reproduce them.
+the turned room in the first two scans) is not addressed here; the odometry discovery
+race is fixed since (see [Running it](#running-it)). The tables before this section
+used 3 m: add `--global-nms-radius-m=3.0 --global-consensus-near-alias-samples=0` to
+the suite to reproduce them.
 
 ## Running it
 
@@ -630,6 +631,17 @@ stream, and `score.json`. `summary.md` and `results.json` collect the cases.
 instead of the installed package. Runs whose RKO-LIO odometry stalled (a registration
 loop over 10 s in its exit profile, e.g. on a cold disk after a restart) are listed
 under the tables: the startup then lacks odometry, so re-run them before comparing.
+
+When a suite launches odometry, each run waits up to 30 s (`odometry_tf_timeout_sec`)
+for its odom TF on /tf before starting quickstart (still 3 s after the bag at the
+earliest), and passes `--odom-tf-prediction --base-frame <child of odom>` unless the
+case's `quickstart_args` set them, so the run does not depend on quickstart's own
+discovery. A run whose quickstart configuration still has `use_odom_tf_prediction: false`,
+or whose odometry never published TF, is stopped and marked invalid (`invalid.txt` in
+the run directory): it is not scored, `summary.md` lists it, and the command exits
+with 1. Set `expect_odometry: false` in a suite or case to measure a launched odometry
+without requiring it. Results before this check (up to #346) include runs that started
+without odometry in about 1 in 10 runs; the tables above name them.
 
 Datasets:
 
