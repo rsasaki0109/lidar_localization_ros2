@@ -378,8 +378,9 @@ the startup node uses it automatically:
   match allows 2 m plus `global_consensus_translation_per_odom_m` (5%) of the distance
   travelled, for the 5-degree heading quantization of each result. Two NDT-refined
   results are not quantized and must match within 0.5 m (plus the same 5%) and 10
-  degrees (`global_consensus_refined_translation_m`, `global_consensus_refined_yaw_deg`;
-  negative values use the wide bounds): on the Go2 cross-session replays the wide
+  degrees (startup-model defaults `global_consensus_refined_translation_m` and
+  `global_consensus_refined_yaw_deg`; the startup node does not expose them as
+  parameters): on the Go2 cross-session replays the wide
   bounds confirmed fixes 1.6-1.8 m apart along the room, and the published one was
   the wrong one;
 - the published `/initialpose` is moved from the queried scan to the latest odometry,
