@@ -39,6 +39,21 @@ not detect the unit.
   EIL_Box → EIL_Stairs run of four, where an odometry jump and the per-scan guard's
   release still ended 3.1 m off. Off by default
   ([benchmark.md](docs/benchmark.md#why-tracking-slid-along-the-room-and-the-fix)).
+- **Opt-in release agreement for the seed correction guards**
+  (`seed_correction_guard_release_agreement_scans`, `_translation_m`, `_yaw_deg`;
+  quickstart: 10 scans, 0.3 m, 5 degrees with `--seed-correction-window-sec`). After 30
+  rejections in a row the guards accepted whatever the registration returned on that
+  scan; on the EIL_Box map an EIL_Stairs scan sequence aliases 2.4 m away for about a
+  second, and the release that fell inside it ended 3.1 m off. Now a released answer is
+  accepted only when its correction agrees with each of the last N rejected ones;
+  otherwise the guards keep the odometry and report
+  `seed_correction_guard_release_disagreed`. With forced 0.7 m odometry jumps the
+  release fell on an aliased answer in three runs; it held all three, two then released
+  onto the right pose (0.01 m off) and the third lost the pose when RKO-LIO itself
+  diverged. Holds of right answers cost 0.1-1.8 s. On the live cross-session suite the
+  hold engaged in two runs only, so it is otherwise unchanged (EIL_Box → EIL_Stairs never
+  reached a release in 4 new runs). 0 (the default) releases as before
+  ([benchmark.md](docs/benchmark.md#why-a-release-locked-onto-an-aliased-answer-and-the-fix)).
 
 ### Fixed
 
