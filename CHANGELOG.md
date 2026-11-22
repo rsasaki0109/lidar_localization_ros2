@@ -2,17 +2,47 @@
 
 ## Unreleased
 
-**Upgrading:** `param/mid360_legged.yaml` and the `mid360` quickstart profile now set
-`imu_accel_scale: 9.80665`. If your MID-360 driver publishes acceleration in m/s^2
-instead of g (`livox_ros_driver2` publishes g), set it back to `1.0`: the localizer does
-not detect the unit.
+## 1.12.0 - 2026-11-23
+
+**Upgrading:** every new setting defaults to the old behaviour:
+`enable_seed_correction_window_guard` (`false`; `seed_correction_window_guard_sec` 1.0,
+`seed_correction_window_guard_translation_m` 0.3; quickstart
+`--seed-correction-window-sec` 0 = off), `seed_correction_guard_release_agreement_scans`
+(`0`, release as before; quickstart sets 10 only together with
+`--seed-correction-window-sec` and odometry prediction), `global_search_engine` on the
+G2 node (`bbs2d`; launch `g2_global_search_engine`, quickstart
+`--global-search-engine`) and the startup node's `global_consensus_near_alias_samples`
+(`0` = off). `global_search_engine: bbs3d` uses the new `bbs3d_cpp` module, built from a
+vendored subset of 3D-BBS (MIT, `third_party/bbs3d`, declared in `package.xml`) whenever
+pybind11 and the Boost hash headers are found; no new dependency. Four behaviours
+change by default:
+
+- `param/mid360_legged.yaml` and the `mid360` quickstart profile set
+  `imu_accel_scale: 9.80665`. If your MID-360 driver publishes acceleration in m/s^2
+  instead of g (`livox_ros_driver2` publishes g), set it back to `1.0`: the localizer
+  does not detect the unit.
+- Global initialization with NDT-refined answers (`--refine-global-candidates` or the
+  sparse-band search) accepts two of them only within 0.5 m and 10 degrees of each
+  other, and rejects a refined top answer that registers less than twice as well as a
+  refined candidate 1 m away or turned 20 degrees. A start may need one or two more
+  queries. The second check turns off with a negative
+  `registration_refined_alternative_min_separation_m` or `_min_yaw_deg` on the startup
+  node; the 0.5 m and 10 degree bounds are startup-model defaults that the node does
+  not expose as parameters.
+- Quickstart keeps looking for an odometry node for up to 3 s after the cloud and IMU
+  appear, so a start without odometry takes up to 3 s longer; `--base-frame` with
+  `--odom-tf-prediction` or `--no-odom-tf-prediction` skips the wait.
+- `tools/benchmark/run_benchmark.py` waits up to 30 s for the odom TF of a suite that
+  launches odometry, and marks a run that still configured no odometry invalid (left
+  out of the scores, benchmark exit code 1); `expect_odometry: false` turns this off.
 
 ### Changed
 
 - **Global initialization rejects aliased NDT-refined answers.** With
   `--refine-global-candidates` or the sparse-band search (Unitree Go2), two answers must
   agree within 0.5 m and 10 degrees instead of 2 m and 20
-  (`global_consensus_refined_translation_m`, `global_consensus_refined_yaw_deg`), and
+  (`global_consensus_refined_translation_m`, `global_consensus_refined_yaw_deg`:
+  defaults of the startup model, not declared as node parameters), and
   the top must register at most half as well as the best refined candidate 1 m away or
   turned 20 degrees, not only one 5 m away
   (`registration_refined_alternative_min_separation_m`, `_min_yaw_deg`). G2 answers mark
@@ -21,7 +51,8 @@ not detect the unit.
   manual poses, and the first pose after a median 11.0 s instead of 10.3 s; replaying
   G2 answers from 889 start points, wrong starts fell from 154 to 41 and manual poses
   rose from 29 to 98 ([benchmark.md](docs/benchmark.md#why-the-wrong-starts-passed-and-the-fix)).
-  Unrefined answers are checked as before; negative values turn either check off.
+  Unrefined answers are checked as before; negative values turn either check off
+  (on the node, only the alternative check's two parameters can be set).
 
 ### Added
 
@@ -133,6 +164,29 @@ not detect the unit.
   (no odometry) only a coarser scan voxel saved CPU (2.0 m: 10-20% for 2% RMSE); fewer
   threads and iterations saved none, and the pose timer raised the RMSE to 0.55 m
   ([benchmark.md](docs/benchmark.md#boreas-with-the-small-computer-knobs)).
+
+### Validation
+
+- The release check: two full Koide `outdoor_hard_02b` replays at 1x passed on
+  `release/v1.12.0` (`main` at `f500a59` plus the version bump), built without a build
+  type, with ndt_omp_ros2 at `17ce1e1`, as for v1.11.0.
+  - **Accuracy:** 0.242 m RMSE in both (0.170 m on the map), against 0.238-0.244 m
+    (0.171 m) for v1.11.0.
+  - **Coverage:** 100.0% diagnostic coverage in both.
+  - **Alignment:** 18 ms at the median and 44-46 ms at p95, against 14-15 and 36-37 ms,
+    **on a host CPU at 2.10 GHz where v1.11.0's was 2.30 GHz**. v1.11.0 rebuilt and
+    replayed twice on this host measured 18 and 44-47 ms (0.242 m), so the difference is
+    the host, not the release
+    ([docs/koide-online-replay.md](docs/koide-online-replay.md#v1120-release-verification-2026-11-23),
+    `docs/validation/v1.12.0-koide-20261123`).
+  - **Resources:** the localizer used 0.56-0.57 cores on average (v1.11.0 on this host:
+    the same) and held 207-210 MB anonymous memory in steady state.
+- Boreas, `param/boreas_ndt_velodyne.yaml` on the release build: 0.132 m RMSE over the
+  first 120 s, 0.127 m with `use_imu_preintegration: true`, every scan accepted, as on
+  1.11.0.
+- The opt-in features of this release (G2 `bbs3d`, the window guard, release agreement,
+  the near-alias rule) are off in both checks; their results are the Go2/JEPLO replays
+  cited above, not re-run for the release.
 
 ## 1.11.0 - 2026-11-18
 
