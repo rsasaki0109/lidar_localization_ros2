@@ -124,6 +124,18 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
         self.assertTrue(params["enable_seed_correction_window_guard"])
         self.assertEqual(params["seed_correction_window_guard_sec"], 2.0)
         self.assertEqual(params["seed_correction_window_guard_translation_m"], 0.3)
+        self.assertEqual(params["seed_correction_guard_release_agreement_scans"], 10)
+        self.assertEqual(
+            params["seed_correction_guard_release_agreement_translation_m"], 0.3
+        )
+        self.assertEqual(params["seed_correction_guard_release_agreement_yaw_deg"], 5.0)
+        # The release stays as before unless the window guard is on.
+        self.assertEqual(
+            config_tool.make_params(args(odom_tf_prediction=True))[
+                "seed_correction_guard_release_agreement_scans"
+            ],
+            0,
+        )
         # Without odometry seeding there is nothing to hold the pose to.
         self.assertFalse(
             config_tool.make_params(args(seed_correction_window_sec=2.0))[
