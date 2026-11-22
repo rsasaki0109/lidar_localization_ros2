@@ -160,6 +160,7 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
     if (lidar_localization::isOdomSeedGap(last_odom_seed_stamp_sec_, scan_stamp_sec)) {
       settled_accepts_since_reset_ = 0;
       seed_correction_window_.clear();
+      seed_correction_release_history_.clear();
     }
     last_odom_seed_stamp_sec_ = scan_stamp_sec;
   }
@@ -764,6 +765,42 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
     });
 }
 
+double PCLLocalization::signedCorrectionYawDeg(
+  const lidar_localization::AlignmentAttempt & attempt)
+{
+  const auto yaw_of = [](const Eigen::Matrix4f & pose) {
+      return std::atan2(static_cast<double>(pose(1, 0)), static_cast<double>(pose(0, 0)));
+    };
+  return std::remainder(
+    yaw_of(attempt.final_transformation) - yaw_of(attempt.init_guess), 2.0 * M_PI) *
+         180.0 / M_PI;
+}
+
+void PCLLocalization::recordSeedCorrectionReleaseHistory(
+  const lidar_localization::AlignmentAttempt & attempt,
+  const lidar_localization::MeasurementGateDecision & gate)
+{
+  const int agreement_scans =
+    measurement_gate_config_.seed_correction_guard_release_agreement_scans;
+  if (agreement_scans <= 0) {
+    return;
+  }
+  if (!gate.reject_measurement) {
+    seed_correction_release_history_.clear();
+    return;
+  }
+  if (
+    attempt.has_converged &&
+    lidar_localization::isSeedCorrectionGuardRejection(gate.status_message))
+  {
+    seed_correction_release_history_.add(
+      attempt.final_transformation(0, 3) - attempt.init_guess(0, 3),
+      attempt.final_transformation(1, 3) - attempt.init_guess(1, 3),
+      signedCorrectionYawDeg(attempt),
+      static_cast<std::size_t>(agreement_scans));
+  }
+}
+
 lidar_localization::MeasurementGateDecision PCLLocalization::measurementGateDecisionFor(
   const lidar_localization::AlignmentAttempt & attempt) const
 {
@@ -781,6 +818,22 @@ lidar_localization::MeasurementGateDecision PCLLocalization::measurementGateDeci
       attempt.final_transformation(0, 3) - attempt.init_guess(0, 3),
       attempt.final_transformation(1, 3) - attempt.init_guess(1, 3),
       measurement_gate_config_.seed_correction_window_guard_sec);
+  }
+  const int agreement_scans =
+    measurement_gate_config_.seed_correction_guard_release_agreement_scans;
+  if (
+    agreement_scans > 0 &&
+    static_cast<int>(prediction_state_.consecutive_rejected_updates) >=
+    measurement_gate_config_.seed_correction_guard_release_rejections)
+  {
+    input.release_agreed = attempt.has_converged &&
+      seed_correction_release_history_.agrees(
+      attempt.final_transformation(0, 3) - attempt.init_guess(0, 3),
+      attempt.final_transformation(1, 3) - attempt.init_guess(1, 3),
+      signedCorrectionYawDeg(attempt),
+      static_cast<std::size_t>(agreement_scans),
+      measurement_gate_config_.seed_correction_guard_release_agreement_translation_m,
+      measurement_gate_config_.seed_correction_guard_release_agreement_yaw_deg);
   }
   return lidar_localization::evaluateMeasurementGate(measurementGateParams(), input);
 }

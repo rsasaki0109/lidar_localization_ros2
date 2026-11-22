@@ -9,6 +9,7 @@ bool PCLLocalization::applyRegistrationPoseBackend(
   bool imu_prediction_ready,
   const std::string & registration_seed_source)
 {
+  recordSeedCorrectionReleaseHistory(attempt, gate_result);
   const PoseBackendApplyContext context{
     observation,
     attempt,

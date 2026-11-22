@@ -52,6 +52,7 @@ void PCLLocalization::resetPredictionState(const Eigen::Matrix4f & pose_matrix, 
   prediction_state_ = lidar_localization::resetPredictionState(pose_matrix, stamp_sec);
   settled_accepts_since_reset_ = 0;
   seed_correction_window_.clear();
+  seed_correction_release_history_.clear();
 }
 
 void PCLLocalization::updatePredictionState(

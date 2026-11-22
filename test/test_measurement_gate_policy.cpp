@@ -165,6 +165,111 @@ void test_seed_correction_window_sums_within_window()
   assert(window.sumNormWith(12.0, 0.0, 0.0, 1.0) == 0.0);
 }
 
+void test_seed_correction_release_history_agreement()
+{
+  ll::SeedCorrectionReleaseHistory history;
+  // Off: always agrees.
+  assert(history.agrees(2.4, 0.0, 0.0, 0, 0.3, 5.0));
+  // Not enough answers yet.
+  assert(!history.agrees(0.4, 0.0, 0.0, 3, 0.3, 5.0));
+  history.add(0.40, 0.00, 1.0, 3);
+  history.add(0.45, 0.05, 0.0, 3);
+  assert(!history.agrees(0.4, 0.0, 0.0, 3, 0.3, 5.0));
+  history.add(0.35, -0.05, -1.0, 3);
+  assert(history.agrees(0.42, 0.0, 0.0, 3, 0.3, 5.0));
+  // An aliased answer far from the recent ones does not agree.
+  assert(!history.agrees(-2.4, 0.1, 0.0, 3, 0.3, 5.0));
+  // Nor one turned beyond the yaw tolerance; yaw wraps.
+  assert(!history.agrees(0.42, 0.0, 7.0, 3, 0.3, 5.0));
+  history.clear();
+  history.add(0.0, 0.0, 179.0, 2);
+  history.add(0.0, 0.0, -179.0, 2);
+  assert(history.agrees(0.0, 0.0, 180.0, 2, 0.3, 5.0));
+  // Capacity keeps only the latest answers; one alias among them breaks agreement
+  // until it has left.
+  history.clear();
+  history.add(-2.4, 0.0, 0.0, 2);
+  history.add(0.4, 0.0, 0.0, 2);
+  assert(!history.agrees(0.4, 0.0, 0.0, 2, 0.3, 5.0));
+  history.add(0.4, 0.0, 0.0, 2);
+  assert(history.size() == 2);
+  assert(history.agrees(0.4, 0.0, 0.0, 2, 0.3, 5.0));
+  // Non-finite answers are not kept and never agree.
+  history.add(std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0, 2);
+  assert(history.size() == 2);
+  assert(!history.agrees(std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0, 2, 0.3, 5.0));
+  history.add(0.4, 0.0, 0.0, 0);
+  assert(history.size() == 2);
+
+  assert(ll::isSeedCorrectionGuardRejection("seed_correction_guard_rejected"));
+  assert(ll::isSeedCorrectionGuardRejection("seed_correction_window_guard_rejected"));
+  assert(ll::isSeedCorrectionGuardRejection("seed_correction_guard_release_disagreed"));
+  assert(!ll::isSeedCorrectionGuardRejection("fitness_score_over_threshold_rejected"));
+}
+
+void test_seed_correction_release_agreement_holds_disagreeing_releases()
+{
+  auto params = default_params();
+  params.enable_seed_correction_guard = true;
+  params.seed_correction_guard_translation_m = 0.3;
+  params.seed_correction_guard_release_rejections = 30;
+  params.seed_correction_guard_warmup_accepts = 5;
+  auto input = default_input();
+  input.accepted_updates_since_reset = 5;
+  input.correction_translation_m = 2.4;
+  input.consecutive_rejected_updates = 30;
+  input.release_agreed = false;
+
+  // Off by default: the release accepts whatever the registration returns.
+  auto gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);
+
+  params.seed_correction_guard_release_agreement_scans = 10;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(gate.reject_measurement);
+  assert(gate.status_level == ll::kMeasurementGateWarn);
+  assert(gate.status_message == "seed_correction_guard_release_disagreed");
+  // Held for as long as it disagrees.
+  input.consecutive_rejected_updates = 80;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(gate.reject_measurement);
+
+  // An answer that agrees with the recent rejected ones is released.
+  input.release_agreed = true;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);
+  assert(gate.status_message == "ok");
+
+  // Before the release the guards reject as before, agreement or not.
+  input.consecutive_rejected_updates = 29;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(gate.status_message == "seed_correction_guard_rejected");
+
+  // A released answer within the guards' limits needs no agreement.
+  input.consecutive_rejected_updates = 30;
+  input.release_agreed = false;
+  input.correction_translation_m = 0.2;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);
+
+  // Applies to the window guard's release too.
+  params.enable_seed_correction_window_guard = true;
+  params.seed_correction_window_guard_translation_m = 0.3;
+  input.window_correction_translation_m = 0.8;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(gate.status_message == "seed_correction_guard_release_disagreed");
+  input.release_agreed = true;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);
+
+  // Not applied before the guards' warmup.
+  input.release_agreed = false;
+  input.accepted_updates_since_reset = 4;
+  input.correction_translation_m = 2.4;
+  gate = ll::evaluateMeasurementGate(params, input);
+  assert(!gate.reject_measurement);
+}
+
 void test_default_ok_gate()
 {
   const auto gate = ll::evaluateMeasurementGate(default_params(), default_input());
@@ -348,6 +453,8 @@ int main()
   test_seed_correction_guard_rejects_jumps_until_release();
   test_seed_correction_window_guard_bounds_summed_corrections();
   test_seed_correction_window_sums_within_window();
+  test_seed_correction_release_history_agreement();
+  test_seed_correction_release_agreement_holds_disagreeing_releases();
   test_param_and_input_builders_map_fields();
   test_default_ok_gate();
   test_nonfinite_fitness_is_never_accepted_or_seeded();

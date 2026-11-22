@@ -801,6 +801,9 @@ class TestQuickstartCli(unittest.TestCase):
             generated = output.read_text(encoding="utf-8")
             self.assertIn("enable_seed_correction_window_guard: true", generated)
             self.assertIn("seed_correction_window_guard_sec: 2.0", generated)
+            self.assertIn(
+                "seed_correction_guard_release_agreement_scans: 10", generated
+            )
 
     def test_next_step_mentions_stationary_search_with_route_crop(self):
         with tempfile.TemporaryDirectory() as directory:

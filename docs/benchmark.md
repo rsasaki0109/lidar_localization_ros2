@@ -399,8 +399,9 @@ manual pose (four before, in other runs).
 Not verified: the window was chosen on the two Long_Stairs pairs it is measured on; two
 runs per pair, one machine, one robot and one odometry. It is off by default and only
 measured with RKO-LIO odometry seeding. The guard does not help when the odometry itself
-jumps, and it does not change the seed correction guard's release, which can still
-accept an aliased answer after 30 rejections in a row.
+jumps. The guards' release after 30 rejections in a row accepted an aliased answer in
+EIL_Box → EIL_Stairs run 2; [the next section](#why-a-release-locked-onto-an-aliased-answer-and-the-fix)
+makes the release check its answer.
 To reproduce the live table, add `--seed-correction-window-sec=2.0` to the suite's
 `quickstart_args`; the start-from-truth runs used a scratch harness (quickstart
 `--dry-run --initial-pose`, then the printed launch command with the bag played from 1 s).
@@ -412,6 +413,102 @@ their own runs), then run
 `python3 tools/benchmark/run_benchmark.py tools/benchmark/suites/go2_jeplo_cross_session.yaml --out results/go2_cross`.
 Query counts and manual-pose requests are read from each run's `quickstart.log`
 (`query answered:` lines) and `status.jsonl` (`needs_operator`).
+
+#### Why a release locked onto an aliased answer, and the fix
+
+Measured 2026-11-22 on `fix/guard-release-alias` (from `0319d70`), same machine and
+settings. **What happened in EIL_Box → EIL_Stairs run 2** (window 2 s, live), from its
+`/alignment_status`: RKO-LIO jumped 0.6 m at 105.1 s. The next scans asked for
+0.35-0.57 m back toward the truth (the pose was 0.34-0.62 m off), and the 0.3 m per-scan
+guard rejected them; a few NDT answers near the jumped seed were accepted on the way and
+reset the count. Then, at 110.2-110.8 s, NDT answered 1.9-2.5 m the other way, onto the
+box platform of the EIL_Box map, five times in six scans. The 30th rejection in a row
+fell on one of those (110.8 s): the release accepted it and the pose sat 2.4-3.1 m off
+for 19 s, until 130 s. The alias belongs to the place and the map, not to the jump:
+in run 1, tracking right, NDT also answered 2.0-2.5 m at 110.9-111.3 s, and the guard
+rejected it as designed. The release takes whatever the 30th scan returns, so whether a
+run ends 3 m off depends on where the count happens to end.
+
+To reproduce it on demand, a relay published `odom -> odom_raw` under RKO-LIO's
+`odom_raw -> livox_frame`, identity until a set time and then a fixed 0.7 m map-frame
+offset toward the alias (quickstart `--initial-pose` at the true pose, bag played from
+1 s). In the run with the jump at 107.5 s, the 30th rejection came at 115.2 s while NDT
+answered 2.0-2.3 m onto the platform (fitness 0.15-0.21, against 0.04-0.07 for the
+answers toward the truth): the old release would have taken 2.42 m from a pose 0.75 m
+off.
+
+**The fix** (opt-in): with `seed_correction_guard_release_agreement_scans` N > 0, a
+released answer is accepted only if its map-frame correction (horizontal offset and yaw
+from its seed) lies within `seed_correction_guard_release_agreement_translation_m`
+(0.3 m) and `_yaw_deg` (5 degrees) of each of the last N corrections the guards
+rejected, i.e. NDT has kept pointing at the same place. Otherwise the guards keep the
+odometry pose and report `seed_correction_guard_release_disagreed`, and the next
+agreeing answer is released. An odometry jump gives the same correction scan after
+scan, so it passes; an alias that flickers in for a second does not. A hold that never
+ends leaves the pose on the odometry until the rejection streak raises the
+reinitialization request, as before. The quickstart sets N = 10 together with
+`--seed-correction-window-sec`; 0 (the default) releases as before. N is the trade:
+an alias that persists N scans is still taken, and a hold delays a right release while
+the odometry drifts or until an outlier leaves the last N.
+
+What the hold did in every run where it engaged (N = 10, `consecutive_rejected_updates`
+at least 30):
+
+| run | answer held at the 30th rejection | outcome |
+|---|---|---|
+| jump 107.5 s (from the true pose) | 2.42 m onto the platform, pose 0.75 m off | held 27 scans, then released 0.75 m, 0.01 m off |
+| jump 111.0 s | 2.24 m onto the platform, pose 0.92 m off | held; released right 12 s later (a small accepted correction near the jump restarted the count) |
+| jump 108.0 s, 108.5 s | 0.69, 0.73 m (right; NDT had answered onto the platform until 4 scans earlier) | held 7 scans until those left the last 10, then released, 0.01 m off |
+| 3 runs started at 95 s (RKO-LIO initialized while walking) | 1.0-1.1 m (right) twice; 2.65 m onto the platform once | held 9-18 scans while the odometry drifted, then released right; the third ran 7.4 m off once RKO-LIO diverged (4-8 m in seconds) |
+| EIL_Mix → EIL_Stairs, live | 1.03 m (right) | held 1 scan |
+| EIL_Stairs → EIL_Box, live (wrong start, 1.5-2 m off) | 0.36 m | held 68 scans; neither release fixed the start |
+
+From the true pose with the same jumps, the paired runs without the hold (six jump
+times, 107.5-111.0 s) all happened to release on a right answer (max 0.57-1.08 m); with
+it, max 0.71-1.08 m (0.85 and 1.08 m in the two that held an alias). In the six runs
+started at 95 s (jumps 107.6-108.4 s), two without the hold ended 3.5 m off (a release
+onto a wrong answer) and 7.6 m off (RKO-LIO diverged); with it, one, the divergence
+above. The hold changes nothing unless a streak reaches 30.
+
+Live with global initialization, window 2 s, against #342's runs (median / p95 / max
+xy in m per run; "-" asked for a manual pose):
+
+| map → scans | window 2 s | window 2 s + release agreement |
+|---|---|---|
+| Long_Stairs → EIL_Box | 0.08 / 0.21 / 0.40; 0.08 / 0.21 / 0.40 | 0.08 / 0.21 / 0.44; 0.08 / 0.23 / 0.68 |
+| Long_Stairs → EIL_Stairs | -; 0.05 / 0.26 / 0.60 | 0.06 / 0.46 / 0.78; 0.05 / 0.26 / 0.51 |
+| Long_Stairs → EIL_Mask1 | 0.07 / 0.18 / 0.34; 0.05 / 0.27 / 0.36 | 0.09 / 0.25 / 0.33; 0.04 / 0.21 / 0.38 |
+| Long_Stairs → Outdoor2 (0-165 s) | 0.02 / 0.04 / 0.08; 0.02 / 0.04 / 0.07 | 0.02 / 0.04 / 0.07; 0.02 / 0.04 / 0.07 |
+| EIL_Mix → EIL_Box | 0.03 / 0.09 / 0.45; 0.03 / 0.08 / 0.31 | 0.03 / 0.08 / 0.36; - |
+| EIL_Mix → EIL_Stairs | 0.02 / 0.12 / 0.54; 0.02 / 0.12 / 0.51 | 0.02 / 0.47 / 1.40; 0.02 / 0.19 / 0.52 |
+| EIL_Mix → EIL_Mask1 | 0.02 / 0.07 / 0.17; 0.02 / 0.06 / 0.17 | 0.02 / 0.06 / 0.17; 0.02 / 0.06 / 0.17 |
+| EIL_Mix → EIL_Mask2 | 0.02 / 0.04 / 0.23; 0.02 / 0.05 / 0.07 | 0.02 / 0.05 / 0.24; 0.02 / 0.04 / 0.22 |
+| EIL_Box → EIL_Mix | 0.03 / 0.10 / 0.43; 0.03 / 0.08 / 0.49 | -; 0.03 / 0.16 / 0.44 |
+| EIL_Box → EIL_Stairs | 0.02 / 0.34 / 0.47; 0.03 / 2.87 / 3.12; 0.02 / 0.13 / 0.45; 0.02 / 0.14 / 0.45 | 0.02 / 0.13 / 0.46; 0.02 / 0.15 / 0.49; 0.02 / 0.13 / 0.38; 0.02 / 0.13 / 0.41 |
+| EIL_Box → EIL_Mask1 | 0.03 / 0.10 / 0.46; 0.03 / 0.08 / 0.17 | 0.03 / 0.11 / 0.89; - |
+| *controls:* EIL_Box → EIL_Box | 0.02 / 0.05 / 0.52; 0.02 / 0.05 / 0.33 | 0.02 / 0.05 / 0.35; 0.02 / 0.05 / 0.26 |
+| EIL_Stairs → EIL_Stairs | 0.02 / 0.06 / 0.35; 0.02 / 0.06 / 0.23 | 0.02 / 0.06 / 0.42; 0.02 / 0.06 / 0.31 |
+| EIL_Mix → EIL_Mix | 0.02 / 0.06 / 0.28; - | 0.02 / 0.05 / 0.35; 0.02 / 0.06 / 0.30 |
+| EIL_Stairs → EIL_Box | (not run) | 1.75 / 2.84 / 3.13 (wrong start); 0.06 / 2.18 / 2.81 (wrong start); 0.04 / 0.13 / 1.17; 0.04 / 0.17 / 0.31 |
+
+The hold engaged in two live runs (above); elsewhere two streaks reached 30 and their
+answers agreed, and no other streak got there, so those runs differ from #342's only by
+run-to-run variation. That includes EIL_Box → EIL_Stairs:
+its four new runs never had more than 10 rejections in a row, so they say nothing about
+the release (the failure was 1 run in 4 before). EIL_Stairs → EIL_Box is new
+(the pair the other way round): 2 of 4 runs started wrong with and without the
+agreement (4 more runs with it forced off: 5.15 and 4.94 m wrong starts, two right at
+0.32-0.49 m), so that is G2 on the EIL_Stairs map, not the release. Startups: 25 of the
+28 runs of #342's cases initialized, none wrong, three asked for a manual pose (#342:
+26, none wrong, two); the startup does not reach the release.
+
+Not verified: one alias, one map pair and one odometry; N = 10 and 0.3 m were chosen
+from the alias seen here (1-2 s long, 2.4 m away), not swept. The jump runs are single
+runs per setting and RKO-LIO does not repeat exactly, so the paired runs differ by more
+than the release. It does not release earlier: a right correction still waits for 30
+rejections (EIL_Mix → EIL_Stairs run 1 rode a 1 m odometry jump for 6 s). To reproduce
+the live table, run the suite with `--seed-correction-window-sec=2.0` in
+`quickstart_args` (the agreement comes with it).
 
 ## Running it
 

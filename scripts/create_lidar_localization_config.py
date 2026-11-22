@@ -292,6 +292,17 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         )
         or 1.0,
         "seed_correction_window_guard_translation_m": 0.3,
+        # With it, the guards' release after 30 rejections takes only an answer
+        # that the last 10 rejected answers agreed with (0.3 m, 5 degrees), not
+        # whatever an aliased scan returns then (docs/benchmark.md).
+        "seed_correction_guard_release_agreement_scans": 10
+        if (
+            getattr(args, "odom_tf_prediction", False)
+            and getattr(args, "seed_correction_window_sec", 0.0) > 0.0
+        )
+        else 0,
+        "seed_correction_guard_release_agreement_translation_m": 0.3,
+        "seed_correction_guard_release_agreement_yaw_deg": 5.0,
         "global_frame_id": args.global_frame,
         "odom_frame_id": args.odom_frame,
         "base_frame_id": args.base_frame,
@@ -498,7 +509,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="With --odom-tf-prediction: reject a scan when the corrections "
         "accepted within this many seconds, plus its own, move the pose more than "
-        "0.3 m away from the odometry (0: off).",
+        "0.3 m away from the odometry, and release the guards after 30 "
+        "rejections only toward an answer the last 10 rejected ones agree with "
+        "(0: off).",
     )
     parser.add_argument("--global-frame", default="map")
     parser.add_argument(

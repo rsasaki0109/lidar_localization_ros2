@@ -558,6 +558,8 @@ public:
   double last_gated_correction_map_dy_{0.0};
   double gate_scan_stamp_sec_{std::numeric_limits<double>::quiet_NaN()};
   lidar_localization::SeedCorrectionWindow seed_correction_window_;
+  // Release agreement: corrections of the latest guard-rejected scans.
+  lidar_localization::SeedCorrectionReleaseHistory seed_correction_release_history_;
   double last_odom_seed_stamp_sec_{std::numeric_limits<double>::quiet_NaN()};
   // Lock order: localization state (when needed), then short twist history lock.
   std::mutex twist_history_mutex_;
@@ -632,6 +634,11 @@ public:
     const lidar_localization::AlignmentAttempt & attempt,
     lidar_localization::RegistrationSeedSource seed_source);
   // The gate's decision on ATTEMPT, without its log or the stored correction.
+  // Map-frame yaw of the attempt's result relative to its seed, in degrees.
+  static double signedCorrectionYawDeg(const lidar_localization::AlignmentAttempt & attempt);
+  void recordSeedCorrectionReleaseHistory(
+    const lidar_localization::AlignmentAttempt & attempt,
+    const lidar_localization::MeasurementGateDecision & gate);
   lidar_localization::MeasurementGateDecision measurementGateDecisionFor(
     const lidar_localization::AlignmentAttempt & attempt) const;
   void logAlignmentPipelineRecovery(

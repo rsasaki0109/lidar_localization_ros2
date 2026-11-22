@@ -464,7 +464,9 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
         help=advanced(
             "with odometry prediction, reject a scan when the corrections accepted "
             "within this many seconds would move the pose more than 0.3 m from the "
-            "odometry; stops slides along a weakly constrained axis "
+            "odometry, and release the seed guards only toward an answer the "
+            "last 10 rejected ones agree with; stops slides along a weakly "
+            "constrained axis and aliased releases "
             "(0: off; docs/benchmark.md)"
         ),
     )

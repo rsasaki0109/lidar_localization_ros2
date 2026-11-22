@@ -210,6 +210,7 @@ These keys are diagnostics only — they never change acceptance behavior.
 | `registration_not_converged` | NDT/GICP did not converge | initial pose too far from truth; try closer seed |
 | `fitness_score_over_threshold_rejected` | match quality too poor | fix initial pose, map alignment, or sensor frame |
 | `seed_correction_window_guard_rejected` | the corrections accepted within `seed_correction_window_guard_sec`, plus this scan's, would move the pose more than `seed_correction_window_guard_translation_m` from the odometry (opt-in) | expected while degraded scans pull the track along a weak axis; persistent streaks mean the odometry itself drifted |
+| `seed_correction_guard_release_disagreed` | the guards' rejection streak reached `seed_correction_guard_release_rejections`, but this scan's correction disagrees with the last `seed_correction_guard_release_agreement_scans` rejected ones (opt-in) | expected while NDT flickers onto an alias during a long streak; persistent streaks mean the odometry itself drifted or the answers never settle |
 | `seed_correction_guard_rejected` | result jumped more than `seed_correction_guard_translation_m` / `_yaw_deg` from the seed (opt-in guard) | expected while an aliased match is suppressed; persistent streaks mean the seed itself drifted |
 | `recovery_retry_from_last_pose_recovered` | retry from last good pose succeeded | transient glitch; usually OK |
 | `gtsam_update_rejected` | backend smoother rejected the update | often follows repeated measurement rejects |
@@ -516,6 +517,13 @@ looks good; previous-delta prediction then extrapolates the jump.
   It shares the guard's warmup and release and reports
   `seed_correction_window_guard_rejected`
   ([benchmark.md](benchmark.md#why-tracking-slid-along-the-room-and-the-fix)).
+- if the pose jumps metres right after a long run of guard rejections (the release took
+  an aliased answer), set `seed_correction_guard_release_agreement_scans` (quickstart:
+  comes with `--seed-correction-window-sec`, 10): the release then accepts only an answer
+  whose correction agrees with each of that many recent rejected ones
+  (`seed_correction_guard_release_agreement_translation_m`, `_yaw_deg`) and otherwise
+  keeps holding the odometry, reporting `seed_correction_guard_release_disagreed`
+  ([benchmark.md](benchmark.md#why-a-release-locked-onto-an-aliased-answer-and-the-fix)).
 
 ## Symptom: Tracking Does Not Recover After Leaving the Map With External Odometry
 
