@@ -464,6 +464,46 @@ class TestQuickstartCli(unittest.TestCase):
                         2,
                     )
 
+    def test_global_search_engine_is_passed_only_when_not_the_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, text = self._dry_run(root, ["--no-auto-occupancy-map"])
+            self.assertNotIn("g2_global_search_engine", text)
+            self.assertNotIn("g2_bbs3d_", text)
+            _, text = self._dry_run(
+                root,
+                [
+                    "--no-auto-occupancy-map",
+                    "--global-search-engine",
+                    "bbs3d",
+                    "--bbs3d-timeout-sec",
+                    "5",
+                    "--bbs3d-threads",
+                    "2",
+                ],
+            )
+            self.assertIn("g2_global_search_engine:=bbs3d", text)
+            self.assertIn("g2_bbs3d_timeout_sec:=5.0", text)
+            self.assertIn("g2_bbs3d_num_threads:=2", text)
+            unknown = ["--global-search-engine", "bbs4d"]
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(
+                SystemExit
+            ):
+                QUICKSTART.main(
+                    ["--map", str(root / "site.pcd"), "--dry-run", *unknown]
+                )
+            for extra in (
+                ["--global-search-engine", "bbs3d", "--bbs3d-timeout-sec", "0"],
+                ["--global-search-engine", "bbs3d", "--bbs3d-threads", "0"],
+            ):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(
+                        QUICKSTART.main(
+                            ["--map", str(root / "site.pcd"), "--dry-run", *extra]
+                        ),
+                        2,
+                    )
+
     def test_generate_occupancy_map_reports_failures(self):
         with tempfile.TemporaryDirectory() as directory:
             yaml_path = Path(directory) / "grids" / "abc.yaml"

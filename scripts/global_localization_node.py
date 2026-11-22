@@ -38,10 +38,31 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import make_bbs_relocalization_attempts as bbs_engine
 from global_localization_query import (
+    GLOBAL_SEARCH_ENGINE_BBS2D,
+    GLOBAL_SEARCH_ENGINE_BBS3D,
     GlobalLocalizationConfig,
     GlobalLocalizationEngine,
     level_attitude,
     quaternion_matrix,
+)
+
+# GlobalLocalizationConfig fields of the bbs3d engine, declared under the same
+# names and types.
+BBS3D_PARAMETERS = (
+    "bbs3d_min_level_res_m",
+    "bbs3d_max_level",
+    "bbs3d_map_leaf_m",
+    "bbs3d_scan_leaf_m",
+    "bbs3d_scan_min_range_m",
+    "bbs3d_scan_max_range_m",
+    "bbs3d_max_tilt_rad",
+    "bbs3d_top_k",
+    "bbs3d_min_separation_m",
+    "bbs3d_min_score_ratio",
+    "bbs3d_relative_score_floor",
+    "bbs3d_timeout_sec",
+    "bbs3d_max_queue_nodes",
+    "bbs3d_num_threads",
 )
 
 
@@ -129,6 +150,13 @@ class GlobalLocalizationNode(Node):
         self.declare_parameter("route_yaw_offsets_deg", "-15,0,15")
         self.declare_parameter("route_lateral_offsets_m", "-2,0,2")
         self.declare_parameter("route_longitudinal_offsets_m", "-1,0,1")
+        # Map-wide search engine: bbs2d (2D grid, default) or bbs3d (3D-BBS voxel
+        # maps of map_path, opt-in for multi-level maps). Without bbs3d_cpp or
+        # map_path the node logs an error and answers with bbs2d.
+        self.declare_parameter("global_search_engine", "bbs2d")
+        defaults = GlobalLocalizationConfig()
+        for name in BBS3D_PARAMETERS:
+            self.declare_parameter(name, getattr(defaults, name))
 
         candidate_source = str(
             self.get_parameter("candidate_source").get_parameter_value().string_value
@@ -217,6 +245,11 @@ class GlobalLocalizationNode(Node):
             route_longitudinal_offsets_m=str(
                 self.get_parameter("route_longitudinal_offsets_m").value
             ),
+            global_search_engine=str(self.get_parameter("global_search_engine").value),
+            **{
+                name: type(getattr(defaults, name))(self.get_parameter(name).value)
+                for name in BBS3D_PARAMETERS
+            },
         )
         self.engine = GlobalLocalizationEngine(
             config, occupancy_yaml=Path(occupancy_yaml) if occupancy_yaml else None
@@ -225,6 +258,40 @@ class GlobalLocalizationNode(Node):
             self.get_logger().warn(
                 f"use_cpp_backend requested but bbs_cpp is unavailable ({self.engine.backend_error}); "
                 "falling back to the Python search"
+            )
+        if self.engine.global_search_engine_error:
+            self.get_logger().error(
+                "global_search_engine=bbs3d requested but unavailable: "
+                f"{self.engine.global_search_engine_error}; answering with the 2D "
+                "search (bbs2d)"
+            )
+        elif self.engine.global_search_engine == GLOBAL_SEARCH_ENGINE_BBS3D:
+            info = self.engine.bbs3d_info or {}
+            rss_before = info.get("rss_before_mb")
+            rss_after = info.get("rss_after_mb")
+            rss_text = (
+                f"{rss_after:.0f} MB (+{rss_after - rss_before:.0f} MB)"
+                if rss_before is not None and rss_after is not None
+                else "unknown"
+            )
+            self.get_logger().info(
+                "global search engine bbs3d: map %s, %d of %d points after %g m "
+                "thinning, voxel maps %.1f MB built in %.0f ms, RSS %s; top %d "
+                "answers %g m apart, limit %g s / %d nodes, %d threads"
+                % (
+                    map_path,
+                    int(info.get("map_points", 0)),
+                    int(info.get("loaded_points", 0)),
+                    config.bbs3d_map_leaf_m,
+                    float(info.get("voxelmap_bytes", 0)) / 1.0e6,
+                    float(info.get("build_ms", 0.0)),
+                    rss_text,
+                    config.bbs3d_top_k,
+                    config.bbs3d_min_separation_m,
+                    config.bbs3d_timeout_sec,
+                    config.bbs3d_max_queue_nodes,
+                    config.bbs3d_num_threads,
+                )
             )
         if enable_registration_scoring:
             if self.engine.registration_scorer is None:
@@ -450,6 +517,20 @@ class GlobalLocalizationNode(Node):
             summary["registration_scoring_error"] = result.registration_scoring_error
         if result.route_crop_error:
             summary["route_crop_error"] = result.route_crop_error
+        # Only off the default engine, so a bbs2d answer reads as before.
+        if (
+            result.global_search_engine != GLOBAL_SEARCH_ENGINE_BBS2D
+            or self.engine.global_search_engine_error
+        ):
+            summary["global_search_engine"] = result.global_search_engine
+        if self.engine.global_search_engine_error:
+            summary["global_search_engine_error"] = (
+                self.engine.global_search_engine_error
+            )
+        if result.search_info is not None:
+            summary["search_info"] = result.search_info
+        if result.search_error:
+            summary["search_error"] = result.search_error
         if ranked:
             summary["top"] = ranked[0]
         response.success = bool(result.candidates)

@@ -504,6 +504,28 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
         ),
     )
     tuning.add_argument(
+        "--global-search-engine",
+        choices=("bbs2d", "bbs3d"),
+        default="bbs2d",
+        help=advanced(
+            "map-wide global search: bbs2d (2D occupancy grid) or bbs3d (3D "
+            "branch-and-bound over the 3D map; multi-level maps, more CPU and "
+            "memory; docs/global_localization.md)"
+        ),
+    )
+    tuning.add_argument(
+        "--bbs3d-timeout-sec",
+        type=float,
+        default=10.0,
+        help=advanced("bbs3d: hard time limit of one search (default: 10)"),
+    )
+    tuning.add_argument(
+        "--bbs3d-threads",
+        type=int,
+        default=4,
+        help=advanced("bbs3d: threads of the search (default: 4)"),
+    )
+    tuning.add_argument(
         "--g3-recovery",
         action=BooleanOptionalAction,
         default=True,
@@ -774,6 +796,11 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
             args.supervisor_odometry_confirmation_mode
         ),
     }
+    if args.global_search_engine != "bbs2d":
+        # Only off the default, so a bbs2d command line reads as before.
+        values["g2_global_search_engine"] = args.global_search_engine
+        values["g2_bbs3d_timeout_sec"] = args.bbs3d_timeout_sec
+        values["g2_bbs3d_num_threads"] = args.bbs3d_threads
     parts = ["ros2", "launch", "lidar_localization_ros2", "quickstart.launch.py"]
     parts.extend(
         f"{key}:={value}"
@@ -867,6 +894,10 @@ def _validate(args) -> str | None:
         return "--global-z-min must be below --global-z-max."
     if args.global_sparse_band_min_points < 0:
         return "--global-sparse-band-min-points must be 0 (off) or positive."
+    if not math.isfinite(args.bbs3d_timeout_sec) or args.bbs3d_timeout_sec <= 0.0:
+        return "--bbs3d-timeout-sec must be a finite time above 0."
+    if args.bbs3d_threads < 1:
+        return "--bbs3d-threads must be 1 or more."
     if (
         not math.isfinite(args.occupancy_inflate_radius_m)
         or args.occupancy_inflate_radius_m < 0.0

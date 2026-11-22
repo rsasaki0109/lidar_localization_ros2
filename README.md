@@ -289,4 +289,5 @@ Results:
 
 ## License
 
-BSD 2-Clause.
+BSD 2-Clause. `third_party/bbs3d` (part of [3D-BBS](https://github.com/KOKIAOKI/3d_bbs), used by the
+opt-in 3D global search `global_search_engine: bbs3d`) is MIT; its licence is kept there.

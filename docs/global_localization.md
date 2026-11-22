@@ -144,8 +144,10 @@ G2 searches a 2D occupancy grid made from the 3D map, so in a building with stai
 room, the stairs and the hall below fall onto the same cells. [3D-BBS](https://github.com/KOKIAOKI/3d_bbs)
 (Aoki, Koide et al., ICRA 2024) runs the branch-and-bound over a 3D voxel hierarchy
 instead and returns x, y, z and yaw. It was evaluated offline as a replacement for the
-2D search, on CPU (no GPU here), and **not integrated**. Method, scripts and the
+2D search, on CPU (no GPU here). Method, scripts and the
 reproduction are in [experiments/3d_bbs_eval](../experiments/3d_bbs_eval/README.md).
+It is now available as an opt-in engine:
+[Using 3D-BBS](#using-3d-bbs-global_search_engine-bbs3d).
 
 - **Licence: MIT.** Usable from this BSD-2 package, also vendored, if its notice is
   kept. Kept external here.
@@ -238,6 +240,117 @@ not obstacles. The costs are CPU time on open or repetitive scenes (seconds to m
 without a limit, so a limit that sometimes returns nothing) and memory during the
 search (up to 1.5 GB here). It does not help with the aliased rooms that fooled G2; the
 startup checks remain what stops those.
+
+### Using 3D-BBS (`global_search_engine: bbs3d`)
+
+Opt-in; the default stays `bbs2d`, whose answers are unchanged (checked query by query
+against the evaluation above on two pairs). Use it for maps with more than one level:
+stairs, a mezzanine, a hall below a floor. Keep `bbs2d` on flat maps, on small
+computers, and where queries must return in a second or two.
+
+```bash
+ros2 run lidar_localization_ros2 quickstart.py --map site.pcd --global-search-engine bbs3d
+# or: ros2 launch ... g2_global_search_engine:=bbs3d   (quickstart / global_localization_recovery launch)
+# or: global_localization_node.py --ros-args -p global_search_engine:=bbs3d -p map_path:=site.pcd ...
+```
+
+What changes: the map-wide search runs over a 3D voxel hierarchy of `map_path` instead
+of the 2D grid and returns x, y, z and yaw. Its `bbs3d_top_k` best poses, each at least
+`bbs3d_min_separation_m` from a better one, go through the same NDT refinement (always
+on for bbs3d) and fitness ranking as the 2D candidates, so the startup's consensus and
+nearby-alternative checks work unchanged. The answer JSON gains `global_search_engine`
+and `search_info` (`elapsed_ms`, `timed_out`, `queue_capped`, `answers`, ...).
+
+| parameter (node) | default | meaning |
+|---|---|---|
+| `global_search_engine` | `bbs2d` | `bbs3d` for the 3D search (launch arg `g2_global_search_engine`, quickstart `--global-search-engine`) |
+| `bbs3d_top_k` | 8 | answers per query (`g2_bbs3d_top_k`) |
+| `bbs3d_min_separation_m` | 3.0 | answers at least this far apart (3D); 1 m left a refined alternative near nearly every top, and most starts went to the operator |
+| `bbs3d_relative_score_floor` / `bbs3d_min_score_ratio` | 0.9 / 0.0 | after the best answer, others need 90% of its score; absolute floor as a share of scan points |
+| `bbs3d_timeout_sec` | 10.0 | hard limit of one search (`g2_bbs3d_timeout_sec`, quickstart `--bbs3d-timeout-sec`); it returns the answers found so far, possibly none |
+| `bbs3d_max_queue_nodes` | 4,000,000 | cap of open nodes (32 bytes each); the search stops like on the time limit |
+| `bbs3d_num_threads` | 4 | OpenMP threads (`g2_bbs3d_num_threads`, quickstart `--bbs3d-threads`) |
+| `bbs3d_min_level_res_m` / `bbs3d_max_level` | 0.5 / 6 | finest voxel and coarser levels (`g2_bbs3d_min_level_res_m`; 1.0 for large outdoor maps) |
+| `bbs3d_map_leaf_m`, `bbs3d_scan_leaf_m`, `bbs3d_scan_min_range_m`, `bbs3d_scan_max_range_m`, `bbs3d_max_tilt_rad` | 0.1, 0.5, 1, 30, 0.02 | map and scan thinning, scan range, roll/pitch searched around the levelled scan |
+
+One search runs at a time: a query that arrives while one runs gets no candidates and
+`search_error: busy` instead of queueing (the node's service is single-threaded anyway,
+so this matters only for callers that share the engine). Searches cannot pile up or
+grow without bound: the time limit and the node cap bound each one.
+
+If `bbs3d` is requested but cannot run (the `bbs3d_cpp` module was not built, `map_path`
+is empty or does not load), the node logs an **error** at startup, answers with `bbs2d`,
+and every answer carries `global_search_engine: bbs2d` and
+`global_search_engine_error`. Invalid `bbs3d_*` values (k < 1, a time limit <= 0, ...)
+refuse to start the node. An occupancy grid is still required, for that fallback.
+
+**Build.** No new dependency: the module `bbs3d_cpp` is built whenever pybind11 is
+found (like `bbs_cpp`), from three unmodified files of 3D-BBS vendored in
+[third_party/bbs3d](../third_party/bbs3d/README.md) (MIT; the licence is installed with
+the package) and the top-k search in `include/lidar_localization/bbs3d_topk_search.hpp`.
+They need Eigen and the Boost hash headers, which PCL already brings; OpenMP when found.
+Vendoring was chosen over an optional external library because 3D-BBS is not packaged
+for ROS or Ubuntu: a user would have to build and install it, and fix its missing
+Boost.Filesystem link, for an engine they may never use; the subset is 260 lines and
+builds in seconds, without the file I/O that needed Boost.Filesystem.
+
+**Through the node's code path** (`eval_global_search.py --method g2 --config
+'{"global_search_engine": "bbs3d"}'`, i.e. `GlobalLocalizationEngine.query`, same scans,
+maps and suite settings as the evaluation; 2026-11-22):
+
+| map → scans, queries | bbs2d: success, median query | bbs3d: success, median query | evaluation, top 8 3 m apart |
+|---|---|---|---|
+| Long_Stairs → Outdoor2 0-165 s, 163 | 137, 2.9 s | **153**, 10.1 s | 153 |
+| EIL_Box → EIL_Stairs, 135 | 59, 0.7 s | 69, 1.4 s | 69 |
+| EIL_Mix → EIL_Box, 103 | 78, 1.2 s (evaluation run) | 88, 3.5 s | 88 |
+
+bbs3d gave the evaluation's top answer on every query and the same full candidate list
+on every query that did not hit the time limit (Long_Stairs → Outdoor2: 135 of 163; the
+other 28 stopped at 10 s, where the answers found so far depend on CPU speed). The
+startup replay starts at the same query with the same pose in all three. bbs2d gave
+the evaluation's G2 candidate lists exactly on every query of Long_Stairs → Outdoor2 and
+EIL_Box → EIL_Stairs. On Long_Stairs → Outdoor2 by segment, bbs3d / bbs2d: room 50/50 /
+50/50, corridor 75/75 / 71/75, stairs 20/20 / 13/20 (5 on another level), hall 5 m
+below 8/18 (10 queries without an answer at the time limit) / 3/18 (12 on another
+level).
+
+Live startup replays (`run_benchmark.py`, the cross-session suite with
+`--global-search-engine=bbs3d`, RKO-LIO odometry, one run each):
+
+| case | bbs2d | bbs3d |
+|---|---|---|
+| Long_Stairs_map__Outdoor2 | right, first pose 15.1 s, 0.02 m median | right, first pose 37.8 s (three 10 s queries), 0.02 m median |
+| EIL_Box_map__EIL_Stairs, 2 runs | right in both, first pose 11.6 s | one wrong start, 3.4 m off; one handed to the operator after 6 queries |
+
+On the aliased room the live bbs3d start went wrong once where bbs2d was right twice:
+the third query's search kept a single answer above 90% of the best score, so there was
+no alternative for the nearby-alternative check to compare with, and two answers agreed
+after the odometry motion. The offline replay above starts right on this pair for both
+engines; two live runs are too few to rank them there, but bbs3d is not a fix for
+aliased rooms, and the 2D search stays the better choice on single-level maps.
+
+**Cost.** Voxel maps, once per map load: 22 ms and 0.6 MB (EIL_Box, 90 k points after
+0.1 m thinning), 32 ms and 0.7 MB (EIL_Mix), 132 ms and 6.2 MB (Long_Stairs, 386 k
+points); RSS after loading +17, +29 and +70 MB (mostly PCL reading the 0.4-1.2 M point
+file). The node logs both at startup. During a search the open nodes take 32 bytes
+each: up to 2.2 M nodes (70 MB, plus the queue's growth) in the hall within 10 s, and the
+4 M cap bounds a search at about 128-256 MB. Peak RSS of the whole query process stayed
+as in the evaluation (184-374 MB with the NDT scorer). Query time on 4 threads is 0.1-
+3 s where the scan is distinctive and the full 10 s on open or repetitive scenes; on
+one thread it was 3.4 times as long in the evaluation. The 10 s limit returns fewer
+answers, or none, on a slower or busier computer: on this shared 4-vCPU machine
+108 of 163 Long_Stairs → Outdoor2 searches hit it (98 in the evaluation).
+
+**Small computers** (the Go2 `mid360_legged_low_resource` class): the voxel maps are
+small, but the search is CPU-bound and runs next to the localizer. If bbs3d is needed
+there, keep `bbs3d_num_threads` below the core count, lower `bbs3d_max_queue_nodes`
+(1,000,000 bounds a search at about 32-64 MB), and expect more searches to end at the
+limit with fewer answers; the startup then needs more queries before two agree.
+Raising `bbs3d_timeout_sec` trades startup time for answers. Not measured on such
+hardware.
+
+**Not verified:** a GPU build (the vendored subset is CPU only), Boreas through the node
+path, Foxy/Humble builds of `bbs3d_cpp` (CI covers them), and real hardware.
 
 ## G3: guarded automatic reinitialization
 

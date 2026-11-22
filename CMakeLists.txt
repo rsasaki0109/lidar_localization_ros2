@@ -274,6 +274,44 @@ if(pybind11_FOUND AND lidar_localization_python_dev_FOUND)
     LIBRARY DESTINATION lib/${PROJECT_NAME})
   set(G2_NDT_SCORE_BUILT TRUE)
   message(STATUS "lidar_localization: building optional g2_ndt_score pybind11 backend")
+
+  # Optional G2 engine global_search_engine=bbs3d: a 3D branch-and-bound over the
+  # voxel maps of 3D-BBS (MIT, vendored in third_party/bbs3d). Needs nothing
+  # beyond PCL, Eigen and the Boost hash headers PCL already brings; OpenMP is used
+  # when found. Built whenever pybind11 is; without it the node logs an error and
+  # answers with the 2D search.
+  include(CheckIncludeFileCXX)
+  set(CMAKE_REQUIRED_INCLUDES ${PCL_INCLUDE_DIRS})
+  check_include_file_cxx("boost/functional/hash/hash.hpp" LIDAR_LOCALIZATION_HAVE_BOOST_HASH)
+  unset(CMAKE_REQUIRED_INCLUDES)
+  if(LIDAR_LOCALIZATION_HAVE_BOOST_HASH)
+    add_library(bbs3d_voxelmaps STATIC third_party/bbs3d/src/voxelmaps.cpp)
+    set_target_properties(bbs3d_voxelmaps PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    # Upstream code, kept unmodified: silence its sign-compare warning.
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+      target_compile_options(bbs3d_voxelmaps PRIVATE -Wno-sign-compare)
+    endif()
+    target_include_directories(bbs3d_voxelmaps PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/bbs3d/include>
+      ${PCL_INCLUDE_DIRS})
+    target_link_libraries(bbs3d_voxelmaps PUBLIC Eigen3::Eigen)
+    pybind11_add_module(bbs3d_cpp src/bbs3d_pybind.cpp)
+    target_compile_features(bbs3d_cpp PRIVATE cxx_std_17)
+    target_include_directories(bbs3d_cpp PRIVATE include ${PCL_INCLUDE_DIRS})
+    target_link_libraries(bbs3d_cpp PRIVATE bbs3d_voxelmaps ${PCL_LIBRARIES})
+    if(OpenMP_CXX_FOUND)
+      target_link_libraries(bbs3d_cpp PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    install(TARGETS bbs3d_cpp
+      LIBRARY DESTINATION lib/${PROJECT_NAME})
+    # The module carries 3D-BBS code: ship its MIT notice with it.
+    install(FILES third_party/bbs3d/LICENSE third_party/bbs3d/README.md
+      DESTINATION "share/${PROJECT_NAME}/third_party/bbs3d")
+    set(BBS3D_CPP_BUILT TRUE)
+    message(STATUS "lidar_localization: building optional bbs3d_cpp (G2 engine bbs3d)")
+  else()
+    message(STATUS "lidar_localization: Boost hash headers not found; bbs3d_cpp (G2 engine bbs3d) disabled")
+  endif()
 else()
   message(STATUS "lidar_localization: pybind11/Python3 Development.Module not found; bbs_cpp backend disabled (Python fallback)")
 endif()
@@ -617,6 +655,17 @@ if(BUILD_TESTING)
     COMMAND test_bbs_branch_and_bound
   )
 
+  if(BBS3D_CPP_BUILT)
+    add_executable(test_bbs3d_topk_search test/test_bbs3d_topk_search.cpp)
+    target_include_directories(test_bbs3d_topk_search PRIVATE include)
+    target_link_libraries(test_bbs3d_topk_search bbs3d_voxelmaps)
+    if(OpenMP_CXX_FOUND)
+      target_link_libraries(test_bbs3d_topk_search OpenMP::OpenMP_CXX)
+    endif()
+    add_test(NAME bbs3d_topk_search COMMAND test_bbs3d_topk_search)
+    set_tests_properties(bbs3d_topk_search PROPERTIES TIMEOUT 120)
+  endif()
+
   add_executable(test_initial_pose_bridge_reset test/test_initial_pose_bridge_reset.cpp)
   target_link_libraries(test_initial_pose_bridge_reset
     lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
@@ -928,6 +977,10 @@ if(BUILD_TESTING)
   add_test(
     NAME global_localization_query
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_global_localization_query.py
+  )
+  add_test(
+    NAME global_localization_bbs3d
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_global_localization_bbs3d.py
   )
   add_test(
     NAME rviz_config
