@@ -647,7 +647,9 @@ def _config_args(args, cloud_topic: str, imu_topic: str):
     if args.odom_tf_prediction:
         argv.append("--odom-tf-prediction")
     if args.seed_correction_window_sec > 0.0:
-        argv.extend(["--seed-correction-window-sec", str(args.seed_correction_window_sec)])
+        argv.extend(
+            ["--seed-correction-window-sec", str(args.seed_correction_window_sec)]
+        )
     return config_tool.build_arg_parser().parse_args(argv)
 
 

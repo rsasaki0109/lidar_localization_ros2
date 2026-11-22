@@ -23,6 +23,23 @@ not detect the unit.
   rose from 29 to 98 ([benchmark.md](docs/benchmark.md#why-the-wrong-starts-passed-and-the-fix)).
   Unrefined answers are checked as before; negative values turn either check off.
 
+### Added
+
+- **Opt-in windowed seed correction guard** (`enable_seed_correction_window_guard`,
+  `seed_correction_window_guard_sec`, `seed_correction_window_guard_translation_m`;
+  quickstart `--seed-correction-window-sec`, only with odometry prediction). It rejects
+  a scan when the corrections accepted within the window plus its own would move the
+  pose more than 0.3 m (horizontally) away from the odometry, reporting
+  `seed_correction_window_guard_rejected`; it shares the seed correction guard's warmup
+  and release. On the Go2 cross-session replays a run of degraded scans, each within
+  the per-scan guard, slid the pose 1-2.7 m along the room's weak axis, after which the
+  per-scan guard rejected the way back. From the true pose, with a 2 s window, the
+  maximum error on the Long_Stairs map fell from 1.8-2.7 m to 0.40 m (EIL_Box) and from
+  1.3-2.2 m to 0.55-0.90 m (EIL_Stairs); live, every slide over 1 m was gone except one
+  EIL_Box → EIL_Stairs run of four, where an odometry jump and the per-scan guard's
+  release still ended 3.1 m off. Off by default
+  ([benchmark.md](docs/benchmark.md#why-tracking-slid-along-the-room-and-the-fix)).
+
 ### Fixed
 
 - **`mid360_legged.yaml` and the `mid360` quickstart profile read the MID-360 IMU as
