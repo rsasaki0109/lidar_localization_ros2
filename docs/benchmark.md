@@ -510,6 +510,108 @@ rejections (EIL_Mix → EIL_Stairs run 1 rode a 1 m odometry jump for 6 s). To r
 the live table, run the suite with `--seed-correction-window-sec=2.0` in
 `quickstart_args` (the agreement comes with it).
 
+#### EIL_Stairs → EIL_Box: why starts were wrong, and the fix
+
+Measured 2026-11-22 on `main` at `9973ee4`. The pair is now a case of the suite. The
+eight earlier live runs (four with the release agreement, four without) had four wrong
+starts, for three different reasons:
+
+| run | what happened |
+|---|---|
+| with agreement, runs 1 and 2 (1.76, 1.79 m off) | identical answers: query 1 a place 1.6 m along the room (rejected as ambiguous, kept as an unconfirmed fix), query 2 right (fitness 0.027), query 4 the same place 1.8 m along the room as query 1 (fitness 0.15, passed the gates), confirmed by query 1 through odometry and published |
+| without agreement, run 4 (4.62 m off) | G2 was right: the published pose was 0.05 m from the ground truth. The localizer's first two scans corrected it by 0.60 m and 1.88 m (fitness 0.13, 0.42) while the robot walked at 0.7 m/s and turned, onto the room turned around 4.6 m away, and the seed correction guard, still in its warm-up after the initial pose, let them through |
+| without agreement, run 1 (5.15 m off) | quickstart's discovery missed the odometry, so the search used the raw scan (roll 0 instead of 177 degrees: the MID-360 hangs upside down, so the scan was mirrored) and the startup had no odometry; two answers on the room turned around agreed while the robot walked 1.4 m. Verification rejected the pose 8 s later and the run handed over to the operator, but one wrong pose had been published |
+
+The first two are the G2 search. Offline (`experiments/3d_bbs_eval/eval_global_search.py`, one
+scan per 0.5 s over the first 60 s, ground truth for levelling) the top was within 1 m
+for 55% of the scans; for 48 of the 120 no candidate was within 1 m of the truth, and in
+42 of those the true pose registered better than the returned top (NDT fitness 0.033
+against 0.149, median), the top being a place 1-2 m along the room at the same heading.
+The G2 search suppresses candidates within `nms_radius_m` (quickstart: 3 m) of a
+better one by the 2D grid score, before NDT refinement, so where the aliased place
+scores higher on the grid the true pose is never refined. With 1.5 m the top was right
+for 89% of the scans and the truth was a candidate for 99%. Agreement over motion does
+not help: the alias is the room shifted along itself, so it moves with the robot like
+the right answer, and query 1 and 4 above agree through odometry. Neither does a
+fitness comparison across views: a startup rule that refused a fix contradicted by an
+earlier, clearly better registered fix (query 2 above) still left 19 of the 24
+simulated wrong starts of this pair: mostly the truth was never a candidate at all.
+
+All 15 pairs, one scan per second (1,175 scans; `quickstart_model.decide_startup`
+replayed from every scan as a start, ground truth as odometry, 995 start points):
+
+| G2 / startup | top right | truth a candidate | query median | wrong | right | manual |
+|---|---|---|---|---|---|---|
+| quickstart (`nms_radius_m` 3 m) | 64% | 67% | 1.16 s | 52 | 835 | 108 |
+| `nms_radius_m` 2 m | 73% | 78% | 0.58 s | 11 | 847 | 137 |
+| `nms_radius_m` 1.5 m | 72% | 78% | 0.46 s | **5** | 804 | 186 |
+| 1.5 m + `global_consensus_near_alias_samples` 3 | | | | **5** | **833** | 157 |
+| 1.5 m + `global_consensus_near_alias_samples` 4 | | | | 5 | 814 | 176 |
+| 3 m + `global_consensus_near_alias_samples` 3 | | | | 52 | 835 | 108 |
+
+2 m left 3 wrong starts on EIL_Box → EIL_Mask1, which had none, and 8 on EIL_Box →
+EIL_Stairs. With 1.5 m the five left are on the two pairs that had the most (EIL_Box →
+EIL_Stairs 2, was 20; Long_Stairs → EIL_Stairs 3, was 16); EIL_Stairs → EIL_Box went
+from 9 / 73 / 10 to 0 / 90 / 2. The cost is manual poses where the room repeats: in the
+capture room the place about 1.8 m along x registers within 2x of the right one in
+many views, and with 1.5 m that alternative is a candidate, so the nearby-alternative
+check of #341 rejects the right answer that 3 m let through (Long_Stairs → EIL_Stairs:
+right 64 → 22). The near-alias rule accepts such a fix once three views agree through
+odometry, if the alternative has the same heading (the room turned around, or an
+alternative 5 m away, still rejects): Long_Stairs → EIL_Stairs right 22 → 33, no new
+wrong start anywhere. With 3 m it never applies. The opt-in 3D search
+(`global_search_engine: bbs3d`) also answers this pair: top right for 79% of the
+scans (3 m: 55%, 1.5 m: 86%), replay 0 wrong / 92 right / 0 manual, 1.8 s per query;
+it was not run on the other pairs or live here.
+
+Live, the 14 cases of #342 (two runs each; before = #345's runs on `main`, quickstart's
+3 m; after = `--global-nms-radius-m=1.5 --global-consensus-near-alias-samples=3` added
+to the same suite, `--seed-correction-window-sec=2.0` in both):
+
+| map → scans | before: initialized / wrong / manual | after | after: first-pose error (m): median / p95 / max xy (m) |
+|---|---|---|---|
+| Long_Stairs → Outdoor2 (0-165 s) | 2 / 0 / 0 | 2 / 0 / 0 | 0.01: 0.02 / 0.04 / 0.07; 0.02: 0.02 / 0.04 / 0.07 |
+| EIL_Mix → EIL_Box | 1 / 0 / 1 | 2 / 0 / 0 | 0.01: 0.03 / 0.07 / 0.32; 0.01: 0.03 / 0.07 / 0.28 |
+| EIL_Mix → EIL_Stairs | 2 / 0 / 0 | 2 / 0 / 0 | 0.02: 0.02 / 0.12 / 0.39; 0.03: 0.02 / 0.15 / 0.48 |
+| EIL_Mix → EIL_Mask1 | 2 / 0 / 0 | 2 / 0 / 0 | 0.04: 0.02 / 0.07 / 0.17; 0.04: 0.02 / 0.07 / 0.16 |
+| EIL_Mix → EIL_Mask2 | 2 / 0 / 0 | 2 / 0 / 0 | 0.03: 0.02 / 0.04 / 0.07; 0.06: 0.02 / 0.07 / 0.48 |
+| EIL_Box → EIL_Mix | 1 / 0 / 1 | 2 / 0 / 0 | 0.03: 0.03 / 0.08 / 0.38; 0.02: 0.03 / 0.10 / 0.38 |
+| EIL_Box → EIL_Stairs | 2 / 0 / 0 | 1 / 0 / **1** | 0.02: 0.02 / 0.12 / 0.38; manual |
+| EIL_Box → EIL_Mask1 | 1 / 0 / 1 | 2 / 0 / 0 | 0.09: 0.03 / 0.12 / 0.30; 0.04: 0.03 / 0.09 / 0.16 |
+| Long_Stairs → EIL_Box | 2 / 0 / 0 | 2 / 0 / 0 | 0.13: 0.08 / 0.21 / 0.44; 0.06: 0.08 / 0.21 / 0.37 |
+| Long_Stairs → EIL_Stairs | 2 / 0 / 0 | 1 / 0 / 1 | manual (no odometry); 0.05: 0.05 / 0.26 / 0.60 |
+| Long_Stairs → EIL_Mask1 | 2 / 0 / 0 | 1 / 0 / **1** | 0.17: 0.10 / 0.27 / 0.59; manual |
+| *controls:* EIL_Box → EIL_Box | 2 / 0 / 0 | 2 / 0 / 0 | 0.02: 0.02 / 0.05 / 0.52; 0.02: 0.02 / 0.04 / 0.19 |
+| EIL_Stairs → EIL_Stairs | 2 / 0 / 0 | 2 / 0 / 0 | 0.02: 0.02 / 0.06 / 0.48; 0.02: 0.02 / 0.10 / 0.97 |
+| EIL_Mix → EIL_Mix | 2 / 0 / 0 | 2 / 0 / 0 | 0.04: 0.02 / 0.06 / 0.27; 0.03: 0.02 / 0.06 / 0.27 |
+| **total** | 25 / 0 / 3 | 25 / 0 / 3 | |
+| EIL_Stairs → EIL_Box (new) | 8 runs: 8 / **4** / 0 | 8 runs: 7 / 0 / 1 | 0.01-0.02 m first-pose error, max 0.31-0.59 m |
+
+The three manual poses before all came from runs that started without odometry: the
+benchmark starts quickstart 3 s after the bag, and in some runs its discovery did not
+see RKO-LIO yet (it logs `Discovery: odometry=none`), so the localizer ran without
+odometry and the search on the raw, upside-down scan. After, one run did (Long_Stairs →
+EIL_Stairs run 1); the other two asked for a pose in views that stayed ambiguous:
+EIL_Box → EIL_Stairs run 2 saw the room turned around in two views and the place 1.2 m
+along it next to the right answer in two more, and Long_Stairs → EIL_Mask1 run 2 (part
+of the sensor covered) placed four of six views 5-22 m away. The first right pose came
+after a median 9.3 s (11.6 s before, max 13.3 s against 20.1 s), and tracking in the
+right runs stayed within p95 0.27 m (0.47 m) and max 0.97 m (1.40 m). EIL_Stairs → EIL_Box
+after combines six runs with 1.5 m alone (five right, one without odometry asked for a
+pose) and two with both settings. With 1.5 m alone on the 14 cases (28 runs): 21 / 0 / 7,
+five of the seven without odometry and both Long_Stairs → EIL_Stairs runs ambiguous in all
+six views, which the near-alias rule is for; with it, 3 of the 4 runs of that pair
+started right (the fourth had no odometry).
+
+Not verified: one site (the JEPLO capture room and its corridor); the rule's 3 and the
+1.5 m were picked from these replays (1.5, 2 and 3 m on all pairs, 1 m only on the first
+60 s of EIL_Stairs → EIL_Box: 0 wrong, 100 right, 8 manual of 108); two runs per pair. Not
+run: the other suites (the Large maps settings on self maps, Koide, Boreas, HDL), which
+keep quickstart's 3 m. The tracking failure of run 4 (a right start pulled 1.9 m onto
+the turned room in the first two scans) and the odometry discovery race are not
+addressed here. The tables before this section used 3 m: add `--global-nms-radius-m=3.0
+--global-consensus-near-alias-samples=0` to the suite to reproduce them.
+
 ## Running it
 
 Build lidar_slam_ros2 (for `rko_lio_odometry.launch.py`) and this package, then:

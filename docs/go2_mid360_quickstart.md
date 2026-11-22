@@ -97,6 +97,32 @@ car-mounted sensor keeps the defaults: on handheld Koide replays, a 256-point ve
 these settings found the sensor later in all 12 runs and at a wrong place in 2, where
 the defaults were right in all 12.
 
+### A map from another session
+
+When the map comes from an earlier recording (props moved, a room that repeats along
+itself), add two options to the Large maps settings:
+
+```bash
+ros2 run lidar_localization_ros2 quickstart.py --map output/my_area/map.pcd \
+  --occupancy-inflate-radius-m 0.2 --global-z-min 0.0 --global-max-scan-points 1024 \
+  --global-max-candidates 16 --refine-global-candidates \
+  --global-nms-radius-m 1.5 --global-consensus-near-alias-samples 3
+```
+
+The search otherwise keeps only the best-scoring pose within 3 m on the 2D grid, and
+in the JEPLO capture room a place 1-2 m along the room often scores higher there than
+the right pose, which is then never checked in 3D. With 1.5 m the right pose stays a
+candidate and usually registers clearly better. In views where the place along the room
+registers almost as well, the startup then sees it and retries; the second option
+accepts such an answer once three views agree through odometry (it needs odometry, and
+the room turned around or a place 5 m away still counts against it). Queries get faster
+(0.5 s instead of 1.2 s, median). The cost: more starts ask for a manual pose where
+every view is that ambiguous. Measured on the JEPLO cross-session pairs: on the
+EIL_Stairs map with EIL_Box's scans, 7 of 8 live runs started right and none wrong (4 of
+8 wrong before); on the other 14 pairs, 25 of 28 started right, none wrong and 3 asked
+for a manual pose, as before, with the first pose after a median 9.3 s instead of 11.6 s
+([details](benchmark.md#eil_stairs--eil_box-why-starts-were-wrong-and-the-fix)).
+
 ## How well it works
 
 Measured on the JEPLO Go2 bags against motion-capture ground truth, on a

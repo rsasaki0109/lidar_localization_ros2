@@ -437,6 +437,7 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
         ("--global-consensus-samples", {"type": int, "default": 2}),
         ("--global-consensus-translation-m", {"type": float, "default": 2.0}),
         ("--global-consensus-yaw-deg", {"type": float, "default": 20.0}),
+        ("--global-consensus-near-alias-samples", {"type": int, "default": 0}),
         ("--global-registration-score-gate", {"type": float, "default": 6.0}),
         ("--global-max-scan-points", {"type": int, "default": 256}),
         ("--global-max-candidates", {"type": int, "default": 8}),
@@ -760,6 +761,9 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         "global_consensus_samples": args.global_consensus_samples,
         "global_consensus_translation_m": args.global_consensus_translation_m,
         "global_consensus_yaw_deg": args.global_consensus_yaw_deg,
+        "global_consensus_near_alias_samples": (
+            args.global_consensus_near_alias_samples
+        ),
         "registration_fitness_high_confidence_threshold": (
             0.5 if route_crop else 1.0e9
         ),
@@ -921,6 +925,7 @@ def _validate(args) -> str | None:
         global_consensus_samples=args.global_consensus_samples,
         global_consensus_translation_m=args.global_consensus_translation_m,
         global_consensus_yaw_deg=args.global_consensus_yaw_deg,
+        global_consensus_near_alias_samples=args.global_consensus_near_alias_samples,
         registration_fitness_high_confidence_threshold=(
             0.5 if args.reference_csv else 1.0e9
         ),

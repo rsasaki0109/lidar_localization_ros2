@@ -62,7 +62,23 @@ cell center — required for the HDL hdl_400 recovery replay (raw poses up to ~3
 off) but harmful on Koide, where refinement can snap aliased hypotheses to
 locally-perfect alignments and collapse walk candidates onto one pose. Lower
 `nms_radius_m` keeps more near-by or alternate-yaw candidates for G3 candidate
-walking; higher values return more spatially diverse candidates. Query latency
+walking; higher values return more spatially diverse candidates. The suppression runs
+on the 2D search score, before NDT refinement: where an aliased place 1-3 m away scores
+higher on the grid, the right pose is suppressed and never refined, however much better
+it registers. On the JEPLO Go2 cross-session replays (quickstart's 3 m, 15 map pairs,
+1,175 scans) the right pose was among the candidates for 67% of the scans and on top
+for 64%; with 1.5 m, 78% and 72%, and the queries took a median 0.46 s instead of
+1.16 s. On the EIL_Stairs map with EIL_Box's scans, the true pose registered 4.5 times
+better than the returned top (fitness 0.033 against 0.149, median) in 42 of the 48
+scans it was missing from, and the top was a place 1-2 m along the room. Closer
+candidates also show the startup's nearby-alternative check
+([`ambiguous_registration_retry`](quickstart.md#troubleshooting)) the aliases that 3 m
+hid, so there are more hand-offs to the operator where a room repeats every 1.5-2 m
+(the startup's `global_consensus_near_alias_samples` takes some of them back); see
+[a map from another session](go2_mid360_quickstart.md#a-map-from-another-session) for
+the settings and
+[the measurements](benchmark.md#eil_stairs--eil_box-why-starts-were-wrong-and-the-fix).
+Query latency
 on a validated window is a few seconds; see the roadmap for the speed/coverage
 envelope. Most of it is NDT scoring, and preparing the scoring target (map crop
 within `ndt_local_map_radius`, voxel filter, NDT cells, k-d tree) costs several

@@ -831,6 +831,120 @@ class TestStartupPolicy(unittest.TestCase):
         )
         self.assertEqual(distinct.reason, "global_consensus_primed")
 
+    def test_turned_refined_alternative_counts_only_turns(self):
+        top = {
+            "x": 0.0,
+            "y": 0.0,
+            "yaw_deg": 10.0,
+            "registration_fitness": 0.05,
+            "registration_refined": True,
+        }
+        along = dict(top, x=-1.8, registration_fitness=0.07)
+        turned = dict(top, x=0.3, yaw_deg=-172.0, registration_fitness=0.30)
+        far_turned = dict(top, x=9.0, yaw_deg=100.0, registration_fitness=0.20)
+        turned_fitness = MODEL.turned_refined_alternative_registration_fitness
+        self.assertEqual(turned_fitness([top, along, turned], 20.0), 0.30)
+        self.assertEqual(turned_fitness([top, along, turned, far_turned], 20.0), 0.20)
+        self.assertIsNone(turned_fitness([top, along], 20.0))
+        self.assertIsNone(turned_fitness([top, turned], -1.0))
+
+    def _near_alias_views(self, params, count, **extra):
+        """Views walking along x, each top 0.05 with an alternative 1.8 m behind."""
+        decision = MODEL.decide_startup(params, MODEL.StartupState(), self.obs(0.0))
+        decisions = []
+        for n in range(1, count + 1):
+            values = {
+                "query_candidate_scores": (0.98, 0.97),
+                "query_candidate_age_sec": 1.0,
+                "query_top_pose": (2.0 + 0.6 * n, 1.0, 0.0),
+                "query_scan_stamp_sec": 10.0 + n,
+                "query_odom_pose": (0.6 * n, 0.0, 0.0),
+                "query_top_refined": True,
+                "query_top_registration_fitness": 0.05,
+                "query_alternative_registration_fitness": 0.40,
+                "query_refined_alternative_registration_fitness": 0.07,
+                "query_refined_turned_alternative_registration_fitness": 0.30,
+            }
+            values.update(extra)
+            decision = MODEL.decide_startup(
+                params, decision.state, self.obs(float(n), **values)
+            )
+            decisions.append(decision)
+        return decisions
+
+    def test_near_alias_views_publish_only_when_enabled(self):
+        # Go2 on the Long_Stairs map, scans of EIL_Stairs, G2 nms_radius_m 1.5: the
+        # right pose has, in every view, a refined alternative 1.8 m along the room
+        # at the same heading with fitness within 2x.
+        off = self._near_alias_views(self.params, 5)
+        self.assertTrue(
+            all(d.reason == "ambiguous_registration_retry" for d in off[:4])
+        )
+        self.assertFalse(any(a.near_alias for a in off[3].state.consensus_odom_anchors))
+        on = replace(self.params, global_consensus_near_alias_samples=3)
+        views = self._near_alias_views(on, 3)
+        self.assertEqual(views[0].reason, "ambiguous_registration_retry")
+        self.assertTrue(views[0].state.consensus_odom_anchors[-1].near_alias)
+        self.assertEqual(views[1].reason, "ambiguous_registration_retry")
+        self.assertEqual(views[2].action, MODEL.ACTION_PUBLISH_GLOBAL)
+
+    def test_near_alias_needs_views_that_agree(self):
+        on = replace(self.params, global_consensus_near_alias_samples=3)
+        decision = MODEL.decide_startup(on, MODEL.StartupState(), self.obs(0.0))
+        # The answer moves between three places 1.8 m apart while the robot
+        # stands: no three views agree.
+        for n in range(1, 6):
+            decision = MODEL.decide_startup(
+                on,
+                decision.state,
+                self.obs(
+                    float(n),
+                    query_candidate_scores=(0.98, 0.97),
+                    query_candidate_age_sec=1.0,
+                    query_top_pose=(2.0 - 1.8 * (n % 3), 1.0, 0.0),
+                    query_scan_stamp_sec=10.0 + n,
+                    query_odom_pose=(0.0, 0.0, 0.0),
+                    query_top_refined=True,
+                    query_top_registration_fitness=0.05,
+                    query_alternative_registration_fitness=0.40,
+                    query_refined_alternative_registration_fitness=0.07,
+                    query_refined_turned_alternative_registration_fitness=0.30,
+                ),
+            )
+            self.assertNotEqual(decision.action, MODEL.ACTION_PUBLISH_GLOBAL)
+
+    def test_near_alias_does_not_cover_turned_or_distant_places(self):
+        on = replace(self.params, global_consensus_near_alias_samples=3)
+        # The room turned by 180 degrees registers within 2x: still rejected.
+        turned = self._near_alias_views(
+            on, 5, query_refined_turned_alternative_registration_fitness=0.08
+        )
+        self.assertTrue(all(d.action != MODEL.ACTION_PUBLISH_GLOBAL for d in turned))
+        self.assertFalse(
+            any(a.near_alias for a in turned[-1].state.consensus_odom_anchors)
+        )
+        # Another place 5 m or more away registers within 2x: still rejected.
+        elsewhere = self._near_alias_views(
+            on, 5, query_alternative_registration_fitness=0.08
+        )
+        self.assertTrue(all(d.action != MODEL.ACTION_PUBLISH_GLOBAL for d in elsewhere))
+        # Unrefined answers are checked as before.
+        unrefined = self._near_alias_views(on, 5, query_top_refined=False)
+        self.assertTrue(all(d.action != MODEL.ACTION_PUBLISH_GLOBAL for d in unrefined))
+
+    def test_near_alias_samples_validation(self):
+        self.assertIsNone(
+            MODEL.validate_startup_params(
+                replace(self.params, global_consensus_near_alias_samples=3)
+            )
+        )
+        for bad in (-1, 1):
+            self.assertIsNotNone(
+                MODEL.validate_startup_params(
+                    replace(self.params, global_consensus_near_alias_samples=bad)
+                )
+            )
+
     def test_retry_waits_for_a_new_view_with_odometry(self):
         params = MODEL.StartupParams()
         sees = MODEL.retry_sees_new_view

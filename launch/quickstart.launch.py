@@ -184,6 +184,7 @@ def generate_launch_description():
         DeclareLaunchArgument("global_consensus_samples", default_value="2"),
         DeclareLaunchArgument("global_consensus_translation_m", default_value="2.0"),
         DeclareLaunchArgument("global_consensus_yaw_deg", default_value="20.0"),
+        DeclareLaunchArgument("global_consensus_near_alias_samples", default_value="0"),
         DeclareLaunchArgument(
             "registration_fitness_high_confidence_threshold", default_value="1000000000.0"),
         DeclareLaunchArgument("g2_use_cpp_backend", default_value="true"),
@@ -375,6 +376,9 @@ def generate_launch_description():
                 LaunchConfiguration("global_consensus_translation_m"), value_type=float),
             "global_consensus_yaw_deg": ParameterValue(
                 LaunchConfiguration("global_consensus_yaw_deg"), value_type=float),
+            "global_consensus_near_alias_samples": ParameterValue(
+                LaunchConfiguration("global_consensus_near_alias_samples"),
+                value_type=int),
             "registration_fitness_high_confidence_threshold": ParameterValue(
                 LaunchConfiguration("registration_fitness_high_confidence_threshold"),
                 value_type=float),
