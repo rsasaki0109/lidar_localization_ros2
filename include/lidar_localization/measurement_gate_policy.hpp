@@ -63,6 +63,19 @@ struct MeasurementGateParams
   double seed_correction_window_guard_sec{1.0};
   double seed_correction_window_guard_translation_m{0.3};
 
+  // Release agreement.  At release the guards accept whatever the registration
+  // returns on that scan; if the scene briefly aliases then (another place in
+  // the map that fits as well), the release locks onto it.  With
+  // release_agreement_scans > 0 a released answer is accepted only when it
+  // agrees with each of the last release_agreement_scans answers the guards
+  // rejected (map-frame correction within release_agreement_translation_m
+  // horizontally and release_agreement_yaw_deg), i.e. the registration has kept
+  // pointing at the same pose; otherwise the guards keep holding the odometry
+  // and report seed_correction_guard_release_disagreed.  0 releases as before.
+  int seed_correction_guard_release_agreement_scans{0};
+  double seed_correction_guard_release_agreement_translation_m{0.3};
+  double seed_correction_guard_release_agreement_yaw_deg{5.0};
+
   bool enable_rejected_seed_update{false};
   int rejected_seed_update_min_rejections{0};
   double rejected_seed_update_max_fitness{10.0};
@@ -84,6 +97,9 @@ struct MeasurementGateInput
   // Horizontal norm of the summed map-frame corrections accepted within the
   // window plus this scan's (see SeedCorrectionWindow).
   double window_correction_translation_m{0.0};
+  // Whether this scan's correction agrees with the recent guard-rejected ones
+  // (see SeedCorrectionReleaseHistory); read only once the guards would release.
+  bool release_agreed{true};
 };
 
 struct MeasurementGateParamConfig : MeasurementGateParams
@@ -247,6 +263,67 @@ private:
   std::deque<Entry> entries_;
 };
 
+// Map-frame corrections (result minus seed: dx, dy, signed yaw) of the most
+// recent scans the seed correction guards rejected, for the release agreement.
+class SeedCorrectionReleaseHistory
+{
+public:
+  void clear() {entries_.clear();}
+
+  void add(double dx, double dy, double dyaw_deg, std::size_t capacity)
+  {
+    if (capacity == 0 || !std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dyaw_deg)) {
+      return;
+    }
+    entries_.push_back({dx, dy, dyaw_deg});
+    while (entries_.size() > capacity) {
+      entries_.pop_front();
+    }
+  }
+
+  // True when at least `scans` corrections are held and the latest `scans` all
+  // lie within translation_m (horizontal) and yaw_deg of (dx, dy, dyaw_deg).
+  bool agrees(
+    double dx, double dy, double dyaw_deg, std::size_t scans,
+    double translation_m, double yaw_deg) const
+  {
+    if (scans == 0) {
+      return true;
+    }
+    if (entries_.size() < scans || !std::isfinite(dx) || !std::isfinite(dy) ||
+      !std::isfinite(dyaw_deg))
+    {
+      return false;
+    }
+    for (auto it = entries_.end() - static_cast<std::ptrdiff_t>(scans); it != entries_.end(); ++it) {
+      const double yaw_diff =
+        std::abs(std::remainder(it->dyaw_deg - dyaw_deg, 360.0));
+      if (std::hypot(it->dx - dx, it->dy - dy) > translation_m || yaw_diff > yaw_deg) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  std::size_t size() const {return entries_.size();}
+
+private:
+  struct Entry
+  {
+    double dx;
+    double dy;
+    double dyaw_deg;
+  };
+  std::deque<Entry> entries_;
+};
+
+inline bool isSeedCorrectionGuardRejection(const std::string & status_message)
+{
+  return status_message == "seed_correction_guard_rejected" ||
+         status_message == "seed_correction_window_guard_rejected" ||
+         status_message == "seed_correction_guard_release_disagreed";
+}
+
 // Odometry seeds more than this far apart in time bridge a gap (a stalled or
 // restarted front end, a covered sensor): the seed may be far off afterwards.
 constexpr double kOdomSeedGapSec = 1.0;
@@ -274,29 +351,37 @@ inline MeasurementGateDecision evaluateMeasurementGate(
   gate.borderline_seed_gate_active =
     isBorderlineSeedGateActive(params, input, gate.effective_score_threshold);
 
-  const bool seed_correction_guard_active =
-    params.enable_seed_correction_guard &&
+  const bool guard_warmed_up =
     input.accepted_updates_since_reset >=
-    static_cast<std::size_t>(std::max(0, params.seed_correction_guard_warmup_accepts)) &&
-    static_cast<int>(input.consecutive_rejected_updates) <
-    params.seed_correction_guard_release_rejections &&
+    static_cast<std::size_t>(std::max(0, params.seed_correction_guard_warmup_accepts));
+  const bool guard_released =
+    static_cast<int>(input.consecutive_rejected_updates) >=
+    params.seed_correction_guard_release_rejections;
+  const bool per_scan_tripped =
+    params.enable_seed_correction_guard && guard_warmed_up &&
     ((input.correction_translation_m > params.seed_correction_guard_translation_m) ||
     (input.correction_yaw_deg > params.seed_correction_guard_yaw_deg));
-  if (seed_correction_guard_active) {
+  const bool window_tripped =
+    params.enable_seed_correction_window_guard && guard_warmed_up &&
+    input.window_correction_translation_m > params.seed_correction_window_guard_translation_m;
+  if (
+    guard_released && (per_scan_tripped || window_tripped) &&
+    params.seed_correction_guard_release_agreement_scans > 0 && !input.release_agreed)
+  {
+    gate.status_level = kMeasurementGateWarn;
+    gate.status_message = "seed_correction_guard_release_disagreed";
+    gate.reject_measurement = true;
+    return gate;
+  }
+
+  if (per_scan_tripped && !guard_released) {
     gate.status_level = kMeasurementGateWarn;
     gate.status_message = "seed_correction_guard_rejected";
     gate.reject_measurement = true;
     return gate;
   }
 
-  const bool seed_correction_window_guard_active =
-    params.enable_seed_correction_window_guard &&
-    input.accepted_updates_since_reset >=
-    static_cast<std::size_t>(std::max(0, params.seed_correction_guard_warmup_accepts)) &&
-    static_cast<int>(input.consecutive_rejected_updates) <
-    params.seed_correction_guard_release_rejections &&
-    input.window_correction_translation_m > params.seed_correction_window_guard_translation_m;
-  if (seed_correction_window_guard_active) {
+  if (window_tripped && !guard_released) {
     gate.status_level = kMeasurementGateWarn;
     gate.status_message = "seed_correction_window_guard_rejected";
     gate.reject_measurement = true;

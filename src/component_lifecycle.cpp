@@ -123,6 +123,9 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("enable_seed_correction_window_guard", false);
   declare_parameter("seed_correction_window_guard_sec", 1.0);
   declare_parameter("seed_correction_window_guard_translation_m", 0.3);
+  declare_parameter("seed_correction_guard_release_agreement_scans", 0);
+  declare_parameter("seed_correction_guard_release_agreement_translation_m", 0.3);
+  declare_parameter("seed_correction_guard_release_agreement_yaw_deg", 5.0);
   declare_parameter("enable_rejected_seed_update", false);
   declare_parameter("rejected_seed_update_min_rejections", 0);
   declare_parameter("rejected_seed_update_max_fitness", 10.0);

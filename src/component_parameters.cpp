@@ -353,6 +353,15 @@ void PCLLocalization::initializeParameters()
   get_parameter(
     "seed_correction_window_guard_translation_m",
     measurement_gate_config_.seed_correction_window_guard_translation_m);
+  get_parameter(
+    "seed_correction_guard_release_agreement_scans",
+    measurement_gate_config_.seed_correction_guard_release_agreement_scans);
+  get_parameter(
+    "seed_correction_guard_release_agreement_translation_m",
+    measurement_gate_config_.seed_correction_guard_release_agreement_translation_m);
+  get_parameter(
+    "seed_correction_guard_release_agreement_yaw_deg",
+    measurement_gate_config_.seed_correction_guard_release_agreement_yaw_deg);
   get_parameter("enable_local_reacquisition", local_reacquisition_params_.enable);
   get_parameter(
     "local_reacquisition_min_rejections", local_reacquisition_params_.min_rejections);
@@ -637,6 +646,12 @@ void PCLLocalization::initializeParameters()
     measurement_gate_config_.enable_seed_correction_window_guard,
     measurement_gate_config_.seed_correction_window_guard_sec,
     measurement_gate_config_.seed_correction_window_guard_translation_m);
+  RCLCPP_INFO(
+    get_logger(), "seed_correction_guard_release_agreement: scans=%d translation_m=%lf "
+    "yaw_deg=%lf",
+    measurement_gate_config_.seed_correction_guard_release_agreement_scans,
+    measurement_gate_config_.seed_correction_guard_release_agreement_translation_m,
+    measurement_gate_config_.seed_correction_guard_release_agreement_yaw_deg);
   RCLCPP_INFO(
     get_logger(), "enable_recovery_retry_from_last_pose: %d",
     recovery_retry_from_last_pose_config_.enable);

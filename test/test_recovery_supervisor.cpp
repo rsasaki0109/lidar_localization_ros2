@@ -221,6 +221,8 @@ void test_seed_correction_guard_counts_as_rejected_measurement()
   assert(ll::isRejectedMeasurementStatus("seed_correction_guard_rejected"));
   assert(ll::isRecoveryFailureStatus("seed_correction_window_guard_rejected"));
   assert(ll::isRejectedMeasurementStatus("seed_correction_window_guard_rejected"));
+  assert(ll::isRecoveryFailureStatus("seed_correction_guard_release_disagreed"));
+  assert(ll::isRejectedMeasurementStatus("seed_correction_guard_release_disagreed"));
 }
 
 int main()
