@@ -202,6 +202,12 @@ def generate_launch_description():
         DeclareLaunchArgument("g2_z_max_m", default_value="5.0"),
         # Search again from the sensor plane up when the band holds fewer points.
         DeclareLaunchArgument("g2_sparse_band_min_points", default_value="0"),
+        # Map-wide search engine: bbs2d (2D grid) or bbs3d (3D-BBS voxel maps).
+        DeclareLaunchArgument("g2_global_search_engine", default_value="bbs2d"),
+        DeclareLaunchArgument("g2_bbs3d_top_k", default_value="8"),
+        DeclareLaunchArgument("g2_bbs3d_timeout_sec", default_value="10.0"),
+        DeclareLaunchArgument("g2_bbs3d_num_threads", default_value="4"),
+        DeclareLaunchArgument("g2_bbs3d_min_level_res_m", default_value="0.5"),
         DeclareLaunchArgument("supervisor_min_candidate_score", default_value="0.15"),
         DeclareLaunchArgument("supervisor_query_timeout_sec", default_value="45.0"),
         DeclareLaunchArgument("supervisor_max_walk_candidates", default_value="4"),
@@ -256,6 +262,15 @@ def generate_launch_description():
                 LaunchConfiguration("g2_z_max_m"), value_type=float),
             "sparse_band_min_points": ParameterValue(
                 LaunchConfiguration("g2_sparse_band_min_points"), value_type=int),
+            "global_search_engine": LaunchConfiguration("g2_global_search_engine"),
+            "bbs3d_top_k": ParameterValue(
+                LaunchConfiguration("g2_bbs3d_top_k"), value_type=int),
+            "bbs3d_timeout_sec": ParameterValue(
+                LaunchConfiguration("g2_bbs3d_timeout_sec"), value_type=float),
+            "bbs3d_num_threads": ParameterValue(
+                LaunchConfiguration("g2_bbs3d_num_threads"), value_type=int),
+            "bbs3d_min_level_res_m": ParameterValue(
+                LaunchConfiguration("g2_bbs3d_min_level_res_m"), value_type=float),
             "candidate_source": LaunchConfiguration("g2_candidate_source"),
             "reference_csv": LaunchConfiguration("reference_csv"),
             "route_time_radius_sec": ParameterValue(

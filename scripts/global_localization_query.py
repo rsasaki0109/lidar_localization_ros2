@@ -9,6 +9,12 @@ testable without rclpy.
 When ``candidate_source=route_crop`` (opt-in, WP3), candidates come from a
 reference trajectory window around the query scan stamp instead of a map-wide
 BBS search. Registration scoring ranks the route-local hypotheses.
+
+When ``global_search_engine=bbs3d`` (opt-in), the map-wide search runs as a 3D
+branch-and-bound over the voxel maps of 3D-BBS (bbs3d_cpp, built from
+src/bbs3d_pybind.cpp and third_party/bbs3d) instead of on the 2D occupancy grid:
+its k best poses, at least bbs3d_min_separation_m apart, are NDT-refined and
+ranked like the 2D candidates. The default, bbs2d, is unchanged.
 """
 
 from __future__ import annotations
@@ -16,6 +22,7 @@ from __future__ import annotations
 import math
 import os
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,6 +41,12 @@ SUPPORTED_CANDIDATE_SOURCES = frozenset(
         CANDIDATE_SOURCE_BBS,
         CANDIDATE_SOURCE_ROUTE_CROP,
     }
+)
+
+GLOBAL_SEARCH_ENGINE_BBS2D = "bbs2d"
+GLOBAL_SEARCH_ENGINE_BBS3D = "bbs3d"
+SUPPORTED_GLOBAL_SEARCH_ENGINES = frozenset(
+    {GLOBAL_SEARCH_ENGINE_BBS2D, GLOBAL_SEARCH_ENGINE_BBS3D}
 )
 
 
@@ -123,6 +136,36 @@ class GlobalLocalizationConfig:
     route_yaw_offsets_deg: str = "-15,0,15"
     route_lateral_offsets_m: str = "-2,0,2"
     route_longitudinal_offsets_m: str = "-1,0,1"
+    # Map-wide search engine: "bbs2d" (branch-and-bound on the 2D occupancy grid,
+    # the default) or "bbs3d" (3D branch-and-bound over the 3D-BBS voxel maps of
+    # map_path, for multi-level maps; docs/global_localization.md). bbs3d needs
+    # map_path and the bbs3d_cpp module; without them the engine records why and
+    # keeps the 2D search.
+    global_search_engine: str = GLOBAL_SEARCH_ENGINE_BBS2D
+    # Finest voxel edge and number of coarser levels (each twice the size).
+    bbs3d_min_level_res_m: float = 0.5
+    bbs3d_max_level: int = 6
+    # The map is thinned to voxel centroids of this edge before the voxel maps are
+    # built (once per map load); the scan likewise, after the range filter.
+    bbs3d_map_leaf_m: float = 0.1
+    bbs3d_scan_leaf_m: float = 0.5
+    bbs3d_scan_min_range_m: float = 1.0
+    bbs3d_scan_max_range_m: float = 30.0
+    # Roll and pitch searched within +-this (the scan is levelled already).
+    bbs3d_max_tilt_rad: float = 0.02
+    # Answers per query, each at least bbs3d_min_separation_m (3D) from every
+    # better one, so the startup's nearby-alternative checks have candidates.
+    bbs3d_top_k: int = 8
+    bbs3d_min_separation_m: float = 3.0
+    # Absolute score floor (share of scan points in occupied voxels) and, once
+    # the best answer is found, the share of its score the others need.
+    bbs3d_min_score_ratio: float = 0.0
+    bbs3d_relative_score_floor: float = 0.9
+    # Hard limits of one search: wall time and open nodes (32 bytes each). A
+    # search that hits one returns the answers found so far, possibly none.
+    bbs3d_timeout_sec: float = 10.0
+    bbs3d_max_queue_nodes: int = 4000000
+    bbs3d_num_threads: int = 4
 
 
 # The sparse-band search: the band starts at the sensor plane, with more scan
@@ -190,6 +233,59 @@ def normalize_candidate_source(value: str) -> str:
     return key
 
 
+def normalize_global_search_engine(value: str) -> str:
+    key = str(value).strip().lower()
+    if key not in SUPPORTED_GLOBAL_SEARCH_ENGINES:
+        raise ValueError(
+            "global_search_engine must be one of "
+            + ", ".join(sorted(SUPPORTED_GLOBAL_SEARCH_ENGINES))
+            + "; got "
+            + key
+        )
+    return key
+
+
+def validate_bbs3d_config(config) -> None:
+    """Raise ValueError for bbs3d settings that cannot bound or run a search."""
+    problems = []
+    if not (config.bbs3d_min_level_res_m > 0.0):
+        problems.append("bbs3d_min_level_res_m must be > 0")
+    if not 0 <= config.bbs3d_max_level <= 16:
+        problems.append("bbs3d_max_level must be 0-16")
+    if config.bbs3d_top_k < 1:
+        problems.append("bbs3d_top_k must be >= 1")
+    if not (config.bbs3d_min_separation_m >= 0.0):
+        problems.append("bbs3d_min_separation_m must be >= 0")
+    if not (0.0 <= config.bbs3d_relative_score_floor <= 1.0):
+        problems.append("bbs3d_relative_score_floor must be 0-1")
+    if not (0.0 <= config.bbs3d_min_score_ratio <= 1.0):
+        problems.append("bbs3d_min_score_ratio must be 0-1")
+    if not (config.bbs3d_timeout_sec > 0.0 and math.isfinite(config.bbs3d_timeout_sec)):
+        problems.append("bbs3d_timeout_sec must be a finite time > 0")
+    if config.bbs3d_max_queue_nodes < 1:
+        problems.append("bbs3d_max_queue_nodes must be >= 1")
+    if config.bbs3d_num_threads < 1:
+        problems.append("bbs3d_num_threads must be >= 1")
+    if not (config.bbs3d_scan_max_range_m > config.bbs3d_scan_min_range_m >= 0.0):
+        problems.append(
+            "bbs3d_scan_max_range_m must exceed bbs3d_scan_min_range_m >= 0"
+        )
+    if problems:
+        raise ValueError("; ".join(problems))
+
+
+def resident_set_mb() -> float | None:
+    """Current resident set size of this process (VmRSS), MB, or None."""
+    try:
+        with open("/proc/self/status", encoding="ascii") as stream:
+            for line in stream:
+                if line.startswith("VmRSS:"):
+                    return float(line.split()[1]) / 1024.0
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
 def parse_float_list(raw: str) -> list[float]:
     return route_grid._parse_float_list(raw)
 
@@ -234,6 +330,12 @@ class GlobalLocalizationResult:
     route_crop_error: str | None = None
     # True when the height band was sparse and the sparse-band search answered.
     sparse_band_search: bool = False
+    # The engine that answered the map-wide search, its limits as they played
+    # out (bbs3d: timed_out, queue_capped, elapsed_ms, ...), and why it did not
+    # answer (e.g. busy).
+    global_search_engine: str = GLOBAL_SEARCH_ENGINE_BBS2D
+    search_info: dict | None = None
+    search_error: str | None = None
 
 
 def _candidate_from_ranked(
@@ -254,6 +356,33 @@ def _candidate_from_ranked(
     )
 
 
+def bbs3d_candidates(search_result) -> list[GlobalLocalizationCandidate]:
+    """GlobalLocalizationCandidates from a bbs3d_cpp MapSearcher.search() result.
+
+    The pose is map <- levelled base; its yaw is the heading, its z the height
+    the 3D search found (registration then starts from it). The score is the
+    share of scan points in occupied voxels.
+    """
+    scan_points = int(search_result.get("scan_points", 0))
+    candidates = []
+    for item in search_result.get("candidates", []):
+        pose = np.asarray(item["pose"], dtype=np.float64)
+        score = float(item["score_ratio"])
+        candidates.append(
+            GlobalLocalizationCandidate(
+                x_m=float(pose[0, 3]),
+                y_m=float(pose[1, 3]),
+                z_m=float(pose[2, 3]),
+                yaw_rad=math.atan2(float(pose[1, 0]), float(pose[0, 0])),
+                score=score,
+                hit_count=int(item["score"]),
+                point_count=scan_points,
+                bbs_score=score,
+            )
+        )
+    return candidates
+
+
 class GlobalLocalizationEngine:
     """Loads map assets once and answers repeated scan queries."""
 
@@ -268,6 +397,15 @@ class GlobalLocalizationEngine:
         self.route_longitudinal_offsets_m = parse_float_list(
             config.route_longitudinal_offsets_m
         )
+
+        self.global_search_engine = GLOBAL_SEARCH_ENGINE_BBS2D
+        self.global_search_engine_error = None
+        self.bbs3d_searcher = None
+        self.bbs3d_info = None
+        self._bbs3d_lock = threading.Lock()
+        requested_engine = normalize_global_search_engine(config.global_search_engine)
+        if requested_engine == GLOBAL_SEARCH_ENGINE_BBS3D:
+            validate_bbs3d_config(config)
 
         if self.candidate_source == CANDIDATE_SOURCE_ROUTE_CROP:
             if not config.reference_csv:
@@ -289,7 +427,54 @@ class GlobalLocalizationEngine:
                 raise ValueError("occupancy_yaml is required when candidate_source=bbs")
             self._load_bbs(config, occupancy_yaml)
             self.backend = self._bbs_backend
+        if requested_engine == GLOBAL_SEARCH_ENGINE_BBS3D:
+            self._load_bbs3d(config)
         self._init_registration_scorer(config)
+
+    def _load_bbs3d(self, config):
+        """Build the 3D voxel maps of map_path once; on failure keep the 2D search."""
+        if self.occupancy_map is None:
+            self.global_search_engine_error = (
+                "global_search_engine=bbs3d answers the map-wide search, which needs "
+                "an occupancy grid here as well (fallback)"
+            )
+            return
+        if not config.map_path:
+            self.global_search_engine_error = (
+                "global_search_engine=bbs3d needs map_path (the 3D map)"
+            )
+            return
+        try:
+            _append_module_dirs("bbs3d_cpp")
+            import bbs3d_cpp
+        except ImportError as exc:  # pragma: no cover - depends on build
+            self.global_search_engine_error = (
+                f"bbs3d_cpp is not built or not importable ({exc})"
+            )
+            return
+        rss_before = resident_set_mb()
+        try:
+            searcher = bbs3d_cpp.MapSearcher(
+                str(config.map_path),
+                config.bbs3d_map_leaf_m,
+                config.bbs3d_min_level_res_m,
+                config.bbs3d_max_level,
+            )
+        except (RuntimeError, ValueError) as exc:
+            self.global_search_engine_error = f"bbs3d voxel maps not built ({exc})"
+            return
+        rss_after = resident_set_mb()
+        # Plain values (the bounding box comes back as arrays), so it serializes.
+        info = {
+            key: value.tolist() if hasattr(value, "tolist") else value
+            for key, value in dict(searcher.info()).items()
+        }
+        info["rss_before_mb"] = rss_before
+        info["rss_after_mb"] = rss_after
+        self.bbs3d_searcher = searcher
+        self.bbs3d_info = info
+        self.global_search_engine = GLOBAL_SEARCH_ENGINE_BBS3D
+        self.backend = GLOBAL_SEARCH_ENGINE_BBS3D
 
     def _load_bbs(self, config, occupancy_yaml):
         self.occupancy_map = bbs_engine.load_occupancy_map(Path(occupancy_yaml))
@@ -571,6 +756,8 @@ class GlobalLocalizationEngine:
         return self._query_bbs(points_xyz, progress_callback)
 
     def _query_bbs(self, points_xyz, progress_callback=None):
+        if self.global_search_engine == GLOBAL_SEARCH_ENGINE_BBS3D:
+            return self._query_bbs3d(points_xyz, progress_callback)
 
         config = self.config
         resolution_m = self.occupancy_map.resolution_m
@@ -671,4 +858,74 @@ class GlobalLocalizationEngine:
             ),
             registration_scoring_error=self.registration_scoring_error,
             candidate_source=CANDIDATE_SOURCE_BBS,
+        )
+
+    def _query_bbs3d(self, points_xyz, progress_callback=None):
+        config = self.config
+        base_result = {
+            "registration_scoring_enabled": self.registration_scorer is not None,
+            "registration_scoring_backend": (
+                "g2_ndt_score" if self.registration_scorer is not None else None
+            ),
+            "registration_scoring_error": self.registration_scoring_error,
+            "candidate_source": CANDIDATE_SOURCE_BBS,
+            "global_search_engine": GLOBAL_SEARCH_ENGINE_BBS3D,
+        }
+        # One search at a time: a query that arrives while one runs is dropped,
+        # not queued, so searches cannot pile up (each is bounded by the time
+        # limit and the node cap on its own).
+        if not self._bbs3d_lock.acquire(blocking=False):
+            return GlobalLocalizationResult(
+                candidates=[],
+                scan_point_count=0,
+                search_error="busy: another bbs3d search is running",
+                **base_result,
+            )
+        try:
+            if progress_callback is not None:
+                progress_callback("search", 0, 1)
+            raw = self.bbs3d_searcher.search(
+                np.asarray(points_xyz, dtype=np.float64).reshape(-1, 3),
+                config.bbs3d_scan_min_range_m,
+                config.bbs3d_scan_max_range_m,
+                config.bbs3d_scan_leaf_m,
+                config.bbs3d_top_k,
+                config.bbs3d_min_separation_m,
+                config.bbs3d_min_score_ratio,
+                config.bbs3d_relative_score_floor,
+                max(1, round(config.bbs3d_timeout_sec * 1000.0)),
+                config.bbs3d_max_queue_nodes,
+                config.bbs3d_num_threads,
+                config.bbs3d_max_tilt_rad,
+            )
+            candidates = bbs3d_candidates(raw)
+            search_info = {
+                key: raw[key]
+                for key in (
+                    "elapsed_ms",
+                    "timed_out",
+                    "queue_capped",
+                    "expanded",
+                    "max_queue",
+                    "scan_points",
+                )
+                if key in raw
+            }
+            search_info["answers"] = len(candidates)
+            # 3D-BBS poses lie on its voxel and angle lattice: always refine.
+            if self.registration_scorer is not None and candidates:
+                if progress_callback is not None:
+                    progress_callback("scoring", 0, len(candidates))
+                candidates = self._score_with_registration(
+                    points_xyz, candidates, refine=True
+                )
+        finally:
+            self._bbs3d_lock.release()
+        if progress_callback is not None:
+            progress_callback("done", 1, 1)
+        return GlobalLocalizationResult(
+            candidates=candidates,
+            scan_point_count=int(raw.get("scan_points", 0)),
+            search_info=search_info,
+            **base_result,
         )

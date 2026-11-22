@@ -6,7 +6,9 @@ global_localization_node.py levels them (g2_offline_probe.py does the same):
 
   g2      GlobalLocalizationEngine (scripts/global_localization_query.py): BBS on
           the 2D occupancy grid, then NDT refinement and ranking of the top
-          candidates (the cross-session suite settings by default).
+          candidates (the cross-session suite settings by default). With
+          --config '{"global_search_engine": "bbs3d"}' the engine's own 3D search
+          (bbs3d_cpp) answers instead.
   3dbbs   3D-BBS (CPU) over a hierarchical 3D voxel map of the same map.pcd
           (bbs3d_py, built from bbs3d_pybind.cpp), x/y/z and yaw with roll and
           pitch within +-0.02 rad; optionally its k best non-suppressed leaves,
@@ -279,6 +281,8 @@ def run(args) -> dict:
         if bbs3d is None:
             result = engine.query(levelled)
             candidates = result.candidates
+            # global_search_engine=bbs3d (--config): the package's own engine.
+            search_info = dict(result.search_info or {})
             raw_top = None
             search_sec = time.monotonic() - started
             refine_sec = 0.0
@@ -353,6 +357,8 @@ def run(args) -> dict:
         "rss_before_setup_mb": rss_start,
         "peak_rss_mb": peak_rss_mb(),
     }
+    if engine.bbs3d_info is not None:
+        info["engine_bbs3d"] = engine.bbs3d_info
     if bbs3d is not None:
         info.update(
             {
