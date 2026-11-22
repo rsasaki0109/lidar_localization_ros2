@@ -433,7 +433,14 @@ Leave IMU TF publication off as appropriate.
   `registration_refined_alternative_min_yaw_deg`; negative disables): refined
   candidates converge onto their own optimum, and a near-symmetric room turned by 180
   degrees, or a place 1-2 m along it, registers almost as well as the right pose when
-  props have moved.
+  props have moved. With odometry, `--global-consensus-near-alias-samples N` (startup
+  node `global_consensus_near_alias_samples`, default 0 = off, at least 2 when on)
+  accepts a refined fix that failed only because of an alternative at about its own
+  heading (not turned by `registration_refined_alternative_min_yaw_deg`, not 5 m
+  away) once N such or gated fixes, itself included, agree through odometry within
+  the refined bounds. It is meant for `--global-nms-radius-m 1.5`, where the right
+  pose of a room that repeats every 1.5-2 m has such an alternative in every view
+  ([Go2, map from another session](go2_mid360_quickstart.md#a-map-from-another-session)).
 - `global_attempts_exhausted`: automatic publication stopped; set the pose in RViz.
 - no detected sensor topic: start the driver or bag first, or pass the topic explicitly.
 

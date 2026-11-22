@@ -1,6 +1,8 @@
 # Cross-session global localization on the JEPLO Go2 bags: the map is built from
-# one recording and the scans come from another, with no initial pose. Same
-# quickstart settings as go2_jeplo_low_sensor.yaml (the Go2 "Large maps" recipe).
+# one recording and the scans come from another, with no initial pose. The quickstart
+# settings of go2_jeplo_low_sensor.yaml (the Go2 "Large maps" recipe) plus those for a
+# map from another session (docs/go2_mid360_quickstart.md#a-map-from-another-session):
+# a 1.5 m candidate suppression radius and the near-alias startup rule.
 #
 # JEPLO_ROOT layout as for the other Go2 suites, with maps_loc/<run>/map.pcd built
 # by build_map_from_odometry.py + align_map_to_ground_truth.py from that run only:
@@ -24,6 +26,8 @@ defaults:
     - --global-max-scan-points=1024
     - --global-max-candidates=16
     - --refine-global-candidates
+    - --global-nms-radius-m=1.5
+    - --global-consensus-near-alias-samples=3
 cases:
   # Long staircase: map from one run, scans from the other.
   - name: Long_Stairs_map__Outdoor2
@@ -63,6 +67,12 @@ cases:
     bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Mask1
     map: ${JEPLO_ROOT}/maps_loc/EIL_Box/map.pcd
     gt: ${JEPLO_ROOT}/gt/EIL_Mask1.txt
+  # EIL_Box_map__EIL_Stairs the other way round: the EIL_Stairs map aliases 1-2 m
+  # along the room for EIL_Box's scans.
+  - name: EIL_Stairs_map__EIL_Box
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_ROOT}/maps_loc/EIL_Stairs/map.pcd
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
   # Capture room on the Long_Stairs map (room plus corridor and staircase), other days.
   - name: Long_Stairs_map__EIL_Box
     bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box

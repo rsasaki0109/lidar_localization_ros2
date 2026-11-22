@@ -371,6 +371,14 @@ class StartupParams:
     # ratio). Negative values turn the check off.
     registration_refined_alternative_min_separation_m: float = 1.0
     registration_refined_alternative_min_yaw_deg: float = 20.0
+    # With odometry, a refined fix that fails only the check above, and only
+    # because of an alternative at about the same heading (a place along the
+    # room, not the room turned), is accepted once this many such or fully
+    # gated fixes, itself included, agree through odometry. Where a room repeats
+    # every 1.5-2 m and the search keeps candidates that close
+    # (g2 nms_radius_m 1.5), the right answer has such an alternative in every
+    # view. 0 (default) turns it off: such fixes are never published.
+    global_consensus_near_alias_samples: int = 0
 
 
 def validate_startup_params(params: StartupParams) -> str | None:
@@ -418,6 +426,10 @@ def validate_startup_params(params: StartupParams) -> str | None:
         return "verification samples and global attempts must be positive"
     if params.global_consensus_samples < 1:
         return "global_consensus_samples must be positive"
+    if params.global_consensus_near_alias_samples < 0 or (
+        params.global_consensus_near_alias_samples == 1
+    ):
+        return "global_consensus_near_alias_samples must be 0 (off) or at least 2"
     if params.global_consensus_translation_per_odom_m < 0.0:
         return "global_consensus_translation_per_odom_m must be non-negative"
     if params.global_attempt_refund_travel_m < 0.0:
@@ -452,6 +464,9 @@ class OdomAnchor:
     gated: bool
     # Whether NDT refined the fix's pose.
     refined: bool = False
+    # Whether the fix failed only because of a refined alternative at about its
+    # heading (see global_consensus_near_alias_samples).
+    near_alias: bool = False
 
 
 @dataclass(frozen=True)
@@ -489,6 +504,9 @@ class StartupObservation:
     # Best fitness of a refined candidate at another pose near the refined top
     # (refined_alternative_registration_fitness); None when the top is not refined.
     query_refined_alternative_registration_fitness: float | None = None
+    # The same among refined candidates turned by at least
+    # registration_refined_alternative_min_yaw_deg (turned_refined_alternative_...).
+    query_refined_turned_alternative_registration_fitness: float | None = None
     # odom -> base at this query's scan; None when odometry is unavailable.
     query_odom_pose: tuple[float, float, float] | None = None
     # Whether NDT refined the top candidate's pose (G2 registration_refined).
@@ -762,6 +780,19 @@ def refined_alternative_registration_fitness(
     return best
 
 
+def turned_refined_alternative_registration_fitness(
+    candidates: Sequence[dict], min_yaw_deg: float, index: int = 0
+) -> float | None:
+    """Best finite NDT fitness among refined candidates turned ``min_yaw_deg`` from ``index``.
+
+    The turned part of refined_alternative_registration_fitness: the room seen the
+    other way round, wherever it lies.
+    """
+    return refined_alternative_registration_fitness(
+        candidates, math.inf, min_yaw_deg, index
+    )
+
+
 def registration_distinctiveness_judged(
     params: StartupParams,
     top_fitness: float | None,
@@ -844,11 +875,16 @@ def _odom_agreements(
     state: StartupState,
     obs: StartupObservation,
     gated_only: bool,
+    near_alias_too: bool = False,
 ) -> int:
-    """Earlier fixes (from other scans) that, moved by odometry, match this fix."""
+    """Earlier fixes (from other scans) that, moved by odometry, match this fix.
+
+    With gated_only, only gated fixes count, and near-alias fixes as well with
+    near_alias_too.
+    """
     return sum(
         anchor.scan_stamp_sec < obs.query_scan_stamp_sec - 1.0e-9
-        and (anchor.gated or not gated_only)
+        and (anchor.gated or not gated_only or (near_alias_too and anchor.near_alias))
         and _consensus_consistent(
             params,
             obs.query_top_pose,
@@ -864,7 +900,11 @@ def _odom_agreements(
 
 
 def _remember_odom_fix(
-    params: StartupParams, state: StartupState, obs: StartupObservation, gated: bool
+    params: StartupParams,
+    state: StartupState,
+    obs: StartupObservation,
+    gated: bool,
+    near_alias: bool = False,
 ) -> StartupState:
     if any(
         anchor.scan_stamp_sec >= obs.query_scan_stamp_sec - 1.0e-9
@@ -880,6 +920,7 @@ def _remember_odom_fix(
         scan_stamp_sec=obs.query_scan_stamp_sec,
         gated=gated,
         refined=obs.query_top_refined,
+        near_alias=near_alias,
     )
     return replace(
         state,
@@ -1019,18 +1060,38 @@ def decide_startup(
             and scores[0] - scores[1] < params.min_score_margin
         ):
             return _query(params, retry_state, obs.now_sec, "ambiguous_candidate_retry")
-        if not high_confidence and (
-            registration_ambiguous(
-                params,
-                obs.query_top_registration_fitness,
-                obs.query_alternative_registration_fitness,
-            )
-            or registration_ambiguous(
-                params,
-                obs.query_top_registration_fitness,
-                obs.query_refined_alternative_registration_fitness,
-            )
-        ):
+        ambiguous_elsewhere = registration_ambiguous(
+            params,
+            obs.query_top_registration_fitness,
+            obs.query_alternative_registration_fitness,
+        )
+        ambiguous_nearby = registration_ambiguous(
+            params,
+            obs.query_top_registration_fitness,
+            obs.query_refined_alternative_registration_fitness,
+        )
+        if not high_confidence and (ambiguous_elsewhere or ambiguous_nearby):
+            if (
+                odom_fix
+                and params.global_consensus_near_alias_samples > 1
+                and obs.query_top_refined
+                and not ambiguous_elsewhere
+                and not registration_ambiguous(
+                    params,
+                    obs.query_top_registration_fitness,
+                    obs.query_refined_turned_alternative_registration_fitness,
+                )
+            ):
+                # Only an alternative along the room at the same heading: let
+                # repeated views of it decide.
+                agreeing = _odom_agreements(
+                    params, state, obs, gated_only=True, near_alias_too=True
+                )
+                if agreeing + 1 >= params.global_consensus_near_alias_samples:
+                    return _publish_confirmed_fix(params, state, obs)
+                retry_state = _remember_odom_fix(
+                    params, state, obs, gated=False, near_alias=True
+                )
             return _query(
                 params, retry_state, obs.now_sec, "ambiguous_registration_retry"
             )

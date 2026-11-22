@@ -25,6 +25,30 @@ not detect the unit.
 
 ### Added
 
+- **Opt-in near-alias startup rule and settings for a map from another session**
+  (`global_consensus_near_alias_samples` on the startup node, default 0 = off;
+  quickstart `--global-consensus-near-alias-samples`). On the JEPLO EIL_Stairs map with
+  EIL_Box's scans, 4 of 8 live starts were wrong (two of them 1.8 m along the room).
+  The G2 search keeps only the best pose within `nms_radius_m` on the 2D grid, before
+  NDT refinement (quickstart: 3 m); in the capture room a place 1-2 m along the room
+  often scores higher on the grid, so the right pose was never refined although it
+  registered 4.5 times better (42 of 120 scans). `--global-nms-radius-m 1.5` keeps it:
+  over the 15 cross-session pairs the top was right for 72% of the scans instead of
+  64%, queries took 0.46 s instead of 1.16 s (median), and the replayed startup had 5
+  wrong starts instead of 52 of 995, but 186 manual poses instead of 108, because the
+  nearby-alternative check now sees the place along the room next to right answers.
+  The new rule accepts a refined fix rejected only by an alternative at the same
+  heading once three such or gated fixes agree through odometry (the room turned
+  around, or a place 5 m away, still rejects): 5 wrong, 833 right (835), 157 manual.
+  Live, EIL_Stairs → EIL_Box: 7 of 8 runs right, none wrong (4 of 8 wrong before); the
+  other 14 cross-session cases: 25 of 28 right, none wrong, 3 manual poses, as before,
+  first pose after a median 9.3 s instead of 11.6 s
+  ([benchmark.md](docs/benchmark.md#eil_stairs--eil_box-why-starts-were-wrong-and-the-fix)).
+  The Go2 docs recommend both for a map from another session
+  ([go2_mid360_quickstart.md](docs/go2_mid360_quickstart.md#a-map-from-another-session));
+  the cross-session suite uses them and has the EIL_Stairs → EIL_Box case. Defaults
+  are unchanged.
+
 - **Opt-in 3D global search for multi-level maps** (`global_search_engine: bbs3d` on
   the G2 node, default `bbs2d`; launch arg `g2_global_search_engine`; quickstart
   `--global-search-engine bbs3d`). The map-wide search runs as a 3D branch-and-bound
