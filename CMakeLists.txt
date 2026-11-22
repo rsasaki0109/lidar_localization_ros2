@@ -943,6 +943,10 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_benchmark_eval.py
   )
   add_test(
+    NAME run_benchmark
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_run_benchmark.py
+  )
+  add_test(
     NAME tum_trajectory_to_pose_reference_csv
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_tum_trajectory_to_pose_reference_csv.py
   )

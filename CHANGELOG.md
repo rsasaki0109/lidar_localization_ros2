@@ -98,6 +98,27 @@ not detect the unit.
 
 ### Fixed
 
+- **Benchmark runs no longer start without the odometry they launch.** Quickstart's
+  discovery decided on the ROS graph as soon as the bag's cloud and IMU appeared; DDS
+  reported the already running RKO-LIO to it up to a second later, so 7 of 66 Go2
+  cross-session runs of the #345/#346 replays (all 3 "manual" starts of #345) started
+  with `Discovery: odometry=none` and scored the no-odometry mode (search on the raw,
+  upside-down MID-360 scan). `run_benchmark.py` now waits for the odom TF on /tf before
+  it starts quickstart (`tools/benchmark/wait_for_odometry.py`, 30 s,
+  `odometry_tf_timeout_sec`; this also covers a bag that starts late from a cold disk),
+  passes `--odom-tf-prediction --base-frame <child of odom>` unless the case sets them,
+  and marks a run that still configured no odometry invalid (`invalid.txt`): it is
+  stopped, left out of the scores, listed in `summary.md`, and the benchmark exits
+  with 1. `expect_odometry: false` in a suite turns this off. 30 of 30 cross-session
+  starts (the first 40 s of each case, twice) then ran with odometry: 28 right, 0
+  wrong, 2 manual (ambiguous Long_Stairs pairs).
+- **Quickstart keeps looking for an odometry node for up to 3 s** after the cloud and IMU
+  appear, instead of a single second look, so odometry started together with or just
+  before quickstart is found. Replaying the benchmark's start-up 24 times, 3 starts
+  missed a running RKO-LIO before (a fourth started before a cold bag played, which only
+  the benchmark's TF wait covers) and none after. Without odometry the start takes up
+  to 3 s longer; passing `--base-frame` with `--odom-tf-prediction` or
+  `--no-odom-tf-prediction` skips the wait ([quickstart.md](docs/quickstart.md)).
 - **`mid360_legged.yaml` and the `mid360` quickstart profile read the MID-360 IMU as
   m/s^2**: `livox_ros_driver2` publishes g, and only `mid360_legged_low_resource.yaml`
   converted it. On EIL_Stairs (RKO-LIO running) the RMSE fell from 0.20-0.27 to

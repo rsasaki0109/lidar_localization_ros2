@@ -122,6 +122,12 @@ CLOUD_TYPE = "sensor_msgs/msg/PointCloud2"
 # How long discovery waits for the odom TF of an odometry node that already
 # advertises its Odometry topic (a LIO front end publishes TF after first scans).
 ODOMETRY_WAIT_SEC = 10.0
+# How long discovery keeps looking for an odometry node (an Odometry topic or an
+# odom TF) after the cloud and IMU appeared. DDS discovers each process on its
+# own: on the Go2 benchmark the bag player showed up first and RKO-LIO, running
+# for 6 s already, 0.5-1 s later, after a single second look had decided
+# "no odometry" in 7 of 66 starts. Without odometry this delays the start by this.
+ODOMETRY_DISCOVERY_SEC = 3.0
 IMU_TYPE = "sensor_msgs/msg/Imu"
 
 
@@ -146,18 +152,52 @@ def wait_for_typed_topics(
         sleep(0.1)
 
 
+def wait_for_odometry_source(
+    list_topics,
+    edges,
+    odom_frame: str,
+    typed,
+    timeout_sec: float,
+    clock=time.monotonic,
+    sleep=time.sleep,
+):
+    """Poll the ROS graph until an odometry node shows up or the timeout passes.
+
+    An odometry node shows up as a published Odometry topic or as an odom TF in
+    edges (filled by a /tf subscription while sleep spins). Returns typed merged
+    with every (topic, type) seen meanwhile.
+    """
+    seen = set(typed)
+    deadline = clock() + timeout_sec
+    while True:
+        seen |= {
+            (name, type_name)
+            for name, type_names in list_topics()
+            for type_name in type_names
+        }
+        if (
+            model.odometry_topics(sorted(seen))
+            or any(parent == odom_frame for parent, _ in edges)
+            or clock() >= deadline
+        ):
+            return sorted(seen)
+        sleep(0.1)
+
+
 def discover_ros_graph(
     odom_frame: str,
     cloud_topic_for=None,
     timeout_sec: float = 5.0,
     listen_sec: float = 1.5,
     odometry_wait_sec: float = ODOMETRY_WAIT_SEC,
+    odometry_discovery_sec: float = ODOMETRY_DISCOVERY_SEC,
 ):
     """Return live (topic, type) pairs, the (parent, child) TF edges seen, and
     the frame_id of one message on the cloud topic cloud_topic_for(topics) picks.
 
-    When an Odometry topic is published but its odom TF has not appeared yet,
-    keep listening up to odometry_wait_sec for it.
+    Look for an odometry node up to odometry_discovery_sec after the cloud and
+    IMU appeared. When an Odometry topic is published but its odom TF has not
+    appeared yet, keep listening up to odometry_wait_sec for it.
     """
     try:
         import rclpy
@@ -222,14 +262,14 @@ def discover_ros_graph(
             spin(0.1)
         # The graph snapshot was taken as soon as a cloud and an IMU showed up;
         # DDS discovers each process separately, so an odometry node started
-        # earlier can still be missing from it. Look again before deciding.
-        typed = sorted(
-            set(typed)
-            | {
-                (name, type_name)
-                for name, type_names in published_topics()
-                for type_name in type_names
-            }
+        # earlier can still be missing from it. Keep looking before deciding.
+        typed = wait_for_odometry_source(
+            published_topics,
+            edges,
+            odom_frame,
+            typed,
+            odometry_discovery_sec,
+            sleep=spin,
         )
         deadline = time.monotonic() + odometry_wait_sec
         while time.monotonic() < deadline and model.odometry_tf_pending(
@@ -970,8 +1010,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return args.cloud_topic
             return model.select_discovered_topic(typed, CLOUD_TYPE, cloud_topic)[0]
 
+        odometry_decided = (
+            args.odom_tf_prediction is not None and args.base_frame is not None
+        )
         typed, tf_edges, cloud_frame = discover_ros_graph(
-            args.odom_frame, cloud_topic_for if args.lidar_frame is None else None
+            args.odom_frame,
+            cloud_topic_for if args.lidar_frame is None else None,
+            odometry_discovery_sec=0.0 if odometry_decided else ODOMETRY_DISCOVERY_SEC,
         )
         graph_checked = True
         running = model.running_localizer_hint(typed)

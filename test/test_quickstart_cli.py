@@ -67,6 +67,52 @@ class TestQuickstartCli(unittest.TestCase):
         self.assertEqual(typed, [("/cloud", "sensor_msgs/msg/PointCloud2")])
         self.assertGreaterEqual(now[0], 3.0)
 
+    def test_odometry_discovery_keeps_looking_for_a_late_odometry_node(self):
+        # The bag player was discovered first; RKO-LIO's topics and TF arrive
+        # 0.5 s later. A single second look would have missed them.
+        player = [
+            ("/livox/lidar", ["sensor_msgs/msg/PointCloud2"]),
+            ("/livox/imu", ["sensor_msgs/msg/Imu"]),
+        ]
+        rko_lio = [("/rko_lio/odom", ["nav_msgs/msg/Odometry"]), *player]
+        now = [0.0]
+
+        def sleep(seconds):
+            now[0] += seconds
+
+        typed = QUICKSTART.wait_for_odometry_source(
+            lambda: rko_lio if now[0] >= 0.5 else player,
+            set(),
+            "odom",
+            [("/livox/lidar", "sensor_msgs/msg/PointCloud2")],
+            3.0,
+            lambda: now[0],
+            sleep,
+        )
+        self.assertIn(("/rko_lio/odom", "nav_msgs/msg/Odometry"), typed)
+        self.assertIn(("/livox/imu", "sensor_msgs/msg/Imu"), typed)
+        self.assertAlmostEqual(now[0], 0.5)
+
+        # An odom TF already seen ends the wait at once.
+        now[0] = 0.0
+        QUICKSTART.wait_for_odometry_source(
+            lambda: player,
+            {("odom", "livox_frame")},
+            "odom",
+            [],
+            3.0,
+            lambda: now[0],
+            sleep,
+        )
+        self.assertEqual(now[0], 0.0)
+
+        # Without odometry it gives up after the timeout.
+        typed = QUICKSTART.wait_for_odometry_source(
+            lambda: player, set(), "odom", [], 3.0, lambda: now[0], sleep
+        )
+        self.assertGreaterEqual(now[0], 3.0)
+        self.assertEqual(len(typed), 2)
+
     def test_help_lists_tuning_options_only_with_help_all(self):
         core = QUICKSTART.build_arg_parser().format_help()
         full = io.StringIO()
@@ -152,7 +198,7 @@ class TestQuickstartCli(unittest.TestCase):
                 (replay, ["--no-use-sim-time"], "false", None),
                 ([], ["--use-sim-time"], "true", None),
             ):
-                QUICKSTART.discover_ros_graph = lambda *_, topics=topics: (
+                QUICKSTART.discover_ros_graph = lambda *_, topics=topics, **__: (
                     topics,
                     set(),
                     None,
@@ -178,7 +224,7 @@ class TestQuickstartCli(unittest.TestCase):
             ("/imu_a", "sensor_msgs/msg/Imu"),
         ]
         original = QUICKSTART.discover_ros_graph
-        QUICKSTART.discover_ros_graph = lambda *_: (topics, set(), None)
+        QUICKSTART.discover_ros_graph = lambda *_, **__: (topics, set(), None)
         try:
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -207,9 +253,38 @@ class TestQuickstartCli(unittest.TestCase):
         finally:
             QUICKSTART.discover_ros_graph = original
 
+    def test_explicit_odometry_settings_skip_the_odometry_discovery_wait(self):
+        waits = []
+
+        def discover(*_, odometry_discovery_sec, **__):
+            waits.append(odometry_discovery_sec)
+            return [], set(), None
+
+        with patch.object(QUICKSTART, "discover_ros_graph", discover):
+            for extra in (
+                [],
+                ["--odom-tf-prediction"],
+                ["--odom-tf-prediction", "--base-frame", "livox_frame"],
+                ["--no-odom-tf-prediction", "--base-frame", "base_link"],
+            ):
+                with tempfile.TemporaryDirectory() as directory:
+                    self._dry_run(
+                        Path(directory),
+                        ["--discover-topics", "--no-auto-occupancy-map", *extra],
+                    )
+        self.assertEqual(
+            waits,
+            [
+                QUICKSTART.ODOMETRY_DISCOVERY_SEC,
+                QUICKSTART.ODOMETRY_DISCOVERY_SEC,
+                0.0,
+                0.0,
+            ],
+        )
+
     def test_missing_topic_hint_explains_how_to_supply_input(self):
         original = QUICKSTART.discover_ros_graph
-        QUICKSTART.discover_ros_graph = lambda *_: ([], set(), None)
+        QUICKSTART.discover_ros_graph = lambda *_, **__: ([], set(), None)
         try:
             with tempfile.TemporaryDirectory() as directory:
                 _, text = self._dry_run(
@@ -232,7 +307,7 @@ class TestQuickstartCli(unittest.TestCase):
             ):
                 with self.subTest(advertised=advertised):
                     topics = [*advertised, ("/available", QUICKSTART.CLOUD_TYPE)]
-                    QUICKSTART.discover_ros_graph = lambda *_, topics=topics: (
+                    QUICKSTART.discover_ros_graph = lambda *_, topics=topics, **__: (
                         topics,
                         set(),
                         None,
@@ -297,7 +372,7 @@ class TestQuickstartCli(unittest.TestCase):
                 ),
                 (set(), ["--odom-tf-prediction"], "base_link", "true"),
             ):
-                QUICKSTART.discover_ros_graph = lambda *_, edges=edges: (
+                QUICKSTART.discover_ros_graph = lambda *_, edges=edges, **__: (
                     topics,
                     edges,
                     None,
@@ -321,7 +396,7 @@ class TestQuickstartCli(unittest.TestCase):
         original = QUICKSTART.discover_ros_graph
         try:
             for extra, expected in (([], True), (["--odom-tf-prediction"], False)):
-                QUICKSTART.discover_ros_graph = lambda *_: (topics, set(), None)
+                QUICKSTART.discover_ros_graph = lambda *_, **__: (topics, set(), None)
                 with tempfile.TemporaryDirectory() as directory:
                     _, text = self._dry_run(
                         Path(directory),
@@ -349,7 +424,9 @@ class TestQuickstartCli(unittest.TestCase):
                 (robot, "velodyne", ["--lidar-frame", "lidar"], "lidar", "true"),
             ):
 
-                def discover(odom_frame, cloud_topic_for, edges=edges, frame=frame):
+                def discover(
+                    odom_frame, cloud_topic_for, edges=edges, frame=frame, **_
+                ):
                     if cloud_topic_for is None:
                         return topics, edges, None
                     self.assertEqual(cloud_topic_for(topics), "/points")
@@ -379,7 +456,7 @@ class TestQuickstartCli(unittest.TestCase):
                 (set(), ["--lidar-frame", "base_link"], None),
             ):
                 with self.subTest(extra=extra, edges=edges):
-                    QUICKSTART.discover_ros_graph = lambda *_, edges=edges: (
+                    QUICKSTART.discover_ros_graph = lambda *_, edges=edges, **__: (
                         [],
                         edges,
                         None,
