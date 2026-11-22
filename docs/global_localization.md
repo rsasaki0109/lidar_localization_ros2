@@ -138,6 +138,107 @@ Keep `supervisor_enable_seed_motion_compensation` at its default, `false`, here.
 route-crop query takes 10-20 s, and extrapolating the seed over that latency moved it
 tens of metres on a moving bag.
 
+### 3D-BBS as a G2 engine (evaluated 2026-11-21)
+
+G2 searches a 2D occupancy grid made from the 3D map, so in a building with stairs the
+room, the stairs and the hall below fall onto the same cells. [3D-BBS](https://github.com/KOKIAOKI/3d_bbs)
+(Aoki, Koide et al., ICRA 2024) runs the branch-and-bound over a 3D voxel hierarchy
+instead and returns x, y, z and yaw. It was evaluated offline as a replacement for the
+2D search, on CPU (no GPU here), and **not integrated**. Method, scripts and the
+reproduction are in [experiments/3d_bbs_eval](../experiments/3d_bbs_eval/README.md).
+
+- **Licence: MIT.** Usable from this BSD-2 package, also vendored, if its notice is
+  kept. Kept external here.
+- **Build:** CPU library in 3.6 s (3 files), needs Eigen 3.4, OpenMP, Boost headers and
+  Boost.Filesystem, which the library uses but does not link. One answer per search
+  (the best pose and its score); the evaluation adds a top-k variant.
+- **Same scans and maps** as `g2_offline_probe.py` (one scan per second, levelled with
+  the ground-truth attitude), the cross-session suite's G2 settings, and the same NDT
+  refinement and ranking for 3D-BBS's candidates. 3D-BBS: 0.5 m finest voxels, 6 levels,
+  scan 1-30 m at 0.5 m, the map's whole bounding box in x, y, z, 4 threads. Success:
+  top answer within 1 m and 5 degrees (Boreas: 2 m). `Long_Stairs` map → `Outdoor2`
+  is scored against the odometry moved into the ground-truth frame and NDT-registered to
+  the map every second (corrections at most 0.12 m), so it covers the corridor, the
+  stairs and the hall 5 m below, not only the motion-capture room. The Long_Stairs scans
+  are no longer on disk, so `Outdoor2` map → `Long_Stairs` was not run.
+
+JEPLO Go2, 14 map → scan pairs, 1,161 queries. Starts are the startup replay
+(`decide_startup` from every query, ground truth as odometry): wrong / right / operator.
+
+| method | success | answer > 1.5 m off in height | median / p95 / max query (s) | peak RSS | starts wrong / right / operator |
+|---|---|---|---|---|---|
+| G2 (2D BBS + NDT on 16) | 763 (66%) | 65 | 1.1 / 3.1 / 4.7 | 150-310 MB | 41 / 789 / 163 |
+| 3D-BBS, its single answer | 833 (72%) | 25 | 0.19 / 7.5 / 201 | 150-1,470 MB | 160 / 807 / 26 |
+| 3D-BBS single answer + NDT | 865 (75%) | 25 | 0.26 / 7.6 / 201 | 150-1,470 MB | 95 / 823 / 75 |
+| 3D-BBS top 8 (3 m apart, 10 s limit) + NDT | **921 (79%)** | 12 | 2.9 / 10.2 / 10.2 | 150-390 MB | **39** / **846** / 108 |
+
+By map:
+
+| map → scans | G2 | 3D-BBS + NDT | 3D-BBS top 8 + NDT |
+|---|---|---|---|
+| room maps (EIL_Box, EIL_Mix, EIL_Stairs), 10 pairs, 734 queries | 513, 0.9 s | 588, 0.1 s | 619, 1.5 s |
+| Long_Stairs map → room runs (EIL_Box, Mask1, Stairs), 264 | 113, 1.8 s | 123, 4.2 s | 149, 10 s |
+| Long_Stairs map → Outdoor2 0-165 s, 163 | 137, 2.9 s | 154, 1.1 s | 153, 10 s |
+
+(successes, median query time). In the room maps an answer far off in height is NDT
+drifting from a wrong start, not another floor; G2 has 24 of them there.
+
+- **Stairs and the hall below: 3D-BBS's case.** `Long_Stairs` map → `Outdoor2`, by
+  segment (success / queries, answers on the wrong level):
+
+  | segment | G2 | 3D-BBS + NDT | 3D-BBS top 8 + NDT |
+  |---|---|---|---|
+  | room, 0-50 s | 50/50 | 44/50 | 50/50 |
+  | corridor, 50-125 s | 71/75, 1 | 75/75 | 75/75 |
+  | stairs, 125-145 s | 13/20, **5** | **20/20** | 20/20 |
+  | hall 5 m below, 145-165 s | 3/18, **12** | **15/18**, 3 | 8/18 (10 timed out) |
+
+  On the stairs and in the hall G2 put 17 answers on another level, 3D-BBS 3 (in the
+  last 3 s, where the robot leaves the part of the hall the map covers). Its weak spot
+  there is time: hall queries took 15 s at the median and up to 201 s, and its queue
+  peaked at 1.5 GB. The 10 s limit caps both but returns nothing for 10 hall queries.
+- **The aliased pairs are not solved.** EIL_Box map → EIL_Stairs: G2 59/135, 3D-BBS
+  43/135 with NDT on its single answer and 69/135 with top 8; EIL_Box → EIL_Mix:
+  14, 15, 16 of 24. In all three, most misses are the same room turned by 180 degrees
+  (G2 50, 3D-BBS 70 and 54 queries on EIL_Box → EIL_Stairs). That is the scene (a box
+  platform in the map where the scans have a stair module, in a near-symmetric room),
+  not the 2D grid, and the 3D score
+  barely separates them (median 0.98 for right, 0.95 for wrong answers; on the
+  Long_Stairs map 0.99 for both).
+- **A room scan on a large multi-level map** (Long_Stairs map → room runs): the 3D search
+  also may pick another level. 3D-BBS alone put 21 of 264 answers more than 1.5 m off in
+  height, G2 23, top 8 + NDT 8.
+- **One answer is not enough for the startup checks.** The nearby-alternative and
+  fitness-ratio checks need other candidates; with the single 3D-BBS answer the replay
+  published 95-160 wrong starts against G2's 41. Top 8 at least 3 m apart (G2's
+  suppression radius) restores them: 39 wrong, and the most right starts. With 1 m
+  suppression the top 8 nearly always held a refined alternative 1-5 m away, and most
+  starts went to the operator.
+- **Boreas** (the 1 km map is not on disk; the 120 s fixture's 545 x 367 m map, 3.1 M
+  points, cross-season scans, 17 queries 7 s apart, 2 m / 5 degrees, G2 with the fast
+  settings of [the map-wide Boreas queries](#on-the-boreas-fixture-map-wide-queries)):
+  G2 12/17 at 4.5 s median (9.8 s max, 570 MB), 3D-BBS (1 m voxels, scan at 2 m) + NDT
+  **17/17** at 8.2 s median (52 s max, 790 MB, 1.7 s to build the voxel map), top 8
+  17/17 at 30 s median (60 s limit).
+- **Cost on CPU:** the voxel maps take 20-110 ms to build for the JEPLO maps and 1.7 s
+  for Boreas. Query time is fast where the scan is distinctive (0.1 s in the rooms) and
+  unbounded where it is not: an open hall or a room scan on a big map expands far more
+  nodes, with time and queue memory to match. Asking for the k best leaves costs a
+  multiple of the single answer. On one thread (every 5th query of EIL_Mix → EIL_Box
+  and Long_Stairs → Outdoor2) the search took 3.4 times as long at the median (0.9 and
+  2.6 s), and 2 of the 33 Long_Stairs → Outdoor2 queries, in the hall, hit a 60 s limit.
+
+**Recommendation.** Worth adding as an **optional** G2 engine for multi-level maps, not
+as the default: on stairs and lower floors it is right where the 2D grid is not, and on
+Boreas it placed every scan. It needs (1) a top-k with G2's 3 m suppression so the
+startup's alternative checks keep working, (2) a hard time limit and a queue cap (the
+library's timeout, or a node budget), and (3) the same NDT refinement and ranking G2
+already has. The licence and the dependency (one small library, Eigen/OpenMP/Boost) are
+not obstacles. The costs are CPU time on open or repetitive scenes (seconds to minutes
+without a limit, so a limit that sometimes returns nothing) and memory during the
+search (up to 1.5 GB here). It does not help with the aliased rooms that fooled G2; the
+startup checks remain what stops those.
+
 ## G3: guarded automatic reinitialization
 
 The localization node already raises `/reinitialization_requested`
