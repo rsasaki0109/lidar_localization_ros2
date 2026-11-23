@@ -689,6 +689,30 @@ def quaternion_from_rpy(roll: float, pitch: float, yaw: float):
     )
 
 
+def global_fix_position_std(
+    trusted_std_m: float,
+    default_std_m: float,
+    refined: bool,
+    odometry_compensated: bool,
+) -> float:
+    """Position std to publish a global fix with.
+
+    The trusted std (a localizer with a matching
+    seed_correction_guard_trusted_start_position_std_m holds the fix to the odometry
+    from the first scan) only for an NDT-refined fix that odometry moved from its
+    scan to now; a fix that is not refined, or was published where odometry
+    could not move it, gets the default std, so the localizer may still correct it.
+    """
+    if (
+        math.isfinite(trusted_std_m)
+        and trusted_std_m > 0.0
+        and refined
+        and odometry_compensated
+    ):
+        return trusted_std_m
+    return default_std_m
+
+
 def apply_planar_motion(
     pose: tuple[float, float, float], motion: tuple[float, float, float]
 ) -> tuple[float, float, float]:

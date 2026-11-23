@@ -436,6 +436,44 @@ void test_seed_guard_exact_start_completes_warmup()
   assert(ll::nextSettledAccepts(0, params, 0.05, 20.0, true) == 0);
 }
 
+void test_seed_guard_trusted_start()
+{
+  ll::MeasurementGateParams params;
+  params.enable_seed_correction_guard = true;
+  params.seed_correction_guard_translation_m = 0.3;
+  params.seed_correction_guard_yaw_deg = 15.0;
+  params.seed_correction_guard_warmup_accepts = 5;
+  params.seed_correction_guard_release_rejections = 30;
+
+  // Off by default.
+  assert(!ll::isTrustedInitialPose(params, 0.01, 0.01));
+
+  params.seed_correction_guard_trusted_start_position_std_m = 0.1;
+  assert(ll::isTrustedInitialPose(params, 0.1 * 0.1, 0.1 * 0.1));
+  assert(ll::isTrustedInitialPose(params, 0.0025, 0.0049));
+  // RViz's 2D Pose Estimate (0.25 m^2), a looser fix, or one axis loose: not trusted.
+  assert(!ll::isTrustedInitialPose(params, 0.25, 0.25));
+  assert(!ll::isTrustedInitialPose(params, 0.0025, 0.04));
+  // A zero or invalid covariance says nothing.
+  assert(!ll::isTrustedInitialPose(params, 0.0, 0.0));
+  assert(!ll::isTrustedInitialPose(params, -0.01, 0.01));
+  assert(!ll::isTrustedInitialPose(
+      params, std::numeric_limits<double>::quiet_NaN(), 0.01));
+
+  // The first odometry-seeded scan completes the warmup; without odometry it does not.
+  assert(ll::trustedStartSettledAccepts(0, params, true) == 5);
+  assert(ll::trustedStartSettledAccepts(0, params, false) == 0);
+  assert(ll::trustedStartSettledAccepts(7, params, true) == 7);
+
+  // So the first scan's 0.6 m correction is rejected instead of accepted.
+  auto input = ll::makeMeasurementGateInput(0.13, 0.08, 0.14, 0.6, 2.0, 0, 0);
+  assert(!ll::evaluateMeasurementGate(params, input).reject_measurement);
+  input.accepted_updates_since_reset = ll::trustedStartSettledAccepts(0, params, true);
+  const auto gate = ll::evaluateMeasurementGate(params, input);
+  assert(gate.reject_measurement);
+  assert(gate.status_message == "seed_correction_guard_rejected");
+}
+
 void test_odom_seed_gap_detection()
 {
   const double nan = std::numeric_limits<double>::quiet_NaN();
@@ -449,6 +487,7 @@ int main()
 {
   test_seed_guard_warmup_counts_only_settled_accepts();
   test_seed_guard_exact_start_completes_warmup();
+  test_seed_guard_trusted_start();
   test_odom_seed_gap_detection();
   test_seed_correction_guard_rejects_jumps_until_release();
   test_seed_correction_window_guard_bounds_summed_corrections();

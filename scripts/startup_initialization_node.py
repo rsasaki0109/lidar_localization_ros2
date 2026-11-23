@@ -85,6 +85,11 @@ class StartupInitializationNode(Node):
         self.declare_parameter("save_interval_sec", 2.0)
         self.declare_parameter("position_std_m", 0.5)
         self.declare_parameter("yaw_std_rad", 0.25)
+        # Position std of the global fixes that are NDT-refined and that odometry
+        # moved from their scan to now (0: position_std_m). A localizer with
+        # seed_correction_guard_trusted_start_position_std_m at least this trusts
+        # them and holds them to the odometry from the first scan.
+        self.declare_parameter("global_pose_position_std_m", 0.0)
 
         self.global_frame = str(self.get_parameter("global_frame_id").value)
         self.odom_frame = str(self.get_parameter("odom_frame_id").value)
@@ -113,6 +118,12 @@ class StartupInitializationNode(Node):
         self.save_interval_sec = float(self.get_parameter("save_interval_sec").value)
         self.position_std = float(self.get_parameter("position_std_m").value)
         self.yaw_std = float(self.get_parameter("yaw_std_rad").value)
+        global_std = float(self.get_parameter("global_pose_position_std_m").value)
+        self.global_position_std = (
+            global_std
+            if math.isfinite(global_std) and global_std > 0.0
+            else self.position_std
+        )
         self.params = model.StartupParams(
             min_candidate_score=float(self.get_parameter("min_candidate_score").value),
             min_score_margin=float(self.get_parameter("min_score_margin").value),
@@ -735,7 +746,27 @@ class StartupInitializationNode(Node):
                 f"{math.hypot(motion[0][0], motion[0][1]):.2f} m, "
                 f"{math.degrees(motion[0][2]):.1f} deg"
             )
+        position_std = model.global_fix_position_std(
+            self.global_position_std,
+            self.position_std,
+            bool(candidate.get("registration_refined", False)),
+            motion is not None,
+        )
+        if self.global_position_std != self.position_std and (
+            position_std == self.position_std
+        ):
+            self.get_logger().info(
+                "global fix published untrusted (std "
+                f"{position_std:.2f} m): "
+                + (
+                    "not NDT-refined"
+                    if not candidate.get("registration_refined", False)
+                    else f"no odometry to move it from its scan ({self.last_odom_error})"
+                )
+            )
         msg = self._new_initialpose()
+        msg.pose.covariance[0] = position_std**2
+        msg.pose.covariance[7] = position_std**2
         msg.pose.pose.position.x = x
         msg.pose.pose.position.y = y
         if candidate.get("z") is not None:

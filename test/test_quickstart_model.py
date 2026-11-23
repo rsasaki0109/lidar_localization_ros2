@@ -945,6 +945,17 @@ class TestStartupPolicy(unittest.TestCase):
                 )
             )
 
+    def test_global_fix_trusted_only_when_refined_and_odometry_moved_it(self):
+        std = MODEL.global_fix_position_std
+        self.assertEqual(std(0.1, 0.5, True, True), 0.1)
+        # Not refined, or odometry could not move it from its scan: the localizer
+        # may still correct it.
+        self.assertEqual(std(0.1, 0.5, False, True), 0.5)
+        self.assertEqual(std(0.1, 0.5, True, False), 0.5)
+        # Off.
+        self.assertEqual(std(0.0, 0.5, True, True), 0.5)
+        self.assertEqual(std(math.nan, 0.5, True, True), 0.5)
+
     def test_retry_waits_for_a_new_view_with_odometry(self):
         params = MODEL.StartupParams()
         sees = MODEL.retry_sees_new_view

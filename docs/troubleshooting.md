@@ -509,6 +509,20 @@ looks good; previous-delta prediction then extrapolates the jump.
   configs `0.1`) ends that warmup at once when the first accept after an initial pose
   corrected it by at most this much, so a known-good initial pose is held from the next scan
   ([experiments/post_init_jump](../experiments/post_init_jump/README.md)).
+- if a right global fix is pulled metres away by the first scans after it (a legged
+  robot stepping down or turning hard right after the fix, so those scans register
+  badly), set `seed_correction_guard_trusted_start_position_std_m` (default `0`, off;
+  quickstart: `--trusted-global-start-std-m 0.1`, only with odometry prediction, which
+  also makes the startup publish each NDT-refined global fix that odometry moved from
+  its scan to now with that position standard deviation, `global_pose_position_std_m`).
+  An `/initialpose` whose covariance claims at most that horizontal standard deviation
+  is trusted: when the first scan after it is seeded from odometry, the guards hold
+  from that scan instead of waiting for the warmup. RViz's 2D Pose Estimate (0.5 m),
+  the recovery supervisor's resets, saved poses (the localizer's covariance floor is
+  0.2 m) and fixes the startup could not move by odometry are not trusted and keep the
+  warmup. A trusted fix that is in fact off is corrected only at
+  the guards' release (30 rejections, about 3 s at 10 Hz)
+  ([benchmark.md](benchmark.md#eil_stairs--eil_box-a-right-start-pulled-onto-the-turned-room-and-the-fix)).
 - with external odometry, also enable `enable_seed_correction_window_guard` (quickstart:
   `--seed-correction-window-sec 2`) when the slide happens over several scans, each one
   within the guard: it rejects a scan when the corrections accepted within

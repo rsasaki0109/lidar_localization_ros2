@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+**Upgrading:** the new settings default to the old behaviour:
+`seed_correction_guard_trusted_start_position_std_m` on the localizer (`0` = off), the
+startup node's `global_pose_position_std_m` (`0` = `position_std_m`; launch arg of the
+same name) and quickstart's `--trusted-global-start-std-m` (`0` = off).
+
+### Added
+
+- **Opt-in trusted global start** (`seed_correction_guard_trusted_start_position_std_m`
+  on the localizer; quickstart `--trusted-global-start-std-m`, only with odometry
+  prediction, which also sets the startup node's `global_pose_position_std_m`). On the
+  JEPLO EIL_Stairs map with EIL_Box's scans, a G2 fix 0.05 m from the ground truth was
+  pulled 0.6 m and then 1.9 m by the first two scans and the track locked onto the room
+  turned around, 4.6 m off. The fix came as the Go2 stepped down (pitch 10 to 45
+  degrees, 0.5 m lower, within 0.5 s): those scans registered 0.4-2.1 m off, with
+  fitness down to 0.02, while the odometry stayed within 0.2 m, and the seed correction
+  guards were still in their warmup, which the first 0.5 m correction restarted.
+  Started from the ground truth the localizer was pulled 1.2 m as well, so neither the
+  fix nor its seed was wrong. With the option the startup publishes an NDT-refined fix
+  that odometry moved from its scan to now with that position standard deviation, and
+  the localizer trusts an `/initialpose` claiming at most it: when the first scan after
+  it is seeded from odometry, the guards hold from that scan. Replayed with the fix at
+  the same moment: 2 of 6 runs ended 4.6 m off before, 0 of 4 after (max 0.26-0.35 m).
+  RViz's 2D Pose Estimate (0.5 m), unrefined fixes, fixes odometry could not move and
+  saved poses keep the warmup. A trusted fix that is off stays off until the guards'
+  release, 30 scans later. Live, on the 14 cross-session cases with the window guard
+  (two runs each): 27 starts, 1 wrong, 1 manual pose (25, 0, 3 before); the wrong start
+  and the manual pose were G2's (the room turned around; no unambiguous view), and one
+  fix G2 placed 0.7 m along the room was held for 3 s (p95 0.73 m in that run;
+  elsewhere p95 at most 0.31 m, max 0.68 m). Off by default because of that cost.
+  ([benchmark.md](docs/benchmark.md#eil_stairs--eil_box-a-right-start-pulled-onto-the-turned-room-and-the-fix),
+  [troubleshooting.md](docs/troubleshooting.md#symptom-pose-jumps-along-a-corridor-like-axis)).
+
 ## 1.12.0 - 2026-11-23
 
 **Upgrading:** every new setting defaults to the old behaviour:

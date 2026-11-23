@@ -345,6 +345,9 @@ void PCLLocalization::initializeParameters()
     "seed_correction_guard_exact_start_translation_m",
     measurement_gate_config_.seed_correction_guard_exact_start_translation_m);
   get_parameter(
+    "seed_correction_guard_trusted_start_position_std_m",
+    measurement_gate_config_.seed_correction_guard_trusted_start_position_std_m);
+  get_parameter(
     "enable_seed_correction_window_guard",
     measurement_gate_config_.enable_seed_correction_window_guard);
   get_parameter(
@@ -634,13 +637,15 @@ void PCLLocalization::initializeParameters()
     measurement_gate_config_.rejected_seed_update_max_correction_yaw_deg);
   RCLCPP_INFO(
     get_logger(), "seed_correction_guard: enabled=%d translation_m=%lf yaw_deg=%lf "
-    "release_rejections=%d warmup_accepts=%d exact_start_translation_m=%lf",
+    "release_rejections=%d warmup_accepts=%d exact_start_translation_m=%lf "
+    "trusted_start_position_std_m=%lf",
     measurement_gate_config_.enable_seed_correction_guard,
     measurement_gate_config_.seed_correction_guard_translation_m,
     measurement_gate_config_.seed_correction_guard_yaw_deg,
     measurement_gate_config_.seed_correction_guard_release_rejections,
     measurement_gate_config_.seed_correction_guard_warmup_accepts,
-    measurement_gate_config_.seed_correction_guard_exact_start_translation_m);
+    measurement_gate_config_.seed_correction_guard_exact_start_translation_m,
+    measurement_gate_config_.seed_correction_guard_trusted_start_position_std_m);
   RCLCPP_INFO(
     get_logger(), "seed_correction_window_guard: enabled=%d window_sec=%lf translation_m=%lf",
     measurement_gate_config_.enable_seed_correction_window_guard,

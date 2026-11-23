@@ -143,6 +143,22 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
             ]
         )
 
+    def test_trusted_global_start_is_opt_in_with_odometry(self):
+        key = "seed_correction_guard_trusted_start_position_std_m"
+        self.assertEqual(
+            config_tool.make_params(args(odom_tf_prediction=True))[key], 0.0
+        )
+        self.assertEqual(
+            config_tool.make_params(
+                args(odom_tf_prediction=True, trusted_global_start_std_m=0.1)
+            )[key],
+            0.1,
+        )
+        # Without odometry seeding there is nothing to hold the pose to.
+        self.assertEqual(
+            config_tool.make_params(args(trusted_global_start_std_m=0.1))[key], 0.0
+        )
+
     def test_relative_map_path_is_written_as_absolute_path(self):
         relative_path = "maps/site.pcd"
         params = config_tool.make_params(args(map_path=relative_path))

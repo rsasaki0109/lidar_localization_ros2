@@ -512,6 +512,18 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
         ),
     )
     tuning.add_argument(
+        "--trusted-global-start-std-m",
+        type=float,
+        default=0.0,
+        help=advanced(
+            "with odometry prediction, publish confirmed global fixes with this "
+            "position standard deviation and let the localizer trust them: the seed "
+            "guards hold the odometry from the first scan instead of warming up, so "
+            "a degraded first scan cannot pull a right fix away "
+            "(0: off; docs/benchmark.md)"
+        ),
+    )
+    tuning.add_argument(
         "--global-cpp-backend",
         action=BooleanOptionalAction,
         default=True,
@@ -715,6 +727,10 @@ def _config_args(args, cloud_topic: str, imu_topic: str):
         argv.extend(
             ["--seed-correction-window-sec", str(args.seed_correction_window_sec)]
         )
+    if args.trusted_global_start_std_m > 0.0:
+        argv.extend(
+            ["--trusted-global-start-std-m", str(args.trusted_global_start_std_m)]
+        )
     return config_tool.build_arg_parser().parse_args(argv)
 
 
@@ -803,6 +819,9 @@ def launch_parts(args, config_args, config_path: Path, state_path: Path):
         "global_consensus_yaw_deg": args.global_consensus_yaw_deg,
         "global_consensus_near_alias_samples": (
             args.global_consensus_near_alias_samples
+        ),
+        "global_pose_position_std_m": (
+            args.trusted_global_start_std_m if args.odom_tf_prediction else 0.0
         ),
         "registration_fitness_high_confidence_threshold": (
             0.5 if route_crop else 1.0e9

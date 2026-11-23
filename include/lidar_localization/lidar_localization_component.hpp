@@ -561,6 +561,9 @@ public:
   // Release agreement: corrections of the latest guard-rejected scans.
   lidar_localization::SeedCorrectionReleaseHistory seed_correction_release_history_;
   double last_odom_seed_stamp_sec_{std::numeric_limits<double>::quiet_NaN()};
+  // Set by a trusted /initialpose (seed_correction_guard_trusted_start_position_std_m)
+  // and consumed by the next scan's seed selection.
+  bool trusted_start_pending_{false};
   // Lock order: localization state (when needed), then short twist history lock.
   std::mutex twist_history_mutex_;
   std::uint64_t twist_subscription_generation_{0};
