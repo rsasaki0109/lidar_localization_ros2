@@ -1,8 +1,14 @@
 # Cross-session global localization on the JEPLO Go2 bags: the map is built from
 # one recording and the scans come from another, with no initial pose. The quickstart
-# settings of go2_jeplo_low_sensor.yaml (the Go2 "Large maps" recipe) plus those for a
-# map from another session (docs/go2_mid360_quickstart.md#a-map-from-another-session):
-# a 1.5 m candidate suppression radius and the near-alias startup rule.
+# settings of go2_jeplo_low_sensor.yaml (the Go2 "Large maps" recipe). Those for a
+# map from another session (docs/go2_mid360_quickstart.md#a-map-from-another-session),
+# a 1.5 m candidate suppression radius and the near-alias startup rule, plus the 2 s
+# window guard, are quickstart's defaults with odometry prediction, which this suite
+# runs (docs/quickstart.md#defaults-with-odometry-prediction). Results up to v1.12.0
+# passed --global-nms-radius-m=1.5 --global-consensus-near-alias-samples=3 and had no
+# window guard; to measure that add --seed-correction-window-sec=0, and for the old
+# defaults altogether --seed-correction-window-sec=0 --global-nms-radius-m=3
+# --global-consensus-near-alias-samples=0.
 #
 # JEPLO_ROOT layout as for the other Go2 suites, with maps_loc/<run>/map.pcd built
 # by build_map_from_odometry.py + align_map_to_ground_truth.py from that run only:
@@ -26,8 +32,6 @@ defaults:
     - --global-max-scan-points=1024
     - --global-max-candidates=16
     - --refine-global-candidates
-    - --global-nms-radius-m=1.5
-    - --global-consensus-near-alias-samples=3
 cases:
   # Long staircase: map from one run, scans from the other.
   - name: Long_Stairs_map__Outdoor2

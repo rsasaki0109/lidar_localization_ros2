@@ -1,8 +1,9 @@
 # Localization Benchmark
 
 `tools/benchmark` replays public datasets through the same two commands a user runs,
-odometry plus `quickstart.py --map <map>`, and scores the published `/pcl_pose`
-against ground truth.
+odometry plus `quickstart.py --map <map>`, and scores the published pose (`/pcl_pose`,
+or `/localization/pose_with_covariance` for a suite that runs `--profile nav2` or
+`mid360`) against ground truth.
 
 ## What is measured
 
@@ -735,6 +736,138 @@ maps settings (`go2_jeplo_low_sensor.yaml`), Koide, Boreas and HDL, where the op
 is off; their defaults do not change. The stale roll and pitch
 of a published fix (the query scan's, moved by planar odometry only) are not changed.
 
+### Defaults with odometry prediction
+
+After v1.12.0, quickstart turns on three settings that were opt-in whenever odometry
+prediction is on, under every profile
+([quickstart](quickstart.md#defaults-with-odometry-prediction)):
+`--seed-correction-window-sec 2.0` (it brings the release agreement of 10 scans),
+`--global-nms-radius-m 1.5` (3.0 before) and `--global-consensus-near-alias-samples 3`
+(0 before). Without odometry prediction all three keep the old values. This is the A/B
+evaluation behind that choice. Every run had odometry prediction on and used the
+default (standalone) profile, which is why the defaults follow odometry prediction and
+not a profile.
+
+Measured on v1.12.0, Jazzy, replay at 1x, RKO-LIO odometry with odometry prediction on,
+two runs per case and configuration, with the suites' default (standalone) profile and
+the settings passed as flags. **A** is the old defaults, **B** the three settings; **C** was B with
+`--global-search-engine bbs3d`. Cross-session is
+[`go2_jeplo_cross_session.yaml`](../tools/benchmark/suites/go2_jeplo_cross_session.yaml)
+(the Large maps settings; A used 3.0 m and no near-alias rule), "Go2 EIL" the four EIL
+cases of `go2_jeplo.yaml` on the room-only EIL_Mix map with quickstart's defaults, and
+Koide `outdoor_hard_01a` and `02b` of `koide_outdoor.yaml`.
+
+| suite | config | runs | initialized / wrong / manual pose | first pose, median (max) |
+|---|---|---|---|---|
+| cross-session | A | 32 | 31 / 3 / 1 | 10.8 s (19.8 s) |
+| cross-session | **B** | 32 | 29 / 1 / 3 | 9.1 s (14.9 s) |
+| cross-session | C (B + bbs3d) | 32 | 31 / 1 / 1 | 16.6 s (38.3 s) |
+| Go2 EIL | A | 8 | 8 / 0 / 0 | 11.4 s (13.8 s) |
+| Go2 EIL | **B** | 8 | 8 / 0 / 0 | 8.9 s (11.6 s) |
+| Koide outdoor_hard | A | 4 | 4 / 0 / 0 | 12.9 s (13.3 s) |
+| Koide outdoor_hard | **B** | 4 | 4 / 0 / 0 | 12.6 s (14.8 s) |
+
+"Wrong" is a first pose more than 1 m off (counted among the initialized runs),
+"manual pose" a run that used up its global attempts. Per case (run 1; run 2),
+cross-session and the cases that changed elsewhere:
+
+| case (map → scans) | A initialized / wrong / manual | B initialized / wrong / manual | A first pose (s) | B first pose (s) | A median / p95 / max xy (m) | B median / p95 / max xy (m) |
+|---|---|---|---|---|---|---|
+| EIL_Box → EIL_Box | 2 / 0 / 0 | 2 / 0 / 0 | 9.8; 9.6 | 8.8; 8.6 | 0.02/0.05/0.26; 0.02/0.05/0.47 | 0.02/0.04/0.49; 0.02/0.05/0.26 |
+| EIL_Box → EIL_Mask1 | 2 / 0 / 0 | 2 / 0 / 0 | 8.0; 9.0 | 9.0; 10.3 | 0.03/0.08/0.81; 0.03/0.11/0.38 | 0.03/0.10/0.46; 0.03/0.10/0.19 |
+| EIL_Box → EIL_Mix | 2 / **1** / 0 | 2 / **1** / 0 | 8.8; 10.8 | 8.8; 8.3 | 0.03/1.09/2.07; 0.03/0.14/0.48 | 0.03/0.08/0.39; 0.03/1.67/2.15 |
+| EIL_Box → EIL_Stairs | 2 / **1** / 0 | 2 / 0 / 0 | 9.4; 11.9 | 12.1; 11.6 | 1.87/3.88/5.55; 0.02/0.20/1.16 | 0.02/0.15/0.48; 0.02/0.14/0.56 |
+| EIL_Mix → EIL_Box | 2 / 0 / 0 | 2 / 0 / 0 | 11.6; 9.6 | 9.1; 9.1 | 0.03/0.08/0.31; 0.03/0.09/0.73 | 0.03/0.15/0.65; 0.03/0.12/1.44 |
+| EIL_Mix → EIL_Mask1 | 2 / 0 / 0 | 2 / 0 / 0 | 9.0; 9.5 | 8.5; 9.5 | 0.02/0.07/0.17; 0.02/0.07/0.18 | 0.02/0.06/0.17; 0.02/0.06/0.17 |
+| EIL_Mix → EIL_Mask2 | 2 / 0 / 0 | 2 / 0 / 0 | 7.8; 9.8 | 10.0; 8.8 | 0.02/0.05/0.49; 0.02/0.05/0.26 | 0.02/0.05/0.14; 0.02/0.05/0.48 |
+| EIL_Mix → EIL_Mix | 2 / 0 / 0 | 2 / 0 / 0 | 9.8; 10.3 | 8.3; 8.8 | 0.02/0.05/0.29; 0.02/0.05/0.27 | 0.02/0.06/0.28; 0.02/0.05/0.29 |
+| EIL_Mix → EIL_Stairs | 2 / 0 / 0 | 2 / 0 / 0 | 12.1; 11.9 | 10.4; 7.6 | 0.02/0.61/1.02; 0.02/0.76/1.14 | 0.02/0.12/0.66; 0.02/0.12/0.91 |
+| EIL_Stairs → EIL_Box | 2 / **1** / 0 | 2 / 0 / 0 | 12.1; 14.6 | 8.8; 8.6 | 0.06/1.74/2.20; 0.04/0.30/0.39 | 0.04/0.12/0.38; 0.04/0.14/0.39 |
+| EIL_Stairs → EIL_Stairs | 2 / 0 / 0 | 2 / 0 / 0 | 8.4; 9.9 | 7.4; 6.9 | 0.02/0.06/0.32; 0.02/0.06/0.49 | 0.02/0.06/0.49; 0.02/0.06/0.53 |
+| Long_Stairs → EIL_Box | 2 / 0 / 0 | 2 / 0 / 0 | 19.8; 18.3 | 9.6; 10.8 | 0.26/1.66/2.02; 0.10/1.35/1.72 | 0.08/0.21/0.42; 0.08/0.22/0.36 |
+| Long_Stairs → EIL_Mask1 | 1 / 0 / **1** | 0 / 0 / **2** | 15.3; - | -; - | 0.36/0.64/0.76 | - |
+| Long_Stairs → EIL_Stairs | 2 / 0 / 0 | 1 / 0 / **1** | 12.4; 15.6 | 14.9; - | 0.23/1.79/2.24; 0.25/1.83/2.24 | 0.05/0.27/0.60 |
+| Long_Stairs → Outdoor2 (0-165 s) | 2 / 0 / 0 | 2 / 0 / 0 | 15.3; 12.8 | 12.3; 11.3 | 0.02/0.04/0.16; 0.02/0.04/0.07 | 0.02/0.04/0.07; 0.02/0.04/0.07 |
+| Outdoor2 (0-165 s), own map | 2 / 0 / 0 | 2 / 0 / 0 | 13.3; 13.1 | 10.8; 11.3 | 0.02/0.04/0.06; 0.02/0.04/0.06 | 0.02/0.04/0.06; 0.02/0.04/0.08 |
+| *Go2 EIL:* EIL_Stairs | 2 / 0 / 0 | 2 / 0 / 0 | 12.4; 12.9 | 11.6; 8.9 | 0.02/0.78/1.17; 0.02/0.67/1.14 | 0.02/0.12/0.42; 0.02/0.12/0.53 |
+| *Koide:* outdoor_hard_01a | 2 / 0 / 0 | 2 / 0 / 0 | 12.5; 13.3 | 12.0; 13.0 | 5.10/5.61/7.51; 4.43/4.66/5.17 | 0.11/0.92/1.61; 0.61/1.16/1.86 |
+| *Koide:* outdoor_hard_02b | 2 / 0 / 0 | 2 / 0 / 0 | 12.8; 13.0 | 14.8; 12.3 | 0.09/0.45/1.75; 0.09/0.43/1.45 | 0.08/0.32/1.45; 0.09/0.56/2.57 |
+
+What changed:
+
+- **Wrong starts: 3 to 1.** A's three were G2 answers 1.6-1.9 m along the room
+  (EIL_Box → EIL_Mix, EIL_Box → EIL_Stairs, EIL_Stairs → EIL_Box), which the 1.5 m
+  suppression and the near-alias rule fix. B had no wrong G2 answer: its one wrong
+  start (EIL_Box → EIL_Mix run 2, 2.0 m) was a right fix pulled away by the first scans
+  after it, the case `--trusted-global-start-std-m` addresses
+  ([why](#eil_stairs--eil_box-a-right-start-pulled-onto-the-turned-room-and-the-fix)).
+- **Slides along the room** stopped: p95 0.6-1.8 m under A (EIL_Mix → EIL_Stairs,
+  Long_Stairs → EIL_Box and EIL_Stairs, the Go2 EIL_Stairs case) against 0.12-0.27 m
+  under B. On Koide 01a, A lost the pose at about 113 s in both runs (median 4.4-5.1 m
+  from then on); B did not.
+- **First pose sooner**: median 9.1 s against 10.8 s cross-session, 8.9 s against
+  11.4 s on the Go2 EIL cases.
+- **Costs.** On the Long_Stairs map, which lacks the EIL props, B asked for a manual
+  pose 3 times in 6 runs (A once): with the 1.5 m suppression the startup sees the
+  places along the room next to the right answer, and in those runs no three views
+  agreed. The release agreement can hold the odometry for seconds where a release
+  would have been right: Koide 02b run 2 reached 2.57 m (max) against 1.45-1.75 m
+  while releases were held (48 held in that run; 10-509 per Koide run, none on the Go2
+  cases). The window guard rejected
+  0-11.6 s of scans per run.
+- **bbs3d (C)**: 31 / 1 / 1 cross-session (two manual poses fewer than B; its wrong
+  start was 3.3 m off), but the first pose came after a median 16.6 s (max 38.3 s), and
+  it asked for a manual pose in 1 of 4 Go2 EIL runs and 1 of 2 Koide runs (A and B:
+  none). It stays opt-in.
+
+The Go2 suites and `koide_outdoor.yaml` run with odometry prediction and the default
+profile, so they now get these defaults; `go2_jeplo_cross_session.yaml` no longer passes
+the 1.5 m radius and near-alias flags (and gains the window guard). To compare with
+results up to v1.12.0, add `--seed-correction-window-sec=0 --global-nms-radius-m=3
+--global-consensus-near-alias-samples=0` to a suite's `quickstart_args` (for the
+cross-session suite's earlier results, only `--seed-correction-window-sec=0`).
+
+**Smoke check of the shipped suites** (this change, one run per case plus a rerun of two;
+`go2_jeplo_cross_session.yaml` and `koide_outdoor.yaml` as shipped, standalone profile,
+RKO-LIO): every run resolved the three settings from odometry prediction (`Settings:`
+line and the head of `quickstart.yaml` say `default with odometry prediction`;
+`enable_seed_correction_window_guard: true`, `seed_correction_window_guard_sec: 2.0`,
+`seed_correction_guard_release_agreement_scans: 10`; launch `g2_nms_radius_m:=1.5`,
+`global_consensus_near_alias_samples:=3`).
+
+| case (map → scans) | initialized / wrong / manual | first pose (s) | median / p95 / max xy (m) |
+|---|---|---|---|
+| EIL_Stairs → EIL_Box | 1 / 0 / 0 | 6.8 | 0.04 / 0.15 / 0.35 |
+| EIL_Box → EIL_Stairs | 1 / **1** / 0 | 7.9 | 0.02 / 1.24 / 2.49 |
+| EIL_Box → EIL_Stairs, again | 1 / 0 / 0 | 11.1 | 0.02 / 0.14 / 0.40 |
+| Long_Stairs → EIL_Box | 0 / 0 / **1** | - | - |
+| Long_Stairs → EIL_Box, again | 1 / 0 / 0 | 13.8 | 0.08 / 0.21 / 0.42 |
+| Koide outdoor_hard_02b | 1 / 0 / 0 | 13.8 | 0.09 / 0.55 / 1.89 |
+
+The wrong run started 1.8 m off after two ambiguous retries, with an RKO-LIO
+registration loop of 17 s in that run (a cold disk after a restart; EIL_Stairs → EIL_Box
+had one of 12 s); its rerun without a stall started right. The manual pose on the
+Long_Stairs map is the cost the A/B shows there (every view ambiguous, 6 attempts). Two
+earlier Koide attempts were invalid (no odom TF within 30 s while the 2.5 GB bag was
+read from a cold disk) and are not counted.
+
+What this does not cover:
+
+- **Sensors and odometry**: only Livox MID-360 sensors (a Go2 with the sensor upside
+  down and a handheld rig) and RKO-LIO odometry were measured. The defaults apply to any
+  setup with odometry prediction (other LiDARs, wheel or leg odometry, other LIO front
+  ends), and those were not measured; odometry that drifts more than RKO-LIO did here
+  may make the window guard reject more scans.
+- **Profiles**: the A/B runs used the standalone profile. `--profile nav2` and
+  `mid360` change other localizer settings (`mid360`: IMU preintegration,
+  continuous-time deskew, its scan filter and ranges), and with odometry they get the
+  same three defaults without an A/B of their own.
+- **Without odometry prediction** nothing changes; the 1.5 m radius alone, without the
+  near-alias rule and window guard, was not evaluated, which is why it is not a
+  default there.
+- Two runs per case and configuration, one machine, one site for the cross-session
+  pairs.
+
 ## Running it
 
 Build lidar_slam_ros2 (for `rko_lio_odometry.launch.py`) and this package, then:
@@ -746,6 +879,10 @@ python3 tools/benchmark/run_benchmark.py tools/benchmark/suites/go2_jeplo.yaml -
 python3 tools/benchmark/run_benchmark.py tools/benchmark/suites/koide_outdoor.yaml --out results/koide
 ```
 
+The suites run quickstart with the default (standalone) profile and record
+`/pcl_pose`; a suite that runs `--profile nav2` or `mid360` records
+`/localization/pose_with_covariance`, where those profiles publish the pose (a suite or
+case can set `pose_topic:`).
 Each case runs three times by default (`--repeats`, `--case` to select). The run
 directories keep every log, the recorded trajectory (`est.tum`), the startup status
 stream, and `score.json`. `summary.md` and `results.json` collect the cases.

@@ -100,22 +100,27 @@ the defaults were right in all 12.
 ### A map from another session
 
 When the map comes from an earlier recording (props moved, a room that repeats along
-itself), add two options to the Large maps settings:
+itself), two more settings matter: a 1.5 m candidate suppression radius
+(`--global-nms-radius-m 1.5`) and the near-alias startup rule
+(`--global-consensus-near-alias-samples 3`). With the odometry of step 2 running, the
+commands on this page already get both by default, together with the window guard
+(see [defaults with odometry](#defaults-with-odometry)), so the Large maps settings are
+enough:
 
 ```bash
 ros2 run lidar_localization_ros2 quickstart.py --map output/my_area/map.pcd \
   --occupancy-inflate-radius-m 0.2 --global-z-min 0.0 --global-max-scan-points 1024 \
-  --global-max-candidates 16 --refine-global-candidates \
-  --global-nms-radius-m 1.5 --global-consensus-near-alias-samples 3
+  --global-max-candidates 16 --refine-global-candidates
 ```
 
-The search otherwise keeps only the best-scoring pose within 3 m on the 2D grid, and
-in the JEPLO capture room a place 1-2 m along the room often scores higher there than
-the right pose, which is then never checked in 3D. With 1.5 m the right pose stays a
-candidate and usually registers clearly better. In views where the place along the room
-registers almost as well, the startup then sees it and retries; the second option
-accepts such an answer once three views agree through odometry (it needs odometry, and
-the room turned around or a place 5 m away still counts against it). Queries get faster
+Without odometry prediction quickstart keeps 3 m and no near-alias rule (which needs
+odometry anyway). With 3 m the search keeps only the best-scoring pose within 3 m on the
+2D grid, and in the JEPLO capture room a place 1-2 m along the room often scores higher
+there than the right pose, which is then never checked in 3D. With 1.5 m the right pose
+stays a candidate and usually registers clearly better. In views where the place along
+the room registers almost as well, the startup then sees it and retries; the near-alias
+rule accepts such an answer once three views agree through odometry (the room turned
+around or a place 5 m away still counts against it). Queries get faster
 (0.5 s instead of 1.2 s, median). The cost: more starts ask for a manual pose where
 every view is that ambiguous. Measured on the JEPLO cross-session pairs: on the
 EIL_Stairs map with EIL_Box's scans, 7 of 8 live runs started right and none wrong (4 of
@@ -129,6 +134,29 @@ after it can register badly and pull a right fix onto the room turned around.
 NDT-refined fix to the odometry from the first scan. A fix that is in fact off then
 stays off for 3 s before the guards let the registration correct it
 ([details](benchmark.md#eil_stairs--eil_box-a-right-start-pulled-onto-the-turned-room-and-the-fix)).
+
+### Defaults with odometry
+
+When quickstart runs with odometry prediction (it finds the `odom -> livox_frame` TF of
+step 2, or you pass `--odom-tf-prediction`), it turns on, by default and under any
+`--profile`, the two settings above (`--global-nms-radius-m 1.5`,
+`--global-consensus-near-alias-samples 3`) and the window guard
+(`--seed-correction-window-sec 2.0`, which also makes the guards' release wait for 10
+agreeing scans). Without odometry prediction they keep 3.0 m and off. quickstart prints
+the values it uses, with their source, on its `Settings:` line. Explicit flags win; the
+behaviour before these defaults is `--seed-correction-window-sec 0
+--global-nms-radius-m 3 --global-consensus-near-alias-samples 0`.
+
+Measured with the commands on this page (default profile, RKO-LIO odometry) on the
+JEPLO Go2 and Koide replays against the old defaults (two runs per case): on the 16
+cross-session cases (32 runs) 29 localized, 1 of them wrong, and 3 asked for a manual
+pose (31, 3, 1 before); no wrong answer of the global search (the one wrong start was a
+right fix pulled away by the next scans, which `--trusted-global-start-std-m 0.1`
+addresses); the first pose after a median 9.1 s instead of 10.8 s; slides along the
+room down from a p95 of 0.6-1.8 m to 0.12-0.27 m. The cost: 3 manual poses instead of 1
+on the Long_Stairs map, and the release agreement can hold the odometry seconds longer
+before a right correction ([evaluation](benchmark.md#defaults-with-odometry-prediction)).
+`--global-search-engine bbs3d` and `--trusted-global-start-std-m` stay opt-in.
 
 ## How well it works
 

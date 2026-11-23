@@ -55,7 +55,9 @@ default 0.5 / 5.0 m; the startup log line reports it), `sparse_band_min_points`
 2D points than this, counted before the `max_scan_points` cap, the query searches
 again from the sensor plane up with 1024 points, 32 candidates and NDT-refined poses;
 each answer reports `sparse_band_search`), `max_scan_points`, `angular_resolution_deg`, `pyramid_depth`,
-`max_candidates`, `nms_radius_m`, `registration_refine_candidates` (node param;
+`max_candidates`, `nms_radius_m` (node default 2.0 m; launch arg `g2_nms_radius_m`,
+3.0 m; quickstart `--global-nms-radius-m`, 3.0 m, or 1.5 m with odometry prediction),
+`registration_refine_candidates` (node param;
 launch arg `g2_registration_refine_candidates`, default `false`). When enabled,
 `g2_ndt_score` publishes each candidate's NDT-refined pose instead of the raw BBS
 cell center — required for the HDL hdl_400 recovery replay (raw poses up to ~3 m
@@ -65,7 +67,7 @@ locally-perfect alignments and collapse walk candidates onto one pose. Lower
 walking; higher values return more spatially diverse candidates. The suppression runs
 on the 2D search score, before NDT refinement: where an aliased place 1-3 m away scores
 higher on the grid, the right pose is suppressed and never refined, however much better
-it registers. On the JEPLO Go2 cross-session replays (quickstart's 3 m, 15 map pairs,
+it registers. On the JEPLO Go2 cross-session replays (with 3 m, 15 map pairs,
 1,175 scans) the right pose was among the candidates for 67% of the scans and on top
 for 64%; with 1.5 m, 78% and 72%, and the queries took a median 0.46 s instead of
 1.16 s. On the EIL_Stairs map with EIL_Box's scans, the true pose registered 4.5 times
@@ -74,7 +76,9 @@ scans it was missing from, and the top was a place 1-2 m along the room. Closer
 candidates also show the startup's nearby-alternative check
 ([`ambiguous_registration_retry`](quickstart.md#troubleshooting)) the aliases that 3 m
 hid, so there are more hand-offs to the operator where a room repeats every 1.5-2 m
-(the startup's `global_consensus_near_alias_samples` takes some of them back); see
+(the startup's `global_consensus_near_alias_samples` takes some of them back; quickstart
+sets 1.5 m and 3 near-alias views by default when odometry prediction is on, see
+[the A/B evaluation](benchmark.md#defaults-with-odometry-prediction)); see
 [a map from another session](go2_mid360_quickstart.md#a-map-from-another-session) for
 the settings and
 [the measurements](benchmark.md#eil_stairs--eil_box-why-starts-were-wrong-and-the-fix).

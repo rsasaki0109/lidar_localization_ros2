@@ -118,6 +118,8 @@ that every sensor model has been validated.
 If the robot already runs odometry that publishes `odom -> base_frame` (a LIO front end
 such as RKO-LIO, or wheel or leg odometry), quickstart sees that TF and turns on odometry
 prediction (`--odom-tf-prediction`); the choice is printed as `odometry=odom->...`.
+With it, three startup settings default differently
+([defaults with odometry prediction](#defaults-with-odometry-prediction)).
 Without `--base-frame`, a single child of `odom` (RKO-LIO's `livox_frame`, for example)
 becomes the base frame, and `base_link` is kept otherwise. Start odometry before
 quickstart, or pass `--odom-tf-prediction` (`--no-odom-tf-prediction` turns it off).
@@ -412,6 +414,35 @@ with an unlimited budget, with no accepted pose more than 3 m wrong.
 | `nav2` | `/velodyne_points` | `/imu/data` | `/localization/pose_with_covariance` | external `odom -> base_link` required |
 | `mid360` | `/livox/points` | `/livox/imu` | `/localization/pose_with_covariance` | external `odom -> base_link` required |
 
+### Defaults with odometry prediction
+
+Three quickstart settings default by whether odometry prediction is on
+(`use_odom_tf_prediction: true`, discovered from the odom TF or set by
+`--odom-tf-prediction`), the same under every profile. An explicit flag always wins,
+including the old value; quickstart prints the resolved values on its `Settings:` line,
+with where each came from (`default with odometry prediction`, `default` or
+`command line`), and writes the same at the top of the generated parameter file.
+
+| Flag | with odometry prediction | without |
+| --- | --- | --- |
+| `--seed-correction-window-sec` | 2.0 (also sets the release agreement to 10 scans) | 0 (off) |
+| `--global-nms-radius-m` | 1.5 | 3.0 |
+| `--global-consensus-near-alias-samples` | 3 | 0 (off) |
+
+Without odometry prediction the window guard and the near-alias rule could not act, and
+the 1.5 m radius was only evaluated together with them, so all three keep the values of
+v1.12.0. `--global-search-engine bbs3d` and `--trusted-global-start-std-m` stay opt-in.
+Why, and what it costs: [the A/B evaluation](benchmark.md#defaults-with-odometry-prediction).
+It was measured with the default (standalone) profile on Livox MID-360 sensors (a Go2
+and a handheld rig) with RKO-LIO odometry; other sensors and odometry sources get the
+same defaults but were not measured. For the old behaviour with odometry pass
+`--seed-correction-window-sec 0 --global-nms-radius-m 3
+--global-consensus-near-alias-samples 0`. The config generator
+(`create_lidar_localization_config.py`), `param/mid360_legged.yaml` and
+`quickstart.launch.py` called directly do not apply these defaults: they keep the
+values they had (`quickstart.launch.py` is quickstart's launch target and gets every
+value from it).
+
 Do not enable quickstart's static TF publishers when `robot_state_publisher`, the sensor
 driver, or a bag already owns the same edge. quickstart leaves its LiDAR TF off when it
 sees such a TF at startup; if that publisher starts later, pass `--no-publish-lidar-tf`.
@@ -439,7 +470,10 @@ Leave IMU TF publication off as appropriate.
   candidates converge onto their own optimum, and a near-symmetric room turned by 180
   degrees, or a place 1-2 m along it, registers almost as well as the right pose when
   props have moved. With odometry, `--global-consensus-near-alias-samples N` (startup
-  node `global_consensus_near_alias_samples`, default 0 = off, at least 2 when on)
+  node `global_consensus_near_alias_samples`, default 0 = off; quickstart's default is 3
+  with odometry prediction, see
+  [defaults with odometry prediction](#defaults-with-odometry-prediction); at least 2
+  when on)
   accepts a refined fix that failed only because of an alternative at about its own
   heading (not turned by `registration_refined_alternative_min_yaw_deg`, not 5 m
   away) once N such or gated fixes, itself included, agree through odometry within

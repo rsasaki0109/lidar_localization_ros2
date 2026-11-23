@@ -58,6 +58,27 @@ class TestRunBenchmark(unittest.TestCase):
             ["--no-odom-tf-prediction", "--base-frame", "base_link"],
         )
 
+    def test_the_pose_topic_follows_the_quickstart_profile(self):
+        self.assertEqual(rb.pose_topic({"quickstart_args": []}), "/pcl_pose")
+        self.assertEqual(
+            rb.pose_topic({"quickstart_args": ["--profile=mid360"]}),
+            "/localization/pose_with_covariance",
+        )
+        self.assertEqual(
+            rb.pose_topic({"quickstart_args": ["--profile", "nav2"]}),
+            "/localization/pose_with_covariance",
+        )
+        self.assertEqual(
+            rb.pose_topic({"quickstart_args": ["--profile", "standalone"]}),
+            "/pcl_pose",
+        )
+        self.assertEqual(
+            rb.pose_topic(
+                {"quickstart_args": ["--profile=mid360"], "pose_topic": "/pose"}
+            ),
+            "/pose",
+        )
+
     def test_quickstart_configuration_reports_odometry(self):
         self.assertTrue(rb.quickstart_uses_odometry(CONFIG.format("true")))
         self.assertFalse(rb.quickstart_uses_odometry(CONFIG.format("false")))

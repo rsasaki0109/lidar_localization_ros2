@@ -2,8 +2,10 @@
 """Replay a benchmark suite through the quickstart and score it against ground truth.
 
 Each run starts the suite's odometry, plays the bag, starts
-``quickstart.py --map <map>`` with a fresh pose state, records ``/pcl_pose``
-and scores it with benchmark_eval.py in the map (= ground-truth) frame.
+``quickstart.py --map <map>`` with a fresh pose state, records the pose
+(``/pcl_pose``; ``/localization/pose_with_covariance`` with ``--profile mid360``
+or ``nav2``) and scores it with benchmark_eval.py in the map (= ground-truth)
+frame.
 
 With odometry, quickstart starts only once the odom TF is on /tf, gets the
 odometry settings explicitly (``--odom-tf-prediction --base-frame <child of
@@ -98,6 +100,26 @@ def odometry_quickstart_args(quickstart_args: list[str], base_frame: str) -> lis
     if "--base-frame" not in flags:
         extra.append(f"--base-frame={base_frame}")
     return list(quickstart_args) + extra
+
+
+def quickstart_profile(quickstart_args: list[str]) -> str:
+    """The --profile the quickstart runs with (standalone when not given)."""
+    profile = "standalone"
+    for index, arg in enumerate(quickstart_args):
+        if arg.startswith("--profile="):
+            profile = arg.split("=", 1)[1]
+        elif arg == "--profile" and index + 1 < len(quickstart_args):
+            profile = quickstart_args[index + 1]
+    return profile
+
+
+def pose_topic(case: dict) -> str:
+    """The pose topic to record: the case's, else the one of its quickstart profile."""
+    if case.get("pose_topic"):
+        return str(case["pose_topic"])
+    if quickstart_profile(list(case.get("quickstart_args", []))) in {"nav2", "mid360"}:
+        return "/localization/pose_with_covariance"
+    return "/pcl_pose"
 
 
 def quickstart_uses_odometry(config_text: str) -> bool | None:
@@ -198,7 +220,12 @@ def run_once(
     rate = float(case.get("rate", 1.0))
 
     recorder = start(
-        [sys.executable, str(TOOL_DIR / "record_pose.py"), str(run_dir)],
+        [
+            sys.executable,
+            str(TOOL_DIR / "record_pose.py"),
+            str(run_dir),
+            pose_topic(case),
+        ],
         run_dir / "recorder.log",
         env,
     )

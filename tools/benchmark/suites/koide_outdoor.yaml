@@ -2,6 +2,14 @@
 # Set KOIDE_ROOT to the directory with sequences/, gt/ and the map_*.ply files.
 # The maps are in the ground-truth frame; kidnap sequences cover the sensor
 # and carry it elsewhere, so they also test recovery.
+# Quickstart runs with the default (standalone) profile (the mid360 profile's
+# imu_accel_scale is for an IMU in g; these bags' is in m/s^2) and with odometry
+# prediction, so it gets the defaults with odometry prediction: the 2 s window
+# guard, 1.5 m candidate suppression and the near-alias rule
+# (docs/quickstart.md#defaults-with-odometry-prediction). Results up to v1.12.0
+# had none of them; to compare with them add quickstart_args:
+# [--seed-correction-window-sec=0, --global-nms-radius-m=3,
+#  --global-consensus-near-alias-samples=0].
 defaults:
   repeats: 3
   odometry_launch: lidarslam rko_lio_odometry.launch.py
