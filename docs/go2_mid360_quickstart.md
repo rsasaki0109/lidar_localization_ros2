@@ -123,6 +123,13 @@ EIL_Stairs map with EIL_Box's scans, 7 of 8 live runs started right and none wro
 for a manual pose, as before, with the first pose after a median 9.3 s instead of 11.6 s
 ([details](benchmark.md#eil_stairs--eil_box-why-starts-were-wrong-and-the-fix)).
 
+If the robot may be stepping down or turning hard when the fix arrives, the first scans
+after it can register badly and pull a right fix onto the room turned around.
+`--trusted-global-start-std-m 0.1` (with odometry; off by default) holds a confirmed,
+NDT-refined fix to the odometry from the first scan. A fix that is in fact off then
+stays off for 3 s before the guards let the registration correct it
+([details](benchmark.md#eil_stairs--eil_box-a-right-start-pulled-onto-the-turned-room-and-the-fix)).
+
 ## How well it works
 
 Measured on the JEPLO Go2 bags against motion-capture ground truth, on a

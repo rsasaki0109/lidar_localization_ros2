@@ -882,6 +882,59 @@ class TestQuickstartCli(unittest.TestCase):
                 "seed_correction_guard_release_agreement_scans: 10", generated
             )
 
+    def test_trusted_global_start_reaches_localizer_and_startup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            map_path = root / "site.pcd"
+            output = root / "generated.yaml"
+            map_path.write_bytes(b"pcd")
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                result = QUICKSTART.main(
+                    [
+                        "--map",
+                        str(map_path),
+                        "--output",
+                        str(output),
+                        "--no-discover-topics",
+                        "--odom-tf-prediction",
+                        "--trusted-global-start-std-m=0.1",
+                        "--dry-run",
+                    ]
+                )
+            self.assertEqual(result, 0)
+            generated = output.read_text(encoding="utf-8")
+            self.assertIn(
+                "seed_correction_guard_trusted_start_position_std_m: 0.1", generated
+            )
+            self.assertIn("global_pose_position_std_m:=0.1", stdout.getvalue())
+
+    def test_trusted_global_start_needs_odometry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            map_path = root / "site.pcd"
+            output = root / "generated.yaml"
+            map_path.write_bytes(b"pcd")
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                result = QUICKSTART.main(
+                    [
+                        "--map",
+                        str(map_path),
+                        "--output",
+                        str(output),
+                        "--no-discover-topics",
+                        "--trusted-global-start-std-m=0.1",
+                        "--dry-run",
+                    ]
+                )
+            self.assertEqual(result, 0)
+            generated = output.read_text(encoding="utf-8")
+            self.assertIn(
+                "seed_correction_guard_trusted_start_position_std_m: 0.0", generated
+            )
+            self.assertIn("global_pose_position_std_m:=0.0", stdout.getvalue())
+
     def test_next_step_mentions_stationary_search_with_route_crop(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

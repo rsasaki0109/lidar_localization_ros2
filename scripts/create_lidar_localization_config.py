@@ -303,6 +303,14 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         else 0,
         "seed_correction_guard_release_agreement_translation_m": 0.3,
         "seed_correction_guard_release_agreement_yaw_deg": 5.0,
+        # Opt-in: an initial pose whose covariance claims at most this horizontal
+        # standard deviation (quickstart's confirmed global fixes) is held to the
+        # odometry from the first scan, without the warmup (docs/benchmark.md).
+        "seed_correction_guard_trusted_start_position_std_m": max(
+            float(getattr(args, "trusted_global_start_std_m", 0.0)), 0.0
+        )
+        if getattr(args, "odom_tf_prediction", False)
+        else 0.0,
         "global_frame_id": args.global_frame,
         "odom_frame_id": args.odom_frame,
         "base_frame_id": args.base_frame,
@@ -511,6 +519,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "accepted within this many seconds, plus its own, move the pose more than "
         "0.3 m away from the odometry, and release the guards after 30 "
         "rejections only toward an answer the last 10 rejected ones agree with "
+        "(0: off).",
+    )
+    parser.add_argument(
+        "--trusted-global-start-std-m",
+        type=float,
+        default=0.0,
+        help="With --odom-tf-prediction: trust an initial pose whose covariance "
+        "claims at most this horizontal standard deviation, and hold the seed "
+        "correction guards from the first scan after it instead of warming them up "
         "(0: off).",
     )
     parser.add_argument("--global-frame", default="map")

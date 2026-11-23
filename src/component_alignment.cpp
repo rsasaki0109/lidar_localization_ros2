@@ -197,6 +197,15 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       odom_tf_bridge_available});
   selected_seed.source = seed_decision.source;
   selected_seed.imu_prediction_ready = seed_decision.imu_prediction_ready;
+  if (trusted_start_pending_) {
+    // Only the first scan after a trusted initial pose decides; without an
+    // odometry seed then, the guards warm up as after any other pose.
+    trusted_start_pending_ = false;
+    settled_accepts_since_reset_ = lidar_localization::trustedStartSettledAccepts(
+      settled_accepts_since_reset_, measurementGateParams(),
+      seed_decision.source == lidar_localization::RegistrationSeedSource::kOdomTfPrediction &&
+      !scan_seeded_from_reacquisition_);
+  }
   if (!lidar_localization::keepsImuRetrySeed(selected_seed.source)) {
     selected_seed.imu_retry_guess.reset();
     selected_seed.imu_retry_guess_bridged = false;

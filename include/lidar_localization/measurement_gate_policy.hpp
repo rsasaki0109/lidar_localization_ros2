@@ -50,6 +50,15 @@ struct MeasurementGateParams
   // next scan. 0 disables this. Aliased corrections right after an exact
   // start, e.g. while the scene differs from the map, are then rejected.
   double seed_correction_guard_exact_start_translation_m{0.0};
+  // An initial pose whose covariance claims a horizontal standard deviation of
+  // at most this (and above 0) is trusted, e.g. a global localization fix the
+  // startup has already registered and confirmed: when the first scan after it
+  // is seeded from odometry, the guards hold from that scan instead of waiting
+  // for the warmup. Right after a trusted pose the odometry is better than a
+  // registration of a degraded scan (a legged robot stepping down pitches its
+  // scan by 30-45 degrees). 0 disables this. A pose that is in fact off is
+  // corrected only at the guards' release.
+  double seed_correction_guard_trusted_start_position_std_m{0.0};
 
   // Windowed seed correction guard.  The guard above bounds one correction;
   // a run of degraded scans (occluded, or seeing things the map lacks) can
@@ -211,6 +220,40 @@ inline std::size_t nextSettledAccepts(
   }
   return settled_accepts < std::numeric_limits<std::size_t>::max() ?
          settled_accepts + 1 : settled_accepts;
+}
+
+// Whether an initial pose with this position covariance (xx, yy, m^2) is
+// trusted; see seed_correction_guard_trusted_start_position_std_m.
+inline bool isTrustedInitialPose(
+  const MeasurementGateParams & params, double covariance_xx, double covariance_yy)
+{
+  const double limit_m = params.seed_correction_guard_trusted_start_position_std_m;
+  if (!(limit_m > 0.0) || !std::isfinite(limit_m)) {
+    return false;
+  }
+  // A zero or invalid covariance says nothing about the pose.
+  if (
+    !std::isfinite(covariance_xx) || !std::isfinite(covariance_yy) ||
+    covariance_xx <= 0.0 || covariance_yy <= 0.0)
+  {
+    return false;
+  }
+  return std::max(covariance_xx, covariance_yy) <= limit_m * limit_m;
+}
+
+// Settled-accept count for the first scan after a trusted initial pose: the
+// warmup counts as done when that scan is seeded from odometry.
+inline std::size_t trustedStartSettledAccepts(
+  std::size_t settled_accepts,
+  const MeasurementGateParams & params,
+  bool odometry_seeded)
+{
+  if (!odometry_seeded) {
+    return settled_accepts;
+  }
+  return std::max(
+    settled_accepts,
+    static_cast<std::size_t>(std::max(0, params.seed_correction_guard_warmup_accepts)));
 }
 
 // Map-frame horizontal corrections (result minus seed) of accepted updates,

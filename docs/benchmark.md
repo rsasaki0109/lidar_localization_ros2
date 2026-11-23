@@ -608,10 +608,132 @@ Not verified: one site (the JEPLO capture room and its corridor); the rule's 3 a
 60 s of EIL_Stairs → EIL_Box: 0 wrong, 100 right, 8 manual of 108); two runs per pair. Not
 run: the other suites (the Large maps settings on self maps, Koide, Boreas, HDL), which
 keep quickstart's 3 m. The tracking failure of run 4 (a right start pulled 1.9 m onto
-the turned room in the first two scans) is not addressed here; the odometry discovery
-race is fixed since (see [Running it](#running-it)). The tables before this section
+the turned room in the first two scans) is addressed in the next section; the odometry
+discovery race is fixed since (see [Running it](#running-it)). The tables before this section
 used 3 m: add `--global-nms-radius-m=3.0 --global-consensus-near-alias-samples=0` to
 the suite to reproduce them.
+
+#### EIL_Stairs → EIL_Box: a right start pulled onto the turned room, and the fix
+
+Measured 2026-11-23 on `main` at `6f6cf9a` (v1.12.0). In live run 4 above (without
+the release agreement) G2 published a pose 0.05 m from the ground truth, and the
+first two scans moved it by 0.60 m (fitness 0.13) and 1.88 m (0.42); the track
+ended on the room turned around, 4.6 m off. Replayed deterministically (bag from the
+start, RKO-LIO, the localizer alone, and query 4's answer published on `/initialpose`
+at the same bag time, moved by odometry as the startup does; quickstart's settings with
+the window guard and the release agreement):
+
+| start at 230.52 s (bag time) | runs | ended 4.6 m off | max xy of the others (m) |
+|---|---|---|---|
+| G2's answer, as published (`main`) | 6 | **2** | 1.16 (all four) |
+| the ground-truth pose (`main`) | 1 | 0 | 1.17 |
+| G2's answer, trusted (`seed_correction_guard_trusted_start_position_std_m`) | 4 | **0** | 0.26, 0.31, 0.32, 0.35 |
+| the ground truth + 0.5 m, `main` / trusted | 1 / 2 | 1 / 0 | - / 0.58, 0.61 |
+| the ground truth + 1.5 m, std 0.5 m (a manual pose): `main` / with the setting | 1 / 1 | 1 / 1 | - |
+
+Why: the fix arrived as the Go2 stepped down: in 0.5 s the ground truth pitched from
+10 to 45 degrees and dropped 0.5 m, and was level again 0.7 s later. The scans of
+that second register badly against the map (corrections of 0.4-2.1 m, some with a fitness of 0.02), while
+RKO-LIO carried the right pose through it within 0.2 m of the ground truth. Started
+from the ground truth itself the localizer was pulled 1.2 m too, so it is neither the
+G2 pose nor a stale seed: the published pose's pitch was the query scan's (0 degrees
+against 15), but taking roll and pitch from the odometry, or the ground truth, gave
+similar first corrections. The guards did not help because of their warmup: they
+hold only after 5 accepts within 0.3 m, and the first correction (0.5 m) already
+restarted the count, so every jump of that second was accepted; whether the track
+returned or locked onto the turned room depended on which scans were processed. A
+fitness gate cannot tell them apart either: the wrong corrections came with fitness
+0.02-0.45, and in the earlier live runs a right first correction of 0.76 m had a
+fitness of 0.12 (99 starts, the first six scans after each: 16 corrected the pose by
+more than 0.3 m at least once, by 0.3-0.8 m from fixes 0.26-0.59 m off in the right
+cases).
+
+The fix trusts the fix the startup has already confirmed: with
+`--trusted-global-start-std-m 0.1` (only with odometry prediction) the startup
+publishes an NDT-refined global fix that odometry moved from its scan to now with a
+0.1 m position standard deviation (`global_pose_position_std_m`), and the localizer
+(`seed_correction_guard_trusted_start_position_std_m: 0.1`) treats an `/initialpose`
+claiming at most that as trusted: when the first scan after it is seeded from
+odometry, the guards hold from that scan. Anything else, including RViz's 2D Pose
+Estimate (0.5 m), an unrefined fix, a fix odometry could not move, or a saved pose
+(the localizer's covariance floor is 0.2 m), keeps the warmup. The cost is a fix that
+is off: it stays off until the guards' release, 30 rejected scans (3 s) later, and is
+then corrected toward what the rejected scans agreed on.
+
+Live, the cross-session suite with #346's settings and `--seed-correction-window-sec=2.0`
+as in the table above, two runs per case (before = that table's "after" column; after
+= the same plus `--trusted-global-start-std-m=0.1`; median / p95 / max xy in m per
+run, "-" asked for a manual pose):
+
+| map → scans | before: initialized / wrong / manual | after | after: first-pose error: median / p95 / max |
+|---|---|---|---|
+| Long_Stairs → Outdoor2 (0-165 s) | 2 / 0 / 0 | 2 / 0 / 0 | 0.02: 0.02 / 0.04 / 0.07; 0.02: 0.02 / 0.04 / 0.07 |
+| EIL_Mix → EIL_Box | 2 / 0 / 0 | 2 / 0 / 0 | 0.02: 0.03 / 0.11 / 0.29; 0.01: 0.03 / 0.09 / 0.35 |
+| EIL_Mix → EIL_Stairs | 2 / 0 / 0 | 2 / 0 / 0 | 0.03: 0.02 / 0.12 / 0.53; 0.02: 0.02 / 0.11 / 0.44 |
+| EIL_Mix → EIL_Mask1 | 2 / 0 / 0 | 2 / 0 / 0 | 0.03: 0.02 / 0.07 / 0.20; 0.03: 0.02 / 0.07 / 0.17 |
+| EIL_Mix → EIL_Mask2 | 2 / 0 / 0 | 2 / 0 / 0 | **0.67**: 0.02 / **0.73** / 0.80; 0.02: 0.02 / 0.05 / 0.07 |
+| EIL_Box → EIL_Mix | 2 / 0 / 0 | 2 / 0 / 0 | 0.03: 0.03 / 0.11 / 0.36; 0.03: 0.03 / 0.08 / 0.37 |
+| EIL_Box → EIL_Stairs | 1 / 0 / 1 | 2 / **1** / 0 | **2.23 (wrong)**; 0.01: 0.02 / 0.12 / 0.38 |
+| EIL_Box → EIL_Mask1 | 2 / 0 / 0 | 2 / 0 / 0 | 0.08: 0.03 / 0.13 / 0.33; 0.03: 0.03 / 0.14 / 0.36 |
+| Long_Stairs → EIL_Box | 2 / 0 / 0 | 2 / 0 / 0 | 0.09: 0.08 / 0.21 / 0.49; 0.03: 0.08 / 0.21 / 0.36 |
+| Long_Stairs → EIL_Stairs | 1 / 0 / 1 | 1 / 0 / 1 | 0.04: 0.05 / 0.31 / 0.62; - |
+| Long_Stairs → EIL_Mask1 | 1 / 0 / 1 | 2 / 0 / 0 | 0.09: 0.08 / 0.21 / 0.39; 0.10: 0.08 / 0.20 / 0.33 |
+| *controls:* EIL_Box → EIL_Box | 2 / 0 / 0 | 2 / 0 / 0 | 0.02: 0.02 / 0.05 / 0.19; 0.02: 0.02 / 0.05 / 0.19 |
+| EIL_Stairs → EIL_Stairs | 2 / 0 / 0 | 2 / 0 / 0 | 0.03: 0.02 / 0.06 / 0.32; 0.02: 0.02 / 0.06 / 0.35 |
+| EIL_Mix → EIL_Mix | 2 / 0 / 0 | 2 / 0 / 0 | 0.05: 0.02 / 0.06 / 0.39; 0.03: 0.02 / 0.06 / 0.27 |
+| **total** | 25 / 0 / 3 | 27 / 1 / 1 | |
+| EIL_Stairs → EIL_Box | 8 runs: 7 / 0 / 1 | 4 runs: 4 / 0 / 0 | 0.02 m first-pose error, p95 0.13-0.26, max 0.37-0.68 |
+
+The wrong start and the two manual poses are G2's, not the localizer's: the manual
+poses came from runs in which no view was unambiguous, so no pose was published, and
+the wrong one (EIL_Box → EIL_Stairs run 1) published the room turned around, 2.2 m
+off, whose first five scans corrected it by 0.03-0.21 m: the guards were in the state
+they reach after a warmup either way (in #346's runs this pair saw the room turned
+around in two views of one run, which then asked for a manual pose). EIL_Mix →
+EIL_Mask2 run 1 is the cost: G2's answer was a place 0.7 m along the room (fitness
+0.028), the guards held it for 30 scans and then took the
+correction the rejected scans agreed on; tracking was right from 3 s after the fix.
+Before, the registration corrected such fixes on the first scans (0.3-0.8 m in the
+99 starts above). In the runs that started right, the first pose came after a median
+9.1 s (9.3 s before) and tracking stayed within p95 0.31 m and max 0.68 m apart from
+that run (before: 0.27 m and 0.97 m). The live EIL_Stairs → EIL_Box runs did not hit
+the failure on `main` either (4 more runs: max 0.35-0.49 m): with #346's settings G2
+answers earlier, before the step down, so the case is in the replay above.
+
+Two cases were run again after a change: in one run of EIL_Mix → EIL_Mix and one of
+EIL_Mix → EIL_Mask2, odometry had not yet covered the queried scan when the fix was
+published, so the startup could not move it to the present (it was 0.48 and 0.42 m
+off), and the guards held it. The startup now publishes such a fix, and any
+unrefined one, with its default 0.5 m, so it is not trusted; the table has the new
+runs of both cases (one of their four fixes was published untrusted that way).
+
+`go2_jeplo.yaml` could not run as is here (it needs the lidar_slam_ros2 map of EIL_Mix
+and the Long_Stairs, Outdoor1 and Outdoor2 bags). Its four EIL cases ran on the
+room-only EIL_Mix map (`maps_loc/EIL_Mix`) with quickstart's defaults (no window
+guard), one run each with and without the option and two more of EIL_Box (median /
+p95 / max xy in m):
+
+| case | `main` | with `--trusted-global-start-std-m=0.1` |
+|---|---|---|
+| EIL_Box | 0.03 / 0.09 / 0.35; wrong start (1.58 m); 0.03 / 0.08 / 1.67 | 1.33 / 4.61 / 5.39 (slid at 42 s); 0.03 / 0.25 / 0.48; 0.03 / 0.10 / 0.36 |
+| EIL_Stairs | 0.02 / 0.67 / 1.17 | 0.03 / 0.76 / 1.02 |
+| EIL_Mask1 | 0.02 / 0.07 / 0.41 | - (no view unambiguous, no pose published) |
+| EIL_Mask2 | 0.02 / 0.05 / 0.07 | 0.02 / 0.05 / 0.17 |
+
+The EIL_Box slide is the default settings' slide along the room (see [Why tracking
+slid along the room](#why-tracking-slid-along-the-room-and-the-fix)), 42 s after a
+start whose first five scans corrected the fix by 0.03-0.16 m, after which the guards
+are warm with or without the option; `main` had a wrong start and a 1.67 m excursion
+in the same three runs.
+
+Not verified: one site and one robot; one case where the option was needed, and that
+one only in the replay (5 and 4 runs). 0.1 m is a value the localizer's own
+covariance (floor 0.2 m) and RViz (0.5 m) do not reach, not a measured accuracy of G2:
+in the 31 live starts one refined, odometry-moved fix was 0.67 m off (and one 0.43 m
+off in a run that was repeated), and such a fix is held for 3 s. Not run: the Large
+maps settings (`go2_jeplo_low_sensor.yaml`), Koide, Boreas and HDL, where the option
+is off; their defaults do not change. The stale roll and pitch
+of a published fix (the query scan's, moved by planar odometry only) are not changed.
 
 ## Running it
 

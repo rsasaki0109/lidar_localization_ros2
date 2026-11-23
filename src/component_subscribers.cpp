@@ -303,6 +303,14 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
       "initial pose accepted before map is ready; scans will wait until map load completes");
   }
   applyInitialPose(msg, true);
+  trusted_start_pending_ = lidar_localization::isTrustedInitialPose(
+    measurementGateParams(), msg->pose.covariance[0], msg->pose.covariance[7]);
+  if (trusted_start_pending_) {
+    RCLCPP_INFO(
+      get_logger(),
+      "trusted initial pose: the seed correction guards hold from the first "
+      "odometry-seeded scan");
+  }
   stale_reset_replay_pending_ = stale_reset_replay_params_.enable;
   stale_reset_replay_.reset();
   RCLCPP_INFO(get_logger(), "initialPoseReceived end");
@@ -314,6 +322,7 @@ void PCLLocalization::applyInitialPose(
 {
   // An admitted reset supersedes the old track even if its TF is not available yet.
   has_last_good_map_to_odom_ = false;
+  trusted_start_pending_ = false;
   odom_bridge_transform_history_.clear();
   has_last_odom_bridge_source_advance_node_stamp_ = false;
   initialpose_received_ = true;
