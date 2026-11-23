@@ -111,6 +111,9 @@ Useful options:
 
 - `--dry-run` shows what it would start, without starting it.
 - `--profile mid360` uses the Livox MID-360 preset.
+- With an odometry TF (odometry prediction on), the window guard, 1.5 m candidate
+  suppression and near-alias startup rule are on by default, under any profile
+  ([defaults with odometry prediction](docs/quickstart.md#defaults-with-odometry-prediction)).
 - `--initial-pose X Y Z QX QY QZ QW` skips the search when you know the pose.
 - `--no-rviz` for a headless robot; `--no-status` turns the status line off.
 - `--help` lists the bringup options; `--help-all` adds the tuning ones.

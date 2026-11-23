@@ -316,6 +316,67 @@ def detect_sim_time(typed_topics: Sequence[tuple[str, str]]) -> bool:
     return ("/clock", "rosgraph_msgs/msg/Clock") in typed_topics
 
 
+# Quickstart settings whose default depends on whether odometry prediction is on
+# (use_odom_tf_prediction, discovered or given), under every profile. An explicit
+# flag always wins. Measured with odometry prediction (RKO-LIO) on the JEPLO Go2
+# and Koide MID-360 replays (docs/benchmark.md#defaults-with-odometry-prediction):
+# the 1.5 m radius was evaluated only together with odometry, so without it all
+# three keep the values of v1.12.0.
+DEFAULT_SETTINGS: dict[str, float | int] = {
+    "seed_correction_window_sec": 0.0,
+    "global_nms_radius_m": 3.0,
+    "global_consensus_near_alias_samples": 0,
+}
+ODOMETRY_DEFAULT_SETTINGS: dict[str, float | int] = {
+    "seed_correction_window_sec": 2.0,
+    "global_nms_radius_m": 1.5,
+    "global_consensus_near_alias_samples": 3,
+}
+SETTING_FROM_COMMAND_LINE = "command line"
+SETTING_FROM_ODOMETRY_DEFAULT = "default with odometry prediction"
+SETTING_FROM_DEFAULT = "default"
+
+
+@dataclass(frozen=True)
+class ResolvedSetting:
+    """A quickstart setting with an odometry-dependent default, and its source."""
+
+    value: float | int
+    source: str
+
+
+def resolve_odometry_settings(
+    explicit: dict[str, float | int | None], odometry: bool | None
+) -> dict[str, ResolvedSetting]:
+    """The odometry-dependent settings: explicit values, else the defaults.
+
+    ``explicit`` maps a setting to the value given on the command line, or None.
+    ``odometry`` is whether odometry prediction is on; None (not known yet) gives
+    the defaults without it.
+    """
+    defaults, source = (
+        (ODOMETRY_DEFAULT_SETTINGS, SETTING_FROM_ODOMETRY_DEFAULT)
+        if odometry
+        else (DEFAULT_SETTINGS, SETTING_FROM_DEFAULT)
+    )
+    resolved = {}
+    for name, default in defaults.items():
+        given = explicit.get(name)
+        if given is not None:
+            resolved[name] = ResolvedSetting(given, SETTING_FROM_COMMAND_LINE)
+        else:
+            resolved[name] = ResolvedSetting(default, source)
+    return resolved
+
+
+def describe_settings(settings: dict[str, ResolvedSetting]) -> list[str]:
+    """One ``name=value (source)`` entry per resolved setting."""
+    return [
+        f"{name}={setting.value:g} ({setting.source})"
+        for name, setting in settings.items()
+    ]
+
+
 @dataclass(frozen=True)
 class StartupParams:
     min_candidate_score: float = 0.6

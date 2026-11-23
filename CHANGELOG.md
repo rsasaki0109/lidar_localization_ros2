@@ -2,10 +2,62 @@
 
 ## Unreleased
 
+**Upgrading / behaviour change for anyone running `quickstart.py` with an odometry
+TF:** when odometry prediction is on (`use_odom_tf_prediction: true`, whether quickstart
+discovered the odom TF or you passed `--odom-tf-prediction`), three settings that were
+opt-in are now on by default, under every profile (`standalone`, `nav2` and `mid360`
+alike): `--seed-correction-window-sec 2.0` (which also sets the release agreement
+`seed_correction_guard_release_agreement_scans: 10`), `--global-nms-radius-m 1.5` (3.0
+before) and `--global-consensus-near-alias-samples 3` (0 before). Without odometry
+prediction all three keep the old defaults (0, 3.0 m, 0). The config generator
+(`create_lidar_localization_config.py`), `param/mid360_legged.yaml` and
+`quickstart.launch.py` called directly keep the old values too. To get the old
+behaviour back with odometry:
+
+```bash
+quickstart.py ... --seed-correction-window-sec 0 \
+  --global-nms-radius-m 3 --global-consensus-near-alias-samples 0
+```
+
+Explicit flags always win. Quickstart prints the resolved values and their source
+(`default with odometry prediction`, `default` or `command line`) on a `Settings:` line
+and at the top of the generated parameter file. Costs: more starts ask for a manual pose
+where every view is ambiguous (3 instead of 1 on the JEPLO Long_Stairs map), and the
+release agreement can hold the odometry a few seconds longer before a right correction.
+The evidence is from MID-360 sensors with RKO-LIO odometry only; other sensors and
+odometry sources with odometry prediction get the same defaults but were not measured.
+
 **Upgrading:** the new settings default to the old behaviour:
 `seed_correction_guard_trusted_start_position_std_m` on the localizer (`0` = off), the
 startup node's `global_pose_position_std_m` (`0` = `position_std_m`; launch arg of the
 same name) and quickstart's `--trusted-global-start-std-m` (`0` = off).
+
+### Changed
+
+- **With odometry prediction, quickstart turns on the window guard, the 1.5 m candidate
+  suppression and the near-alias rule** (see Upgrading above). Measured on v1.12.0 with
+  the default (standalone) profile and RKO-LIO odometry prediction, the three settings
+  against the old defaults (JEPLO Go2 and Koide replays, both a Livox MID-360): on the
+  16 cross-session cases (32 runs) 29 localized, 1 of them wrong, and 3 asked for a
+  manual pose, against 31, 3 and 1; the wrong one was the post-initialization pull the
+  trusted global start addresses, none was a wrong G2 answer. The first pose came after
+  a median 9.1 s instead of 10.8 s, and slides along the room fell from a p95 of
+  0.6-1.8 m to 0.12-0.27 m. The Go2 EIL suite stayed 8 of 8 right (first pose 8.9 s
+  instead of 11.4 s) and Koide outdoor_hard 4 of 4; on 01a the old defaults lost the
+  pose at about 113 s, the new ones did not. The 1.5 m radius was evaluated only
+  together with odometry, so without it the radius stays 3.0 m.
+  `--global-search-engine bbs3d` and `--trusted-global-start-std-m` stay opt-in (bbs3d's
+  first pose came after a median 16.6 s)
+  ([benchmark.md](docs/benchmark.md#defaults-with-odometry-prediction)). The Go2
+  quickstart page's commands run with odometry and now get these settings by default.
+- The benchmark suites that run with odometry (all Go2 suites and `koide_outdoor.yaml`)
+  now get these defaults, so their results are not directly comparable with earlier
+  ones; add the three flags above to a suite's `quickstart_args` to compare with them.
+  `go2_jeplo_cross_session.yaml` drops its now redundant `--global-nms-radius-m 1.5` and
+  `--global-consensus-near-alias-samples 3` flags (it gains the window guard).
+  `tools/benchmark/run_benchmark.py` records `/localization/pose_with_covariance` when a
+  suite runs quickstart with `--profile mid360` or `nav2`, which publish the pose there
+  instead of `/pcl_pose` (`pose_topic:` overrides).
 
 ### Added
 

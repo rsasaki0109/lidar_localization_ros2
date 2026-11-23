@@ -261,6 +261,78 @@ class TestDiscovery(unittest.TestCase):
         )
 
 
+NOT_GIVEN = {
+    "seed_correction_window_sec": None,
+    "global_nms_radius_m": None,
+    "global_consensus_near_alias_samples": None,
+}
+OLD_DEFAULTS = {
+    "seed_correction_window_sec": 0.0,
+    "global_nms_radius_m": 3.0,
+    "global_consensus_near_alias_samples": 0,
+}
+
+
+class TestOdometrySettings(unittest.TestCase):
+    def values(self, settings):
+        return {name: setting.value for name, setting in settings.items()}
+
+    def sources(self, settings):
+        return {setting.source for setting in settings.values()}
+
+    def test_odometry_prediction_turns_the_defaults_on(self):
+        settings = MODEL.resolve_odometry_settings(NOT_GIVEN, True)
+        self.assertEqual(
+            self.values(settings),
+            {
+                "seed_correction_window_sec": 2.0,
+                "global_nms_radius_m": 1.5,
+                "global_consensus_near_alias_samples": 3,
+            },
+        )
+        self.assertEqual(self.sources(settings), {MODEL.SETTING_FROM_ODOMETRY_DEFAULT})
+        self.assertEqual(
+            MODEL.describe_settings(settings),
+            [
+                "seed_correction_window_sec=2 (default with odometry prediction)",
+                "global_nms_radius_m=1.5 (default with odometry prediction)",
+                "global_consensus_near_alias_samples=3 (default with odometry "
+                "prediction)",
+            ],
+        )
+
+    def test_without_odometry_all_three_keep_the_old_defaults(self):
+        # The 1.5 m radius too: it was only evaluated together with odometry.
+        # Not known yet (None) resolves the same way.
+        for odometry in (False, None):
+            settings = MODEL.resolve_odometry_settings(NOT_GIVEN, odometry)
+            self.assertEqual(self.values(settings), OLD_DEFAULTS)
+            self.assertEqual(self.sources(settings), {MODEL.SETTING_FROM_DEFAULT})
+        self.assertEqual(MODEL.DEFAULT_SETTINGS, OLD_DEFAULTS)
+
+    def test_explicit_values_win_even_when_they_are_the_old_defaults(self):
+        for odometry in (True, False, None):
+            settings = MODEL.resolve_odometry_settings(OLD_DEFAULTS, odometry)
+            self.assertEqual(self.values(settings), OLD_DEFAULTS)
+            self.assertEqual(self.sources(settings), {MODEL.SETTING_FROM_COMMAND_LINE})
+        settings = MODEL.resolve_odometry_settings(
+            dict(NOT_GIVEN, global_nms_radius_m=2.5), True
+        )
+        self.assertEqual(settings["global_nms_radius_m"].value, 2.5)
+        self.assertEqual(
+            settings["global_consensus_near_alias_samples"].source,
+            MODEL.SETTING_FROM_ODOMETRY_DEFAULT,
+        )
+
+    def test_odometry_near_alias_default_is_a_valid_startup_setting(self):
+        params = MODEL.StartupParams(
+            global_consensus_near_alias_samples=MODEL.ODOMETRY_DEFAULT_SETTINGS[
+                "global_consensus_near_alias_samples"
+            ]
+        )
+        self.assertIsNone(MODEL.validate_startup_params(params))
+
+
 class TestStartupPolicy(unittest.TestCase):
     def setUp(self):
         self.params = MODEL.StartupParams(
@@ -931,6 +1003,20 @@ class TestStartupPolicy(unittest.TestCase):
         # Unrefined answers are checked as before.
         unrefined = self._near_alias_views(on, 5, query_top_refined=False)
         self.assertTrue(all(d.action != MODEL.ACTION_PUBLISH_GLOBAL for d in unrefined))
+
+    def test_near_alias_without_odometry_acts_as_off(self):
+        # An explicit near-alias setting without any odometry (no odom TF, so no
+        # odometry pose per query): the same retries as with it off, nothing
+        # remembered as a near-alias view and nothing published from one.
+        on = replace(self.params, global_consensus_near_alias_samples=3)
+        without = self._near_alias_views(on, 5, query_odom_pose=None)
+        off = self._near_alias_views(self.params, 5, query_odom_pose=None)
+        self.assertEqual(
+            [(d.action, d.reason) for d in without],
+            [(d.action, d.reason) for d in off],
+        )
+        self.assertTrue(all(d.action != MODEL.ACTION_PUBLISH_GLOBAL for d in without))
+        self.assertFalse(without[-1].state.consensus_odom_anchors)
 
     def test_near_alias_samples_validation(self):
         self.assertIsNone(
