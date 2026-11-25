@@ -1,4 +1,5 @@
 #include "lidar_localization/map_initialization_policy.hpp"
+#include "lidar_localization/initial_map_message.hpp"
 
 #include <cassert>
 #include <cmath>

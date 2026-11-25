@@ -251,9 +251,6 @@ bool PCLLocalization::loadMapFromPath(const std::string & path, bool reject_empt
   if (const auto warning = lidar_localization::largeMapCoordinateWarning(map_bounds)) {
     RCLCPP_WARN(get_logger(), "%s", warning->c_str());
   }
-  map_bounds_valid_ = map_bounds.valid;
-  map_min_pt_ = map_bounds.min_point;
-  map_max_pt_ = map_bounds.max_point;
 
   {
     const auto map_msg = lidar_localization::makeInitialMapMessage(
@@ -267,63 +264,9 @@ bool PCLLocalization::loadMapFromPath(const std::string & path, bool reject_empt
   // registration target is built, the node's memory peak (24 MB for a 2.0M-point map).
   raw_map_cloud = pcl::PCLPointCloud2();
 
-  // The map content changed: drop the crop guards and the cached local target.
-  consecutive_crop_failures_ = 0;
-  crop_failure_guard_active_ = false;
-  discardLocalMapRebuild();
-  local_map_target_cached_ = false;
-
-  // A runtime map switch must not race with an align() running outside the state lock.
-  auto registration_execution_lock =
-    callback_state_coordinator_.lockRegistrationExecution();
-  const auto target_setup =
-    lidar_localization::planInitialMapTargetSetup(
-      enable_local_map_crop_, registration_method_);
-  use_local_map_crop_ = target_setup.use_local_map_crop;
-  if (target_setup.builds_full_map_ndt_grid) {
-    if (const auto error =
-      lidar_localization::ndtVoxelGridOverflowError(map_bounds, ndt_resolution_))
-    {
-      RCLCPP_ERROR(get_logger(), "%s", error->c_str());
-    }
-  }
-  if (use_local_map_crop_) {
-    // Keep the raw full map and only voxel-filter the cropped local target per scan.
-    full_map_cloud_ptr_ = map_cloud_ptr;
-    RCLCPP_INFO(
-      get_logger(), "Local map cropping enabled. Full map: %ld pts, radius: %.0fm",
-      full_map_cloud_ptr_->size(), local_map_radius_);
-    // Avoid building a full-map NDT target here. It can overflow on city-scale maps.
-    if (target_setup.create_ndt_initializer) {
-      use_ndt_initializer_ = true;
-      ndt_init_scan_count_ = 0;
-      ndt_initializer_.reset(
-        new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
-      ndt_initializer_->setStepSize(ndt_step_size_);
-      ndt_initializer_->setResolution(ndt_resolution_);
-      ndt_initializer_->setTransformationEpsilon(transform_epsilon_);
-      ndt_initializer_->setNumThreads(
-        lidar_localization::resolveRegistrationThreadCount(
-          ndt_num_threads_, omp_get_max_threads()));
-      lidar_localization::setNdtTargetWithSearchTree<pcl::PointXYZI>(
-        *ndt_initializer_, map_cloud_ptr);
-      RCLCPP_INFO(get_logger(), "NDT initializer created (%d scans before GICP switch)",
-                  ndt_init_scans_required_);
-    } else {
-      use_ndt_initializer_ = false;
-      ndt_initializer_.reset();
-    }
-  } else {
-    full_map_cloud_ptr_.reset();
-    if (target_setup.set_full_map_as_registration_target && registration_) {
-      lidar_localization::setRegistrationTarget<pcl::PointXYZI>(
-        *registration_, map_cloud_ptr,
-        lidar_localization::usesNdtVoxelGrid(registration_method_));
-      lidar_localization::keepRegistrationCloudAlive(
-        recent_target_clouds_, map_cloud_ptr, registration_target_cloud_keep_alive_count_);
-      warmUpRegistrationTarget(map_cloud_ptr);
-    }
-  }
+  // The map content changed: the engine drops the crop guards and the cached local
+  // target, and builds the new registration target (registration_engine.hpp).
+  registration_engine_.setMap(map_cloud_ptr, map_bounds);
 
   map_received_ = true;
   return true;
@@ -483,16 +426,10 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   last_odom_bridge_source_advance_node_stamp_ = builtin_interfaces::msg::Time{};
   has_last_odom_bridge_source_advance_node_stamp_ = false;
 
-  discardLocalMapRebuild();
-  auto registration_execution_lock =
-    callback_state_coordinator_.lockRegistrationExecution();
-  ndt_initializer_.reset();
-  use_ndt_initializer_ = false;
-  registration_ = nullptr;
-  registration_objects_ = RegistrationObjects();
-  spare_registration_objects_ = RegistrationObjects();
-  registration_source_cloud_.reset();
-  registration_execution_lock.unlock();
+  // The backend, targets and map; with leak_target_clouds_for_shutdown the target
+  // and full-map clouds are leaked (NDT_OMP can still hold shutdown-path
+  // ownership relationships to them, so freeing them during teardown crashes).
+  registration_engine_.release(leak_target_clouds_for_shutdown);
 
   {
     std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
@@ -521,32 +458,6 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
   reinitialization_request_ = {};
   reinitialization_request_latch_ = {};
   recovery_supervisor_ = {RecoverySupervisorState::kTracking, "idle", 0.0, 0};
-  recent_source_clouds_.clear();
-  // NOLINTBEGIN(clang-analyzer-cplusplus.NewDeleteLeaks): the target and full-map
-  // clouds are intentionally leaked when leak_target_clouds_for_shutdown is set.
-  // NDT_OMP can still hold shutdown-path ownership relationships to them, so
-  // freeing them during process teardown crashes.
-  if (leak_target_clouds_for_shutdown) {
-    auto * leaked_target_clouds =
-      new std::deque<pcl::PointCloud<pcl::PointXYZI>::Ptr>();
-    leaked_target_clouds->swap(recent_target_clouds_);
-    (void)leaked_target_clouds;
-  } else {
-    recent_target_clouds_.clear();
-  }
-  if (leak_target_clouds_for_shutdown) {
-    auto * leaked_full_map_cloud =
-      new pcl::PointCloud<pcl::PointXYZI>::Ptr(std::move(full_map_cloud_ptr_));
-    (void)leaked_full_map_cloud;
-  } else {
-    full_map_cloud_ptr_.reset();
-  }
-  map_bounds_valid_ = false;
-  // NOLINTEND(clang-analyzer-cplusplus.NewDeleteLeaks)
-  consecutive_crop_failures_ = 0;
-  crop_failure_guard_active_ = false;
-  last_crop_out_of_bounds_log_time_ = std::chrono::steady_clock::time_point{};
-  last_crop_failure_streak_log_time_ = std::chrono::steady_clock::time_point{};
   map_received_ = false;
   initialpose_received_ = false;
 }

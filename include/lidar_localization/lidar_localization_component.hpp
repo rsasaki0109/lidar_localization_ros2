@@ -91,6 +91,7 @@
 #include "lidar_localization/point_field_read.hpp"
 #include "lidar_localization/prediction_state_policy.hpp"
 #include "lidar_localization/registration_backend_policy.hpp"
+#include "lidar_localization/registration_engine.hpp"
 #include "lidar_localization/registration_cloud_keep_alive_policy.hpp"
 #include "lidar_localization/registration_observation_policy.hpp"
 #include "lidar_localization/registration_seed_policy.hpp"
@@ -267,46 +268,8 @@ public:
   rclcpp::CallbackGroup::SharedPtr imu_callback_group_;
   rclcpp::CallbackGroup::SharedPtr twist_callback_group_;
 
-  // --- Registration backends ---
+  // --- Registration ---
 
-  // The owner of one registration backend; only the member for
-  // registration_method_ is set.
-  struct RegistrationObjects
-  {
-    pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr pcl;
-    boost::shared_ptr<lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>>
-    ndt_omp;
-    pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp_omp;
-#ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
-    small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>::Ptr small_gicp;
-#endif
-    pcl::Registration<pcl::PointXYZI, pcl::PointXYZI> * get() const;
-    // Iterations of the last align(); -1 when the backend does not report them.
-    int finalIterationCount() const;
-  };
-  RegistrationObjects makeRegistrationObjects(
-    lidar_localization::RegistrationBackend backend) const;
-  pcl::Registration<pcl::PointXYZI, pcl::PointXYZI> * registration_{nullptr};
-  RegistrationObjects registration_objects_;
-  // local_map_async_rebuild: the next local target is built on this twin of
-  // registration_objects_ in the background, then the two are swapped.
-  RegistrationObjects spare_registration_objects_;
-  struct LocalMapRebuild
-  {
-    bool ready{false};
-    float center_x{0.0f};
-    float center_y{0.0f};
-    pcl::PointCloud<pcl::PointXYZI>::Ptr target;
-    pcl::PointCloud<pcl::PointXYZI>::Ptr warm_up_source;
-  };
-  std::future<LocalMapRebuild> local_map_rebuild_;
-  // Set when a target change freed memory; the next cloud callback returns it to the OS
-  // (releaseFreedHeapMemory) when it is done.
-  std::atomic<bool> heap_trim_pending_{false};
-  float local_map_rebuild_center_x_{0.0f};
-  float local_map_rebuild_center_y_{0.0f};
-  pcl::PointCloud<pcl::PointXYZI>::Ptr registration_source_cloud_;
-  pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter_;
 
   // --- Shared callback state ---
 
@@ -315,6 +278,25 @@ public:
   // dedicated group so a reset can interrupt long registration. Every access
   // shared with that group is protected by callback_state_coordinator_.
   lidar_localization::CallbackStateCoordinator callback_state_coordinator_;
+  // The backend, the map and its registration target (registration_engine.hpp).
+  // Its messages go to this node's logger; its execution lock is the callback
+  // state coordinator's, so /initialpose and map switches never race an align().
+  lidar_localization::RegistrationEngine registration_engine_{
+    [this](lidar_localization::LogLevel level, const std::string & message) {
+      switch (level) {
+        case lidar_localization::LogLevel::kInfo:
+          RCLCPP_INFO(get_logger(), "%s", message.c_str());
+          break;
+        case lidar_localization::LogLevel::kWarn:
+          RCLCPP_WARN(get_logger(), "%s", message.c_str());
+          break;
+        case lidar_localization::LogLevel::kError:
+          RCLCPP_ERROR(get_logger(), "%s", message.c_str());
+          break;
+      }
+    },
+    [this]() {return callback_state_coordinator_.lockRegistrationExecution();}};
+  lidar_localization::RegistrationEngineConfig registrationEngineConfig() const;
   geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr current_pose_with_cov_stamped_ptr_;
   nav_msgs::msg::Path::SharedPtr path_ptr_;
   std::size_t path_max_poses_{lidar_localization::kDefaultPathMaxPoses};
@@ -324,36 +306,19 @@ public:
   bool map_received_{false};
   bool initialpose_received_{false};
   double last_initial_pose_stamp_sec_{-1.0};
-  pcl::PointCloud<pcl::PointXYZI>::Ptr full_map_cloud_ptr_;
-  pcl::PointXYZI map_min_pt_{};
-  pcl::PointXYZI map_max_pt_{};
-  bool map_bounds_valid_{false};
-  std::deque<pcl::PointCloud<pcl::PointXYZI>::Ptr> recent_source_clouds_;
-  std::deque<pcl::PointCloud<pcl::PointXYZI>::Ptr> recent_target_clouds_;
   std::size_t registration_source_cloud_keep_alive_count_{
     lidar_localization::kDefaultRegistrationSourceCloudKeepAliveCount};
   std::size_t registration_target_cloud_keep_alive_count_{
     lidar_localization::kDefaultRegistrationTargetCloudKeepAliveCount};
-  bool use_local_map_crop_{false};
   bool enable_local_map_crop_{false};
   double local_map_radius_{150.0};
   std::size_t local_map_min_points_{100};
   std::size_t min_registration_points_{0};
   double local_map_update_distance_{0.0};
   bool local_map_async_rebuild_{false};
-  bool local_map_target_cached_{false};
-  float local_map_target_center_x_{0.0f};
-  float local_map_target_center_y_{0.0f};
-  int consecutive_crop_failures_{0};
-  bool crop_failure_guard_active_{false};
-  std::chrono::steady_clock::time_point last_crop_out_of_bounds_log_time_{};
-  std::chrono::steady_clock::time_point last_crop_failure_streak_log_time_{};
 
   // NDT initializer for GICP-based methods
-  bool use_ndt_initializer_{false};
-  int ndt_init_scan_count_{0};
   int ndt_init_scans_required_{5};
-  pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_initializer_;
 
   // IMU preintegration smoother
   bool use_imu_preintegration_{false};
@@ -609,14 +574,6 @@ public:
   void snapshotImuPreintegrationSampleCountersForScan();
   SelectedRegistrationSeed selectRegistrationSeed(
     const builtin_interfaces::msg::Time & stamp, double scan_stamp_sec);
-  Eigen::Matrix4f refineSeedWithNdtInitializer(
-    const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud,
-    const Eigen::Matrix4f & init_guess);
-  bool setInputTargetForPose(const Eigen::Matrix4f & center_pose_matrix);
-  void startLocalMapRebuild(float center_x, float center_y);
-  bool takeLocalMapRebuild(float center_x, float center_y, bool wait);
-  void discardLocalMapRebuild();
-  void warmUpRegistrationTarget(const pcl::PointCloud<pcl::PointXYZI>::Ptr & target);
   void broadcastTransform(const geometry_msgs::msg::TransformStamped & transform);
   lidar_localization::AlignmentAttempt runAlignmentAttempt(
     const Eigen::Matrix4f & attempt_init_guess,

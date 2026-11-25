@@ -1,4 +1,5 @@
-#include <lidar_localization/lidar_localization_component.hpp>
+// The registration engine's local targets with background rebuilds (no ROS).
+#include "lidar_localization/registration_engine.hpp"
 #include "lidar_localization/local_map_target_policy.hpp"
 #include <pcl/filters/voxel_grid.h>
 #include <cassert>
@@ -43,7 +44,7 @@ Eigen::Matrix4f poseAt(float x, float y)
   return pose;
 }
 
-// The target setInputTargetForPose builds around (x, y) in the scan callback.
+// The target setTargetForPose builds around (x, y) in the scan callback.
 std::size_t expectedTargetSize(
   const pcl::PointCloud<pcl::PointXYZI> & map, const std::string & method, float x, float y)
 {
@@ -74,48 +75,41 @@ bool isCropAround(
 
 void checkBackend(const std::string & method)
 {
-  rclcpp::NodeOptions options;
-  options.parameter_overrides({
-    rclcpp::Parameter("registration_method", method),
-    rclcpp::Parameter("enable_local_map_crop", true),
-    rclcpp::Parameter("local_map_radius", kRadius),
-    rclcpp::Parameter("local_map_update_distance", 5.0),
-    rclcpp::Parameter("local_map_async_rebuild", true),
-    rclcpp::Parameter("scan_max_range", 10.0),
-    rclcpp::Parameter("voxel_leaf_size", 1.0),
-    rclcpp::Parameter("ndt_num_threads", 2)});
-  PCLLocalization node(options);
-  node.initializeParameters();
-  node.initializeRegistration();
+  ll::RegistrationEngineConfig config;
+  config.registration_method = method;
+  config.enable_local_map_crop = true;
+  config.local_map_radius = kRadius;
+  config.local_map_update_distance = 5.0;
+  config.local_map_async_rebuild = true;
+  config.scan_max_range = 10.0;
+  config.voxel_leaf_size = 1.0;
+  config.ndt_num_threads = 2;
+  ll::RegistrationEngine engine;
+  assert(engine.configure(config));
   const auto map = makeMap();
-  node.use_local_map_crop_ = true;
-  node.full_map_cloud_ptr_ = map;
-  node.map_bounds_valid_ = true;
-  node.map_min_pt_.x = -kMapHalfSize;
-  node.map_min_pt_.y = -kMapHalfSize;
-  node.map_max_pt_.x = kMapHalfSize;
-  node.map_max_pt_.y = kMapHalfSize;
+  engine.setMap(map, ll::computeMapBounds(*map));
+  assert(engine.usesLocalMapCrop());
 
   // Nothing cached: the first target is built in the scan callback.
-  assert(node.setInputTargetForPose(poseAt(0.0f, 0.0f)));
-  auto * const first = node.registration_;
-  assert(!node.local_map_rebuild_.valid());
+  assert(engine.setTargetForPose(poseAt(0.0f, 0.0f)));
+  auto * const first = engine.registration();
+  assert(!engine.localMapRebuildPending());
   assert(first->getInputTarget()->size() == expectedTargetSize(*map, method, 0.0f, 0.0f));
 
   // Past the update distance and within radius - scan_max_range: keep the
   // cached target and build the next one on the twin in the background.
-  assert(node.setInputTargetForPose(poseAt(6.0f, 0.0f)));
-  assert(node.registration_ == first);
-  assert(node.local_map_rebuild_.valid());
-  node.local_map_rebuild_.wait();
+  assert(engine.setTargetForPose(poseAt(6.0f, 0.0f)));
+  assert(engine.registration() == first);
+  assert(engine.localMapRebuildPending());
+  engine.waitForLocalMapRebuild();
 
   // The next scan swaps the twin in, its target cropped (and filtered like the
   // scan callback's) around (6, 0) and already aligned once.
-  assert(node.setInputTargetForPose(poseAt(7.0f, 0.0f)));
-  auto * const second = node.registration_;
+  assert(engine.setTargetForPose(poseAt(7.0f, 0.0f)));
+  auto * const second = engine.registration();
   assert(second != first);
-  assert(second == node.registration_objects_.get());
-  assert(node.local_map_target_center_x_ == 6.0f);
+  assert(second == engine.registrationObjects().get());
+  assert(engine.localMapTargetCenter()->x() == 6.0f);
   const auto target = second->getInputTarget();
   assert(isCropAround(*target, 6.0f, 0.0f, kRadius + 0.5));
   assert(target->size() == expectedTargetSize(*map, method, 6.0f, 0.0f));
@@ -125,28 +119,28 @@ void checkBackend(const std::string & method)
   // The first align() on a target builds its search tree.
   assert(second->getSearchMethodTarget()->getInputCloud() == target);
 #ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
-  if (node.registration_objects_.small_gicp) {
-    assert(node.registration_objects_.small_gicp->getTargetCovariances().size() == target->size());
+  if (engine.registrationObjects().small_gicp) {
+    assert(
+      engine.registrationObjects().small_gicp->getTargetCovariances().size() == target->size());
   }
 #endif
 
   // A background target around a center the pose has since left is dropped,
   // and the target is built in the scan callback instead.
-  assert(node.setInputTargetForPose(poseAt(12.0f, 0.0f)));
-  assert(node.local_map_rebuild_.valid());
-  node.local_map_rebuild_.wait();
-  assert(node.setInputTargetForPose(poseAt(40.0f, 0.0f)));
-  assert(node.registration_ == second);
-  assert(!node.local_map_rebuild_.valid());
-  assert(node.local_map_target_center_x_ == 40.0f);
-  assert(isCropAround(*node.registration_->getInputTarget(), 40.0f, 0.0f, 50.0f));
+  assert(engine.setTargetForPose(poseAt(12.0f, 0.0f)));
+  assert(engine.localMapRebuildPending());
+  engine.waitForLocalMapRebuild();
+  assert(engine.setTargetForPose(poseAt(40.0f, 0.0f)));
+  assert(engine.registration() == second);
+  assert(!engine.localMapRebuildPending());
+  assert(engine.localMapTargetCenter()->x() == 40.0f);
+  assert(isCropAround(*engine.registration()->getInputTarget(), 40.0f, 0.0f, 50.0f));
 }
 
 }  // namespace
 
-int main(int argc, char ** argv)
+int main()
 {
-  rclcpp::init(argc, argv);
   for (const std::string method : {"NDT_OMP", "GICP_OMP", "GICP"}) {
     checkBackend(method);
   }
@@ -155,5 +149,4 @@ int main(int argc, char ** argv)
     checkBackend(method);
   }
 #endif
-  rclcpp::shutdown();
 }

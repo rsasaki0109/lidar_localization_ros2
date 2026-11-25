@@ -275,6 +275,7 @@ Using it:
 - [Go2 / MID-360 in five minutes](docs/go2_mid360_quickstart.md) and [MID-360 bringup](docs/mid360_legged_jetson.md)
 - [Repeat-route site setup](docs/site_setup.md)
 - [Runtime details](docs/runtime.md): parameter precedence, deskew, lifecycle
+- [Without ROS 2](docs/core.md): the registration as a library (`lidar_localization_core`) with a C API, for simulators and offline tools
 - [Frames](docs/frame_contract.md) and [troubleshooting](docs/troubleshooting.md)
 - [Map alignment](docs/map_alignment.md): map frame and pose offsets
 

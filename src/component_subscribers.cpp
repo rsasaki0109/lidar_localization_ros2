@@ -138,133 +138,36 @@ void PCLLocalization::initializePubSub()
   RCLCPP_INFO(get_logger(), "initializePubSub end");
 }
 
-pcl::Registration<pcl::PointXYZI, pcl::PointXYZI> *
-PCLLocalization::RegistrationObjects::get() const
+lidar_localization::RegistrationEngineConfig PCLLocalization::registrationEngineConfig() const
 {
-  if (pcl) {return pcl.get();}
-  if (ndt_omp) {return ndt_omp.get();}
-  if (gicp_omp) {return gicp_omp.get();}
-#ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
-  if (small_gicp) {return small_gicp.get();}
-#endif
-  return nullptr;
-}
-
-int PCLLocalization::RegistrationObjects::finalIterationCount() const
-{
-  if (ndt_omp) {return ndt_omp->getFinalNumIteration();}
-  if (const auto * ndt =
-    dynamic_cast<const pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI> *>(
-      pcl.get()))
-  {
-    return ndt->getFinalNumIteration();
-  }
-#ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
-  if (small_gicp) {
-    return static_cast<int>(small_gicp->getRegistrationResult().iterations);
-  }
-#endif
-  return -1;
-}
-
-PCLLocalization::RegistrationObjects PCLLocalization::makeRegistrationObjects(
-  lidar_localization::RegistrationBackend backend) const
-{
-  RegistrationObjects objects;
-  if (backend == lidar_localization::RegistrationBackend::kPclGicp) {
-    pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp(
-      new pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>());
-    gicp->setTransformationEpsilon(transform_epsilon_);
-    gicp->setCorrespondenceRandomness(gicp_corr_randomness_);
-    gicp->setMaxCorrespondenceDistance(gicp_max_correspondence_distance_);
-    objects.pcl = gicp;
-  }
-  else if (backend == lidar_localization::RegistrationBackend::kPclNdt) {
-    pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt(
-      new pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
-    ndt->setStepSize(ndt_step_size_);
-    ndt->setResolution(ndt_resolution_);
-    ndt->setTransformationEpsilon(transform_epsilon_);
-    objects.pcl = ndt;
-  }
-  else if (backend == lidar_localization::RegistrationBackend::kNdtOmp) {
-    boost::shared_ptr<lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>>
-    ndt_omp(new lidar_localization::DiagnosticNdtOmp<pcl::PointXYZI, pcl::PointXYZI>());
-    ndt_omp->setStepSize(ndt_step_size_);
-    ndt_omp->setResolution(ndt_resolution_);
-    ndt_omp->setTransformationEpsilon(transform_epsilon_);
-    ndt_omp->setNumThreads(
-      lidar_localization::resolveRegistrationThreadCount(
-        ndt_num_threads_, omp_get_max_threads()));
-    objects.ndt_omp = ndt_omp;
-  }
-  else if (backend == lidar_localization::RegistrationBackend::kGicpOmp) {
-    pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp_omp(
-      new pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>());
-    gicp_omp->setTransformationEpsilon(transform_epsilon_);
-    gicp_omp->setCorrespondenceRandomness(gicp_corr_randomness_);
-    gicp_omp->setMaxCorrespondenceDistance(gicp_max_correspondence_distance_);
-    objects.gicp_omp = gicp_omp;
-  }
-#ifdef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
-  else if (lidar_localization::isSmallGicpBackend(backend)) {
-    small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>::Ptr reg(
-      new small_gicp::RegistrationPCL<pcl::PointXYZI, pcl::PointXYZI>());
-    reg->setTransformationEpsilon(transform_epsilon_);
-    reg->setCorrespondenceRandomness(gicp_corr_randomness_);
-    reg->setMaxCorrespondenceDistance(gicp_max_correspondence_distance_);
-    reg->setVoxelResolution(vgicp_voxel_resolution_);
-    reg->setRegistrationType(lidar_localization::smallGicpRegistrationType(backend));
-    reg->setNumThreads(
-      lidar_localization::resolveRegistrationThreadCount(
-        ndt_num_threads_, omp_get_max_threads()));
-    objects.small_gicp = reg;
-  }
-#endif
-  if (objects.get()) {
-    objects.get()->setMaximumIterations(ndt_max_iterations_);
-  }
-  return objects;
+  lidar_localization::RegistrationEngineConfig config;
+  config.registration_method = registration_method_;
+  config.transform_epsilon = transform_epsilon_;
+  config.ndt_resolution = ndt_resolution_;
+  config.ndt_step_size = ndt_step_size_;
+  config.ndt_max_iterations = ndt_max_iterations_;
+  config.ndt_num_threads = ndt_num_threads_;
+  config.gicp_corr_randomness = gicp_corr_randomness_;
+  config.gicp_max_correspondence_distance = gicp_max_correspondence_distance_;
+  config.vgicp_voxel_resolution = vgicp_voxel_resolution_;
+  config.voxel_leaf_size = voxel_leaf_size_;
+  config.enable_local_map_crop = enable_local_map_crop_;
+  config.local_map_radius = local_map_radius_;
+  config.local_map_min_points = local_map_min_points_;
+  config.local_map_update_distance = local_map_update_distance_;
+  config.local_map_async_rebuild = local_map_async_rebuild_;
+  config.scan_max_range = scan_max_range_;
+  config.source_cloud_keep_alive_count = registration_source_cloud_keep_alive_count_;
+  config.target_cloud_keep_alive_count = registration_target_cloud_keep_alive_count_;
+  config.ndt_init_scans_required = ndt_init_scans_required_;
+  return config;
 }
 
 void PCLLocalization::initializeRegistration()
 {
-  RCLCPP_INFO(get_logger(), "initializeRegistration");
-
-  discardLocalMapRebuild();
-  registration_ = nullptr;
-  registration_objects_ = RegistrationObjects();
-  spare_registration_objects_ = RegistrationObjects();
-  registration_source_cloud_.reset();
-  recent_source_clouds_.clear();
-  recent_target_clouds_.clear();
-
-  const auto registration_backend =
-    lidar_localization::parseRegistrationBackend(registration_method_);
-  if (!lidar_localization::isValidRegistrationBackend(registration_backend)) {
-    RCLCPP_ERROR(get_logger(), "Invalid registration method.");
+  if (!registration_engine_.configure(registrationEngineConfig())) {
     exit(EXIT_FAILURE);
   }
-#ifndef LIDAR_LOCALIZATION_HAVE_SMALL_GICP
-  if (lidar_localization::isSmallGicpBackend(registration_backend)) {
-    RCLCPP_ERROR(
-      get_logger(),
-      "small_gicp backend requested but support is not available. Install small_gicp and rebuild.");
-    exit(EXIT_FAILURE);
-  }
-#endif
-  registration_objects_ = makeRegistrationObjects(registration_backend);
-  registration_ = registration_objects_.get();
-  if (registration_ == nullptr) {
-    RCLCPP_ERROR(get_logger(), "Registration backend setup failed.");
-    exit(EXIT_FAILURE);
-  }
-  if (local_map_async_rebuild_) {
-    spare_registration_objects_ = makeRegistrationObjects(registration_backend);
-  }
-
-  voxel_grid_filter_.setLeafSize(voxel_leaf_size_, voxel_leaf_size_, voxel_leaf_size_);
-  RCLCPP_INFO(get_logger(), "initializeRegistration end");
 }
 
 void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg)
@@ -341,10 +244,7 @@ void PCLLocalization::applyInitialPose(
   recovery_supervisor_.state = RecoverySupervisorState::kTracking;
   recovery_supervisor_.action = "initial_pose_reset";
   recovery_supervisor_.entered_stamp_sec = stamp_to_sec(msg->header.stamp);
-  consecutive_crop_failures_ = 0;
-  crop_failure_guard_active_ = false;
-  last_crop_out_of_bounds_log_time_ = std::chrono::steady_clock::time_point{};
-  last_crop_failure_streak_log_time_ = std::chrono::steady_clock::time_point{};
+  registration_engine_.resetCropFailureGuard();
   // The initialpose is authoritative for every anchor: if the last-accepted
   // pose stayed at the pre-reset track, the crop-failure guard and the
   // retry-from-last-pose path would re-seed alignment there after a few
@@ -464,32 +364,8 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
     RCLCPP_WARN(get_logger(), "%s", warning->c_str());
   }
 
-  const auto map_target_choice = lidar_localization::chooseMapSubscriptionTargetCloud(
-    lidar_localization::usesFilteredTarget(registration_method_));
-  if (map_target_choice == lidar_localization::LocalMapTargetCloud::kFilteredLocalMap) {
-    pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_cloud_ptr(
-      new pcl::PointCloud<pcl::PointXYZI>());
-    voxel_grid_filter_.setInputCloud(map_cloud_ptr);
-    voxel_grid_filter_.filter(*filtered_cloud_ptr);
-    lidar_localization::setRegistrationTarget<pcl::PointXYZI>(
-      *registration_, filtered_cloud_ptr,
-      lidar_localization::usesNdtVoxelGrid(registration_method_));
-    lidar_localization::keepRegistrationCloudAlive(
-      recent_target_clouds_, filtered_cloud_ptr, registration_target_cloud_keep_alive_count_);
-    warmUpRegistrationTarget(filtered_cloud_ptr);
-
-  } else {
-    lidar_localization::setRegistrationTarget<pcl::PointXYZI>(
-      *registration_, map_cloud_ptr,
-      lidar_localization::usesNdtVoxelGrid(registration_method_));
-    lidar_localization::keepRegistrationCloudAlive(
-      recent_target_clouds_, map_cloud_ptr, registration_target_cloud_keep_alive_count_);
-    warmUpRegistrationTarget(map_cloud_ptr);
-  }
-
   // The map topic replaces the whole registration target.
-  discardLocalMapRebuild();
-  local_map_target_cached_ = false;
+  registration_engine_.setMapFromTopic(map_cloud_ptr);
   map_received_ = true;
   RCLCPP_INFO(get_logger(), "mapReceived end");
 }
@@ -776,7 +652,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
     PCLLocalization * self;
     ~TrimFreedHeapAtExit()
     {
-      if (self->heap_trim_pending_.exchange(false, std::memory_order_relaxed)) {
+      if (self->registration_engine_.takeHeapTrimPending()) {
         lidar_localization::releaseFreedHeapMemory();
       }
     }
@@ -827,7 +703,7 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   std::string registration_seed_source =
     lidar_localization::registrationSeedSourceName(selected_seed.source);
   Eigen::Matrix4f init_guess =
-    refineSeedWithNdtInitializer(tmp_ptr, selected_seed.init_guess);
+    registration_engine_.refineSeedWithNdtInitializer(tmp_ptr, selected_seed.init_guess);
   auto pipeline_result = runAlignmentPipelineForScan(
     init_guess,
     selected_seed.imu_retry_guess,
