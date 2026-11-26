@@ -116,6 +116,21 @@ number of candidates being scored), `elapsed_sec`). Watch it during a slow query
 ros2 topic echo /global_localization_node/status
 ```
 
+### Among people and vehicles
+
+People and vehicles in the first scans are not in the map, and they raise every
+candidate's NDT fitness alike, so the startup's ratio test may find each view ambiguous
+and hand over to the operator. Whether they reach the 2D search depends on the band:
+`z_min_m` 0.5 m above a sensor 1.3 m up starts 1.8 m above the ground, above people
+and cars, and on Koide the startup came through crowds on 13-43% of the points in 11
+of 12 runs. The Go2 searches from its own plane up (`z_min_m: 0`, its upside-down
+MID-360 sees almost nothing higher) in a 10 m x 4 m room, and started in 1 of 6 runs
+with 11-15% of the points on people or cars and in none above. A band starting 2 m
+above the ground estimated from the scan, scoring only the points in it, removing
+compact clusters and trimmed fitness were tried and did not help there
+([benchmark](benchmark.md#g2-startup-among-obstacles)); give the start pose instead
+([troubleshooting](troubleshooting.md#symptom-tracking-is-lost-among-people-and-vehicles-dynamic-obstacles)).
+
 ### Route-crop candidates (opt-in, WP3)
 
 On routes where map-wide BBS returns along-corridor aliases (Koide outdoor north/

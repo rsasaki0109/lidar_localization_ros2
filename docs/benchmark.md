@@ -1406,7 +1406,15 @@ up, a stress test that adds them to real scans with ground truth, what fails, an
 map-distance prefilter that fixes the tracking failures
 ([troubleshooting](troubleshooting.md#symptom-tracking-is-lost-among-people-and-vehicles-dynamic-obstacles)).
 Measured 2026-11-26 on `main` at `2ad59eb` and on this change, Jazzy, 4 vCPUs, one run
+per cell; the G2 startups [below](#g2-startup-among-obstacles) later that day, 3 seeds
 per cell.
+
+The Koide runs of the first measurement placed every obstacle 1.2 m too high: the
+injector took the sensor height from the scan, and the upright MID-360 1.3 m up sees no
+ground within about 10 m, so it found 0.12 m. Pedestrians stood with their feet near
+the sensor and their heads 2.9 m above the real ground. The injector now takes the
+height from the map when it has one (1.30 m there). The Koide startups below are
+re-measured; the Koide tracking rows are marked where they are not.
 
 ### In the real data
 
@@ -1523,12 +1531,17 @@ filter; at 50% the error triples, and the filter takes it back to 0.27 m at p95.
 | crowd | main | fix (`--map-distance-filter-m 0.5`) |
 |---|---|---|
 | none | 0.082 / 0.33 / 1.45 m, >1 m 0.008 | 0.082 / 0.30 / 1.45 m, >1 m 0.007 |
-| from the first scan, 0.28 and 0.43 | **not initialized** (ambiguous) | - |
+| from the first scan, 0.28 and 0.43, obstacles 1.2 m too high | **not initialized** (ambiguous) | - |
+| from the first scan, on the ground (3 seeds) | 0.29: 3 of 3 started; 0.43: 2 of 3 ([below](#g2-startup-among-obstacles)) | - |
 | after 40 s, 0.28 | **lost: drifts from 105 s, 24 m median, 144 m max, 63% > 1 m** | 0.120 / 1.86 / 1.94 m, 7% > 1 m |
 | after 40 s, 0.43 | **lost: 19 m median, 96 m max, 63% > 1 m** | **lost: 22 m median, 65 m max, 67% > 1 m** |
 
 (median / p95 / max horizontal error.) On main the crowd dragged the accepted alignments
 until the pose had slid off the campus, while the odometry carried the wrong pose on.
+The "after 40 s" rows had the obstacles 1.2 m too high. Re-measured at 0.29 with them on
+the ground (seed 1): main lost the track again (17 m median, 50 m p95, 53 m max, 68%
+> 1 m); the filter at 0.5 m kept it (0.17 / 0.69 / 2.68 m, 3% > 1 m). The 0.43 row was
+not re-measured.
 
 ### Failure modes
 
@@ -1537,12 +1550,76 @@ until the pose had slid off the campus, while the odometry carried the wrong pos
 | **Rejection streak, then no pose** (no odometry): the inlier-ratio gate rejects exact alignments | Boreas alongside and parked | from 11-12% of the voxels |
 | **Drag** (slow bias): accepted alignments pulled toward the obstacles | Boreas without the gate (28%: RMSE x2.6, max 1.6 m); Go2 crowd 50% (p95 x5); Koide crowd 28-43% (drifts off) | 28-50% |
 | **Wrong convergence** (jump) | Boreas without the gate, 43% | 43% |
-| **G2 startup failure**: no unambiguous candidate, manual pose | Go2 crowd and startup obstacles, Koide crowd: 1 of 11 runs started | from 11% of the points |
+| **G2 startup failure**: no unambiguous candidate, manual pose | Go2 crowd and fixed obstacles: 1 of 6 runs started at 11-15%, 0 of 12 at 26-44% ([below](#g2-startup-among-obstacles)); not Koide once the obstacles stand on the ground (11 of 12 at 0-43%) | from 11% of the points on the Go2 |
 | **Blind scan**: too few map points left to register | Boreas alongside 39%, parked lot | 30-40% of the voxels |
 | CPU overrun | not the cause of a failure here; NDT takes longer among people (Go2 at 50%: 46 ms median, 262 ms p95 per alignment, against 20 / 109 ms clean; the scans come at 10 Hz) | - |
 
 Robust as it is: crossing traffic (Boreas, 7% of the voxels, the most a crossing reaches
 around a car), and the Go2 with odometry up to about 40% of the points.
+
+### G2 startup among obstacles
+
+Obstacles from the first scan, quickstart with odometry, 3 seeds per cell (`--seed 1-3`),
+the share reached in points. Koide plays the first 90 s
+(`run_benchmark.py --play-duration 90`; its clean start takes 11-19 s). "Started" is a
+first pose within 1 m; no run started wrong unless noted. "ground band" is the
+experiment below, `--global-ground-band-m 2.0`.
+
+| data, scenario | share | main: started, first pose (s) | ground band: started |
+|---|---|---|---|
+| Go2, crowd | 0 | 3 of 3, 6.8-9.1 s | 3 of 3 |
+| Go2, crowd | 0.12-0.13 | 1 of 3, 12.6 s | 1 of 3 |
+| Go2, crowd | 0.28-0.29 | **0 of 3** | 0 of 3 |
+| Go2, crowd | 0.42-0.44 | **0 of 3** | 0 of 3 |
+| Go2, fixed people and cars (`startup`) | 0.11-0.15 | 1 of 3, 8.3 s | 1 of 3 |
+| Go2, `startup` | 0.26-0.28 | **0 of 3**, and 1 started 2.7 m off | 0 of 3 |
+| Go2, `startup` | 0.32-0.41 | **0 of 3** | 0 of 3 |
+| Koide 02b, crowd | 0 | 3 of 3, 12.5-13.3 s | 3 of 3 |
+| Koide 02b, crowd | 0.13 | 3 of 3, 12.5-19.0 s | 3 of 3 |
+| Koide 02b, crowd | 0.29 | 3 of 3, 14.8-17.3 s | 3 of 3 |
+| Koide 02b, crowd | 0.43-0.44 | 2 of 3, 10.3-12.0 s (first fix 0.43 / 0.08 m) | 2 of 3 (0.16 / 0.56 m) |
+| Koide 02b, crowd 1.2 m too high (2 seeds) | 0.30 | **0 of 2** | 0 of 2 |
+
+Every run that did not start ended at `manual_pose_required` after six queries. The
+Koide `startup` scenario placed nothing: it puts the obstacles around the first pose of
+the ground truth, which for 02b is the start of 02a.
+
+So the G2 startup failure is the Go2's, in the 10 m x 4 m capture room. Koide's failure
+in the first measurement came from the obstacles floating 1.2 m up, into the 2D search's
+band (0.5-5 m above the sensor, 1.8-6.3 m above the ground there); standing on the
+ground, a crowd stays below it. Replaying the floating crowd reproduces the failure.
+
+What was tried for the Go2, offline first (`g2_offline_probe.py --inject`, 30 queries
+in the first 30 s of EIL_Box on the EIL_Mix map, the suite's G2 settings, ground truth
+for the attitude):
+
+- **A height band above the ground** (the primary idea): search and score only the
+  points 2-3 m above the ground, which people (1.7 m) and cars (1.5 m) do not reach.
+  The Go2's MID-360 is mounted upside down 0.4-1.0 m up and sees up to 7 degrees above
+  its plane, so in the room almost nothing lies that high: 0-10 points 2 m above the
+  floor in 5 of 6 scans with a crowd on 0.25, 5-217 at 1.5 m, and those still 8-100%
+  obstacle (the sixth scan, looking down the room: 2216 points, none on people). The band
+  had too few points and fell back to the usual one in 28 of 30 queries; the replays
+  above match main. On Koide's first scan the band's edge at 2 m above the ground kept
+  the truth among the 2D candidates where main's 0.5 m above the sensor lost it to a
+  tie (0.29 and 0.40 of the points), but in the replays main started anyway, from later
+  views. Scoring only the band's points with NDT moved Koide's refined start 0.6 m
+  instead of 0.3-0.5 m (the height is free without the ground) and did not separate the
+  places better. Not merged.
+- **Removing compact clusters** (connected 0.25 m cells more than 0.25 m above the
+  ground within 15 m, at most 1.2 or 2.0 m across, below 2.5 m): it removed 7-15% of
+  the points against 28% on people, since people next to walls or to each other merge
+  with them, and it cost the clean case (truth on top 0.90 → 0.77-0.80). With the crowd
+  at 0.28: truth on top in 0.23-0.27 of the queries (main 0.23), true-pose fitness 0.29-0.30
+  against 0.22 for the best wrong place (main 0.85 against 0.64). Not pursued.
+- **Range weighting** does not apply: the whole room is within 10 m.
+- **Trimmed or inlier-based fitness** was checked offline in the first measurement and
+  did not separate the places either (above).
+
+The ground estimate those checks used (2nd percentile of the levelled heights 1-40 m
+away) was within 0.1 m of the floor on the Go2 (median error 0.03-0.07 m, 120 scans of
+EIL_Box and EIL_Stairs) and -0.01 m on Koide (19 scans; 5% more than 0.5 m off): good
+enough for a band, but the Go2 has nothing above it.
 
 ### The fix: the map-distance prefilter
 

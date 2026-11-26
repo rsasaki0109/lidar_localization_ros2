@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+**Fix (stress test): obstacles stand on the map's ground.** `dynamic_obstacles.py`
+estimated the sensor height from the scan, and for the upright handheld MID-360 on Koide
+found 0.12 m instead of 1.30 m, so its people floated 1.2 m up, into global
+localization's height band. With `--map` (and no `--ground-z` or `--sensor-height`) it
+now takes the height from the map under the first pose. Re-measured with 3 seeds, Koide
+`outdoor_hard_02b` started among crowds on 13% and 29% of the points in 3 of 3 runs and
+on 43% in 2 of 3 (earlier: not at all), with or without a height band at 2 m above the
+ground. The Go2 startup failure stands: 1 of 6 runs at 11-15%, 0 of 12 at 26-44%. A
+height band above the ground, scoring only those points, removing compact clusters and
+trimmed fitness did not help it (its upside-down sensor sees almost nothing above
+people); no runtime change. `run_benchmark.py --play-duration SEC` plays only the
+start of each bag, and `g2_offline_probe.py --inject ARGS` renders obstacles into its
+scans ([docs/benchmark.md](docs/benchmark.md#g2-startup-among-obstacles)).
+
 **New, opt-in: the map-distance prefilter for scans with people and vehicles the map
 lacks.** `map_distance_filter_m` (default 0: off; quickstart `--map-distance-filter-m`)
 aligns only the scan points within that distance of the map at the predicted pose, so
@@ -20,11 +34,12 @@ Measured with the new stress test (one run per cell): on Boreas, trucks alongsid
 every scan by its inlier ratio and stop publishing (6-48% of scans accepted); with
 `map_distance_filter_m: 0.5` it tracked all three (98-100%, RMSE 0.20-0.27 m). A crowd on
 28% of the points after the start sent Koide `outdoor_hard_02b` 144 m off; with the
-filter it stayed within 1.9 m. On the Go2 with a crowd on 50% of the points, p95 error
+filter it stayed within 1.9 m (with the crowd standing on the ground, see the fix below:
+17 m median error against 0.17 m). On the Go2 with a crowd on 50% of the points, p95 error
 fell from 0.71 to 0.27 m. Clean Boreas, Istanbul, Koide and four Go2 cross-session cases
-did not get worse. It does not help global localization, which in these tests started
-in 1 of 11 runs with 11% or more of the points on obstacles, nor scans the obstacles
-fill (Boreas at 39%, Koide at 43%). See
+did not get worse. It does not help global localization (on the Go2 the startup came
+through in 1 of 6 runs with 11-15% of the points on obstacles and in none above), nor
+scans the obstacles fill (Boreas at 39%, Koide at 43%). See
 [docs/troubleshooting.md](docs/troubleshooting.md#symptom-tracking-is-lost-among-people-and-vehicles-dynamic-obstacles).
 
 **New: a dynamic-obstacle stress test.** `tools/benchmark/dynamic_obstacles.py` renders

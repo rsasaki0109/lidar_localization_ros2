@@ -295,7 +295,13 @@ People, cars and trucks that are not in the map reach the localizer in three way
 - **Global localization cannot tell places apart.** The startup scores candidates by
   the mean squared distance of the scan to the map, which the obstacle points dominate
   at every candidate alike, so the true place no longer stands out and every view is
-  ambiguous.
+  ambiguous. This depends on what the sensor sees above the obstacles: the 2D search
+  uses only the points 0.5-5 m above the sensor (`--global-z-min`, `--global-z-max`),
+  so a handheld or vehicle sensor with walls and trees around started among crowds on
+  13-43% of the points (Koide, 11 of 12 runs), while the Go2's upside-down MID-360 in
+  a small room, which searches from its own plane up (`--global-z-min 0`) and sees
+  almost nothing above people, started in 1 of 6 runs at 11-15% and none above
+  ([benchmark](benchmark.md#g2-startup-among-obstacles)).
 
 **What helps while tracking: the map-distance prefilter.** It aligns only the scan
 points within `map_distance_filter_m` of the map at the predicted pose, so the
@@ -338,7 +344,10 @@ What it does not do:
 
 - **It does not help the startup.** Global localization has no pose to filter at. In a
   crowd, give the start pose (`/initialpose`, `--initial-pose`, or the saved pose
-  quickstart restores), or start before the crowd gathers.
+  quickstart restores), or start before the crowd gathers. Using only the scan points
+  2 m or more above the ground, removing compact clusters, or trimming the fitness did
+  not help the Go2's startups either: it sees almost nothing that high, and people next
+  to walls merge with them ([what was tried](benchmark.md#g2-startup-among-obstacles)).
 - **It cannot fix a scan the obstacles fill.** Measured on Boreas, trucks around the car
   on 40% of the scan's voxels stopped the localizer with or without it.
 - **The NDT_OMP and GICP_OMP backends only.** small_gicp has no target search tree to
