@@ -255,6 +255,7 @@ def run_once(
     _, duration = bag_start_and_duration(bag)
     offset = float(case.get("start_offset_sec", 0.0))
     rate = float(case.get("rate", 1.0))
+    played = played_duration(case, duration)
 
     recorder = start(
         [
@@ -287,6 +288,8 @@ def run_once(
     play_cmd = ["ros2", "bag", "play", str(bag), "--clock", "--rate", str(rate)]
     if offset > 0.0:
         play_cmd += ["--start-offset", str(offset)]
+    if played < duration - offset:
+        play_cmd += ["--playback-duration", f"{played:g}"]
     play_cmd += ["--topics", *case["topics"]]
     if injection:
         topic = inject_topic(case)
@@ -327,7 +330,7 @@ def run_once(
             quickstart,
             run_dir / "quickstart.yaml",
             expect_odometry,
-            (duration - offset) / rate + 120.0,
+            played / rate + 120.0,
         )
     if invalid is None:
         time.sleep(5.0)
@@ -364,6 +367,13 @@ def supervise(
     return None
 
 
+def played_duration(case: dict, duration: float) -> float:
+    """Seconds of the bag the case plays from its offset (play_duration_sec caps it)."""
+    remaining = duration - float(case.get("start_offset_sec", 0.0))
+    cap = float(case.get("play_duration_sec", 0.0) or 0.0)
+    return min(remaining, cap) if cap > 0.0 else remaining
+
+
 def score(case: dict, run_dir: Path) -> benchmark_eval.RunScore:
     bag_start, duration = bag_start_and_duration(Path(case["bag"]))
     start_sec = bag_start + float(case.get("start_offset_sec", 0.0))
@@ -372,7 +382,7 @@ def score(case: dict, run_dir: Path) -> benchmark_eval.RunScore:
         benchmark_eval.load_tum(case["gt"]),
         start_sec,
         benchmark_eval.load_alignment_levels(run_dir / "alignment.jsonl"),
-        end_sec=bag_start + duration,
+        end_sec=start_sec + played_duration(case, duration),
     )
     odometry_log = run_dir / "odometry.log"
     if odometry_log.exists():
@@ -413,6 +423,13 @@ def main(argv=None) -> int:
         help="dynamic_obstacles.py arguments for every case, e.g. "
         "'--scenario crowd --fraction 0.25'",
     )
+    parser.add_argument(
+        "--play-duration",
+        type=float,
+        default=0.0,
+        metavar="SEC",
+        help="play only this many seconds of each bag (e.g. to score startups)",
+    )
     args = parser.parse_args(argv)
 
     cases = [
@@ -424,6 +441,8 @@ def main(argv=None) -> int:
         case["quickstart_args"] = list(case["quickstart_args"]) + shlex.split(
             args.quickstart_args
         )
+        if args.play_duration > 0.0:
+            case["play_duration_sec"] = args.play_duration
     results: dict[str, list[benchmark_eval.RunScore]] = {}
     invalid: list[str] = []
     for case in cases:

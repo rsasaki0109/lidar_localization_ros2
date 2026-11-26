@@ -78,8 +78,13 @@ def pose_at(trajectory: np.ndarray, stamp: float):
     return rotation[0], translation[0]
 
 
-def read_scans(bag: Path, stamps_wanted: list[float], topic: str = "/livox/lidar"):
-    """(header stamp, xyz) of the first cloud at or after each wanted stamp."""
+def read_scans(
+    bag: Path, stamps_wanted: list[float], topic: str = "/livox/lidar", transform=None
+):
+    """(header stamp, xyz) of the first cloud at or after each wanted stamp.
+
+    TRANSFORM(stamp, xyz) -> xyz, if given, edits each cloud (obstacle injection).
+    """
     import rosbag2_py
     from rclpy.serialization import deserialize_message
     from sensor_msgs.msg import PointCloud2
@@ -101,10 +106,44 @@ def read_scans(bag: Path, stamps_wanted: list[float], topic: str = "/livox/lidar
         if stamp + 1.0e-6 < wanted[index]:
             continue
         xyz = bbs_engine.pointcloud2_xyz_array(msg).astype(np.float64)
-        scans.append((stamp, xyz[np.isfinite(xyz).all(axis=1)]))
+        xyz = xyz[np.isfinite(xyz).all(axis=1)]
+        if transform is not None:
+            xyz = transform(stamp, xyz)
+        scans.append((stamp, xyz))
         while index < len(wanted) and wanted[index] <= stamp + 1.0e-6:
             index += 1
     return scans
+
+
+def obstacle_injector(args):
+    """A read_scans transform rendering dynamic_obstacles.py obstacles, or None."""
+    if not args.inject:
+        return None
+    import shlex
+
+    import dynamic_obstacles as dyn
+
+    options = dyn.parse_args(
+        ["--input", "-", "--output", "-", "--gt", str(args.ground_truth)]
+        + shlex.split(args.inject)
+    )
+    occupancy = (
+        dyn.MapOccupancy(dyn.read_map_points(options.map)) if options.map else None
+    )
+    injector = dyn.Injector(options, dyn.Trajectory.load(options.gt), occupancy)
+    shares = []
+
+    def transform(stamp, xyz):
+        rendered, _obstacles = injector.process(stamp, xyz)
+        if rendered is None:
+            return xyz
+        shares.append(rendered.point_fraction)
+        transform.mean_share = float(np.mean(shares))
+        return np.concatenate([xyz[rendered.keep], rendered.obstacle_points])
+
+    transform.mean_share = 0.0
+    args.injector = transform
+    return transform
 
 
 def level_scan(xyz: np.ndarray, odom_rotation: np.ndarray) -> np.ndarray:
@@ -172,7 +211,9 @@ def probe(
         needed.append(stamp)
         if accumulate_sec > 0.0:
             needed.extend(np.arange(stamp - accumulate_sec, stamp, 0.1).tolist())
-    scans = read_scans(args.bag, sorted(set(needed)), args.topic)
+    scans = read_scans(
+        args.bag, sorted(set(needed)), args.topic, obstacle_injector(args)
+    )
     scan_by_stamp = {round(s, 3): xyz for s, xyz in scans}
     scan_stamps = np.array(sorted(scan_by_stamp))
 
@@ -275,6 +316,11 @@ def probe(
                 "near_rank": near_rank,
                 "truth_bbs_score": truth_bbs,
                 "sparse_band_search": result.sparse_band_search,
+                # The ground-band experiment's fields, where the engine has them.
+                "ground_z": getattr(result, "ground_z_m", None),
+                "band_z_min": getattr(result, "band_z_min_m", None),
+                "ground_band_used": getattr(result, "band_z_min_m", None)
+                not in (None, config.z_min_m),
                 "truth_fitness": truth_fitness,
                 "candidates": candidates,
             }
@@ -436,6 +482,8 @@ def summarize(queries: list[dict]) -> dict:
             )
         ),
         "runtime_median_sec": float(np.median([q["runtime_sec"] for q in queries])),
+        "sparse_band_searches": sum(bool(q["sparse_band_search"]) for q in queries),
+        "ground_band_used": sum(bool(q.get("ground_band_used")) for q in queries),
         "startup": simulate_startup(queries),
         "consensus_pairs": consensus_pairs(queries, gated_only=False),
         "gated_consensus_pairs": consensus_pairs(queries, gated_only=True),
@@ -459,6 +507,13 @@ def main(argv=None) -> int:
     parser.add_argument("--window-sec", type=float, default=40.0)
     parser.add_argument("--topic", default="/livox/lidar")
     parser.add_argument(
+        "--inject",
+        default="",
+        metavar="ARGS",
+        help="dynamic_obstacles.py options: render obstacles into the scans "
+        "(placed from --ground-truth)",
+    )
+    parser.add_argument(
         "--yaw-sweep-offset",
         action="store_true",
         help="start each query's yaw sweep at a sample fixed by the scan stamp",
@@ -475,6 +530,8 @@ def main(argv=None) -> int:
     )
     queries = probe(args, config, args.accumulate_sec, args.yaw_sweep_offset)
     summary = summarize(queries)
+    if args.inject:
+        summary["obstacle_share"] = round(args.injector.mean_share, 3)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(
         json.dumps(
@@ -482,6 +539,7 @@ def main(argv=None) -> int:
                 "config": dataclasses.asdict(config),
                 "accumulate_sec": args.accumulate_sec,
                 "yaw_sweep_offset": args.yaw_sweep_offset,
+                "inject": args.inject,
                 "summary": summary,
                 "queries": queries,
             },
