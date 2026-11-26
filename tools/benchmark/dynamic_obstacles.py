@@ -339,12 +339,38 @@ def scenario_obstacles(
 # Free space
 
 
+GROUND_CELL_M = 0.5
+
+
 class MapOccupancy:
     """Occupied voxels of the map, to skip obstacles placed inside structure."""
 
     def __init__(self, points: np.ndarray, leaf: float = 0.4):
         self.leaf = leaf
-        self.keys = np.unique(self._keys(np.asarray(points, dtype=float)))
+        points = np.asarray(points, dtype=float)
+        self.keys = np.unique(self._keys(points))
+        # Lowest map height per GROUND_CELL_M column, for the ground under the sensor.
+        cells = np.floor(points[:, :2] / GROUND_CELL_M).astype(np.int64)
+        order = np.lexsort((points[:, 2], cells[:, 1], cells[:, 0]))
+        cells, heights = cells[order], points[order, 2]
+        first = np.r_[True, (np.diff(cells, axis=0) != 0).any(axis=1)]
+        self.ground_cells = {
+            (int(cx), int(cy)): float(z)
+            for (cx, cy), z in zip(cells[first], heights[first])
+        }
+
+    def ground_z(self, x: float, y: float, radius: float = 3.0) -> float | None:
+        """The ground under (x, y): the median of the lowest map heights of the
+        columns within RADIUS, or None where the map has fewer than 5 columns."""
+        reach = math.ceil(radius / GROUND_CELL_M)
+        cx, cy = math.floor(x / GROUND_CELL_M), math.floor(y / GROUND_CELL_M)
+        lows = [
+            self.ground_cells[(cx + i, cy + j)]
+            for i in range(-reach, reach + 1)
+            for j in range(-reach, reach + 1)
+            if (cx + i, cy + j) in self.ground_cells
+        ]
+        return float(np.median(lows)) if len(lows) >= 5 else None
 
     def _keys(self, points: np.ndarray) -> np.ndarray:
         return voxel_keys(points, self.leaf)
@@ -833,7 +859,18 @@ class Injector:
             return None, []
         rotation, position = self.traj.pose(stamp)
         if self.sensor_height is None:
-            self.sensor_height = estimate_sensor_height(xyz, rotation)
+            # From the map where there is one: an upright MID-360 sees no ground
+            # within 10 m from 1.3 m up, so the scan alone under-estimates it.
+            ground = (
+                self.occupancy.ground_z(position[0], position[1])
+                if self.occupancy is not None
+                else None
+            )
+            self.sensor_height = (
+                float(position[2] - ground)
+                if ground is not None
+                else estimate_sensor_height(xyz, rotation)
+            )
             print(
                 f"sensor height {self.sensor_height:.2f} m", file=sys.stderr, flush=True
             )
@@ -882,7 +919,9 @@ def parse_args(argv=None):
     parser.add_argument("--min-range", type=float, default=0.5)
     parser.add_argument("--max-range", type=float, default=100.0)
     parser.add_argument(
-        "--sensor-height", default="auto", help="over the ground, m (auto: from a scan)"
+        "--sensor-height",
+        default="auto",
+        help="over the ground, m (auto: from --map under the first pose, else a scan)",
     )
     parser.add_argument("--ground-z", type=float, help="a level ground at this map z")
     parser.add_argument("--map", type=Path, help="skip obstacles that cut this map")

@@ -164,6 +164,14 @@ class TestRunBenchmark(unittest.TestCase):
             rb.injector_command({"topics": ["/a"], "gt": "g"}, Path("r"), [])
         )
 
+    def test_play_duration_caps_the_replay_from_the_offset(self):
+        self.assertEqual(rb.played_duration({}, 300.0), 300.0)
+        self.assertEqual(rb.played_duration({"start_offset_sec": 20.0}, 300.0), 280.0)
+        case = {"start_offset_sec": 20.0, "play_duration_sec": 90.0}
+        self.assertEqual(rb.played_duration(case, 300.0), 90.0)
+        case["play_duration_sec"] = 500.0
+        self.assertEqual(rb.played_duration(case, 300.0), 280.0)
+
     def test_quickstart_args_are_added_to_every_case(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

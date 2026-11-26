@@ -169,6 +169,38 @@ def test_sensor_height_is_estimated_from_the_ground():
     assert math.isclose(dyn.estimate_sensor_height(xyz, np.eye(3)), 1.8, abs_tol=0.05)
 
 
+def test_map_ground_sets_the_sensor_height():
+    # Floor at z = 0.5 with a wall rising above it; columns without a map point
+    # are not used.
+    floor = np.array(
+        [[x, y, 0.5] for x in np.arange(-5, 5, 0.2) for y in np.arange(-5, 5, 0.2)]
+    )
+    wall = np.array([[2.0, y, z] for y in np.arange(-5, 5, 0.2) for z in (1, 2, 3)])
+    occupancy = dyn.MapOccupancy(np.vstack([floor, wall]))
+    assert math.isclose(occupancy.ground_z(0.0, 0.0), 0.5)
+    assert occupancy.ground_z(50.0, 50.0) is None
+    # An upright sensor 1.3 m up sees no ground near it; the map gives the height.
+    traj = _straight_trajectory(height=1.8)
+    args = types.SimpleNamespace(
+        pattern="rings:-15:15:31:1",
+        sensor_height="auto",
+        ground_z=None,
+        active=None,
+        scenario="crowd",
+        seed=0,
+        fraction=None,
+        obstacle_leaf=0.0,
+        min_range=0.5,
+        max_range=100.0,
+        count_leaf=0.0,
+    )
+    injector = dyn.Injector(args, traj, occupancy)
+    injector.process(100.0, _ring_scan(height=0.3))
+    _rotation, position = traj.pose(100.0)
+    expected = position[2] - occupancy.ground_z(position[0], position[1])
+    assert math.isclose(injector.sensor_height, expected)
+
+
 def test_trajectory_interpolates_and_reports_heading():
     rows = np.array(
         [
