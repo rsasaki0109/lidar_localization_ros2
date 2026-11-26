@@ -28,6 +28,12 @@ usage: boreas_replay.py FIXTURE_DIR OUT_DIR --ws WS [--preset YAML] [--set KEY=V
 --wrap runs the localizer under COMMAND, e.g. 'taskset -c 0,1' or a script that puts
 it into a memory cgroup and execs it. Each --companion COMMAND (e.g. an odometry node)
 starts once the localizer is active, logging to companionN.log.
+
+--inject ARGS renders synthetic dynamic obstacles into the clouds
+(dynamic_obstacles.py ARGS, e.g. '--scenario alongside --fraction 0.25'): the bag's
+cloud topic is played as TOPIC_raw and the injector republishes it on TOPIC, placing
+the obstacles from the fixture's reference.tum. Its per-scan log is obstacles.csv;
+summary.json adds the achieved obstacle share and the injector's time per scan.
 """
 
 import argparse
@@ -67,6 +73,10 @@ def score(poses, reference, scans, diagnostics, accepted):
     )
     index = np.where(earlier, index - 1, index)
     matched = abs(reference[index, 0] - poses[:, 0]) < MATCH_SEC
+    if not matched.any():
+        # Poses, but none at a scan stamp (e.g. only the initial pose).
+        result["matched_poses"] = 0
+        return result
     diff = poses[matched, 1:4] - reference[index[matched], 1:4]
     error = np.linalg.norm(diff, axis=1)
     result["poses_over_1_m"] = int((error > 1.0).sum())
@@ -92,6 +102,25 @@ def score(poses, reference, scans, diagnostics, accepted):
         }
     )
     return result
+
+
+def obstacle_summary(path):
+    """The injector's achieved obstacle share and time per scan (dynamic_obstacles.py
+    --log)."""
+    if not Path(path).exists():
+        return {}
+    rows = np.genfromtxt(path, delimiter=",", names=True)
+    rows = np.atleast_1d(rows)
+    if not len(rows):
+        return {}
+    return {
+        "obstacle_share_mean": round(float(np.mean(rows["fraction"])), 4),
+        "obstacle_share_median": round(float(np.median(rows["fraction"])), 4),
+        "obstacle_point_share_mean": round(float(np.mean(rows["point_fraction"])), 4),
+        "injector_ms_median": round(float(np.median(rows["ms"])), 1),
+        "injector_ms_p95": round(float(np.percentile(rows["ms"], 95)), 1),
+        "injected_scans": len(rows),
+    }
 
 
 def bag_message_count(bag, topic):
@@ -133,6 +162,7 @@ def main():
     parser.add_argument("--wrap", default="", metavar="COMMAND")
     parser.add_argument("--companion", action="append", default=[], metavar="COMMAND")
     parser.add_argument("--sample-sec", type=float, default=1.0)
+    parser.add_argument("--inject", default="", metavar="ARGS")
     args = parser.parse_args()
     points, imu = args.points_topic, args.imu_topic
 
@@ -240,6 +270,31 @@ def main():
                 started.pid, args.out / f"{name}_resources.csv", args.sample_sec
             )
         own = session.node.get_name()
+        if args.inject:
+            injector = session.spawn(
+                [
+                    sys.executable,
+                    str(Path(__file__).resolve().parent / "dynamic_obstacles.py"),
+                    "--input",
+                    f"{points}_raw",
+                    "--output",
+                    points,
+                    "--gt",
+                    str(args.fixture / "reference.tum"),
+                    "--log",
+                    str(args.out / "obstacles.csv"),
+                    "--reliable",
+                    *shlex.split(args.inject),
+                ],
+                "injector",
+            )
+            deadline = time.monotonic() + 60
+            while not session.node.get_subscriptions_info_by_topic(f"{points}_raw"):
+                session.require_running("injector")
+                if time.monotonic() > deadline:
+                    raise RuntimeError("injector did not subscribe; see injector.log")
+                session.spin_for(0.1)
+            del injector
 
         def subscribers():
             return {
@@ -276,6 +331,7 @@ def main():
                 "--topics",
                 points,
                 imu,
+                *(["--remap", f"{points}:={points}_raw"] if args.inject else []),
             ],
             "player",
         )
@@ -323,6 +379,9 @@ def main():
             ),
         }
     )
+    if args.inject:
+        result.update(obstacle_summary(args.out / "obstacles.csv"))
+        result["inject"] = args.inject
     (args.out / "summary.json").write_text(json.dumps(result, indent=2) + "\n")
     print(
         f"RMSE {result.get('rmse_m', float('nan')):.3f} m (horizontal "

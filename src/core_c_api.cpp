@@ -109,6 +109,8 @@ lidarloc_config lidarloc_default_config(void)
   c.inlier_ratio_distance_m = 0.5;
   c.inlier_ratio_min_points = 200;
   c.localizability = 1;
+  c.map_distance_filter_m = 0.0;
+  c.map_distance_filter_min_kept_ratio = 0.3;
   return c;
 }
 
@@ -202,6 +204,14 @@ int lidarloc_align(
       return 0;
     }
     result->target_ready = 1;
+    if (core->config.map_distance_filter_m > 0.0) {
+      const auto filtered = core->engine.setSourceNearTarget(
+        source, guess_refined, core->config.map_distance_filter_m,
+        core->config.map_distance_filter_min_kept_ratio);
+      result->map_distance_filter_kept_points = filtered.kept_points;
+      result->map_distance_filter_applied =
+        filtered.status == lidar_localization::MapDistanceFilterStatus::kApplied ? 1 : 0;
+    }
     const auto aligned = core->engine.align(guess_refined);
     result->has_converged = aligned.has_converged ? 1 : 0;
     result->iterations = aligned.iterations;

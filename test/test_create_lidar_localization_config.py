@@ -159,6 +159,21 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
             config_tool.make_params(args(trusted_global_start_std_m=0.1))[key], 0.0
         )
 
+    def test_map_distance_filter_is_opt_in(self):
+        self.assertEqual(config_tool.make_params(args())["map_distance_filter_m"], 0.0)
+        self.assertEqual(
+            config_tool.make_params(args(map_distance_filter_m=1.0))[
+                "map_distance_filter_m"
+            ],
+            1.0,
+        )
+        self.assertEqual(
+            config_tool.make_params(args(map_distance_filter_m=-1.0))[
+                "map_distance_filter_m"
+            ],
+            0.0,
+        )
+
     def test_relative_map_path_is_written_as_absolute_path(self):
         relative_path = "maps/site.pcd"
         params = config_tool.make_params(args(map_path=relative_path))

@@ -532,6 +532,17 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
         ),
     )
     tuning.add_argument(
+        "--map-distance-filter-m",
+        type=float,
+        default=0.0,
+        help=advanced(
+            "align only the scan points within this distance of the map at the "
+            "predicted pose, for people and vehicles the map lacks; widened with "
+            "the time since the last accepted pose, off at startup "
+            "(0: off; docs/troubleshooting.md)"
+        ),
+    )
+    tuning.add_argument(
         "--trusted-global-start-std-m",
         type=float,
         default=0.0,
@@ -783,6 +794,8 @@ def _config_args(args, cloud_topic: str, imu_topic: str):
         argv.extend(
             ["--trusted-global-start-std-m", str(args.trusted_global_start_std_m)]
         )
+    if args.map_distance_filter_m > 0.0:
+        argv.extend(["--map-distance-filter-m", str(args.map_distance_filter_m)])
     return config_tool.build_arg_parser().parse_args(argv)
 
 

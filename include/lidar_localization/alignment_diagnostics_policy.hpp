@@ -120,6 +120,12 @@ struct AlignmentDiagnosticValuesInput
   // fitness_score is what the gate read.
   double registration_fitness_score{NAN};
   double inlier_ratio{NAN};
+  // The map-distance prefilter of the attempt (map_distance_filter.hpp): its status,
+  // distance and the share of the points within it (NaN when not run).
+  std::string map_distance_filter_status{"disabled"};
+  double map_distance_filter_m{NAN};
+  double map_distance_filter_kept_ratio{NAN};
+  double map_distance_filter_time_sec{NAN};
 };
 
 inline const char * boolString(bool value)
@@ -329,6 +335,10 @@ inline std::vector<DiagnosticKeyValue> buildAlignmentDiagnosticValues(
   }
   append("registration_fitness_score", std::to_string(input.registration_fitness_score));
   append("inlier_ratio", std::to_string(input.inlier_ratio));
+  append("map_distance_filter_status", input.map_distance_filter_status);
+  append("map_distance_filter_m", std::to_string(input.map_distance_filter_m));
+  append("map_distance_filter_kept_ratio", std::to_string(input.map_distance_filter_kept_ratio));
+  append("map_distance_filter_time_sec", std::to_string(input.map_distance_filter_time_sec));
   return values;
 }
 

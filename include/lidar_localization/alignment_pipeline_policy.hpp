@@ -40,6 +40,13 @@ struct AlignmentAttempt
   double seed_yaw_since_accept_deg{std::numeric_limits<double>::quiet_NaN()};
   double accepted_gap_sec{std::numeric_limits<double>::quiet_NaN()};
   RegistrationLocalizabilityMetrics registration_localizability;
+  // The map-distance prefilter (map_distance_filter.hpp): its status name, the distance
+  // (NaN when not decided) and the points before it and within the distance.
+  const char * map_distance_filter_status{"disabled"};
+  double map_distance_filter_m{std::numeric_limits<double>::quiet_NaN()};
+  std::size_t map_distance_filter_input_points{0};
+  std::size_t map_distance_filter_kept_points{0};
+  double map_distance_filter_time_sec{0.0};
 };
 
 struct AlignmentPipelineInput

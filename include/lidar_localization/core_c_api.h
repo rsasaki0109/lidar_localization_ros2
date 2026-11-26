@@ -46,6 +46,13 @@ typedef struct lidarloc_config
   size_t inlier_ratio_min_points;
   /* Report the NDT_OMP Hessian's localizability. */
   int localizability;
+  /* map_distance_filter.hpp: above 0, align only the scan points within this
+   * distance of the map at the guess (people and vehicles the map lacks), or the
+   * whole scan when fewer than map_distance_filter_min_kept_ratio of them are. The
+   * guess must then be within about this distance of the pose: leave it 0 for a
+   * guess that is not a tracked pose (a start, a reset, a long gap). */
+  double map_distance_filter_m;
+  double map_distance_filter_min_kept_ratio;
 } lidarloc_config;
 
 typedef struct lidarloc_result
@@ -70,6 +77,10 @@ typedef struct lidarloc_result
   double weakest_eigenvector[6];
   double weak_ratio;
   size_t correspondence_count;
+  /* With map_distance_filter_m: the source points within it of the map at the
+   * guess, and whether only those were aligned. */
+  size_t map_distance_filter_kept_points;
+  int map_distance_filter_applied;
 } lidarloc_result;
 
 /* The node's parameter defaults, but NDT_OMP (the node's default is PCL's NDT)

@@ -13,7 +13,15 @@ odom>``) instead of discovering them, and a run whose configuration still has
 odometry off is marked invalid (``invalid.txt``), left out of the scores and
 makes the exit code 1.
 
+With ``--inject ARGS`` (or a case's ``inject: [ARGS]``), synthetic dynamic obstacles
+are rendered into the cloud (dynamic_obstacles.py, placed from the case's ground
+truth): the bag plays the case's ``inject_topic`` (default: its first topic) as
+TOPIC_raw and the injector republishes it as TOPIC, which quickstart and global
+localization read. Odometry reads TOPIC as well unless its arguments name
+TOPIC_raw. The injector's per-scan log is obstacles.csv in the run directory.
+
 usage: run_benchmark.py SUITE.yaml --out DIR [--repeats N] [--case NAME ...]
+                        [--inject ARGS]
        run_benchmark.py SUITE.yaml --out DIR --evaluate-only
 """
 
@@ -204,12 +212,41 @@ def wait_for_odometry_tf(case: dict, env: dict) -> tuple[str | None, str]:
     return None, (result.stderr or result.stdout).strip()
 
 
+def injector_command(case: dict, run_dir: Path, extra: list[str]) -> list[str] | None:
+    """The dynamic_obstacles.py command for CASE, or None without injection."""
+    args = [str(arg) for arg in case.get("inject", [])] + list(extra)
+    if not args:
+        return None
+    topic = inject_topic(case)
+    return [
+        sys.executable,
+        str(TOOL_DIR / "dynamic_obstacles.py"),
+        "--input",
+        f"{topic}_raw",
+        "--output",
+        topic,
+        "--gt",
+        str(case["gt"]),
+        "--log",
+        str(run_dir / "obstacles.csv"),
+        *args,
+    ]
+
+
+def inject_topic(case: dict) -> str:
+    return str(case.get("inject_topic", case["topics"][0]))
+
+
 def run_once(
-    case: dict, run_dir: Path, domain_id: int, quickstart_cmd: list[str]
+    case: dict,
+    run_dir: Path,
+    domain_id: int,
+    quickstart_cmd: list[str],
+    inject: list[str] | None = None,
 ) -> str | None:
     """Run the case once; return why the run is invalid, or None."""
     run_dir.mkdir(parents=True, exist_ok=True)
-    for stale in (INVALID_FILE, "quickstart.yaml"):
+    for stale in (INVALID_FILE, "quickstart.yaml", "obstacles.csv"):
         (run_dir / stale).unlink(missing_ok=True)
     env = dict(os.environ)
     env["ROS_DOMAIN_ID"] = str(domain_id)
@@ -242,11 +279,18 @@ def run_once(
             run_dir / "odometry.log",
             env,
         )
+    injection = injector_command(case, run_dir, list(inject or []))
+    injector = None
+    if injection:
+        injector = start(injection, run_dir / "injector.log", env)
     time.sleep(3.0)
     play_cmd = ["ros2", "bag", "play", str(bag), "--clock", "--rate", str(rate)]
     if offset > 0.0:
         play_cmd += ["--start-offset", str(offset)]
     play_cmd += ["--topics", *case["topics"]]
+    if injection:
+        topic = inject_topic(case)
+        play_cmd += ["--remap", f"{topic}:={topic}_raw"]
     play = start(play_cmd, run_dir / "play.log", env)
     play_started = time.monotonic()
     quickstart_args = list(case["quickstart_args"])
@@ -287,7 +331,7 @@ def run_once(
         )
     if invalid is None:
         time.sleep(5.0)
-    for process in (play, quickstart, odometry, recorder):
+    for process in (play, quickstart, odometry, injector, recorder):
         stop(process)
     if invalid:
         (run_dir / INVALID_FILE).write_text(invalid + "\n", encoding="utf-8")
@@ -355,6 +399,20 @@ def main(argv=None) -> int:
         help="command that starts the quickstart (e.g. a source checkout's script)",
     )
     parser.add_argument("--domain-id", type=int, default=120)
+    parser.add_argument(
+        "--quickstart-args",
+        default="",
+        metavar="ARGS",
+        help="more quickstart arguments for every case; pass them with '=', e.g. "
+        "--quickstart-args='--map-distance-filter-m=0.5'",
+    )
+    parser.add_argument(
+        "--inject",
+        default="",
+        metavar="ARGS",
+        help="dynamic_obstacles.py arguments for every case, e.g. "
+        "'--scenario crowd --fraction 0.25'",
+    )
     args = parser.parse_args(argv)
 
     cases = [
@@ -362,6 +420,10 @@ def main(argv=None) -> int:
         for case in load_suite(args.suite)
         if not args.case or case["name"] in args.case
     ]
+    for case in cases:
+        case["quickstart_args"] = list(case["quickstart_args"]) + shlex.split(
+            args.quickstart_args
+        )
     results: dict[str, list[benchmark_eval.RunScore]] = {}
     invalid: list[str] = []
     for case in cases:
@@ -373,7 +435,13 @@ def main(argv=None) -> int:
                 print(
                     f"[benchmark] {case['name']} run {repeat + 1}/{repeats}", flush=True
                 )
-                run_once(case, run_dir, args.domain_id, shlex.split(args.quickstart))
+                run_once(
+                    case,
+                    run_dir,
+                    args.domain_id,
+                    shlex.split(args.quickstart),
+                    shlex.split(args.inject),
+                )
             reason = invalid_reason(run_dir)
             if reason:
                 invalid.append(f"{case['name']} run {repeat + 1}: {reason}")

@@ -311,6 +311,12 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         )
         if getattr(args, "odom_tf_prediction", False)
         else 0.0,
+        # Opt-in: align only the scan points within this distance of the map at the
+        # predicted pose, so people and vehicles the map lacks neither drag the
+        # alignment nor fail the gates (docs/troubleshooting.md).
+        "map_distance_filter_m": max(
+            float(getattr(args, "map_distance_filter_m", 0.0)), 0.0
+        ),
         "global_frame_id": args.global_frame,
         "odom_frame_id": args.odom_frame,
         "base_frame_id": args.base_frame,
@@ -529,6 +535,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "claims at most this horizontal standard deviation, and hold the seed "
         "correction guards from the first scan after it instead of warming them up "
         "(0: off).",
+    )
+    parser.add_argument(
+        "--map-distance-filter-m",
+        type=float,
+        default=0.0,
+        help="Align only the scan points within this distance of the map at the "
+        "predicted pose, widened with the time since the last accepted pose and off "
+        "at startup, for scans with people and vehicles the map lacks (0: off).",
     )
     parser.add_argument("--global-frame", default="map")
     parser.add_argument(

@@ -16,6 +16,12 @@ and scans but no ROS graph. It is the same code the node runs, not a copy.
     background (`local_map_async_rebuild`), and failed crops have a guard.
   - The NDT initializer for the GICP backends.
   - One alignment, with its fitness, inlier ratio and (NDT_OMP) localizability.
+  - The map-distance prefilter (`setSourceNearTarget`,
+    [map_distance_filter.hpp](../include/lidar_localization/map_distance_filter.hpp)): the
+    scan points farther than a distance from the target at the guess, such as people and
+    vehicles the map lacks, are left out of the alignment and its fitness. The policy
+    that decides when the guess is trustworthy enough (`decideMapDistanceFilter`) is in
+    the same header; the node applies it with `map_distance_filter_m`.
   - Its messages go to a `LogSink` you provide. The node forwards them to its ROS logger.
 - A C API over it, for other languages and for FFIs
   ([core_c_api.h](../include/lidar_localization/core_c_api.h)):
@@ -34,8 +40,13 @@ and scans but no ROS graph. It is the same code the node runs, not a copy.
   1. Voxel-filters the scan, as `enable_scan_voxel_filter` does in the node.
   2. Refines the guess with the NDT initializer while that is still running.
   3. Sets the target around the guess.
-  4. Aligns the scan.
-  5. Reports the result.
+  4. With `map_distance_filter_m` above 0, keeps only the scan points within that
+     distance of the target at the guess (the whole scan when fewer than
+     `map_distance_filter_min_kept_ratio` of them are). The caller decides when its guess
+     is good enough for that; leave it 0 at a start or after a reset.
+  5. Aligns the scan.
+  6. Reports the result, with `map_distance_filter_kept_points` and
+     `map_distance_filter_applied`.
 - The policy headers (`include/lidar_localization/*_policy.hpp`) are ROS-free as well. Seed
   selection, the measurement gate, retries and recovery can be called directly; see the
   node's `component_*.cpp` for how they are combined.

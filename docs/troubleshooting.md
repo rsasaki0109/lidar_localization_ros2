@@ -279,6 +279,71 @@ scored 0.35-0.38, 0.89-0.90 and 0.55 m 3D RMSE, against 0.45-0.47, 0.93-0.97 and
 0.56-0.57 m without the gate
 ([experiments/inlier_ratio_gate](../experiments/inlier_ratio_gate/README.md#boreas-and-istanbul)).
 
+## Symptom: Tracking Is Lost Among People and Vehicles (Dynamic Obstacles)
+
+People, cars and trucks that are not in the map reach the localizer in three ways
+([benchmark: dynamic obstacles](benchmark.md#dynamic-obstacles)):
+
+- **The inlier-ratio gate rejects good alignments.** With `min_inlier_ratio`, the
+  points on obstacles count as outliers, so a scan with more obstacle points than
+  `1 - min_inlier_ratio` cannot pass even when it is aligned exactly. On Boreas the
+  real traffic already takes the ratio of the preset (0.8) down to 0.83 on some
+  scans. Without odometry the rejected scans are not replaced: the pose stops, and
+  the localizer requests reinitialization.
+- **NDT is dragged.** Without that gate, the obstacle points pull the alignment: the
+  error grows, and with enough of them it converges somewhere else.
+- **Global localization cannot tell places apart.** The startup scores candidates by
+  the mean squared distance of the scan to the map, which the obstacle points dominate
+  at every candidate alike, so the true place no longer stands out and every view is
+  ambiguous.
+
+**What helps while tracking: the map-distance prefilter.** It aligns only the scan
+points within `map_distance_filter_m` of the map at the predicted pose, so the
+obstacles drop out of the alignment, the fitness and the inlier ratio:
+
+```yaml
+map_distance_filter_m: 0.5            # 0: off (the default)
+map_distance_filter_growth_m_per_s: 1.0
+map_distance_filter_max_m: 3.0
+map_distance_filter_warmup_accepts: 5
+map_distance_filter_min_kept_ratio: 0.3
+```
+
+or `quickstart.py ... --map-distance-filter-m 0.5`. The prediction must be within about
+that distance of the truth, otherwise the filter would drop the map points that should
+correct it. So:
+
+- The distance grows by `map_distance_filter_growth_m_per_s` with every second since the
+  last accepted scan (beyond one scan period); past `map_distance_filter_max_m` the scan
+  is aligned whole.
+- It starts only after `map_distance_filter_warmup_accepts` accepted scans after an
+  initial pose (a global fix, `/initialpose`, a reset). Set 0 only when the initial pose
+  is exact (a known start); the first scan then trusts it.
+- A scan that would keep less than `map_distance_filter_min_kept_ratio` of its points
+  (a prediction far off, or a sensor almost covered) is aligned whole, as are retries
+  from other seeds.
+- Choose the distance like `inlier_ratio_distance_m`: points of a correctly aligned
+  scan must lie within it. Read `inlier_ratio` on a clean stretch first; where good
+  alignments have many points beyond 0.5 m of the map (a sparse map), use 1.0 m.
+  Smaller distances remove more of each obstacle: what stays is its part within the
+  distance of the ground or a wall.
+
+`/alignment_status` reports `map_distance_filter_status` (`applied`, `warming_up`,
+`gap_too_long`, `too_few_kept`, `no_accepted_pose`, `no_target_tree`, `retry_seed`,
+`disabled`), `map_distance_filter_m`, `map_distance_filter_kept_ratio` and
+`map_distance_filter_time_sec`. A kept ratio well below 1 on a good track is the share
+of the scan the map does not explain.
+
+What it does not do:
+
+- **It does not help the startup.** Global localization has no pose to filter at. In a
+  crowd, give the start pose (`/initialpose`, `--initial-pose`, or the saved pose
+  quickstart restores), or start before the crowd gathers.
+- **It cannot fix a scan the obstacles fill.** Measured on Boreas, trucks around the car
+  on 40% of the scan's voxels stopped the localizer with or without it.
+- **The NDT_OMP and GICP_OMP backends only.** small_gicp has no target search tree to
+  filter with (`no_target_tree`).
+
 ## Symptom: Tracking Is Lost on a Fast Turn With Twist Prediction
 
 With `use_twist_prediction`, the seed moves the last pose by the twist's linear

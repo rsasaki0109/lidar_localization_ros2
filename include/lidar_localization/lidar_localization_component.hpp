@@ -494,6 +494,16 @@ public:
   // The attempt whose status is being published, for /alignment_status.
   double status_registration_fitness_score_{std::numeric_limits<double>::quiet_NaN()};
   double status_inlier_ratio_{std::numeric_limits<double>::quiet_NaN()};
+  std::string status_map_distance_filter_status_{"disabled"};
+  double status_map_distance_filter_m_{std::numeric_limits<double>::quiet_NaN()};
+  double status_map_distance_filter_kept_ratio_{std::numeric_limits<double>::quiet_NaN()};
+  double status_map_distance_filter_time_sec_{std::numeric_limits<double>::quiet_NaN()};
+  // The map-distance prefilter (map_distance_filter.hpp), its decision for the scan
+  // being aligned, and that scan's whole source, which retries from other seeds use.
+  lidar_localization::MapDistanceFilterParams map_distance_filter_params_;
+  lidar_localization::MapDistanceFilterDecision map_distance_filter_decision_;
+  pcl::PointCloud<pcl::PointXYZI>::Ptr registration_full_source_;
+  bool registration_source_filtered_{false};
   int ndt_max_iterations_;
 
   double pose_publish_frequency_;
@@ -575,12 +585,18 @@ public:
   SelectedRegistrationSeed selectRegistrationSeed(
     const builtin_interfaces::msg::Time & stamp, double scan_stamp_sec);
   void broadcastTransform(const geometry_msgs::msg::TransformStamped & transform);
+  void applyMapDistanceFilter(
+    lidar_localization::AlignmentAttempt & attempt, bool filter_by_map_distance);
+  // With FILTER_BY_MAP_DISTANCE (the primary attempt of a scan), the source is the
+  // scan's points near the map at the guess when map_distance_filter_decision_ says
+  // so; otherwise the whole scan.
   lidar_localization::AlignmentAttempt runAlignmentAttempt(
     const Eigen::Matrix4f & attempt_init_guess,
     const Eigen::Matrix4f & crop_center_pose_matrix,
     double scan_stamp_sec,
     lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
-    std::uint64_t seed_generation);
+    std::uint64_t seed_generation,
+    bool filter_by_map_distance = false);
   lidar_localization::AlignmentPipelineResult runAlignmentPipelineForScan(
     const Eigen::Matrix4f & init_guess,
     const std::optional<Eigen::Matrix4f> & alternate_guess,

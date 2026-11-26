@@ -1128,6 +1128,34 @@ class TestQuickstartCli(unittest.TestCase):
             )
             self.assertIn("global_pose_position_std_m:=0.1", stdout.getvalue())
 
+    def test_map_distance_filter_reaches_the_localizer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            map_path = root / "site.pcd"
+            output = root / "generated.yaml"
+            map_path.write_bytes(b"pcd")
+            for extra, expected in (
+                ([], "0.0"),
+                (["--map-distance-filter-m=1.0"], "1.0"),
+            ):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    result = QUICKSTART.main(
+                        [
+                            "--map",
+                            str(map_path),
+                            "--output",
+                            str(output),
+                            "--no-discover-topics",
+                            "--dry-run",
+                            *extra,
+                        ]
+                    )
+                self.assertEqual(result, 0)
+                self.assertIn(
+                    f"map_distance_filter_m: {expected}",
+                    output.read_text(encoding="utf-8"),
+                )
+
     def test_trusted_global_start_needs_odometry(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

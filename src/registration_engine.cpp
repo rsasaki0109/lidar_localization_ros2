@@ -583,6 +583,37 @@ void RegistrationEngine::setSource(const Cloud::Ptr & source_cloud)
     recent_source_clouds_, source_cloud, config_.source_cloud_keep_alive_count);
 }
 
+MapDistanceFilterResult RegistrationEngine::setSourceNearTarget(
+  const Cloud::Ptr & source_cloud, const Eigen::Matrix4f & guess, double distance_m,
+  double min_kept_ratio)
+{
+  MapDistanceFilterResult result;
+  result.input_points = source_cloud ? source_cloud->size() : 0;
+  result.distance_m = distance_m;
+  const auto tree = registration_ ? registration_->getSearchMethodTarget() : nullptr;
+  if (!source_cloud || !tree || !tree->getInputCloud()) {
+    result.status = MapDistanceFilterStatus::kNoTargetTree;
+    setSource(source_cloud);
+    return result;
+  }
+  const auto start = std::chrono::steady_clock::now();
+  Cloud::Ptr kept = filterByMapDistance<PointT>(*source_cloud, *tree, guess, distance_m, threads());
+  result.time_sec =
+    std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+  result.kept_points = kept->size();
+  if (result.input_points == 0 ||
+    static_cast<double>(result.kept_points) <
+    min_kept_ratio * static_cast<double>(result.input_points))
+  {
+    result.status = MapDistanceFilterStatus::kTooFewKept;
+    setSource(source_cloud);
+    return result;
+  }
+  result.status = MapDistanceFilterStatus::kApplied;
+  setSource(kept);
+  return result;
+}
+
 Eigen::Matrix4f RegistrationEngine::refineSeedWithNdtInitializer(
   const Cloud::Ptr & source_cloud, const Eigen::Matrix4f & init_guess)
 {

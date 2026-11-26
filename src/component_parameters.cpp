@@ -180,6 +180,31 @@ void PCLLocalization::initializeParameters()
     min_inlier_ratio_ = 0.0;
   }
   inlier_ratio_min_points_ = std::max(0, inlier_ratio_min_points_);
+  get_parameter("map_distance_filter_m", map_distance_filter_params_.distance_m);
+  get_parameter(
+    "map_distance_filter_growth_m_per_s", map_distance_filter_params_.growth_m_per_s);
+  get_parameter("map_distance_filter_max_m", map_distance_filter_params_.max_distance_m);
+  get_parameter("map_distance_filter_warmup_accepts", map_distance_filter_params_.warmup_accepts);
+  get_parameter("map_distance_filter_min_kept_ratio", map_distance_filter_params_.min_kept_ratio);
+  if (!std::isfinite(map_distance_filter_params_.distance_m) ||
+    map_distance_filter_params_.distance_m < 0.0 ||
+    !std::isfinite(map_distance_filter_params_.growth_m_per_s) ||
+    map_distance_filter_params_.growth_m_per_s < 0.0 ||
+    !(map_distance_filter_params_.max_distance_m >= map_distance_filter_params_.distance_m) ||
+    !(map_distance_filter_params_.min_kept_ratio >= 0.0 &&
+    map_distance_filter_params_.min_kept_ratio <= 1.0))
+  {
+    if (map_distance_filter_params_.distance_m != 0.0) {
+      RCLCPP_WARN(
+        get_logger(),
+        "map_distance_filter_m must be at least 0 and at most map_distance_filter_max_m, "
+        "map_distance_filter_growth_m_per_s at least 0 and "
+        "map_distance_filter_min_kept_ratio in [0, 1]: the map-distance filter stays off");
+    }
+    map_distance_filter_params_.distance_m = 0.0;
+  }
+  map_distance_filter_params_.warmup_accepts =
+    std::max(0, map_distance_filter_params_.warmup_accepts);
   get_parameter("ndt_max_iterations", ndt_max_iterations_);
   get_parameter("gicp_corr_randomness", gicp_corr_randomness_);
   get_parameter("gicp_max_correspondence_distance", gicp_max_correspondence_distance_);
