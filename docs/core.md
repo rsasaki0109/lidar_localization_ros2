@@ -47,16 +47,51 @@ and scans but no ROS graph. It is the same code the node runs, not a copy.
   5. Aligns the scan.
   6. Reports the result, with `map_distance_filter_kept_points` and
      `map_distance_filter_applied`.
-- The policy headers (`include/lidar_localization/*_policy.hpp`) are ROS-free as well. Seed
-  selection, the measurement gate, retries and recovery can be called directly; see the
-  node's `component_*.cpp` for how they are combined.
+- `lidar_localization::ScanTracker`
+  ([scan_tracker.hpp](../include/lidar_localization/scan_tracker.hpp)): what the node
+  remembers from scan to scan, and what it does with it every scan:
+  - The prediction state: the last accepted pose, the predicted pose and the motion between
+    them. It is reset at an initial pose, moved by an accepted scan, and advanced without a
+    measurement.
+  - The measurement gate's own state: settled accepts since a reset, the windowed seed
+    correction guard, and the release agreement.
+  - The gate's decision on an attempt, and the attempt's seed metrics.
+
+  `scoreAlignment` turns the backend's result into the attempt the gate reads: the fitness,
+  or the inlier ratio with `min_inlier_ratio`, the localizability, and the correction from
+  the seed. The node keeps one `ScanTracker` and reads its fields under its old member names.
+- The C API's `lidarloc_localize` runs the node's per-scan flow on these pieces, without
+  the IMU:
+  1. The seed: the caller's (for example, predicted from odometry), else the previous
+     delta, else the tracked pose.
+  2. The NDT initializer.
+  3. The alignment.
+  4. A retry from the last accepted pose (`enable_recovery_retry_from_last_pose`).
+  5. The measurement gate (score threshold, `min_inlier_ratio`, the seed correction guard
+     and its window).
+  6. The update of the tracked pose and the prediction, as the node's raw registration pose
+     backend does.
+
+  `lidarloc_set_initial_pose` starts it, and `lidarloc_set_tracking` sets the gate, retry
+  and prediction parameters:
+
+  ```c
+  lidarloc_set_initial_pose(core, start /* 4x4 */, 0.0);
+  lidarloc_update update;
+  lidarloc_localize(core, scan_xyz, scan_points, stamp_sec, NULL /* or an odometry seed */,
+                    &update);
+  /* update.accepted, update.status ("ok", "seed_correction_guard_rejected", ...),
+     update.pose (the tracked pose), update.alignment (the attempt the gate judged) */
+  ```
+- The policy headers (`include/lidar_localization/*_policy.hpp`) are ROS-free as well, so the
+  rest of the node's decisions can be called directly. See the node's `component_*.cpp` for
+  how they are combined.
 
 The rest of the node is not in the core yet:
-- seed selection;
-- prediction;
-- the IMU smoothers;
+- seed selection with the IMU, twist and odometry TF;
+- the IMU and GTSAM smoothers;
 - deskew;
-- the measurement gate and recovery orchestration;
+- local reacquisition and reinitialization;
 - publishing.
 
 These still live in `PCLLocalization`.
