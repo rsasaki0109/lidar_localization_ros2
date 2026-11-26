@@ -1,0 +1,56 @@
+# Dynamic-obstacle stress test (docs/benchmark.md#dynamic-obstacles): the quickstart
+# with odometry, on scans into which dynamic_obstacles.py renders people and
+# vehicles. Run it with the scenario and load to inject, e.g.
+#   run_benchmark.py tools/benchmark/suites/dynamic_obstacles.yaml --out OUT \
+#     --inject "--scenario crowd --fraction 0.25 --seed 1"
+# The suite needs --inject: its clean baseline is --fraction 0, which passes the
+# clouds through the injector unchanged.
+#
+# The odometry reads the clean cloud (TOPIC_raw), so the obstacles reach only the
+# localizer and global localization; quickstart is told the cloud topic, since both
+# are on the graph. Each case gives the injector its sensor pattern, the map to keep
+# obstacles out of walls and the ground (the JEPLO motion-capture floor is z = 0).
+#
+# JEPLO_ROOT and KOIDE_ROOT as for go2_jeplo_cross_session.yaml and koide_outdoor.yaml.
+defaults:
+  repeats: 1
+cases:
+  # Go2 in the capture room on another session's map: G2 start and tracking.
+  - name: EIL_Mix_map__EIL_Box
+    bag: ${JEPLO_ROOT}/bags_pc2_merged/EIL_Box
+    map: ${JEPLO_ROOT}/maps_loc/EIL_Mix/map.pcd
+    gt: ${JEPLO_ROOT}/gt/EIL_Box.txt
+    odometry_launch: lidarslam rko_lio_odometry.launch.py
+    odometry_args:
+      - lidar_topic:=/livox/lidar_raw
+      - imu_topic:=/livox/imu
+      - rko_param_file:=${SUITE_DIR}/rko_lio_jeplo.yaml
+    topics: [/livox/lidar, /livox/imu]
+    inject:
+      - --pattern=random:-7:52
+      - --ground-z=0
+      - --min-range=1
+      - --map=${JEPLO_ROOT}/maps_loc/EIL_Mix/map.pcd
+    quickstart_args:
+      - --cloud-topic=/livox/lidar
+      - --occupancy-inflate-radius-m=0.2
+      - --global-z-min=0.0
+      - --global-max-scan-points=1024
+      - --global-max-candidates=16
+      - --refine-global-candidates
+  # Handheld MID-360 outdoors (Koide): G2 start and tracking on a campus.
+  - name: outdoor_hard_02b
+    bag: ${KOIDE_ROOT}/sequences/outdoor_hard_02b
+    map: ${KOIDE_ROOT}/map_outdoor_hard.ply
+    gt: ${KOIDE_ROOT}/gt/traj_lidar_outdoor_hard_02.txt
+    odometry_launch: lidarslam rko_lio_odometry.launch.py
+    odometry_args:
+      - lidar_topic:=/livox/points_raw
+      - imu_topic:=/livox/imu
+    topics: [/livox/points, /livox/imu]
+    inject:
+      - --pattern=random:-7:52
+      - --min-range=1
+      - --map=${KOIDE_ROOT}/map_outdoor_hard.ply
+    quickstart_args:
+      - --cloud-topic=/livox/points

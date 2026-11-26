@@ -41,6 +41,10 @@ ALIGNMENT_KEYS = (
     "weak_overlap_active",
     "horizontal_localizability_eigenvalue_ratio",
     "registration_localizability_weak_ratio",
+    "recovery_action",
+    "map_distance_filter_status",
+    "map_distance_filter_kept_ratio",
+    "map_distance_filter_time_sec",
 )
 
 

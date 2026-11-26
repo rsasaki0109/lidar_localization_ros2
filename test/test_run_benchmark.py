@@ -133,6 +133,63 @@ class TestRunBenchmark(unittest.TestCase):
                 (None, "no odom TF on /tf within 30 s"),
             )
 
+    def test_injection_replays_the_cloud_as_raw_and_republishes_it(self):
+        case = {
+            "topics": ["/livox/lidar", "/livox/imu"],
+            "gt": "gt.txt",
+            "inject": ["--pattern=random:-7:52"],
+        }
+        command = rb.injector_command(case, Path("run"), ["--scenario", "crowd"])
+        self.assertEqual(command[1], str(rb.TOOL_DIR / "dynamic_obstacles.py"))
+        self.assertEqual(
+            command[2:10],
+            [
+                "--input",
+                "/livox/lidar_raw",
+                "--output",
+                "/livox/lidar",
+                "--gt",
+                "gt.txt",
+                "--log",
+                str(Path("run") / "obstacles.csv"),
+            ],
+        )
+        self.assertEqual(
+            command[10:], ["--pattern=random:-7:52", "--scenario", "crowd"]
+        )
+        # Another topic on request; none without injector arguments.
+        case["inject_topic"] = "/livox/points"
+        self.assertIn("/livox/points_raw", rb.injector_command(case, Path("r"), []))
+        self.assertIsNone(
+            rb.injector_command({"topics": ["/a"], "gt": "g"}, Path("r"), [])
+        )
+
+    def test_quickstart_args_are_added_to_every_case(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            suite = root / "suite.yaml"
+            suite.write_text(
+                "cases:\n  - {name: c, bag: b, map: m, gt: g, topics: [], "
+                "quickstart_args: [--a]}\n",
+                encoding="utf-8",
+            )
+            seen = []
+            with patch.object(
+                rb, "run_once", side_effect=lambda case, *a: seen.append(case)
+            ):
+                rb.main(
+                    [
+                        str(suite),
+                        "--out",
+                        str(root / "out"),
+                        "--quickstart-args",
+                        "--map-distance-filter-m=1 --b",
+                    ]
+                )
+            self.assertEqual(
+                seen[0]["quickstart_args"], ["--a", "--map-distance-filter-m=1", "--b"]
+            )
+
     def test_invalid_runs_are_left_out_and_fail_the_benchmark(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

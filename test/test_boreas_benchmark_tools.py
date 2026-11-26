@@ -138,3 +138,25 @@ def test_score_counts_poses_over_a_metre():
     result = replay.score(poses, reference, scans=10, diagnostics=set(), accepted=0)
     assert result["poses_over_1_m"] == 1
     assert result["median_error_m"] == 0.0
+
+
+def test_obstacle_summary_reads_the_injector_log(tmp_path):
+    log = tmp_path / "obstacles.csv"
+    log.write_text(
+        "stamp,points_in,points_out,obstacle_points,point_fraction,fraction,"
+        "obstacles_shown,obstacles_considered,ms\n"
+        "1.0,100,90,20,0.2,0.25,2,4,30.0\n"
+        "2.0,100,95,10,0.1,0.15,1,4,50.0\n"
+    )
+    summary = replay.obstacle_summary(log)
+    assert summary["obstacle_share_mean"] == 0.2
+    assert summary["obstacle_point_share_mean"] == 0.15
+    assert summary["injector_ms_median"] == 40.0
+    assert summary["injected_scans"] == 2
+    assert replay.obstacle_summary(tmp_path / "missing.csv") == {}
+
+
+def test_score_with_no_pose_at_a_scan_stamp():
+    reference = np.array([[10.0, 0, 0, 0, 0, 0, 0, 1], [10.1, 1, 0, 0, 0, 0, 0, 1]])
+    result = replay.score([[5.0, 0, 0, 0, 0, 0, 0, 1]], reference, 2, [], 0)
+    assert result["matched_poses"] == 0 and "rmse_m" not in result
