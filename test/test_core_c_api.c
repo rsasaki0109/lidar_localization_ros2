@@ -110,6 +110,22 @@ int main(void)
   lidarloc_config config = lidarloc_default_config();
   char error[256];
   lidarloc_result result;
+  /* The map-distance prefilter keeps this scan of the map whole: every point lies on
+   * the map at a guess 0.4 m off. */
+  config.map_distance_filter_m = 1.0;
+  config.ndt_num_threads = 2;
+  lidarloc_core * filtering = lidarloc_create(&config, error, sizeof error);
+  assert(filtering);
+  assert(lidarloc_set_map(filtering, map, n) == 0);
+  assert(lidarloc_align(filtering, scan, n, guess, &result) == 0);
+  printf(
+    "filtered: applied %d, kept %zu of %zu\n", result.map_distance_filter_applied,
+    result.map_distance_filter_kept_points, result.source_points);
+  assert(result.map_distance_filter_applied == 1);
+  assert(result.map_distance_filter_kept_points == result.source_points);
+  lidarloc_destroy(filtering);
+  config = lidarloc_default_config();
+
   /* No map, no alignment. */
   lidarloc_core * empty = lidarloc_create(&config, error, sizeof error);
   assert(empty);

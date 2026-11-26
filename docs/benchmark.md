@@ -1399,6 +1399,190 @@ one, and returns the freed memory to the OS:
 its pose, at the median, p95 and most, and how many poses came over 200 ms late.
 
 
+## Dynamic obstacles
+
+People, cars and trucks that are not in the map: how much of the real data they take
+up, a stress test that adds them to real scans with ground truth, what fails, and the
+map-distance prefilter that fixes the tracking failures
+([troubleshooting](troubleshooting.md#symptom-tracking-is-lost-among-people-and-vehicles-dynamic-obstacles)).
+Measured 2026-11-26 on `main` at `2ad59eb` and on this change, Jazzy, 4 vCPUs, one run
+per cell.
+
+### In the real data
+
+The share of scan points farther than 0.5 m and 1 m from the map at the ground-truth
+pose (every 5th scan; Koide every 10th):
+
+| data | points | > 0.5 m: median / p95 / max | > 1 m: median / p95 / max | what it does |
+|---|---|---|---|---|
+| Boreas, 120 s, Toronto traffic, map from another day | 1.5 m voxels, 1-60 m | 0.038 / 0.083 / 0.167 | 0.010 / 0.037 / 0.101 | sets the inlier ratio (correlation +0.99), down to 0.83 against the preset's 0.8; no error (correlation -0.27), no rejection |
+| JEPLO EIL_Box on the EIL_Mix map (Go2, boxes not in the map) | raw, 1-40 m | 0.080 / 0.220 / 0.235 | 0.000 / 0.020 / 0.054 | error 0.046 m median on the 10% most affected scans, 0.026 m elsewhere |
+| Koide outdoor_hard_02b (handheld, campus) | raw, 1-100 m | 0.037 / 0.860 / 0.921 | 0.016 / 0.844 / 0.889 | the p95 is the stretch off the map (17% of scans over 50%); 17% of scans have 5-50% |
+
+So the real traffic in these recordings is light: it costs the Boreas gate most of its
+margin but no accuracy. The stress test below goes further.
+
+### The stress test
+
+[`tools/benchmark/dynamic_obstacles.py`](../tools/benchmark/dynamic_obstacles.py) renders
+boxes into the replayed scans online: pedestrians (0.5 x 0.5 x 1.7 m), cars
+(4.5 x 1.8 x 1.5 m) and trucks or buses (10 x 2.5 x 3 m). The bag plays the cloud as
+`TOPIC_raw`; the injector republishes it as `TOPIC`, so no rewritten bag is kept.
+
+- **Placement** comes from the ground truth and depends only on the seed, the scenario and
+  the time. With `--map`, obstacles that cut map structure (walls) are skipped.
+- **Rendering** casts rays from the sensor. A real return behind an obstacle is removed.
+  The obstacle's surface is sampled with the sensor's pattern: Velodyne rings
+  (`rings:-25:15:128:0.2`, thinned to the bag's 0.25 m) or MID-360 random rays
+  (`random:-7:52`, as many as the scan has points). A synthetic return behind a real one
+  is dropped.
+- **Scenarios:**
+  - `crowd`: pedestrians walking 1.5-10 m around the sensor.
+  - `crossing`: platoons of cars (some trucks) crossing 5-25 m ahead at 6-12 m/s.
+  - `alongside`: trucks and cars that move with the sensor, static relative to it.
+  - `parked`: cars, trucks and people along the route, fixed in the map.
+  - `startup`: cars and people fixed around the start pose.
+- **Load:** `--fraction F` adds obstacles in a fixed, seeded order until F of the output
+  lies on them. The share is counted as the localizer registers it: in its own voxels
+  (`--count-leaf 1.5` for the Boreas preset), or in points (the Go2 and Koide quickstart
+  has no voxel filter). The tables give the share reached (mean over the scans that show
+  obstacles). Some scenarios saturate below the target.
+
+```bash
+# Boreas preset, trucks alongside on a quarter of the registered voxels
+python3 tools/benchmark/boreas_replay.py /tmp/boreas_fixture OUT --ws WS --rate 0.5 \
+  --inject "--scenario alongside --fraction 0.25 --seed 1 --pattern rings:-25:15:128:0.2 \
+            --obstacle-leaf 0.25 --count-leaf 1.5 --min-range 1 --max-range 60"
+# quickstart with odometry (Go2, Koide); the clean baseline is --fraction 0
+python3 tools/benchmark/run_benchmark.py tools/benchmark/suites/dynamic_obstacles.yaml \
+  --out OUT --case EIL_Mix_map__EIL_Box --inject "--scenario crowd --fraction 0.25 --seed 1"
+```
+
+The Boreas stress runs play at 0.5x: the injector takes 85-250 ms a scan there, up to 400
+ms at p95 in the parking lot (Python, 60k points); on the MID-360 bags 40-70 ms.
+
+### Boreas (car, no odometry, preset `boreas_ndt_velodyne.yaml`)
+
+Starts from the ground-truth pose. "fix" is `map_distance_filter_m: 0.5` with
+`map_distance_filter_warmup_accepts: 0` (the start pose is exact). Accepted is the share
+of scans with an accepted pose; a rejection streak there means no pose at all.
+
+| scenario | share | main: accepted / RMSE / p95 / max (m) | fix: accepted / RMSE / p95 / max (m) |
+|---|---|---|---|
+| none (0.5x) | 0 | 100% / 0.132 / 0.24 / 0.41 | 100% / 0.130 / 0.24 / 0.43 |
+| crossing (all targets) | 0.07 | 98% / 0.148 / 0.25 / 0.44 | 100% / 0.145 / 0.25 / 0.40 |
+| parked, 10% | 0.11 | **48%**, then lost / 0.216 / 0.42 / 0.62 | 98% / 0.198 / 0.36 / 0.63 |
+| parked, 60% (saturates; 0.3-0.4 in the parking lot) | 0.12 | **12%**, lost / - | **16%**, lost / - |
+| alongside, 10% | 0.12 | **9%**, lost / - | 100% / 0.217 / 0.40 / 0.64 |
+| alongside, 25% | 0.28 | **6%**, lost / - | 99% / 0.271 / 0.48 / 0.99 |
+| alongside, 40% | 0.39 | **0%**, lost from the start | **8%**, lost |
+| alongside, 60% (saturates) | 0.43 | **0%** | **0%** |
+
+The crowd scenario reaches only 5-8% of the voxels around a car at speed and was not
+run. Without the inlier-ratio gate, main does not stop at 28% but drifts: RMSE 0.345 m,
+max 1.64 m, z biased by 0.1-0.4 m. At 43% it converges elsewhere within 10 s and ends
+75 m off (`--set min_inlier_ratio=0`).
+
+The two failures the filter cannot fix are the same: the trucks or parked cars hide
+almost the whole scene. At 39% of the voxels the scan keeps about 300 of its usual 3000,
+and after the filter fewer than `inlier_ratio_min_points` (200): the scan is treated as
+blind.
+
+### Go2, JEPLO (quickstart with RKO-LIO odometry, EIL_Box on the EIL_Mix map)
+
+Odometry reads the clean cloud. **Startup:** obstacles from the first scan.
+
+| scenario | share (points) | main: initialized |
+|---|---|---|
+| none (3 seeds) | 0 | 3 of 3, first pose at 9.3-9.6 s, 0.03 m median |
+| crowd, 0.12 (3 seeds) | 0.12 | **1 of 3** (12.8 s); the others: every view ambiguous, manual pose |
+| crowd | 0.28, 0.43, 0.50 | **0 of 3** |
+| startup (fixed people and cars) | 0.11, 0.27, 0.31 | **0 of 3** |
+
+Global localization ranks candidates by the mean squared distance of the scan to the map.
+Clean, the right place scores 0.045 and the next 0.25; with 12% of the points on people
+0.45-0.78 against 0.46-0.88. The ratio test then finds every view ambiguous. Trimmed or
+inlier-based scores did not separate the places in an offline check either: in the
+capture room the aliases differ only in the few points a trimmed score drops.
+
+**Tracking:** the crowd appears 20 s after the start, once the pose is known. "fix" is
+quickstart `--map-distance-filter-m 0.5`.
+
+| crowd share (points) | main: median / p95 / max xy (m), tracked | fix: median / p95 / max xy (m), tracked |
+|---|---|---|
+| 0 | 0.026 / 0.11 / 0.36, 0.97 | 0.026 / 0.09 / 0.23, 0.97 |
+| 0.28 | 0.031 / 0.15 / 0.63, 0.94 | 0.028 / 0.09 / 0.54, 0.93 |
+| 0.43 | 0.040 / 0.14 / 0.54, 0.91 | 0.038 / 0.11 / 0.26, 0.92 |
+| 0.50 | 0.084 / **0.71** / 1.15, 0.80 | 0.054 / 0.27 / 0.44, 0.85 |
+
+With odometry and its guards, the Go2 tracks through crowds up to about 40% without the
+filter; at 50% the error triples, and the filter takes it back to 0.27 m at p95.
+
+### Koide outdoor_hard_02b (quickstart with RKO-LIO odometry)
+
+| crowd | main | fix (`--map-distance-filter-m 0.5`) |
+|---|---|---|
+| none | 0.082 / 0.33 / 1.45 m, >1 m 0.008 | 0.082 / 0.30 / 1.45 m, >1 m 0.007 |
+| from the first scan, 0.28 and 0.43 | **not initialized** (ambiguous) | - |
+| after 40 s, 0.28 | **lost: drifts from 105 s, 24 m median, 144 m max, 63% > 1 m** | 0.120 / 1.86 / 1.94 m, 7% > 1 m |
+| after 40 s, 0.43 | **lost: 19 m median, 96 m max, 63% > 1 m** | **lost: 22 m median, 65 m max, 67% > 1 m** |
+
+(median / p95 / max horizontal error.) On main the crowd dragged the accepted alignments
+until the pose had slid off the campus, while the odometry carried the wrong pose on.
+
+### Failure modes
+
+| failure | where | load |
+|---|---|---|
+| **Rejection streak, then no pose** (no odometry): the inlier-ratio gate rejects exact alignments | Boreas alongside and parked | from 11-12% of the voxels |
+| **Drag** (slow bias): accepted alignments pulled toward the obstacles | Boreas without the gate (28%: RMSE x2.6, max 1.6 m); Go2 crowd 50% (p95 x5); Koide crowd 28-43% (drifts off) | 28-50% |
+| **Wrong convergence** (jump) | Boreas without the gate, 43% | 43% |
+| **G2 startup failure**: no unambiguous candidate, manual pose | Go2 crowd and startup obstacles, Koide crowd: 1 of 11 runs started | from 11% of the points |
+| **Blind scan**: too few map points left to register | Boreas alongside 39%, parked lot | 30-40% of the voxels |
+| CPU overrun | not the cause of a failure here; NDT takes longer among people (Go2 at 50%: 46 ms median, 262 ms p95 per alignment, against 20 / 109 ms clean; the scans come at 10 Hz) | - |
+
+Robust as it is: crossing traffic (Boreas, 7% of the voxels, the most a crossing reaches
+around a car), and the Go2 with odometry up to about 40% of the points.
+
+### The fix: the map-distance prefilter
+
+`map_distance_filter_m` aligns only the scan points within that distance of the map at
+the predicted pose, so the obstacles leave the alignment, the fitness and the inlier
+ratio together. It covers moving and parked obstacles alike, which a temporal filter
+would not (a parked car is static, a truck alongside is static relative to the sensor),
+and it needs no change to NDT_OMP (whose outlier model is fixed) or small_gicp. The
+prediction must be good, so the filter widens with the time since the last accepted
+scan, waits for a few accepted scans after an initial pose and aligns the whole scan
+when too little is left. It does not help global localization, which has no pose to
+filter at.
+
+Real data, the filter on (one run each):
+
+| data | main | fix |
+|---|---|---|
+| Boreas 120 s, preset, 1x | RMSE 0.132 m, p95 0.24, max 0.41, 100% | 0.130 m, 0.24, 0.43, 100% (0.5 m) |
+| Boreas, filter off | | byte-identical trajectory |
+| Istanbul A (two runs) / B / C, horizontal RMSE | 0.225, 0.302 / 0.752 / 0.456 m | 0.5 m: 0.243, 0.305 / 0.760 / 0.470 m; 1.0 m: 0.459, 0.232 / 0.753 / 0.467 m |
+| Go2 cross-session, EIL_Box map → EIL_Stairs: first pose, median / p95 / max xy | 12.6 s, 0.02 / 0.25 / 0.47 m | 11.1 s, 0.02 / 0.12 / 0.34 m |
+| Go2, EIL_Stairs map → EIL_Box | 13.3 s, 0.04 / 0.17 / 1.31 m | 8.8 s, 0.04 / 0.16 / 0.35 m |
+| Go2, Long_Stairs map → Outdoor2 | 12.3 s, 0.02 / 0.04 / 0.07 m | 11.6 s, 0.02 / 0.04 / 0.07 m |
+| Go2, EIL_Mix map → EIL_Mask1 | 6.8 s, 0.02 / 0.07 / 0.20 m | 9.3 s, 0.02 / 0.07 / 0.17 m |
+| Go2, EIL_Mix map → EIL_Box (the stress test's clean run) | 9.3 s, 0.026 / 0.11 / 0.36 m | 9.1 s, 0.026 / 0.09 / 0.23 m |
+| Koide outdoor_hard_02b | see above | see above |
+
+Istanbul has no dynamic-obstacle problem to fix, and the filter changes little there:
+the window A runs spread 0.23-0.30 m on main alone, and one 1.0 m run spiked to 0.46 m
+(z p95 1.28 m) while its repeat scored 0.23 m. Its map is sparse (good alignments have
+58-93% of their points within 0.5 m,
+[troubleshooting](troubleshooting.md#symptom-good-alignments-rejected-where-the-map-misses-structure)),
+so the filter also drops correct points there; it is not recommended for that preset.
+
+**CPU:** one nearest-neighbour search per scan point, on the target's existing tree.
+Boreas (about 3000 voxels): 2.4 ms median, 6.1 ms p95 per scan at 1x, against 12.6 ms
+for the alignment, which did not change (12.3 ms on main); the localizer used 106 against
+96 CPU-ms per scan. Go2 and Koide (11-30k points, no voxel filter): 5-10 ms median, 8-20 ms
+p95, on 4 threads.
+
 ## Boreas with the small-computer knobs
 
 The knobs of [the low-resource preset](mid360_legged_jetson.md#low-resource-preset) that

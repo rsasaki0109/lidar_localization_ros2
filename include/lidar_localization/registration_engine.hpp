@@ -33,6 +33,7 @@
 #endif
 
 #include "lidar_localization/diagnostic_ndt_omp.hpp"
+#include "lidar_localization/map_distance_filter.hpp"
 #include "lidar_localization/map_initialization_policy.hpp"
 #include "lidar_localization/registration_backend_policy.hpp"
 #include "lidar_localization/registration_cloud_keep_alive_policy.hpp"
@@ -91,6 +92,19 @@ struct RegistrationAlignResult
   int iterations{-1};
   Eigen::Matrix4f final_transformation{Eigen::Matrix4f::Identity()};
   double alignment_time_sec{0.0};
+};
+
+// One map-distance prefilter of a source (map_distance_filter.hpp).
+struct MapDistanceFilterResult
+{
+  // kApplied, or why the whole source was set (kTooFewKept, kNoTargetTree).
+  MapDistanceFilterStatus status{MapDistanceFilterStatus::kDisabled};
+  std::size_t input_points{0};
+  // The points within the distance of the target, whether or not they were set.
+  std::size_t kept_points{0};
+  double distance_m{0.0};
+  // The nearest-neighbour searches and the copy.
+  double time_sec{0.0};
 };
 
 class RegistrationEngine
@@ -156,6 +170,14 @@ public:
   void discardLocalMapRebuild();
 
   void setSource(const Cloud::Ptr & source);
+  // Sets as the source the points of SOURCE within DISTANCE_M of the registration
+  // target when moved by GUESS (map_distance_filter.hpp), or SOURCE whole when the
+  // target has no search tree yet (a GICP backend before its first alignment) or
+  // fewer than MIN_KEPT_RATIO of its points would be kept. Call it after
+  // setTargetForPose(GUESS), so the distance is to the target that will be aligned to.
+  MapDistanceFilterResult setSourceNearTarget(
+    const Cloud::Ptr & source, const Eigen::Matrix4f & guess, double distance_m,
+    double min_kept_ratio);
   // The seed refined by the NDT initializer while it runs (the first
   // ndt_init_scans_required scans after a map load, GICP backends with
   // cropping); otherwise the seed.

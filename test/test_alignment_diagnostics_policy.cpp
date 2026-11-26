@@ -146,9 +146,12 @@ void test_build_alignment_diagnostic_values_order_and_strings()
   input.imu_accel_bias_m_s2[1] = 0.25;
   input.imu_velocity_m_s[0] = 1.5;
   input.registration_fitness_score = 3.5;
+  input.map_distance_filter_status = "applied";
+  input.map_distance_filter_m = 1.25;
+  input.map_distance_filter_kept_ratio = 0.75;
 
   const auto values = ll::buildAlignmentDiagnosticValues(input);
-  assert(values.size() == 107);
+  assert(values.size() == 111);
   assert(values[0].first == "registration_method");
   assert(values[0].second == "NDT");
   assert(values[1].first == "has_converged");
@@ -283,6 +286,13 @@ void test_build_alignment_diagnostic_values_order_and_strings()
   assert(values[105].first == "registration_fitness_score");
   assert(values[105].second.find("3.500") == 0);
   assert(values[106].first == "inlier_ratio" && values[106].second == "nan");
+  assert(values[107].first == "map_distance_filter_status");
+  assert(values[107].second == "applied");
+  assert(values[108].first == "map_distance_filter_m");
+  assert(values[108].second.find("1.250") == 0);
+  assert(values[109].first == "map_distance_filter_kept_ratio");
+  assert(values[109].second.find("0.750") == 0);
+  assert(values[110].first == "map_distance_filter_time_sec" && values[110].second == "nan");
 }
 
 int main()

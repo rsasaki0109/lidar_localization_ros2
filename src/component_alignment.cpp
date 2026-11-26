@@ -249,7 +249,8 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   const Eigen::Matrix4f & crop_center_pose_matrix,
   double scan_stamp_sec,
   lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
-  std::uint64_t seed_generation)
+  std::uint64_t seed_generation,
+  bool filter_by_map_distance)
 {
   lidar_localization::AlignmentAttempt attempt;
   attempt.init_guess = attempt_init_guess;
@@ -257,6 +258,7 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
     return attempt;
   }
   attempt.target_ready = true;
+  applyMapDistanceFilter(attempt, filter_by_map_distance);
 
   // Only the backend call runs outside the shared-state lock (the engine takes
   // the registration execution lock around it). All seed, crop, recovery, and
@@ -321,6 +323,37 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
   return attempt;
 }
 
+void PCLLocalization::applyMapDistanceFilter(
+  lidar_localization::AlignmentAttempt & attempt, bool filter_by_map_distance)
+{
+  using lidar_localization::MapDistanceFilterStatus;
+  const bool enabled = map_distance_filter_params_.distance_m > 0.0;
+  if (filter_by_map_distance && map_distance_filter_decision_.apply && registration_full_source_) {
+    const auto filtered = registration_engine_.setSourceNearTarget(
+      registration_full_source_, attempt.init_guess, map_distance_filter_decision_.distance_m,
+      map_distance_filter_params_.min_kept_ratio);
+    registration_source_filtered_ = filtered.status == MapDistanceFilterStatus::kApplied;
+    attempt.map_distance_filter_status =
+      lidar_localization::mapDistanceFilterStatusName(filtered.status);
+    attempt.map_distance_filter_m = filtered.distance_m;
+    attempt.map_distance_filter_input_points = filtered.input_points;
+    attempt.map_distance_filter_kept_points = filtered.kept_points;
+    attempt.map_distance_filter_time_sec = filtered.time_sec;
+    return;
+  }
+  // Retries from other seeds, and scans the filter skips, align the whole scan.
+  if (registration_source_filtered_ && registration_full_source_) {
+    registration_engine_.setSource(registration_full_source_);
+    registration_source_filtered_ = false;
+  }
+  if (enabled) {
+    attempt.map_distance_filter_status = lidar_localization::mapDistanceFilterStatusName(
+      filter_by_map_distance ?
+      map_distance_filter_decision_.status : MapDistanceFilterStatus::kRetrySeed);
+    attempt.map_distance_filter_m = map_distance_filter_decision_.distance_m;
+  }
+}
+
 lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelineForScan(
   const Eigen::Matrix4f & init_guess,
   const std::optional<Eigen::Matrix4f> & alternate_guess,
@@ -332,8 +365,17 @@ lidar_localization::AlignmentPipelineResult PCLLocalization::runAlignmentPipelin
   std::uint64_t seed_generation)
 {
   gate_scan_stamp_sec_ = scan_stamp_sec;
-  const lidar_localization::AlignmentAttempt primary_attempt =
-    runAlignmentAttempt(init_guess, init_guess, scan_stamp_sec, state_lock, seed_generation);
+  map_distance_filter_decision_ = lidar_localization::decideMapDistanceFilter(
+    map_distance_filter_params_,
+    lidar_localization::MapDistanceFilterInput{
+      prediction_state_.have_last_accepted_pose,
+      scan_stamp_sec - prediction_state_.last_accepted_pose_time_sec,
+      scan_period_,
+      static_cast<int>(std::min<std::size_t>(
+        prediction_state_.accepted_updates_since_reset,
+        static_cast<std::size_t>(std::numeric_limits<int>::max())))});
+  const lidar_localization::AlignmentAttempt primary_attempt = runAlignmentAttempt(
+    init_guess, init_guess, scan_stamp_sec, state_lock, seed_generation, true);
   if (!callback_state_coordinator_.initialPoseGenerationMatches(seed_generation)) {
     lidar_localization::AlignmentPipelineResult interrupted_result;
     interrupted_result.selected_attempt = primary_attempt;
@@ -604,6 +646,8 @@ void PCLLocalization::setRegistrationSourceCloud(
   const pcl::PointCloud<pcl::PointXYZI>::Ptr & source_cloud)
 {
   registration_engine_.setSource(source_cloud);
+  registration_full_source_ = source_cloud;
+  registration_source_filtered_ = false;
 }
 
 void PCLLocalization::printAlignmentDebugInfo(

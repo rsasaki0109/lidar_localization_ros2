@@ -10,6 +10,14 @@ void PCLLocalization::publishAlignmentStatusForAttempt(
 {
   status_registration_fitness_score_ = attempt.registration_fitness_score;
   status_inlier_ratio_ = attempt.inlier_ratio;
+  status_map_distance_filter_status_ = attempt.map_distance_filter_status;
+  status_map_distance_filter_m_ = attempt.map_distance_filter_m;
+  status_map_distance_filter_kept_ratio_ = attempt.map_distance_filter_input_points > 0 ?
+    static_cast<double>(attempt.map_distance_filter_kept_points) /
+    static_cast<double>(attempt.map_distance_filter_input_points) :
+    std::numeric_limits<double>::quiet_NaN();
+  status_map_distance_filter_time_sec_ = attempt.map_distance_filter_input_points > 0 ?
+    attempt.map_distance_filter_time_sec : std::numeric_limits<double>::quiet_NaN();
   publishAlignmentStatus(
     stamp,
     level,
@@ -29,6 +37,10 @@ void PCLLocalization::publishAlignmentStatusForAttempt(
     attempt.registration_iterations);
   status_registration_fitness_score_ = std::numeric_limits<double>::quiet_NaN();
   status_inlier_ratio_ = std::numeric_limits<double>::quiet_NaN();
+  status_map_distance_filter_status_ = "disabled";
+  status_map_distance_filter_m_ = std::numeric_limits<double>::quiet_NaN();
+  status_map_distance_filter_kept_ratio_ = std::numeric_limits<double>::quiet_NaN();
+  status_map_distance_filter_time_sec_ = std::numeric_limits<double>::quiet_NaN();
 }
 
 void PCLLocalization::publishAlignmentStatus(
@@ -265,6 +277,10 @@ PCLLocalization::prepareAlignmentDiagnosticValuesInput(
   diagnostic_input.point_timestamp_unit = point_timestamp_unit_name_;
   diagnostic_input.registration_fitness_score = status_registration_fitness_score_;
   diagnostic_input.inlier_ratio = status_inlier_ratio_;
+  diagnostic_input.map_distance_filter_status = status_map_distance_filter_status_;
+  diagnostic_input.map_distance_filter_m = status_map_distance_filter_m_;
+  diagnostic_input.map_distance_filter_kept_ratio = status_map_distance_filter_kept_ratio_;
+  diagnostic_input.map_distance_filter_time_sec = status_map_distance_filter_time_sec_;
   if (use_imu_preintegration_) {
     std::lock_guard<std::mutex> lock(imu_preintegration_mutex_);
     if (imu_smoother_.isInitialized()) {

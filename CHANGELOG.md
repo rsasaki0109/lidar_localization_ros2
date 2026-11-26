@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+**New, opt-in: the map-distance prefilter for scans with people and vehicles the map
+lacks.** `map_distance_filter_m` (default 0: off; quickstart `--map-distance-filter-m`)
+aligns only the scan points within that distance of the map at the predicted pose, so
+obstacles neither drag NDT nor fail `min_inlier_ratio`. The distance grows with the time
+since the last accepted scan (`map_distance_filter_growth_m_per_s`), the filter stays off
+past `map_distance_filter_max_m`, for `map_distance_filter_warmup_accepts` accepted scans
+after an initial pose and for retries from other seeds, and a scan that would keep less
+than `map_distance_filter_min_kept_ratio` of its points is aligned whole. It lives in
+`lidar_localization_core` (`RegistrationEngine::setSourceNearTarget`,
+`map_distance_filter.hpp`; `map_distance_filter_m` in the C API's `lidarloc_config`).
+`/alignment_status` adds `map_distance_filter_status`, `map_distance_filter_m`,
+`map_distance_filter_kept_ratio` and `map_distance_filter_time_sec`. With it off (the
+default) the Boreas preset's trajectory is byte-identical.
+Measured with the new stress test (one run per cell): on Boreas, trucks alongside on
+12% and 28% of the registered voxels, or parked cars on 11%, made the preset reject
+every scan by its inlier ratio and stop publishing (6-48% of scans accepted); with
+`map_distance_filter_m: 0.5` it tracked all three (98-100%, RMSE 0.20-0.27 m). A crowd on
+28% of the points after the start sent Koide `outdoor_hard_02b` 144 m off; with the
+filter it stayed within 1.9 m. On the Go2 with a crowd on 50% of the points, p95 error
+fell from 0.71 to 0.27 m. Clean Boreas, Istanbul, Koide and four Go2 cross-session cases
+did not get worse. It does not help global localization, which in these tests started
+in 1 of 11 runs with 11% or more of the points on obstacles, nor scans the obstacles
+fill (Boreas at 39%, Koide at 43%). See
+[docs/troubleshooting.md](docs/troubleshooting.md#symptom-tracking-is-lost-among-people-and-vehicles-dynamic-obstacles).
+
+**New: a dynamic-obstacle stress test.** `tools/benchmark/dynamic_obstacles.py` renders
+pedestrians, cars and trucks into replayed scans online, with occlusion and the sensor's
+ring or random pattern, in five seeded scenarios (crowd, crossing traffic, a truck
+alongside, parked objects, obstacles at the start) and at a chosen share of the scan
+(`run_benchmark.py --inject`, `boreas_replay.py --inject`,
+`suites/dynamic_obstacles.yaml`; [docs/benchmark.md](docs/benchmark.md#dynamic-obstacles)).
+
 **New: `lidar_localization_core`, the registration without ROS 2.** The node's
 registration (backend, map, local-map targets with background rebuilds and the crop
 failure guard, NDT initializer, alignment with fitness and localizability) moved out of
