@@ -9,7 +9,10 @@
 
 #include <pcl/filters/voxel_grid.h>
 
+#include "lidar_localization/localization_update_policy.hpp"
+#include "lidar_localization/pose_backend_result_policy.hpp"
 #include "lidar_localization/registration_engine.hpp"
+#include "lidar_localization/scan_tracker.hpp"
 
 struct lidarloc_core
 {
@@ -17,6 +20,14 @@ struct lidarloc_core
   lidarloc_config config{};
   std::string registration_method;
   bool map_set{false};
+  // lidarloc_localize's state: the tracking settings, the tracked pose and
+  // the prediction and gate state (scan_tracker.hpp).
+  lidarloc_tracking tracking{};
+  lidar_localization::MeasurementGateParamConfig gate;
+  lidar_localization::RecoveryRetryFromLastPoseParams retry;
+  lidar_localization::ScanTracker tracker;
+  bool tracking_started{false};
+  Eigen::Matrix4f current_pose{Eigen::Matrix4f::Identity()};
   mutable std::mutex log_mutex;
   std::string last_log;
 
@@ -136,6 +147,8 @@ lidarloc_core * lidarloc_create(const lidarloc_config * config, char * error, si
     e.local_map_update_distance = c.local_map_update_distance;
     e.scan_max_range = c.scan_max_range;
     e.ndt_init_scans_required = c.ndt_init_scans_required;
+    const lidarloc_tracking tracking = lidarloc_default_tracking();
+    lidarloc_set_tracking(core.get(), &tracking);
     if (!core->engine.configure(e)) {
       writeError(error, error_size, core->last_log);
       return nullptr;
@@ -234,6 +247,225 @@ int lidarloc_align(
         result->correspondence_count = metrics->correspondence_count;
       }
     }
+    return 0;
+  } catch (const std::exception & e) {
+    std::lock_guard<std::mutex> lock(core->log_mutex);
+    core->last_log = e.what();
+    return 2;
+  }
+}
+
+lidarloc_tracking lidarloc_default_tracking(void)
+{
+  const lidar_localization::MeasurementGateParams g;
+  const lidar_localization::RecoveryRetryFromLastPoseParams r;
+  lidarloc_tracking t{};
+  t.score_threshold = g.score_threshold;
+  t.min_inlier_ratio = 0.0;
+  t.enable_seed_correction_guard = g.enable_seed_correction_guard ? 1 : 0;
+  t.seed_correction_guard_translation_m = g.seed_correction_guard_translation_m;
+  t.seed_correction_guard_yaw_deg = g.seed_correction_guard_yaw_deg;
+  t.seed_correction_guard_release_rejections = g.seed_correction_guard_release_rejections;
+  t.seed_correction_guard_warmup_accepts = g.seed_correction_guard_warmup_accepts;
+  t.enable_seed_correction_window_guard = g.enable_seed_correction_window_guard ? 1 : 0;
+  t.seed_correction_window_guard_sec = g.seed_correction_window_guard_sec;
+  t.seed_correction_window_guard_translation_m = g.seed_correction_window_guard_translation_m;
+  t.enable_recovery_retry_from_last_pose = r.enable ? 1 : 0;
+  t.recovery_retry_from_last_pose_min_rejections = r.min_rejections;
+  t.recovery_retry_from_last_pose_max_accepted_gap_sec = r.max_accepted_gap_sec;
+  t.predict_pose_from_previous_delta = 1;
+  t.previous_delta_max_extrapolation_sec = 1.0;
+  return t;
+}
+
+int lidarloc_set_tracking(lidarloc_core * core, const lidarloc_tracking * tracking)
+{
+  if (!core || !tracking) {
+    return 1;
+  }
+  const lidarloc_tracking & t = *tracking;
+  core->tracking = t;
+  core->gate = lidar_localization::MeasurementGateParamConfig{};
+  core->gate.score_threshold = t.score_threshold;
+  core->gate.enable_seed_correction_guard = t.enable_seed_correction_guard != 0;
+  core->gate.seed_correction_guard_translation_m = t.seed_correction_guard_translation_m;
+  core->gate.seed_correction_guard_yaw_deg = t.seed_correction_guard_yaw_deg;
+  core->gate.seed_correction_guard_release_rejections =
+    t.seed_correction_guard_release_rejections;
+  core->gate.seed_correction_guard_warmup_accepts = t.seed_correction_guard_warmup_accepts;
+  core->gate.enable_seed_correction_window_guard = t.enable_seed_correction_window_guard != 0;
+  core->gate.seed_correction_window_guard_sec = t.seed_correction_window_guard_sec;
+  core->gate.seed_correction_window_guard_translation_m =
+    t.seed_correction_window_guard_translation_m;
+  core->retry = lidar_localization::RecoveryRetryFromLastPoseParams{};
+  core->retry.enable = t.enable_recovery_retry_from_last_pose != 0;
+  core->retry.min_rejections = t.recovery_retry_from_last_pose_min_rejections;
+  core->retry.max_accepted_gap_sec = t.recovery_retry_from_last_pose_max_accepted_gap_sec;
+  return 0;
+}
+
+int lidarloc_set_initial_pose(lidarloc_core * core, const double pose[16], double stamp_sec)
+{
+  if (!core || !pose) {
+    return 1;
+  }
+  core->current_pose = toMatrix(pose);
+  core->tracker.reset(core->current_pose, stamp_sec);
+  core->tracking_started = true;
+  return 0;
+}
+
+namespace
+{
+
+// The attempt into the C result.
+void fillResult(const lidar_localization::AlignmentAttempt & attempt, lidarloc_result & result)
+{
+  result.target_ready = attempt.target_ready ? 1 : 0;
+  result.has_converged = attempt.has_converged ? 1 : 0;
+  result.iterations = attempt.registration_iterations;
+  fromMatrix(attempt.has_converged ? attempt.final_transformation : attempt.init_guess, result.pose);
+  result.fitness_score = attempt.fitness_score;
+  result.inlier_ratio = attempt.inlier_ratio;
+  result.alignment_time_sec = attempt.alignment_time_sec;
+  const auto & metrics = attempt.registration_localizability;
+  result.localizability_valid = metrics.valid ? 1 : 0;
+  for (int k = 0; k < 6; ++k) {
+    result.eigenvalues[k] = metrics.eigenvalues[k];
+    result.weakest_eigenvector[k] = metrics.weakest_eigenvector[k];
+  }
+  result.weak_ratio = metrics.weak_ratio;
+  result.correspondence_count = metrics.correspondence_count;
+  result.map_distance_filter_kept_points = attempt.map_distance_filter_kept_points;
+}
+
+void writeStatus(const std::string & message, char (&out)[64])
+{
+  const std::size_t n = std::min(sizeof(out) - 1, message.size());
+  std::memcpy(out, message.data(), n);
+  out[n] = '\0';
+}
+
+}  // namespace
+
+int lidarloc_localize(
+  lidarloc_core * core, const float * xyz, size_t count, double stamp_sec,
+  const double seed[16], lidarloc_update * update)
+{
+  if (!core || !xyz || count == 0 || !update || !core->map_set || !core->tracking_started) {
+    return 1;
+  }
+  try {
+    namespace ll = lidar_localization;
+    *update = lidarloc_update{};
+    Cloud::Ptr source = toCloud(xyz, count);
+    if (core->config.filter_scan) {
+      // As the node's enable_scan_voxel_filter (component_scan_preparation.cpp).
+      Cloud::Ptr filtered(new Cloud());
+      pcl::VoxelGrid<pcl::PointXYZI> grid;
+      const auto leaf = static_cast<float>(core->config.voxel_leaf_size);
+      grid.setLeafSize(leaf, leaf, leaf);
+      grid.setInputCloud(source);
+      grid.filter(*filtered);
+      source = filtered;
+    }
+    update->alignment.source_points = source->size();
+    if (source->empty()) {
+      return 1;
+    }
+    auto & tracker = core->tracker;
+    const auto & tracking = core->tracking;
+    // The seed, as the node's selectRegistrationSeed without the IMU: the
+    // caller's (odometry), the previous delta, or the tracked pose.
+    Eigen::Matrix4f init_guess = core->current_pose;
+    if (seed) {
+      init_guess = toMatrix(seed);
+    } else if (tracking.predict_pose_from_previous_delta && tracker.prediction.have_last_accepted_pose) {
+      init_guess = tracker.prediction.predicted_pose_matrix *
+        tracker.previousDeltaMotionAt(stamp_sec, tracking.previous_delta_max_extrapolation_sec);
+    }
+    core->engine.setSource(source);
+    init_guess = core->engine.refineSeedWithNdtInitializer(source, init_guess);
+    fromMatrix(init_guess, update->seed);
+
+    const ll::AlignmentScoring scoring{
+      core->config.inlier_ratio_distance_m,
+      core->config.inlier_ratio_min_points,
+      tracking.min_inlier_ratio,
+      core->gate.score_threshold,
+      core->config.localizability != 0};
+    // One attempt, as the node's runAlignmentAttempt.
+    auto attempt_from = [&](const Eigen::Matrix4f & guess) {
+        ll::AlignmentAttempt attempt;
+        attempt.init_guess = guess;
+        if (!core->engine.setTargetForPose(guess)) {
+          return attempt;
+        }
+        attempt.target_ready = true;
+        const auto aligned = core->engine.align(guess);
+        ll::scoreAlignment(core->engine, aligned, scoring, attempt);
+        tracker.fillSeedMetrics(attempt, stamp_sec);
+        return attempt;
+      };
+    tracker.gate_scan_stamp_sec = stamp_sec;
+    const auto primary = attempt_from(init_guess);
+    const auto pipeline = ll::runAlignmentPipeline(
+      primary,
+      ll::AlignmentPipelineInput{
+        tracker.prediction.have_last_accepted_pose,
+        tracker.prediction.consecutive_rejected_updates,
+        stamp_sec,
+        tracker.prediction.last_accepted_pose_time_sec,
+        core->retry,
+        false,
+        "primary_retry_from_last_pose_rejected"},
+      [&]() {return attempt_from(tracker.prediction.last_accepted_pose_matrix);},
+      [&](const ll::AlignmentAttempt & attempt) {return tracker.evaluateGate(attempt, core->gate);});
+    fillResult(pipeline.selected_attempt, update->alignment);
+    update->retried_from_last_pose = pipeline.recovered_by_retry_from_last_pose ? 1 : 0;
+
+    const auto advance_mode = ll::choosePredictionAdvanceMode(
+      tracker.prediction.have_last_accepted_pose, false, false,
+      tracking.predict_pose_from_previous_delta != 0);
+    const auto handling = ll::decideAlignmentPipelineHandling(pipeline);
+    std::string status = pipeline.status_message;
+    int level = pipeline.status_level;
+    if (!handling.continue_to_backend) {
+      if (handling.advance_prediction_without_measurement) {
+        tracker.advanceWithoutMeasurement(
+          stamp_sec, advance_mode, Eigen::Matrix4f::Identity(),
+          tracking.previous_delta_max_extrapolation_sec);
+      }
+    } else {
+      // As the node's raw registration pose backend (component_pose_backend.cpp).
+      tracker.recordReleaseHistory(pipeline.selected_attempt, pipeline.gate_result, core->gate);
+      const auto result = ll::makePoseBackendResultFromLocalizationUpdate(
+        pipeline.selected_attempt.final_transformation,
+        pipeline.gate_result.status_level,
+        pipeline.gate_result.status_message,
+        ll::decideLocalizationUpdate(pipeline.gate_result));
+      status = result.status_message;
+      level = result.status_level;
+      if (result.advance_prediction_without_measurement) {
+        tracker.advanceWithoutMeasurement(
+          stamp_sec, advance_mode, Eigen::Matrix4f::Identity(),
+          tracking.previous_delta_max_extrapolation_sec);
+      } else if (result.update_prediction_from_rejected_measurement) {
+        tracker.rejectMeasurement(result.pose_matrix, stamp_sec);
+      } else {
+        if (result.update_current_pose) {
+          core->current_pose = result.pose_matrix;
+          update->accepted = 1;
+        }
+        if (result.update_prediction_state) {
+          tracker.acceptMeasurement(result.pose_matrix, stamp_sec, core->gate);
+        }
+      }
+    }
+    update->status_level = level;
+    writeStatus(status, update->status);
+    fromMatrix(core->current_pose, update->pose);
+    update->consecutive_rejected_updates = tracker.prediction.consecutive_rejected_updates;
     return 0;
   } catch (const std::exception & e) {
     std::lock_guard<std::mutex> lock(core->log_mutex);

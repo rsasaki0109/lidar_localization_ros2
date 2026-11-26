@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+**New: the per-scan tracking in `lidar_localization_core`.** The prediction state and
+the measurement gate's state (settled accepts, the windowed seed correction guard, the
+release agreement), with the gate's decision, the seed metrics and the scoring of an
+alignment, moved out of `PCLLocalization` into `lidar_localization::ScanTracker` and
+`scoreAlignment` (`scan_tracker.hpp`). The node runs the same code through them. The C
+API adds `lidarloc_localize`: one scan through the node's flow without the IMU (seed,
+NDT initializer, alignment, retry from the last accepted pose, measurement gate, update
+of the pose and the prediction), with `lidarloc_set_initial_pose` and
+`lidarloc_set_tracking` ([docs/core.md](docs/core.md)). No parameter, topic or
+behaviour changed.
+
 **New, opt-in: the map-distance prefilter for scans with people and vehicles the map
 lacks.** `map_distance_filter_m` (default 0: off; quickstart `--map-distance-filter-m`)
 aligns only the scan points within that distance of the map at the predicted pose, so

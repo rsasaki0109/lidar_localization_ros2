@@ -49,29 +49,14 @@ Eigen::Matrix4f PCLLocalization::applyTwistPrediction(
 
 void PCLLocalization::resetPredictionState(const Eigen::Matrix4f & pose_matrix, double stamp_sec)
 {
-  prediction_state_ = lidar_localization::resetPredictionState(pose_matrix, stamp_sec);
-  settled_accepts_since_reset_ = 0;
-  seed_correction_window_.clear();
-  seed_correction_release_history_.clear();
+  scan_tracker_.reset(pose_matrix, stamp_sec);
 }
 
 void PCLLocalization::updatePredictionState(
   const Eigen::Matrix4f & accepted_pose_matrix,
   double stamp_sec)
 {
-  // Store the pose at its timestamp in every prediction mode. Extrapolating
-  // here makes a later switch to twist integrate the same interval twice.
-  prediction_state_ = lidar_localization::updatePredictionStateFromAcceptedMeasurement(
-    prediction_state_, accepted_pose_matrix, stamp_sec, false);
-  settled_accepts_since_reset_ = lidar_localization::nextSettledAccepts(
-    settled_accepts_since_reset_, measurementGateParams(),
-    last_gated_correction_translation_m_, last_gated_correction_yaw_deg_,
-    prediction_state_.accepted_updates_since_reset == 1);
-  if (measurement_gate_config_.enable_seed_correction_window_guard) {
-    seed_correction_window_.add(
-      stamp_sec, last_gated_correction_map_dx_, last_gated_correction_map_dy_,
-      measurement_gate_config_.seed_correction_window_guard_sec);
-  }
+  scan_tracker_.acceptMeasurement(accepted_pose_matrix, stamp_sec, measurement_gate_config_);
 }
 
 void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
@@ -88,21 +73,18 @@ void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
     twist_predicted_pose_matrix =
       applyTwistPrediction(prediction_state_.predicted_pose_matrix, dt);
   }
-  prediction_state_ = lidar_localization::advancePredictionWithoutMeasurement(
-    prediction_state_, stamp_sec, advance_mode, twist_predicted_pose_matrix,
-    previousDeltaMotionAt(stamp_sec));
+  scan_tracker_.advanceWithoutMeasurement(
+    stamp_sec, advance_mode, twist_predicted_pose_matrix, previous_delta_max_extrapolation_sec_);
 }
 
 Eigen::Matrix4f PCLLocalization::previousDeltaMotionAt(double stamp_sec) const
 {
-  return lidar_localization::previousDeltaMotionAt(
-    prediction_state_, stamp_sec, previous_delta_max_extrapolation_sec_);
+  return scan_tracker_.previousDeltaMotionAt(stamp_sec, previous_delta_max_extrapolation_sec_);
 }
 
 void PCLLocalization::updatePredictionFromRejectedMeasurement(
   const Eigen::Matrix4f & rejected_pose_matrix,
   double stamp_sec)
 {
-  prediction_state_ = lidar_localization::updatePredictionFromRejectedMeasurement(
-    prediction_state_, rejected_pose_matrix, stamp_sec);
+  scan_tracker_.rejectMeasurement(rejected_pose_matrix, stamp_sec);
 }

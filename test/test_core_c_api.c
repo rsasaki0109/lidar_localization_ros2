@@ -83,6 +83,71 @@ static void check(
   lidarloc_destroy(core);
 }
 
+/* The scan of the map seen from pose m. */
+static void scan_from(const float * map, size_t n, const double m[16], float * scan)
+{
+  for (size_t i = 0; i < n; ++i) {
+    const double dx = map[3 * i] - m[3], dy = map[3 * i + 1] - m[7];
+    scan[3 * i] = (float)(m[0] * dx + m[4] * dy);
+    scan[3 * i + 1] = (float)(m[1] * dx + m[5] * dy);
+    scan[3 * i + 2] = map[3 * i + 2];
+  }
+}
+
+/* lidarloc_localize along a drive: from an initial pose, scans every 0.1 s
+ * at 2 m/s turning 0.05 rad a scan, seeded by the previous delta; every scan
+ * is accepted and the track stays on the truth. Then a seed 3 m off with the
+ * seed correction guard on is rejected and the track holds. */
+static void check_tracking(const float * map, size_t n)
+{
+  lidarloc_config config = lidarloc_default_config();
+  config.registration_method = "GICP_OMP";
+  config.ndt_num_threads = 2;
+  char error[256];
+  lidarloc_core * core = lidarloc_create(&config, error, sizeof error);
+  assert(core);
+  assert(lidarloc_set_map(core, map, n) == 0);
+  lidarloc_tracking tracking = lidarloc_default_tracking();
+  tracking.score_threshold = 0.5;
+  tracking.enable_seed_correction_guard = 1;
+  tracking.seed_correction_guard_translation_m = 0.5;
+  tracking.seed_correction_guard_warmup_accepts = 3;
+  assert(lidarloc_set_tracking(core, &tracking) == 0);
+  float * scan = malloc(3 * n * sizeof(float));
+  lidarloc_update update;
+  double truth[16];
+  pose(-4.0, -3.0, 0.0, truth);
+  /* Nothing before the initial pose. */
+  scan_from(map, n, truth, scan);
+  assert(lidarloc_localize(core, scan, n, 0.0, NULL, &update) != 0);
+  assert(lidarloc_set_initial_pose(core, truth, 0.0) == 0);
+  double x = -4.0, y = -3.0, yaw = 0.0;
+  for (int k = 1; k <= 20; ++k) {
+    x += 0.2 * cos(yaw);
+    y += 0.2 * sin(yaw);
+    yaw += 0.05;
+    pose(x, y, yaw, truth);
+    scan_from(map, n, truth, scan);
+    assert(lidarloc_localize(core, scan, n, 0.1 * k, NULL, &update) == 0);
+    const double error_m = hypot(update.pose[3] - x, update.pose[7] - y);
+    if (!update.accepted || error_m > 0.05) {
+      printf("scan %d: %s, %.3f m off\n", k, update.status, error_m);
+    }
+    assert(update.accepted && error_m < 0.05);
+  }
+  printf("tracked 20 scans: %.3f m off, %s\n", hypot(update.pose[3] - x, update.pose[7] - y),
+    update.status);
+  /* A seed 3 m off: the guard rejects the 3 m correction and the track holds. */
+  double off[16];
+  pose(x + 3.0, y, yaw, off);
+  assert(lidarloc_localize(core, scan, n, 2.1, off, &update) == 0);
+  printf("seed 3 m off: accepted %d, %s\n", update.accepted, update.status);
+  assert(!update.accepted && update.consecutive_rejected_updates == 1);
+  assert(hypot(update.pose[3] - x, update.pose[7] - y) < 0.05);
+  lidarloc_destroy(core);
+  free(scan);
+}
+
 int main(void)
 {
   const size_t n = room(NULL);
@@ -106,6 +171,7 @@ int main(void)
    * 0.2 m samples, and it stops a few centimetres off. */
   check("GICP_OMP", map, scan, n, truth, guess, 0.02, 0.005);
   check("NDT_OMP", map, scan, n, truth, guess, 0.1, 0.02);
+  check_tracking(map, n);
 
   lidarloc_config config = lidarloc_default_config();
   char error[256];
