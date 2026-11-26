@@ -22,6 +22,75 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_CXX_FLAGS "-O2 -g ${CMAKE_CXX_FLAGS}")
 endif()
 
+# lidar_localization_core: the registration engine (registration_engine.hpp)
+# and the C API over it (core_c_api.h), without ROS. The node links it; with
+# LIDAR_LOCALIZATION_CORE_ONLY only it is built, for programs that localize
+# without ROS 2 (docs/core.md): then only PCL, Eigen, OpenMP and the pclomp
+# headers of ndt_omp_ros2 (NDT_OMP_ROS2_INCLUDE_DIR) are needed.
+option(LIDAR_LOCALIZATION_CORE_ONLY "Build only lidar_localization_core, without ROS 2" OFF)
+set(LIDAR_LOCALIZATION_CORE_SOURCES
+  src/registration_engine.cpp
+  src/ndt_omp_instantiation.cpp
+  src/core_c_api.cpp
+)
+
+# Defines lidar_localization_core; pclomp comes from the include directory or
+# the link target given.
+function(lidar_localization_add_core pclomp_include_dir pclomp_target)
+  add_library(lidar_localization_core STATIC ${LIDAR_LOCALIZATION_CORE_SOURCES})
+  set_target_properties(lidar_localization_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  target_include_directories(lidar_localization_core PUBLIC
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+    "$<INSTALL_INTERFACE:include>"
+    ${PCL_INCLUDE_DIRS})
+  if(pclomp_include_dir)
+    target_include_directories(lidar_localization_core PUBLIC "${pclomp_include_dir}")
+  endif()
+  if(pclomp_target)
+    target_link_libraries(lidar_localization_core PUBLIC ${pclomp_target})
+  endif()
+  target_link_libraries(lidar_localization_core PUBLIC ${PCL_LIBRARIES} Eigen3::Eigen)
+  if(OpenMP_CXX_FOUND)
+    target_link_libraries(lidar_localization_core PUBLIC OpenMP::OpenMP_CXX)
+  endif()
+  if(small_gicp_FOUND)
+    target_compile_definitions(lidar_localization_core PUBLIC LIDAR_LOCALIZATION_HAVE_SMALL_GICP=1)
+    target_link_libraries(lidar_localization_core PUBLIC small_gicp::small_gicp)
+  endif()
+endfunction()
+
+# The C API from a C program (test/test_core_c_api.c), in both builds.
+function(lidar_localization_add_core_c_api_test)
+  add_executable(test_core_c_api test/test_core_c_api.c)
+  set_target_properties(test_core_c_api PROPERTIES LINKER_LANGUAGE CXX)
+  target_link_libraries(test_core_c_api lidar_localization_core m)
+  add_test(NAME core_c_api COMMAND test_core_c_api)
+  set_tests_properties(core_c_api PROPERTIES TIMEOUT 60)
+endfunction()
+
+if(LIDAR_LOCALIZATION_CORE_ONLY)
+  find_package(PCL REQUIRED)
+  find_package(Eigen3 REQUIRED)
+  find_package(OpenMP)
+  find_package(small_gicp QUIET CONFIG)
+  find_path(NDT_OMP_ROS2_INCLUDE_DIR pclomp/ndt_omp.h
+    HINTS "${NDT_OMP_ROS2_SOURCE_DIR}/include")
+  if(NOT NDT_OMP_ROS2_INCLUDE_DIR)
+    message(FATAL_ERROR
+      "pclomp headers not found: set NDT_OMP_ROS2_SOURCE_DIR to an ndt_omp_ros2 checkout")
+  endif()
+  lidar_localization_add_core("${NDT_OMP_ROS2_INCLUDE_DIR}" "")
+  install(TARGETS lidar_localization_core ARCHIVE DESTINATION lib)
+  file(GLOB LIDAR_LOCALIZATION_CORE_HEADERS
+    include/lidar_localization/*.hpp include/lidar_localization/*.h)
+  install(FILES ${LIDAR_LOCALIZATION_CORE_HEADERS} DESTINATION include/lidar_localization)
+  include(CTest)
+  if(BUILD_TESTING)
+    lidar_localization_add_core_c_api_test()
+  endif()
+  return()
+endif()
+
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
@@ -57,6 +126,12 @@ if (OPENMP_FOUND)
 endif()
 
 
+if(TARGET ndt_omp_ros2::ndt_omp)
+  lidar_localization_add_core("" ndt_omp_ros2::ndt_omp)
+else()
+  lidar_localization_add_core("${ndt_omp_ros2_INCLUDE_DIRS}" "${ndt_omp_ros2_LIBRARIES}")
+endif()
+
 add_library(lidar_localization_component SHARED
   src/component_lifecycle.cpp
   src/component_parameters.cpp
@@ -69,9 +144,10 @@ add_library(lidar_localization_component SHARED
   src/component_pose_publisher.cpp
   src/component_reinit_recovery.cpp
   src/component_diagnostics.cpp
-  src/ndt_omp_instantiation.cpp
 )
-target_link_libraries(lidar_localization_component Eigen3::Eigen)
+# The core first: its NDT_OMP and GICP_OMP instantiations (ndt_omp_instantiation.cpp)
+# are linked before libndt_omp.
+target_link_libraries(lidar_localization_component lidar_localization_core Eigen3::Eigen)
 
 ament_target_dependencies(lidar_localization_component
   rclcpp
@@ -696,9 +772,10 @@ if(BUILD_TESTING)
   add_test(NAME removed_parameters COMMAND test_removed_parameters)
   set_tests_properties(removed_parameters PROPERTIES TIMEOUT 30)
 
+  lidar_localization_add_core_c_api_test()
+
   add_executable(test_local_map_async_rebuild test/test_local_map_async_rebuild.cpp)
-  target_link_libraries(test_local_map_async_rebuild
-    lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+  target_link_libraries(test_local_map_async_rebuild lidar_localization_core)
   add_test(NAME local_map_async_rebuild COMMAND test_local_map_async_rebuild)
   set_tests_properties(local_map_async_rebuild PROPERTIES TIMEOUT 120)
 

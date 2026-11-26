@@ -33,8 +33,8 @@ bool PCLLocalization::admitScanMessage(
       min_scan_interval_sec_,
       has_last_process_time,
       elapsed_since_last_process_sec,
-      consecutive_crop_failures_,
-      crop_failure_guard_active_,
+      registration_engine_.consecutiveCropFailures(),
+      registration_engine_.cropFailureGuardActive(),
       prediction_state_.have_last_accepted_pose});
 
   if (admission.should_warn_null_scan) {
@@ -56,7 +56,7 @@ bool PCLLocalization::admitScanMessage(
       *scan_stamp_sec = current_scan_stamp_sec;
     }
     if (admission.should_activate_crop_failure_guard) {
-      crop_failure_guard_active_ = true;
+      registration_engine_.activateCropFailureGuard();
       if (admission.should_reset_prediction_to_last_accepted_pose) {
         prediction_state_.predicted_pose_matrix = prediction_state_.last_accepted_pose_matrix;
         prediction_state_.predicted_pose_time_sec = current_scan_stamp_sec;
@@ -67,7 +67,7 @@ bool PCLLocalization::admitScanMessage(
         get_logger(),
         "Activating crop failure guard after %d consecutive crop failures; "
         "dropping subsequent scans until a new initial pose arrives.",
-        consecutive_crop_failures_);
+        registration_engine_.consecutiveCropFailures());
     }
   }
 

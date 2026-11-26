@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+**New: `lidar_localization_core`, the registration without ROS 2.** The node's
+registration (backend, map, local-map targets with background rebuilds and the crop
+failure guard, NDT initializer, alignment with fitness and localizability) moved out of
+`PCLLocalization` into `lidar_localization::RegistrationEngine`
+(`registration_engine.hpp`), a library that does not depend on ROS. The node links it,
+so it runs the same code as before. A C API (`core_c_api.h`) lets other programs and
+languages use it, and `-DLIDAR_LOCALIZATION_CORE_ONLY=ON` builds only it, from PCL, Eigen,
+OpenMP and the pclomp headers ([docs/core.md](docs/core.md)). `makeInitialMapMessage`
+moved to `initial_map_message.hpp` so that `map_initialization_policy.hpp` stays free of
+ROS. No parameter, topic or behaviour changed.
+
 **Upgrading / behaviour change for anyone running `quickstart.py` with an odometry
 TF:** when odometry prediction is on (`use_odom_tf_prediction: true`, whether quickstart
 discovered the odom TF or you passed `--odom-tf-prediction`), three settings that were
