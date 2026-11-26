@@ -102,6 +102,66 @@ int lidarloc_align(
   lidarloc_core * core, const float * xyz, size_t count, const double guess[16],
   lidarloc_result * result);
 
+/* The tracking around each alignment in lidarloc_localize: the node's
+ * measurement gate, its retry from the last accepted pose and its prediction
+ * (the node's parameters of the same names; no IMU). */
+typedef struct lidarloc_tracking
+{
+  /* The gate rejects a score above this (NDT fitness, or with
+   * min_inlier_ratio the inlier ratio on that scale). */
+  double score_threshold;
+  double min_inlier_ratio;
+  int enable_seed_correction_guard;
+  double seed_correction_guard_translation_m;
+  double seed_correction_guard_yaw_deg;
+  int seed_correction_guard_release_rejections;
+  int seed_correction_guard_warmup_accepts;
+  int enable_seed_correction_window_guard;
+  double seed_correction_window_guard_sec;
+  double seed_correction_window_guard_translation_m;
+  int enable_recovery_retry_from_last_pose;
+  int recovery_retry_from_last_pose_min_rejections;
+  double recovery_retry_from_last_pose_max_accepted_gap_sec;
+  /* Without a seed from the caller: the last accepted motion extrapolated
+   * (as predict_pose_from_previous_delta), else the tracked pose. */
+  int predict_pose_from_previous_delta;
+  double previous_delta_max_extrapolation_sec;
+} lidarloc_tracking;
+
+typedef struct lidarloc_update
+{
+  /* Whether the gate accepted the scan and the tracked pose moved to it. */
+  int accepted;
+  /* The node's status: level 0 ok, 1 warn, 2 error, and its message
+   * (e.g. "ok", "score_threshold_rejected", "registration_not_converged"). */
+  int status_level;
+  char status[64];
+  /* The tracked pose after this scan, and the seed the scan was aligned from. */
+  double pose[16];
+  double seed[16];
+  int retried_from_last_pose;
+  size_t consecutive_rejected_updates;
+  /* The alignment the gate judged. */
+  lidarloc_result alignment;
+} lidarloc_update;
+
+/* The node's defaults for the tracking. */
+lidarloc_tracking lidarloc_default_tracking(void);
+/* Sets the tracking; 0 on success. */
+int lidarloc_set_tracking(lidarloc_core * core, const lidarloc_tracking * tracking);
+/* Starts tracking at a pose (an initial pose, a reset); 0 on success. */
+int lidarloc_set_initial_pose(lidarloc_core * core, const double pose[16], double stamp_sec);
+
+/* One scan through the node's per-scan flow, without the IMU: the seed (the
+ * caller's, e.g. predicted from odometry, or NULL for the prediction), the
+ * NDT initializer, the alignment, a retry from the last accepted pose, the
+ * measurement gate, and the update of the tracked pose and the prediction.
+ * Needs a map and an initial pose. 0 when the scan was processed (accepted or
+ * not), nonzero when it could not be (no map or initial pose, empty scan). */
+int lidarloc_localize(
+  lidarloc_core * core, const float * xyz, size_t count, double stamp_sec,
+  const double seed[16], lidarloc_update * update);
+
 /* The last message the engine logged (empty when none). */
 const char * lidarloc_last_log(const lidarloc_core * core);
 

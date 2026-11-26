@@ -30,6 +30,7 @@ endif()
 option(LIDAR_LOCALIZATION_CORE_ONLY "Build only lidar_localization_core, without ROS 2" OFF)
 set(LIDAR_LOCALIZATION_CORE_SOURCES
   src/registration_engine.cpp
+  src/scan_tracker.cpp
   src/ndt_omp_instantiation.cpp
   src/core_c_api.cpp
 )

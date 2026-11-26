@@ -92,6 +92,7 @@
 #include "lidar_localization/prediction_state_policy.hpp"
 #include "lidar_localization/registration_backend_policy.hpp"
 #include "lidar_localization/registration_engine.hpp"
+#include "lidar_localization/scan_tracker.hpp"
 #include "lidar_localization/registration_cloud_keep_alive_policy.hpp"
 #include "lidar_localization/registration_observation_policy.hpp"
 #include "lidar_localization/registration_seed_policy.hpp"
@@ -521,20 +522,21 @@ public:
   TwistGtsamSmoother gtsam_smoother_;
   float last_ndt_roll_{0.0f};
   float last_ndt_pitch_{0.0f};
-  lidar_localization::PredictionState prediction_state_;
-  // Seed correction guard warmup: consecutive small-correction accepts since
-  // the last reset or odometry gap, and the correction of the last gated scan.
-  std::size_t settled_accepts_since_reset_{0};
-  double last_gated_correction_translation_m_{std::numeric_limits<double>::infinity()};
-  double last_gated_correction_yaw_deg_{std::numeric_limits<double>::infinity()};
-  // Windowed seed correction guard: map-frame horizontal correction of the last
-  // gated scan, the stamp of the scan being gated, and the accepted corrections.
-  double last_gated_correction_map_dx_{0.0};
-  double last_gated_correction_map_dy_{0.0};
-  double gate_scan_stamp_sec_{std::numeric_limits<double>::quiet_NaN()};
-  lidar_localization::SeedCorrectionWindow seed_correction_window_;
-  // Release agreement: corrections of the latest guard-rejected scans.
-  lidar_localization::SeedCorrectionReleaseHistory seed_correction_release_history_;
+  // The prediction state and the measurement gate's state (scan_tracker.hpp),
+  // under the names the node's code reads them by.
+  lidar_localization::ScanTracker scan_tracker_;
+  lidar_localization::PredictionState & prediction_state_{scan_tracker_.prediction};
+  std::size_t & settled_accepts_since_reset_{scan_tracker_.settled_accepts_since_reset};
+  double & last_gated_correction_translation_m_{
+    scan_tracker_.last_gated_correction_translation_m};
+  double & last_gated_correction_yaw_deg_{scan_tracker_.last_gated_correction_yaw_deg};
+  double & last_gated_correction_map_dx_{scan_tracker_.last_gated_correction_map_dx};
+  double & last_gated_correction_map_dy_{scan_tracker_.last_gated_correction_map_dy};
+  double & gate_scan_stamp_sec_{scan_tracker_.gate_scan_stamp_sec};
+  lidar_localization::SeedCorrectionWindow & seed_correction_window_{
+    scan_tracker_.seed_correction_window};
+  lidar_localization::SeedCorrectionReleaseHistory & seed_correction_release_history_{
+    scan_tracker_.seed_correction_release_history};
   double last_odom_seed_stamp_sec_{std::numeric_limits<double>::quiet_NaN()};
   // Set by a trusted /initialpose (seed_correction_guard_trusted_start_position_std_m)
   // and consumed by the next scan's seed selection.
