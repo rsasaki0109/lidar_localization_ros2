@@ -252,6 +252,8 @@ int lidarloc_align(
   }
   try {
     *result = lidarloc_result{};
+    result->horizontal_constraint[0] = std::numeric_limits<double>::quiet_NaN();
+    result->horizontal_constraint[1] = std::numeric_limits<double>::quiet_NaN();
     const Eigen::Matrix4f seed = toMatrix(guess);
     fromMatrix(seed, result->pose);
     result->iterations = -1;
@@ -338,6 +340,7 @@ lidarloc_tracking lidarloc_default_tracking(void)
   const lidar_localization::DegeneracyRemappingParams remapping;
   t.enable_degeneracy_remapping = remapping.enable ? 1 : 0;
   t.degeneracy_remapping_weak_ratio = remapping.weak_ratio;
+  t.degeneracy_remapping_min_horizontal_constraint = remapping.min_horizontal_constraint;
   return t;
 }
 
@@ -467,6 +470,8 @@ void fillResult(const lidar_localization::AlignmentAttempt & attempt, lidarloc_r
   result.map_distance_filter_applied = attempt.map_distance_filter_status == "applied" ? 1 : 0;
   result.degeneracy_remapped = attempt.degeneracy_remapped ? 1 : 0;
   result.degeneracy_dropped_m = attempt.degeneracy_dropped_m;
+  result.horizontal_constraint[0] = attempt.horizontal_constraint(0);
+  result.horizontal_constraint[1] = attempt.horizontal_constraint(1);
 }
 
 template<std::size_t N>
@@ -595,7 +600,7 @@ int lidarloc_localize(
       core->config.localizability != 0,
       ll::DegeneracyRemappingParams{
         tracking.enable_degeneracy_remapping != 0, tracking.degeneracy_remapping_weak_ratio,
-        0.7}};
+        0.7, tracking.degeneracy_remapping_min_horizontal_constraint}};
     // One attempt, as the node's runAlignmentAttempt: the target around
     // crop_center, and only the primary attempt filtered by map distance
     // (applyMapDistanceFilter).

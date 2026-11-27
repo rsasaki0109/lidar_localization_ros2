@@ -67,6 +67,29 @@ int main()
   aligned = at(10.6f, 2.1f);
   assert(!ll::remapDegenerateCorrection(seed, aligned, none, params).applied);
 
+  // By the surfaces under the scan: off without min_horizontal_constraint.
+  aligned = at(10.6f, 2.1f);
+  Eigen::Matrix2d information = Eigen::Matrix2d::Zero();
+  assert(ll::remapUnconstrainedCorrection(seed, aligned, information, params).dropped_directions ==
+    0);
+  params.min_horizontal_constraint = 0.02;
+  // Bare ground: nothing faces sideways, both directions dropped.
+  auto u = ll::remapUnconstrainedCorrection(seed, aligned, information, params);
+  assert(u.dropped_directions == 2);
+  assert(std::abs(aligned(0, 3) - 10.0f) < 1e-5f && std::abs(aligned(1, 3) - 2.0f) < 1e-5f);
+  // Walls facing y (a corridor along x): only x dropped.
+  aligned = at(10.6f, 2.1f);
+  information << 0.001, 0.0, 0.0, 0.5;
+  u = ll::remapUnconstrainedCorrection(seed, aligned, information, params);
+  assert(u.dropped_directions == 1 && std::abs(u.dropped_m - 0.6) < 1e-5);
+  assert(std::abs(aligned(0, 3) - 10.0f) < 1e-5f && std::abs(aligned(1, 3) - 2.1f) < 1e-5f);
+  // Surfaces facing both ways: nothing dropped.
+  aligned = at(10.6f, 2.1f);
+  information << 0.3, 0.0, 0.0, 0.5;
+  assert(ll::remapUnconstrainedCorrection(seed, aligned, information, params).dropped_directions ==
+    0);
+  assert(aligned(0, 3) == 10.6f);
+
   std::printf("degeneracy remapping policy: ok\n");
   return 0;
 }

@@ -115,7 +115,10 @@ and scans but no ROS graph. It is the same code the node runs, not a copy.
   where NDT_OMP's Hessian is weakest along a horizontal translation it barely constrains
   (a corridor, a tunnel), the alignment's correction along it is dropped. `scoreAlignment`
   applies it, so the node (`enable_degeneracy_remapping`) and `lidarloc_localize`
-  (`lidarloc_tracking.enable_degeneracy_remapping`) share it. Off by default.
+  (`lidarloc_tracking.enable_degeneracy_remapping`) share it. Off by default. With
+  `degeneracy_remapping_min_horizontal_constraint` it also drops the correction along the
+  horizontal directions the map's surfaces under the scan barely face
+  (`RegistrationEngine::horizontalConstraint`): bare ground, which NDT's Hessian misses.
 - Global localization (`GlobalLocalizer`,
   [global_localization.hpp](../include/lidar_localization/global_localization.hpp)): the G2
   engine "bbs3d" search over the whole map (3D-BBS's voxel maps, `bbs3d_topk_search.hpp`),

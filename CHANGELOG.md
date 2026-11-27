@@ -15,6 +15,12 @@ corridor (`degeneracy_remapping_policy.hpp`, in `scoreAlignment`; the C API's
 tunnel, where it took lidar_localization_ros2's tracking from 95 m at worst to 2.9 m; in the
 C API test's corridor NDT slid 0.12 m along it from a seed 0.3 m off, and with remapping it
 keeps the seed's 0.3 m while correcting the 0.2 m across.
+`degeneracy_remapping_min_horizontal_constraint` (default 0, off; any backend) also drops
+the correction along every horizontal direction the map's surfaces under the scan pin less
+than that: the eigenvalues of the summed horizontal parts of their normals over the scan's
+point count (`RegistrationEngine::horizontalConstraint`, `registration_fitness.hpp`). On bare
+ground they are both zero, where NDT's cells pin the scan to their lattice and its Hessian
+reports it well constrained (Robot Native Engine's fields: NDT stopped 0.5-2.6 m off).
 
 **New: global localization in `lidar_localization_core`.** The G2 engine "bbs3d" search
 over the whole map, with each candidate refined by the registration and the decision of

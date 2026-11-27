@@ -41,6 +41,7 @@ void PCLLocalization::declareImuPreintegrationParameters()
   // (degeneracy_remapping_policy.hpp).
   declare_parameter("enable_degeneracy_remapping", false);
   declare_parameter("degeneracy_remapping_weak_ratio", 0.05);
+  declare_parameter("degeneracy_remapping_min_horizontal_constraint", 0.0);
 }
 
 void PCLLocalization::loadImuPreintegrationParameters()
@@ -87,6 +88,9 @@ void PCLLocalization::loadImuPreintegrationParameters()
     enable_registration_localizability_diagnostics_);
   get_parameter("enable_degeneracy_remapping", degeneracy_remapping_.enable);
   get_parameter("degeneracy_remapping_weak_ratio", degeneracy_remapping_.weak_ratio);
+  get_parameter(
+    "degeneracy_remapping_min_horizontal_constraint",
+    degeneracy_remapping_.min_horizontal_constraint);
   if (degeneracy_remapping_.enable && registration_method_ != "NDT_OMP") {
     RCLCPP_WARN(
       get_logger(),

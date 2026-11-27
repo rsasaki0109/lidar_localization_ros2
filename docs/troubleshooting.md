@@ -634,6 +634,11 @@ looks good; previous-delta prediction then extrapolates the jump.
   of its strongest eigenvalue, the correction along that direction is dropped and the
   pose keeps the prediction's position along the corridor. The prediction (odometry, the
   IMU or the previous motion) then carries the pose along it until the walls end.
+  `degeneracy_remapping_min_horizontal_constraint` (e.g. `0.02`) does the same by the
+  map's surfaces under the scan, along every horizontal direction fewer than that share
+  of the scan's points face: also on open ground (a field, a car park), where NDT's
+  cells pin a scan of bare ground to their lattice and the Hessian looks well
+  constrained.
 
 ## Symptom: Tracking Does Not Recover After Leaving the Map With External Odometry
 

@@ -90,6 +90,11 @@ typedef struct lidarloc_result
    * along the Hessian's weakest direction was dropped, and how much (m). */
   int degeneracy_remapped;
   double degeneracy_dropped_m;
+  /* With degeneracy_remapping_min_horizontal_constraint: how the map's
+   * surfaces pin the scan horizontally, the eigenvalues (ascending) of the
+   * summed horizontal parts of the surface normals under the scan's points
+   * over its point count; NaN when not computed. */
+  double horizontal_constraint[2];
 } lidarloc_result;
 
 /* The node's parameter defaults, but NDT_OMP (the node's default is PCL's NDT)
@@ -152,6 +157,12 @@ typedef struct lidarloc_tracking
    * seed's position along it. Off by default. */
   int enable_degeneracy_remapping;
   double degeneracy_remapping_weak_ratio;
+  /* Above 0 (with enable_degeneracy_remapping, any backend with a target search
+   * tree): also drop the correction along every horizontal direction the map's
+   * surfaces under the scan pin less than this (see horizontal_constraint in
+   * lidarloc_result). Bare ground pins neither, though NDT's Hessian says it
+   * does. */
+  double degeneracy_remapping_min_horizontal_constraint;
 } lidarloc_tracking;
 
 typedef struct lidarloc_update

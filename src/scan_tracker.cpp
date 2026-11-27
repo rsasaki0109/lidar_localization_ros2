@@ -173,6 +173,20 @@ void scoreAlignment(
       scoring.remapping);
     attempt.degeneracy_remapped = remapping.applied;
     attempt.degeneracy_dropped_m = remapping.dropped_m;
+    if (scoring.remapping.enable && scoring.remapping.min_horizontal_constraint > 0.0) {
+      const auto constraint = engine.horizontalConstraint(scoring.inlier_ratio_distance_m);
+      if (constraint.valid) {
+        const auto unconstrained = remapUnconstrainedCorrection(
+          attempt.init_guess, attempt.final_transformation, constraint.information,
+          scoring.remapping);
+        attempt.horizontal_constraint = unconstrained.eigenvalues;
+        if (unconstrained.dropped_directions > 0) {
+          attempt.degeneracy_remapped = true;
+          attempt.degeneracy_dropped_m = std::hypot(
+            attempt.degeneracy_dropped_m, unconstrained.dropped_m);
+        }
+      }
+    }
     const auto correction_metrics =
       computeAlignmentCorrectionMetrics(attempt.init_guess, attempt.final_transformation);
     attempt.correction_translation_m = correction_metrics.translation_m;
