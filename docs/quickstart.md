@@ -431,7 +431,11 @@ with where each came from (`default with odometry prediction`, `default` or
 
 Without odometry prediction the window guard and the near-alias rule could not act, and
 the 1.5 m radius was only evaluated together with them, so all three keep the values of
-v1.12.0. `--global-search-engine bbs3d` and `--trusted-global-start-std-m` stay opt-in.
+v1.12.0. `--global-search-engine bbs3d` and `--trusted-global-start-std-m` stay opt-in,
+and so does `--map-distance-filter-m`: it keeps tracking among people and vehicles the
+map lacks, but it let the pose slide 0.7-1.2 m off in 2 of 45 clean Go2 cross-session
+runs and 1 of 3 among parked cars, where the guards alone did not
+([why it is not a default](benchmark.md#why-it-is-not-a-quickstart-default)).
 Why, and what it costs: [the A/B evaluation](benchmark.md#defaults-with-odometry-prediction).
 It was measured with the default (standalone) profile on Livox MID-360 sensors (a Go2
 and a handheld rig) with RKO-LIO odometry; other sensors and odometry sources get the

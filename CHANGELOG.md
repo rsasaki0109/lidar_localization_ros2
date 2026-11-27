@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+**Evaluated, not changed: the map-distance prefilter stays opt-in under quickstart's
+odometry defaults.** An A/B of `--map-distance-filter-m 0.5` against off, with
+odometry prediction and quickstart's other odometry defaults on (3 runs or seeds per
+case, RKO-LIO, MID-360): no wrong start, manual pose or loss it caused; on Koide
+`outdoor_hard_02b` p95 0.30-0.32 m instead of 0.41-0.46 m, no repeat of a 2 m loss on
+`01a` (1 of 3 runs without it), Koide with a crowd on 29% of the points tracked
+instead of lost (3 of 3 without it), and the Go2 crowd at 43% no longer lost once in
+three; 4-6 ms per scan at the median on 4 threads. But on the 15 Go2 cross-session
+cases it slid 0.7-1.2 m in 2 of 45 runs where no run without it did (stretches over
+0.3 m for more than 1 s: 7 against 4, 21.9 s against 7.2 s), once more among parked
+cars, and the 44% Koide crowd, lost either way, went farther with it: with the pose
+already 0.4-0.8 m off, the filter keeps the points that agree with it while the seed
+guard rejects the corrections back. Documented in
+[docs/benchmark.md](docs/benchmark.md#why-it-is-not-a-quickstart-default) and
+[docs/troubleshooting.md](docs/troubleshooting.md#symptom-tracking-is-lost-among-people-and-vehicles-dynamic-obstacles);
+no parameter, default or behaviour changed.
+
 **New: the per-scan tracking in `lidar_localization_core`.** The prediction state and
 the measurement gate's state (settled accepts, the windowed seed correction guard, the
 release agreement), with the gate's decision, the seed metrics and the scoring of an

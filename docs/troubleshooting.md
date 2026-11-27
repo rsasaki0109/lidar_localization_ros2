@@ -333,6 +333,16 @@ correct it. So:
   alignments have many points beyond 0.5 m of the map (a sparse map), use 1.0 m.
   Smaller distances remove more of each obstacle: what stays is its part within the
   distance of the ground or a wall.
+- It can hold on to a pose that is already off. Once the pose is 0.4-0.8 m off (after
+  a stretch the guards held on odometry, or small accepted corrections where the scene
+  differs from the map), the filter keeps the points that agree with it, the
+  alignments stay there, and the seed guard rejects the larger corrections back. On
+  clean Go2 cross-session data this slid the pose 0.7-1.2 m in 2 of 45 runs for
+  3-8 s at a time, where the guards alone did not, which is why quickstart does not turn it on
+  with odometry prediction
+  ([why it is not a default](benchmark.md#why-it-is-not-a-quickstart-default)). It
+  shows as streaks of `seed_correction_guard_rejected` while
+  `map_distance_filter_status` is `applied`. Turn the filter on where people or vehicles the map lacks are expected.
 
 `/alignment_status` reports `map_distance_filter_status` (`applied`, `warming_up`,
 `gap_too_long`, `too_few_kept`, `no_accepted_pose`, `no_target_tree`, `retry_seed`,
