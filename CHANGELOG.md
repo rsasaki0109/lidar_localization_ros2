@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+**New: local re-acquisition, the NDT Hessian and the map-distance prefilter in the C
+API.** The search the node runs after an odometry-bridged outage
+(`enable_local_reacquisition`) moved into `lidar_localization_core` as
+`proposeLocalReacquisition` (`local_reacquisition.hpp`), which the node now calls. The C
+API runs it in `lidarloc_localize` (`lidarloc_set_reacquisition`), on an occupancy grid
+generated from the map instead of a map file. `lidarloc_localize` also applies the
+map-distance prefilter as the node decides it (new `lidarloc_tracking` fields), which it
+skipped before. `lidarloc_result` adds the NDT_OMP score Hessian (`score_hessian`), from
+which a caller can estimate the pose covariance
+([docs/core.md](docs/core.md)). No node parameter, topic or behaviour changed; the C
+structs grew, so C API callers must rebuild.
+
 **New: the per-scan tracking in `lidar_localization_core`.** The prediction state and
 the measurement gate's state (settled accepts, the windowed seed correction guard, the
 release agreement), with the gate's decision, the seed metrics and the scoring of an

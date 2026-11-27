@@ -78,8 +78,19 @@ static void check(
   assert(
     fabs(atan2(result.pose[4], result.pose[0]) - atan2(truth[4], truth[0])) < tolerance_rad);
   assert(result.inlier_ratio > 0.9);
-  /* Only NDT_OMP reports its Hessian. */
+  /* Only NDT_OMP reports its Hessian: symmetric, and the NDT score at its
+   * maximum (negative definite: a negative diagonal). */
   assert(result.localizability_valid == (method[0] == 'N'));
+  assert(result.score_hessian_valid == (method[0] == 'N'));
+  if (result.score_hessian_valid) {
+    for (int r = 0; r < 6; ++r) {
+      assert(result.score_hessian[7 * r] < 0.0);
+      for (int c = 0; c < 6; ++c) {
+        assert(fabs(result.score_hessian[6 * r + c] - result.score_hessian[6 * c + r]) <=
+          1e-6 * fabs(result.score_hessian[7 * r]) + 1e-9);
+      }
+    }
+  }
   lidarloc_destroy(core);
 }
 
@@ -96,13 +107,17 @@ static void scan_from(const float * map, size_t n, const double m[16], float * s
 
 /* lidarloc_localize along a drive: from an initial pose, scans every 0.1 s
  * at 2 m/s turning 0.05 rad a scan, seeded by the previous delta; every scan
- * is accepted and the track stays on the truth. Then a seed 3 m off with the
- * seed correction guard on is rejected and the track holds. */
-static void check_tracking(const float * map, size_t n)
+ * is accepted and the track stays on the truth. Without the prefilter, a seed
+ * 3 m off with the seed correction guard on is then rejected and the track
+ * holds; with it, the prefilter applies from the fourth scan and keeps every
+ * point. */
+static void check_tracking(const float * map, size_t n, int filter)
 {
   lidarloc_config config = lidarloc_default_config();
   config.registration_method = "GICP_OMP";
   config.ndt_num_threads = 2;
+  /* With filter, the map-distance prefilter from the fourth accepted scan. */
+  config.map_distance_filter_m = filter ? 1.0 : 0.0;
   char error[256];
   lidarloc_core * core = lidarloc_create(&config, error, sizeof error);
   assert(core);
@@ -112,6 +127,7 @@ static void check_tracking(const float * map, size_t n)
   tracking.enable_seed_correction_guard = 1;
   tracking.seed_correction_guard_translation_m = 0.5;
   tracking.seed_correction_guard_warmup_accepts = 3;
+  tracking.map_distance_filter_warmup_accepts = 3;
   assert(lidarloc_set_tracking(core, &tracking) == 0);
   float * scan = malloc(3 * n * sizeof(float));
   lidarloc_update update;
@@ -134,16 +150,96 @@ static void check_tracking(const float * map, size_t n)
       printf("scan %d: %s, %.3f m off\n", k, update.status, error_m);
     }
     assert(update.accepted && error_m < 0.05);
+    /* Every point of this scan lies on the map. */
+    assert(update.alignment.map_distance_filter_applied == (filter && k > 3));
+    if (filter && k > 3) {
+      assert(update.alignment.map_distance_filter_kept_points == update.alignment.source_points);
+    }
   }
   printf("tracked 20 scans: %.3f m off, %s\n", hypot(update.pose[3] - x, update.pose[7] - y),
     update.status);
-  /* A seed 3 m off: the guard rejects the 3 m correction and the track holds. */
+  /* A seed 3 m off: the guard rejects the 3 m correction and the track holds.
+   * (Not with the prefilter, which needs a guess within about its distance:
+   * from 3 m along the room the long walls and the floor still fit.) */
+  if (filter) {
+    lidarloc_destroy(core);
+    free(scan);
+    return;
+  }
   double off[16];
   pose(x + 3.0, y, yaw, off);
   assert(lidarloc_localize(core, scan, n, 2.1, off, &update) == 0);
   printf("seed 3 m off: accepted %d, %s\n", update.accepted, update.status);
   assert(!update.accepted && update.consecutive_rejected_updates == 1);
   assert(hypot(update.pose[3] - x, update.pose[7] - y) < 0.05);
+  lidarloc_destroy(core);
+  free(scan);
+}
+
+/* Local re-acquisition after an odometry-bridged outage: tracking with
+ * odometry seeds, the odometry then 4 m off. The guard rejects the scans;
+ * after three, the search around the bridged seed proposes the true pose, and
+ * the next scan, seeded from it, is accepted there. */
+static void check_reacquisition(const float * map, size_t n)
+{
+  lidarloc_config config = lidarloc_default_config();
+  config.registration_method = "GICP_OMP";
+  config.ndt_num_threads = 2;
+  char error[256];
+  lidarloc_core * core = lidarloc_create(&config, error, sizeof error);
+  assert(core);
+  lidarloc_reacquisition reacquisition = lidarloc_default_reacquisition();
+  assert(!reacquisition.enable);
+  reacquisition.enable = 1;
+  reacquisition.min_rejections = 3;
+  reacquisition.attempt_interval_scans = 1;
+  reacquisition.search_radius_m = 6.0;
+  assert(lidarloc_set_reacquisition(core, &reacquisition) == 0);
+  /* The occupancy grid is built when the map is set. */
+  assert(lidarloc_set_map(core, map, n) == 0);
+  lidarloc_tracking tracking = lidarloc_default_tracking();
+  tracking.score_threshold = 0.5;
+  tracking.enable_seed_correction_guard = 1;
+  tracking.seed_correction_guard_translation_m = 0.5;
+  tracking.seed_correction_guard_warmup_accepts = 3;
+  assert(lidarloc_set_tracking(core, &tracking) == 0);
+  float * scan = malloc(3 * n * sizeof(float));
+  lidarloc_update update;
+  double truth[16], seed[16];
+  double x = -5.0, y = -3.0;
+  pose(x, y, 0.0, truth);
+  assert(lidarloc_set_initial_pose(core, truth, 0.0) == 0);
+  int k = 1;
+  for (; k <= 6; ++k) {
+    x += 0.2;
+    pose(x, y, 0.0, truth);
+    scan_from(map, n, truth, scan);
+    assert(lidarloc_localize(core, scan, n, 0.1 * k, truth, &update) == 0);
+    assert(update.accepted && !update.reacquisition_attempted);
+  }
+  int proposed_at = 0;
+  for (; k <= 12; ++k) {
+    x += 0.2;
+    pose(x, y, 0.0, truth);
+    pose(x + 4.0, y + 1.0, 0.0, seed);
+    scan_from(map, n, truth, scan);
+    assert(lidarloc_localize(core, scan, n, 0.1 * k, seed, &update) == 0);
+    printf(
+      "bridged scan %d: accepted %d (%s), seeded from re-acquisition %d, attempted %d: %s\n",
+      k, update.accepted, update.status, update.seeded_from_reacquisition,
+      update.reacquisition_attempted, update.reacquisition_reason);
+    if (update.seeded_from_reacquisition) {
+      assert(update.accepted);
+      assert(hypot(update.pose[3] - x, update.pose[7] - y) < 0.05);
+      break;
+    }
+    assert(!update.accepted);
+    if (update.reacquisition_proposed) {
+      assert(hypot(update.reacquisition_pose[3] - x, update.reacquisition_pose[7] - y) < 0.1);
+      proposed_at = k;
+    }
+  }
+  assert(proposed_at == 9 && k == 10);
   lidarloc_destroy(core);
   free(scan);
 }
@@ -171,7 +267,9 @@ int main(void)
    * 0.2 m samples, and it stops a few centimetres off. */
   check("GICP_OMP", map, scan, n, truth, guess, 0.02, 0.005);
   check("NDT_OMP", map, scan, n, truth, guess, 0.1, 0.02);
-  check_tracking(map, n);
+  check_tracking(map, n, 0);
+  check_tracking(map, n, 1);
+  check_reacquisition(map, n);
 
   lidarloc_config config = lidarloc_default_config();
   char error[256];

@@ -25,6 +25,9 @@ struct RegistrationLocalizabilityMetrics
   double weak_ratio{NAN};
   double absolute_condition_number{NAN};
   std::size_t nonpositive_eigenvalue_count{0};
+  // The analysed Hessian of the NDT score at the solution, row-major in
+  // (x, y, z, roll, pitch, yaw); zeros when not analysed.
+  std::array<double, 36> score_hessian{};
 };
 
 inline RegistrationLocalizabilityMetrics analyzeRegistrationHessian(

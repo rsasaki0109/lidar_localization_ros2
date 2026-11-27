@@ -15,7 +15,8 @@ and scans but no ROS graph. It is the same code the node runs, not a copy.
     or a crop around the pose (`enable_local_map_crop`). The crop can be rebuilt in the
     background (`local_map_async_rebuild`), and failed crops have a guard.
   - The NDT initializer for the GICP backends.
-  - One alignment, with its fitness, inlier ratio and (NDT_OMP) localizability.
+  - One alignment, with its fitness, inlier ratio and (NDT_OMP) localizability and score
+    Hessian.
   - The map-distance prefilter (`setSourceNearTarget`,
     [map_distance_filter.hpp](../include/lidar_localization/map_distance_filter.hpp)): the
     scan points farther than a distance from the target at the guess, such as people and
@@ -32,7 +33,8 @@ and scans but no ROS graph. It is the same code the node runs, not a copy.
   lidarloc_set_map(core, map_xyz, map_points);
   lidarloc_result result;
   lidarloc_align(core, scan_xyz, scan_points, guess /* 4x4 row-major */, &result);
-  /* result.pose, has_converged, fitness_score, inlier_ratio, eigenvalues, ... */
+  /* result.pose, has_converged, fitness_score, inlier_ratio, eigenvalues,
+     score_hessian, ... */
   lidarloc_destroy(core);
   ```
 
@@ -65,12 +67,16 @@ and scans but no ROS graph. It is the same code the node runs, not a copy.
   1. The seed: the caller's (for example, predicted from odometry), else the previous
      delta, else the tracked pose.
   2. The NDT initializer.
-  3. The alignment.
+  3. The alignment, of the points near the map with `map_distance_filter_m` once the
+     tracking is trusted (the node's decision, with the `map_distance_filter_*` fields of
+     `lidarloc_tracking`).
   4. A retry from the last accepted pose (`enable_recovery_retry_from_last_pose`).
   5. The measurement gate (score threshold, `min_inlier_ratio`, the seed correction guard
      and its window).
   6. The update of the tracked pose and the prediction, as the node's raw registration pose
      backend does.
+  7. With `lidarloc_set_reacquisition`, local re-acquisition after rejected scans given a
+     seed (see below).
 
   `lidarloc_set_initial_pose` starts it, and `lidarloc_set_tracking` sets the gate, retry
   and prediction parameters:
@@ -83,6 +89,32 @@ and scans but no ROS graph. It is the same code the node runs, not a copy.
   /* update.accepted, update.status ("ok", "seed_correction_guard_rejected", ...),
      update.pose (the tracked pose), update.alignment (the attempt the gate judged) */
   ```
+- Local re-acquisition (`proposeLocalReacquisition`,
+  [local_reacquisition.hpp](../include/lidar_localization/local_reacquisition.hpp)): when
+  odometry carried the pose through an outage and drifted beyond the registration's reach,
+  a 2D branch-and-bound search on an occupancy grid around the bridged pose, near its
+  heading; each candidate is refined by the registration, and the best is proposed only
+  when it passes the score threshold and no other place fits nearly as well. The node runs
+  it with `enable_local_reacquisition` on the occupancy map file it is given. In the C API,
+  `lidarloc_set_reacquisition` enables it with a grid generated from the map
+  (`occupancy_map_generation.hpp`), and `lidarloc_localize` runs it after
+  `min_rejections` rejected scans that came with a seed. The seed must then be the
+  odometry bridge (the last tracked pose moved by odometry). The next scan with a seed is
+  aligned from the proposal, and the gate on it decides:
+
+  ```c
+  lidarloc_reacquisition reacquisition = lidarloc_default_reacquisition();
+  reacquisition.enable = 1;
+  lidarloc_set_reacquisition(core, &reacquisition);   /* before or after the map */
+  lidarloc_localize(core, scan_xyz, scan_points, stamp_sec, odometry_seed, &update);
+  /* update.reacquisition_attempted, reacquisition_reason ("proposed", "ambiguous", ...),
+     reacquisition_pose; on the next scan seeded_from_reacquisition and accepted */
+  ```
+- The NDT score Hessian (`score_hessian`, NDT_OMP with `localizability`): the second
+  derivatives of the NDT score at the pose, in (x, y, z, roll, pitch, yaw). The score is
+  at a maximum there, so the Hessian is negative definite, and its negated inverse is the
+  shape of the pose covariance, up to a scale that depends on the NDT parameters and the
+  sensor noise.
 - The policy headers (`include/lidar_localization/*_policy.hpp`) are ROS-free as well, so the
   rest of the node's decisions can be called directly. See the node's `component_*.cpp` for
   how they are combined.
@@ -91,7 +123,7 @@ The rest of the node is not in the core yet:
 - seed selection with the IMU, twist and odometry TF;
 - the IMU and GTSAM smoothers;
 - deskew;
-- local reacquisition and reinitialization;
+- global reinitialization (the G2 search) and the recovery supervisor;
 - publishing.
 
 These still live in `PCLLocalization`.
