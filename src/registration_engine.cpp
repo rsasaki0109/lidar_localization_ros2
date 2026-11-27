@@ -685,7 +685,13 @@ std::optional<RegistrationLocalizabilityMetrics> RegistrationEngine::localizabil
   Eigen::Matrix<double, 6, 6> hessian;
   std::size_t correspondence_count = 0;
   registration_objects_.ndt_omp->evaluateFinalScoreHessian(hessian, correspondence_count);
-  return analyzeRegistrationHessian(hessian, correspondence_count);
+  auto metrics = analyzeRegistrationHessian(hessian, correspondence_count);
+  for (Eigen::Index row = 0; row < 6; ++row) {
+    for (Eigen::Index col = 0; col < 6; ++col) {
+      metrics.score_hessian[static_cast<std::size_t>(row * 6 + col)] = hessian(row, col);
+    }
+  }
+  return metrics;
 }
 
 void RegistrationEngine::resetCropFailureGuard()

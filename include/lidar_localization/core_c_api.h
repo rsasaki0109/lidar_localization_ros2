@@ -81,6 +81,11 @@ typedef struct lidarloc_result
    * guess, and whether only those were aligned. */
   size_t map_distance_filter_kept_points;
   int map_distance_filter_applied;
+  /* With localizability, for NDT_OMP: the Hessian of the NDT score at the
+   * pose, row-major in (x, y, z, roll, pitch, yaw). Its inverse, negated,
+   * approximates the pose covariance up to the scale of the NDT score. */
+  int score_hessian_valid;
+  double score_hessian[36];
 } lidarloc_result;
 
 /* The node's parameter defaults, but NDT_OMP (the node's default is PCL's NDT)
@@ -126,6 +131,16 @@ typedef struct lidarloc_tracking
    * (as predict_pose_from_previous_delta), else the tracked pose. */
   int predict_pose_from_previous_delta;
   double previous_delta_max_extrapolation_sec;
+  /* The map-distance prefilter on the primary alignment (config's
+   * map_distance_filter_m above 0), as the node decides it
+   * (map_distance_filter.hpp): from map_distance_filter_warmup_accepts
+   * accepted scans after the initial pose, at map_distance_filter_m growing by
+   * growth_m_per_s per second since the last accepted scan beyond one scan
+   * period, up to max_distance_m. Retries align the whole scan. */
+  double map_distance_filter_growth_m_per_s;
+  double map_distance_filter_max_distance_m;
+  int map_distance_filter_warmup_accepts;
+  double scan_period_sec;
 } lidarloc_tracking;
 
 typedef struct lidarloc_update
@@ -143,6 +158,16 @@ typedef struct lidarloc_update
   size_t consecutive_rejected_updates;
   /* The alignment the gate judged. */
   lidarloc_result alignment;
+  /* Local re-acquisition (lidarloc_set_reacquisition): whether this scan was
+   * aligned from the previous scan's proposal (accepted then says whether the
+   * gate confirmed it), whether the search ran after this scan's rejection,
+   * its outcome ("proposed", "ambiguous", "best_fitness_above_threshold", ...)
+   * and, when proposed, the pose the next scan is seeded from. */
+  int seeded_from_reacquisition;
+  int reacquisition_attempted;
+  int reacquisition_proposed;
+  char reacquisition_reason[32];
+  double reacquisition_pose[16];
 } lidarloc_update;
 
 /* The node's defaults for the tracking. */
@@ -161,6 +186,51 @@ int lidarloc_set_initial_pose(lidarloc_core * core, const double pose[16], doubl
 int lidarloc_localize(
   lidarloc_core * core, const float * xyz, size_t count, double stamp_sec,
   const double seed[16], lidarloc_update * update);
+
+/* Local re-acquisition after an odometry-bridged outage, as the node's
+ * enable_local_reacquisition (local_reacquisition_policy.hpp), on an
+ * occupancy grid generated from the map (occupancy_map_generation.hpp). It
+ * runs in lidarloc_localize on scans given a seed (the caller's odometry
+ * bridge: the last tracked pose moved by odometry) once min_rejections
+ * consecutive scans were rejected, every attempt_interval_scans scans: a 2D
+ * branch-and-bound search within search_radius_m of the seed, near its
+ * heading, each candidate refined by the registration; the best is proposed
+ * when it passes the score threshold and no other place fits nearly as well.
+ * The next scan with a seed is aligned from the seed moved by the proposal's
+ * correction, and the gate on that scan confirms it or not. */
+typedef struct lidarloc_reacquisition
+{
+  int enable;
+  int min_rejections;
+  int attempt_interval_scans;
+  double search_radius_m;
+  double yaw_window_deg;
+  int max_candidates;
+  double candidate_separation_m;
+  double min_fitness_ratio;
+  double scan_min_z_m;
+  double scan_max_z_m;
+  double scan_min_range_m;
+  double scan_voxel_m;
+  int scan_max_points;
+  double angular_resolution_deg;
+  int pyramid_depth;
+  /* The occupancy grid from the map: a cell is occupied when it holds
+   * occupancy_min_points_per_cell points between occupancy_obstacle_height_m
+   * and occupancy_max_obstacle_height_m (0: no limit) above its lowest
+   * point, inflated by occupancy_inflate_radius_m. */
+  double occupancy_resolution_m;
+  double occupancy_obstacle_height_m;
+  double occupancy_max_obstacle_height_m;
+  int occupancy_min_points_per_cell;
+  double occupancy_inflate_radius_m;
+} lidarloc_reacquisition;
+
+/* The node's defaults (disabled). */
+lidarloc_reacquisition lidarloc_default_reacquisition(void);
+/* Sets the re-acquisition; with enable, builds the occupancy grid from the
+ * map (now, or when the map is set). 0 on success. */
+int lidarloc_set_reacquisition(lidarloc_core * core, const lidarloc_reacquisition * reacquisition);
 
 /* The last message the engine logged (empty when none). */
 const char * lidarloc_last_log(const lidarloc_core * core);
