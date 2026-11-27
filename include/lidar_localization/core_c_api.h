@@ -232,6 +232,68 @@ lidarloc_reacquisition lidarloc_default_reacquisition(void);
  * map (now, or when the map is set). 0 on success. */
 int lidarloc_set_reacquisition(lidarloc_core * core, const lidarloc_reacquisition * reacquisition);
 
+/* Global localization: where in the whole map a scan was taken, with no
+ * prior (a start, a robot lost). The G2 engine "bbs3d" search
+ * (bbs3d_topk_search.hpp, on 3D-BBS's voxel maps of the map) proposes top_k
+ * poses at least min_separation_m apart; each is refined by the registration,
+ * and the best is found when it passes the tracking's score threshold and no
+ * candidate that refined farther than candidate_separation_m fits nearly as
+ * well (min_fitness_ratio), as local re-acquisition decides
+ * (global_localization.hpp). The voxel maps are built on the first call and
+ * kept until the map or their parameters change. The caller then starts
+ * tracking there (lidarloc_set_initial_pose). */
+typedef struct lidarloc_global_config
+{
+  /* The map's voxel hierarchy: thinned to map_leaf_m voxel centroids, finest
+   * voxels min_level_res_m, max_level coarser levels. */
+  double map_leaf_m;
+  double min_level_res_m;
+  int max_level;
+  /* The scan as the search sees it (base frame, levelled). */
+  double scan_min_range_m;
+  double scan_max_range_m;
+  double scan_leaf_m;
+  int top_k;
+  double min_separation_m;
+  /* Keep searching for candidates scoring at least this share of the best. */
+  double relative_score_floor;
+  int timeout_ms;
+  size_t max_queue_nodes;
+  int num_threads;
+  double max_tilt_rad;
+  double candidate_separation_m;
+  double min_fitness_ratio;
+} lidarloc_global_config;
+
+typedef struct lidarloc_global_result
+{
+  int found;
+  /* "proposed", "ambiguous", "best_fitness_above_threshold",
+   * "no_converged_candidate", "no_candidates", "no_scan_points", ... */
+  char reason[32];
+  /* The pose found (map <- sensor) and its fitness; when none was found,
+   * the best refined candidate's (fitness infinite when none converged). */
+  double pose[16];
+  double fitness;
+  /* Candidates the search returned, and the best fitness among the others. */
+  size_t candidates;
+  double second_fitness;
+  size_t scan_points;
+  int timed_out;
+  double voxelmap_build_ms;
+  double search_ms;
+  double total_ms;
+} lidarloc_global_result;
+
+/* The G2 bbs3d defaults (global_localization_query.py). */
+lidarloc_global_config lidarloc_default_global_config(void);
+/* Searches the map for the scan (count x, y, z triplets, sensor frame). 0 when
+ * the search ran (found or not), nonzero when it could not (no map, an empty
+ * scan, bad parameters). */
+int lidarloc_global_localize(
+  lidarloc_core * core, const float * xyz, size_t count, const lidarloc_global_config * config,
+  lidarloc_global_result * result);
+
 /* The last message the engine logged (empty when none). */
 const char * lidarloc_last_log(const lidarloc_core * core);
 

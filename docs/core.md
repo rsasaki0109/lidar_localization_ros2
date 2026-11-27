@@ -110,6 +110,22 @@ and scans but no ROS graph. It is the same code the node runs, not a copy.
   /* update.reacquisition_attempted, reacquisition_reason ("proposed", "ambiguous", ...),
      reacquisition_pose; on the next scan seeded_from_reacquisition and accepted */
   ```
+- Global localization (`GlobalLocalizer`,
+  [global_localization.hpp](../include/lidar_localization/global_localization.hpp)): the G2
+  engine "bbs3d" search over the whole map (3D-BBS's voxel maps, `bbs3d_topk_search.hpp`),
+  each of its `top_k` candidates refined by the registration, and the best kept when it
+  passes the score threshold and no other place fits nearly as well (the decision of local
+  re-acquisition). The C API builds the voxel maps from the map on the first call:
+
+  ```c
+  lidarloc_global_config global = lidarloc_default_global_config();
+  lidarloc_global_result found;
+  lidarloc_global_localize(core, scan_xyz, scan_points, &global, &found);
+  if (found.found) {
+    lidarloc_set_initial_pose(core, found.pose, stamp_sec);
+  }
+  /* found.reason ("proposed", "ambiguous", ...), fitness, second_fitness, search_ms */
+  ```
 - The NDT score Hessian (`score_hessian`, NDT_OMP with `localizability`): the second
   derivatives of the NDT score at the pose, in (x, y, z, roll, pitch, yaw). The score is
   at a maximum there, so the Hessian is negative definite, and its negated inverse is the
@@ -123,7 +139,8 @@ The rest of the node is not in the core yet:
 - seed selection with the IMU, twist and odometry TF;
 - the IMU and GTSAM smoothers;
 - deskew;
-- global reinitialization (the G2 search) and the recovery supervisor;
+- the G2 startup checks around the search (confirmations, the trusted start) and the
+  recovery supervisor;
 - publishing.
 
 These still live in `PCLLocalization`.
