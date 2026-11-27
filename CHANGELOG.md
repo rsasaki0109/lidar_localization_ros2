@@ -14,6 +14,23 @@ which a caller can estimate the pose covariance
 ([docs/core.md](docs/core.md)). No node parameter, topic or behaviour changed; the C
 structs grew, so C API callers must rebuild.
 
+**Evaluated, not changed: letting the map-distance prefilter go of an offset the seed
+guard defends.** Two ways, each tied to the seed guards' rejections and released after
+5 accepted scans in a row, were measured against the A/B below (3 runs or seeds per
+case): widening the distance to the rejected correction plus `map_distance_filter_m`,
+and also keeping the points near the map at the rejected pose. Both removed the slides
+on the two Go2 cases where the filter had slid (0 of 6 runs each, against 2 of 6), and
+widening kept the 15 Go2 cross-session cases within the filter-off spread at p95 (3
+stretches over 0.3 m for more than 1 s, against 4 off and 7 with the filter). But
+widening let people back in and lost the Koide crowd on 29% of the points in 3 of 3
+runs, and the two poses lost 2 of 3 clean Koide `outdoor_hard_02b` runs where the filter
+alone lost none, so neither was merged. Re-runs the same day also showed that the Koide
+gains measured below do not repeat reliably: `outdoor_hard_01a` with odometry is
+decided by gaps in its data (the filter alone sat 1.3-5.3 m off in 2 of 3 re-runs), and
+the 29% crowd tracked in 1 of 3 re-runs. Documented in
+[docs/benchmark.md](docs/benchmark.md#letting-go-of-an-offset-the-seed-guard-defends);
+no parameter, default or behaviour changed.
+
 **Evaluated, not changed: the map-distance prefilter stays opt-in under quickstart's
 odometry defaults.** An A/B of `--map-distance-filter-m 0.5` against off, with
 odometry prediction and quickstart's other odometry defaults on (3 runs or seeds per
