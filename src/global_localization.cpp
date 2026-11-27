@@ -70,6 +70,13 @@ GlobalLocalizationResult GlobalLocalizer::localize(
   decision_params.min_fitness_ratio = params.min_fitness_ratio;
   const auto decision = decideLocalReacquisition(refined, score_threshold, decision_params);
   result.reason = decision.reason;
+  // The best refined candidate, found or not (ambiguous, above the threshold).
+  for (std::size_t i = 0; i < refined.size(); ++i) {
+    if (refined[i].converged && refined[i].fitness < result.fitness) {
+      result.fitness = refined[i].fitness;
+      result.pose = result.candidates[i].refined.pose;
+    }
+  }
   if (decision.propose) {
     result.found = true;
     result.pose = result.candidates[decision.index].refined.pose;

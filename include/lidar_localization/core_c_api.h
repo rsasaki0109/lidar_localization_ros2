@@ -271,7 +271,8 @@ typedef struct lidarloc_global_result
   /* "proposed", "ambiguous", "best_fitness_above_threshold",
    * "no_converged_candidate", "no_candidates", "no_scan_points", ... */
   char reason[32];
-  /* The pose found (map <- sensor) and its fitness. */
+  /* The pose found (map <- sensor) and its fitness; when none was found,
+   * the best refined candidate's (fitness infinite when none converged). */
   double pose[16];
   double fitness;
   /* Candidates the search returned, and the best fitness among the others. */

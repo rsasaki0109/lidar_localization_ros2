@@ -54,6 +54,8 @@ struct GlobalLocalizationResult
   // decideLocalReacquisition's reason ("proposed", "ambiguous", ...), or
   // "no_map", "no_scan_points", "search_failed", "interrupted".
   std::string reason{"no_map"};
+  // The pose found, or else the best refined candidate's (fitness infinite
+  // when none converged).
   Eigen::Matrix4f pose{Eigen::Matrix4f::Identity()};
   double fitness{std::numeric_limits<double>::infinity()};
   std::vector<GlobalCandidate> candidates;
