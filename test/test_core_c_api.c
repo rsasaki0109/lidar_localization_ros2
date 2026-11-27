@@ -244,6 +244,52 @@ static void check_reacquisition(const float * map, size_t n)
   free(scan);
 }
 
+/* Global localization: a scan of the room from (2, -3) turned 2.0 rad, no
+ * prior. The search over the whole room finds it; a scan with no points in
+ * range is refused. */
+static void check_global(const float * map, size_t n)
+{
+  lidarloc_config config = lidarloc_default_config();
+  config.registration_method = "GICP_OMP";
+  config.ndt_num_threads = 2;
+  char error[256];
+  lidarloc_core * core = lidarloc_create(&config, error, sizeof error);
+  assert(core);
+  lidarloc_global_config global = lidarloc_default_global_config();
+  global.num_threads = 2;
+  lidarloc_global_result result;
+  float * scan = malloc(3 * n * sizeof(float));
+  double truth[16];
+  pose(2.0, -3.0, 2.0, truth);
+  scan_from(map, n, truth, scan);
+  /* No map, no search. */
+  assert(lidarloc_global_localize(core, scan, n, &global, &result) != 0);
+  assert(lidarloc_set_map(core, map, n) == 0);
+  lidarloc_tracking tracking = lidarloc_default_tracking();
+  tracking.score_threshold = 0.5;
+  assert(lidarloc_set_tracking(core, &tracking) == 0);
+  assert(lidarloc_global_localize(core, scan, n, &global, &result) == 0);
+  printf(
+    "global: found %d (%s) at (%.3f, %.3f, yaw %.3f), fitness %.4f, %zu candidates, "
+    "second %.4f, voxel maps %.0f ms, search %.0f ms, total %.0f ms\n",
+    result.found, result.reason, result.pose[3], result.pose[7],
+    atan2(result.pose[4], result.pose[0]), result.fitness, result.candidates,
+    result.second_fitness, result.voxelmap_build_ms, result.search_ms, result.total_ms);
+  assert(result.found);
+  assert(hypot(result.pose[3] - 2.0, result.pose[7] + 3.0) < 0.05);
+  assert(fabs(atan2(result.pose[4], result.pose[0]) - 2.0) < 0.02);
+  assert(result.candidates >= 1);
+  /* The voxel maps are kept: a second search builds nothing. */
+  assert(lidarloc_global_localize(core, scan, n, &global, &result) == 0);
+  assert(result.voxelmap_build_ms == 0.0 && result.found);
+  /* Every point beyond the search's range. */
+  global.scan_max_range_m = 0.5;
+  assert(lidarloc_global_localize(core, scan, n, &global, &result) != 0);
+  assert(!result.found);
+  lidarloc_destroy(core);
+  free(scan);
+}
+
 int main(void)
 {
   const size_t n = room(NULL);
@@ -270,6 +316,7 @@ int main(void)
   check_tracking(map, n, 0);
   check_tracking(map, n, 1);
   check_reacquisition(map, n);
+  check_global(map, n);
 
   lidarloc_config config = lidarloc_default_config();
   char error[256];

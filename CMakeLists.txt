@@ -32,6 +32,8 @@ set(LIDAR_LOCALIZATION_CORE_SOURCES
   src/registration_engine.cpp
   src/scan_tracker.cpp
   src/local_reacquisition.cpp
+  src/global_localization.cpp
+  third_party/bbs3d/src/voxelmaps.cpp
   src/ndt_omp_instantiation.cpp
   src/core_c_api.cpp
 )
@@ -43,8 +45,15 @@ function(lidar_localization_add_core pclomp_include_dir pclomp_target)
   set_target_properties(lidar_localization_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
   target_include_directories(lidar_localization_core PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/bbs3d/include>"
     "$<INSTALL_INTERFACE:include>"
     ${PCL_INCLUDE_DIRS})
+  # 3D-BBS's voxel maps (global_localization.hpp), kept unmodified: silence its
+  # sign-compare warning.
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set_source_files_properties(third_party/bbs3d/src/voxelmaps.cpp
+      PROPERTIES COMPILE_OPTIONS "-Wno-sign-compare")
+  endif()
   if(pclomp_include_dir)
     target_include_directories(lidar_localization_core PUBLIC "${pclomp_include_dir}")
   endif()
@@ -91,6 +100,13 @@ if(LIDAR_LOCALIZATION_CORE_ONLY)
   file(GLOB LIDAR_LOCALIZATION_CORE_HEADERS
     include/lidar_localization/*.hpp include/lidar_localization/*.h)
   install(FILES ${LIDAR_LOCALIZATION_CORE_HEADERS} DESTINATION include/lidar_localization)
+  # The core carries 3D-BBS code (global localization): its headers and MIT notice.
+  # (install(FILES), not install(DIRECTORY): test_rviz_config reads the latter.)
+  install(FILES third_party/bbs3d/include/cpu_bbs3d/voxelmaps.hpp DESTINATION include/cpu_bbs3d)
+  install(FILES third_party/bbs3d/include/discrete_transformation/discrete_transformation.hpp
+    DESTINATION include/discrete_transformation)
+  install(FILES third_party/bbs3d/LICENSE third_party/bbs3d/README.md
+    DESTINATION share/lidar_localization_core/third_party/bbs3d)
   include(CTest)
   if(BUILD_TESTING)
     lidar_localization_add_core_c_api_test()

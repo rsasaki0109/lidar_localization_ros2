@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+**New: global localization in `lidar_localization_core`.** The G2 engine "bbs3d" search
+over the whole map, with each candidate refined by the registration and the decision of
+local re-acquisition, is `GlobalLocalizer` (`global_localization.hpp`). The C API runs it as
+`lidarloc_global_localize`: the pose of a scan anywhere in the map, with no prior, for a
+start or a robot that is lost. The core now builds 3D-BBS's voxel maps (`third_party/bbs3d`,
+MIT) and installs their headers and notice. No node parameter, topic or behaviour changed.
+
 **New: local re-acquisition, the NDT Hessian and the map-distance prefilter in the C
 API.** The search the node runs after an odometry-bridged outage
 (`enable_local_reacquisition`) moved into `lidar_localization_core` as
