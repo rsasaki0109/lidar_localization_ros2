@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstring>
 #include <exception>
 #include <limits>
@@ -13,6 +14,7 @@
 
 #include <pcl/filters/voxel_grid.h>
 
+#include "lidar_localization/global_localization.hpp"
 #include "lidar_localization/local_reacquisition.hpp"
 #include "lidar_localization/localization_update_policy.hpp"
 #include "lidar_localization/map_distance_filter.hpp"
@@ -44,6 +46,8 @@ struct lidarloc_core
   // The proposal's correction (map frame, left of the seed), for the next
   // scan with a seed.
   std::optional<Eigen::Matrix4f> pending_reacquisition;
+  // Global localization's voxel maps of the map (built on demand).
+  lidar_localization::GlobalLocalizer global;
   mutable std::mutex log_mutex;
   std::string last_log;
 
@@ -223,6 +227,7 @@ int lidarloc_set_map(lidarloc_core * core, const float * xyz, size_t count)
     core->engine.setMap(map, lidar_localization::computeMapBounds(*map));
     core->map_set = true;
     core->occupancy.reset();
+    core->global.clear();
     core->map_points.assign(count, {});
     for (std::size_t i = 0; i < count; ++i) {
       core->map_points[i] = {xyz[3 * i], xyz[3 * i + 1], xyz[3 * i + 2]};
@@ -704,6 +709,131 @@ int lidarloc_localize(
     fromMatrix(core->current_pose, update->pose);
     update->consecutive_rejected_updates = tracker.prediction.consecutive_rejected_updates;
     return 0;
+  } catch (const std::exception & e) {
+    std::lock_guard<std::mutex> lock(core->log_mutex);
+    core->last_log = e.what();
+    return 2;
+  }
+}
+
+lidarloc_global_config lidarloc_default_global_config(void)
+{
+  const lidar_localization::GlobalLocalizationParams p;
+  lidarloc_global_config c{};
+  c.map_leaf_m = 0.1;
+  c.min_level_res_m = 0.5;
+  c.max_level = 6;
+  c.scan_min_range_m = p.scan_min_range_m;
+  c.scan_max_range_m = p.scan_max_range_m;
+  c.scan_leaf_m = p.scan_leaf_m;
+  c.top_k = p.search.k;
+  c.min_separation_m = p.search.min_separation_m;
+  c.relative_score_floor = p.search.relative_score_floor;
+  c.timeout_ms = p.search.timeout_ms;
+  c.max_queue_nodes = p.search.max_queue_nodes;
+  c.num_threads = p.search.num_threads;
+  c.max_tilt_rad = p.search.max_tilt_rad;
+  c.candidate_separation_m = p.candidate_separation_m;
+  c.min_fitness_ratio = p.min_fitness_ratio;
+  return c;
+}
+
+int lidarloc_global_localize(
+  lidarloc_core * core, const float * xyz, size_t count, const lidarloc_global_config * config,
+  lidarloc_global_result * result)
+{
+  if (!core || !xyz || count == 0 || !result || !core->map_set) {
+    return 1;
+  }
+  try {
+    namespace ll = lidar_localization;
+    const auto started = std::chrono::steady_clock::now();
+    const lidarloc_global_config c = config ? *config : lidarloc_default_global_config();
+    *result = lidarloc_global_result{};
+    result->fitness = std::numeric_limits<double>::infinity();
+    result->second_fitness = std::numeric_limits<double>::infinity();
+    if (!core->global.builtWith(c.map_leaf_m, c.min_level_res_m, c.max_level)) {
+      const auto build_started = std::chrono::steady_clock::now();
+      ll::bbs3d::Points points;
+      points.reserve(core->map_points.size());
+      for (const auto & p : core->map_points) {
+        points.emplace_back(p[0], p[1], p[2]);
+      }
+      core->global.build(std::move(points), c.map_leaf_m, c.min_level_res_m, c.max_level);
+      result->voxelmap_build_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - build_started).count();
+    }
+    ll::bbs3d::Points scan;
+    scan.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+      const Eigen::Vector3d p(xyz[3 * i], xyz[3 * i + 1], xyz[3 * i + 2]);
+      if (p.allFinite()) {
+        scan.push_back(p);
+      }
+    }
+    // The registration's source: the scan as lidarloc_align takes it.
+    Cloud::Ptr source = toCloud(xyz, count);
+    if (core->config.filter_scan) {
+      Cloud::Ptr filtered(new Cloud());
+      pcl::VoxelGrid<pcl::PointXYZI> grid;
+      const auto leaf = static_cast<float>(core->config.voxel_leaf_size);
+      grid.setLeafSize(leaf, leaf, leaf);
+      grid.setInputCloud(source);
+      grid.filter(*filtered);
+      source = filtered;
+    }
+    if (source->empty()) {
+      return 1;
+    }
+    core->engine.setSource(source);
+    ll::GlobalLocalizationParams params;
+    params.scan_min_range_m = c.scan_min_range_m;
+    params.scan_max_range_m = c.scan_max_range_m;
+    params.scan_leaf_m = c.scan_leaf_m;
+    params.search.k = c.top_k;
+    params.search.min_separation_m = c.min_separation_m;
+    params.search.relative_score_floor = c.relative_score_floor;
+    params.search.timeout_ms = c.timeout_ms;
+    params.search.max_queue_nodes = c.max_queue_nodes;
+    params.search.num_threads = c.num_threads;
+    params.search.max_tilt_rad = c.max_tilt_rad;
+    params.candidate_separation_m = c.candidate_separation_m;
+    params.min_fitness_ratio = c.min_fitness_ratio;
+    const auto found = core->global.localize(
+      scan, params, core->gate.score_threshold,
+      [&](const Eigen::Matrix4f & guess) -> std::optional<ll::LocalReacquisitionRefinement> {
+        ll::LocalReacquisitionRefinement refinement;
+        refinement.pose = guess;
+        if (!core->engine.setTargetForPose(guess)) {
+          return refinement;
+        }
+        const auto aligned = core->engine.align(guess);
+        refinement.converged = aligned.has_converged;
+        if (aligned.has_converged) {
+          refinement.pose = aligned.final_transformation;
+          refinement.fitness = core->engine.fitness(
+            core->config.inlier_ratio_distance_m, core->config.inlier_ratio_min_points).score;
+        }
+        return refinement;
+      });
+    result->found = found.found ? 1 : 0;
+    writeString(found.reason, result->reason);
+    fromMatrix(found.pose, result->pose);
+    result->fitness = found.fitness;
+    result->candidates = found.candidates.size();
+    for (const auto & candidate : found.candidates) {
+      const double fitness = candidate.refined.converged ? candidate.refined.fitness :
+        std::numeric_limits<double>::infinity();
+      if (fitness > found.fitness && fitness < result->second_fitness) {
+        result->second_fitness = fitness;
+      }
+    }
+    result->scan_points = found.search.scan_points;
+    result->timed_out = found.search.timed_out ? 1 : 0;
+    result->search_ms = found.search.elapsed_ms;
+    result->total_ms = std::chrono::duration<double, std::milli>(
+      std::chrono::steady_clock::now() - started).count();
+    return found.reason == "no_scan_points" ? 1 : 0;
   } catch (const std::exception & e) {
     std::lock_guard<std::mutex> lock(core->log_mutex);
     core->last_log = e.what();
