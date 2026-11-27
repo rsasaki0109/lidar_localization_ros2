@@ -1741,7 +1741,9 @@ So the filter fixes the two tracking failures it was built for (Koide at 29%: 3 
 lost without it, none with it; Go2 at 43%: 1 of 3 lost without it), does not change
 the Go2 crowd at 28% or the G2 startup, cannot hold Koide at 44% (both arms lost, B
 farther), and slid once among the parked cars (seed 1: 0.7-1.0 m for 10 s from 43 s;
-A's runs stayed within 0.53 m).
+A's runs stayed within 0.53 m). The Koide gains did not repeat as well later the same
+day: B tracked the 29% crowd in 1 of 3 re-runs
+([below](#letting-go-of-an-offset-the-seed-guard-defends)).
 
 **How it slides.** The three runs that slid show the same pattern. The pose first
 gets 0.4-0.8 m off, either by accepted alignments drifting 0.1-0.2 m a scan where the
@@ -1800,8 +1802,83 @@ one parked-obstacle run got worse beyond A's spread, and the 44% Koide crowd was
 farther. Turn it on where people or vehicles the map lacks are expected
 ([troubleshooting](troubleshooting.md#symptom-tracking-is-lost-among-people-and-vehicles-dynamic-obstacles)),
 not by default. A default would first need the filter to let go of a prediction the
-alignments keep agreeing with, for example by widening it while the seed guard
-rejects corrections larger than the distance, which was not tried here.
+alignments keep agreeing with; two ways of doing that were tried
+[below](#letting-go-of-an-offset-the-seed-guard-defends) and did not qualify either.
+
+### Letting go of an offset the seed guard defends
+
+Two changes to the filter, each tied to the seed guards' rejections, were measured on
+2026-11-27 from `caa9feb` with the harness, cases and settings of the A/B above, and
+neither was kept: the filter is unchanged and stays opt-in.
+
+- **W (widen):** after the seed correction guard, its window or its release agreement
+  rejects a correction, the distance is at least that correction (horizontal) plus
+  `map_distance_filter_m`, the whole scan past `map_distance_filter_max_m`, until 5
+  scans in a row are accepted.
+- **T (two poses):** after such a rejection, the filter also keeps the points within
+  the distance of the map at the predicted pose moved by the rejected correction, until
+  5 scans in a row are accepted. The distance stays the time's, so people far from the
+  map at both poses stay out.
+
+Both ran in `ScanTracker` and `lidarloc_localize`, so the node and the C API shared them.
+1 against 5 accepted scans was chosen on the two cases where B slid (EIL_Stairs →
+EIL_Box and the parked cars, 3 runs each) with W: neither slid; on EIL_Stairs → EIL_Box
+the accepted alignments that kept less than 90% of the points raised the error by more
+than 0.1 m in 8 of 234 with 1 and 2 of 196 with 5 (B: 12 of 221).
+
+**What B's slides were.** Read scan by scan, the filter started only one of the three:
+in EIL_Stairs → EIL_Box run 1 the accepted alignments that kept 70-82% of the points
+moved the pose 0.11-0.15 m a scan where the map lacks the boxes. In EIL_Mix →
+EIL_Stairs run 3 the filter had kept 98-100% of the points for 3 s before the slide
+(it did nothing), and among the parked cars the pose went 0.75 m off while the guard
+held the odometry through 11 rejected scans (aliased corrections of 1.2-2.1 m), then
+accepted a scan at the wrong pose with every point kept. The guards defend these
+offsets whether or not the filter is on.
+
+**Results** (Anew, Bnew: A and B re-run the same day; ranges over the runs that
+started; a slide is a stretch over 0.3 m for more than 1 s after the first 3 s):
+
+| case | A | B | W | T |
+|---|---|---|---|---|
+| EIL_Stairs → EIL_Box: p95 / max (m) | 0.12-0.18 / 0.35-0.40 | 0.15-0.72 / 0.35-1.17 | 0.12-0.15 / 0.32-0.36 | 0.11-0.15 / 0.32-0.42 |
+| Go2 parked cars: p95 / max (m) | 0.07-0.10 / 0.23-0.53 | 0.09-0.68 / 0.32-1.01 | 0.07-0.09 / 0.25-0.35 | 0.08-0.11 / 0.32-0.62 |
+| runs of those two that slid | 0 of 6 (Anew 0 of 2) | 2 of 6 | 0 of 6 (and 0 of 12 in the trials of 1 and 5) | 0 of 6 |
+| 15 cross-session cases: started / wrong / manual | 39 / 0 / 6 | 40 / 0 / 5 | 41 / 0 / 4 | not run |
+| slides there (time) | 4 (7.2 s) | 7 (21.9 s) | 3 (10.6 s) | |
+| Koide 01a: p95 (m) | 0.85-2.24; Anew 0.92, 12.1 | 1.13-1.26; Bnew 1.47-6.04 | 1.24-8.53 | 1.04-284 |
+| Koide 02b: p95 (m) | 0.41-0.46 | 0.30-0.32; Bnew 0.30-0.32 | 0.30-0.33 | 0.35, 10.7, 254 |
+| Koide crowd 29%: tracked | 0 of 3 | 2 of 2 (one manual pose); Bnew 1 of 3 | 0 of 3 | 0 of 3 |
+| Koide crowd 44%: tracked | 0 of 3 | 0 of 3 | 0 of 1 | 0 of 1 |
+
+- **Clean Go2 (W):** p95 within A's range in every case. Of W's three slides, two are
+  the 0.53 m step A has in EIL_Mix → EIL_Stairs, and one is in a start neither A nor B
+  made (Long_Stairs → EIL_Stairs: a fix 0.38 m off, then 0.6-0.97 m for 8.6 s with
+  87-100% of the points kept). The max went beyond A's range in EIL_Box → EIL_Box
+  (0.52 against 0.20 m), EIL_Mix → EIL_Box (0.54 against 0.25 m) and EIL_Mix → EIL_Mix
+  (0.40 against 0.28 m), each for under 1 s while the guards held the odometry with
+  every point kept.
+- **The Koide crowd (W):** a rejected correction widened the filter in the crowd and
+  let people back in. In seed 1 the guard rejected 0.85 m with 43% of the points kept;
+  at 1.35 m the next scan kept 90%, was accepted 0.44 m off, and the guard then held
+  the odometry until the track was lost.
+- **Koide 02b (T):** 2 of 3 runs lost. In one, the two-pose filter was on for 8 s while
+  the guard kept rejecting corrections of 0.36-0.73 m and the error grew from 0.2 to
+  0.6 m, then 2 m; in the other, the odometry jumped 67 m at a gap in the data and a
+  reinitialization took a wrong place.
+- **Koide 01a is not repeatable with odometry.** The bag has gaps (5 scan intervals
+  without IMU, scan gaps up to 1.7 s) where RKO-LIO re-anchors; the error that follows
+  at 100-115 s decides each run. Re-run the same day, B sat 1.3-5.3 m off (median) in 2
+  of 3 runs and A 3.4 m (max 36 m) in 1 of 2, against none of 3 and 1 of 3 earlier.
+  The 29% Koide crowd is as chaotic: B re-run tracked 1 of 3, not 2 of 2.
+- **CPU (T):** the second pose is searched only for the points the first drops: 4.1 ms
+  per scan at the median on the Go2 and 6.9 ms on Koide while it is on, against 4.7
+  and 6.3 ms for the filter alone.
+
+Neither is a default: both lost runs B tracked (W the crowd it is for, T clean 02b),
+and neither is a strict improvement for those who turn the filter on, so neither was
+merged. Both removed the slides on the two Go2 cases, but those slides are mostly the
+guards': a fix would have to let the guards release toward corrections that keep
+agreeing, with or without the filter.
 
 ## Boreas with the small-computer knobs
 

@@ -342,7 +342,12 @@ correct it. So:
   with odometry prediction
   ([why it is not a default](benchmark.md#why-it-is-not-a-quickstart-default)). It
   shows as streaks of `seed_correction_guard_rejected` while
-  `map_distance_filter_status` is `applied`. Turn the filter on where people or vehicles the map lacks are expected.
+  `map_distance_filter_status` is `applied`. Widening the filter after the guard rejects
+  a correction, or also keeping the map's points at the rejected pose, removed these
+  slides on the two Go2 cases where they happened (0 of 6 runs, against 2 of 6), but
+  lost runs that tracked without them (the Koide crowd, clean Koide 02b), so neither
+  is in ([what was tried](benchmark.md#letting-go-of-an-offset-the-seed-guard-defends)).
+  Turn the filter on where people or vehicles the map lacks are expected.
 
 `/alignment_status` reports `map_distance_filter_status` (`applied`, `warming_up`,
 `gap_too_long`, `too_few_kept`, `no_accepted_pose`, `no_target_tree`, `retry_seed`,
