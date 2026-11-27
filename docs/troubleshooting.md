@@ -627,6 +627,13 @@ looks good; previous-delta prediction then extrapolates the jump.
   (`seed_correction_guard_release_agreement_translation_m`, `_yaw_deg`) and otherwise
   keeps holding the odometry, reporting `seed_correction_guard_release_disagreed`
   ([benchmark.md](benchmark.md#why-a-release-locked-onto-an-aliased-answer-and-the-fix)).
+- in a long corridor or a tunnel, where the walls pin nothing along it and the pose
+  slides along it in small steps every guard lets through, set
+  `enable_degeneracy_remapping` (NDT_OMP only, default off): when the Hessian is weakest
+  along a horizontal translation, with less than `degeneracy_remapping_weak_ratio` (0.05)
+  of its strongest eigenvalue, the correction along that direction is dropped and the
+  pose keeps the prediction's position along the corridor. The prediction (odometry, the
+  IMU or the previous motion) then carries the pose along it until the walls end.
 
 ## Symptom: Tracking Does Not Recover After Leaving the Map With External Odometry
 

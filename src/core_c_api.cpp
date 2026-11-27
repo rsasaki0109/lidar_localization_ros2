@@ -335,6 +335,9 @@ lidarloc_tracking lidarloc_default_tracking(void)
   t.map_distance_filter_max_distance_m = m.max_distance_m;
   t.map_distance_filter_warmup_accepts = m.warmup_accepts;
   t.scan_period_sec = 0.1;
+  const lidar_localization::DegeneracyRemappingParams remapping;
+  t.enable_degeneracy_remapping = remapping.enable ? 1 : 0;
+  t.degeneracy_remapping_weak_ratio = remapping.weak_ratio;
   return t;
 }
 
@@ -462,6 +465,8 @@ void fillResult(const lidar_localization::AlignmentAttempt & attempt, lidarloc_r
   fillLocalizability(attempt.registration_localizability, result);
   result.map_distance_filter_kept_points = attempt.map_distance_filter_kept_points;
   result.map_distance_filter_applied = attempt.map_distance_filter_status == "applied" ? 1 : 0;
+  result.degeneracy_remapped = attempt.degeneracy_remapped ? 1 : 0;
+  result.degeneracy_dropped_m = attempt.degeneracy_dropped_m;
 }
 
 template<std::size_t N>
@@ -587,7 +592,10 @@ int lidarloc_localize(
       core->config.inlier_ratio_min_points,
       tracking.min_inlier_ratio,
       core->gate.score_threshold,
-      core->config.localizability != 0};
+      core->config.localizability != 0,
+      ll::DegeneracyRemappingParams{
+        tracking.enable_degeneracy_remapping != 0, tracking.degeneracy_remapping_weak_ratio,
+        0.7}};
     // One attempt, as the node's runAlignmentAttempt: the target around
     // crop_center, and only the primary attempt filtered by map distance
     // (applyMapDistanceFilter).

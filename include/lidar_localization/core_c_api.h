@@ -86,6 +86,10 @@ typedef struct lidarloc_result
    * approximates the pose covariance up to the scale of the NDT score. */
   int score_hessian_valid;
   double score_hessian[36];
+  /* lidarloc_localize with enable_degeneracy_remapping: whether the correction
+   * along the Hessian's weakest direction was dropped, and how much (m). */
+  int degeneracy_remapped;
+  double degeneracy_dropped_m;
 } lidarloc_result;
 
 /* The node's parameter defaults, but NDT_OMP (the node's default is PCL's NDT)
@@ -141,6 +145,13 @@ typedef struct lidarloc_tracking
   double map_distance_filter_max_distance_m;
   int map_distance_filter_warmup_accepts;
   double scan_period_sec;
+  /* Solution remapping (NDT_OMP, degeneracy_remapping_policy.hpp): where the
+   * Hessian's weakest direction is a horizontal translation with less than
+   * degeneracy_remapping_weak_ratio of its strongest eigenvalue (a corridor,
+   * a tunnel), the correction along it is dropped and the pose keeps the
+   * seed's position along it. Off by default. */
+  int enable_degeneracy_remapping;
+  double degeneracy_remapping_weak_ratio;
 } lidarloc_tracking;
 
 typedef struct lidarloc_update

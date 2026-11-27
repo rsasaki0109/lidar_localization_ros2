@@ -47,6 +47,10 @@ struct AlignmentAttempt
   std::size_t map_distance_filter_input_points{0};
   std::size_t map_distance_filter_kept_points{0};
   double map_distance_filter_time_sec{0.0};
+  // Solution remapping (degeneracy_remapping_policy.hpp): whether the
+  // correction along the Hessian's weakest direction was dropped, and how much.
+  bool degeneracy_remapped{false};
+  double degeneracy_dropped_m{0.0};
 };
 
 struct AlignmentPipelineInput

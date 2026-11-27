@@ -161,13 +161,18 @@ void scoreAlignment(
   attempt.fitness_score = scoring.min_inlier_ratio > 0.0 ?
     inlierRatioGateScore(fitness.inlier_ratio, scoring.min_inlier_ratio, scoring.score_threshold) :
     fitness.score;
-  if (scoring.localizability) {
+  if (scoring.localizability || scoring.remapping.enable) {
     if (const auto localizability = engine.localizability()) {
       attempt.registration_localizability = *localizability;
     }
   }
   if (attempt.has_converged) {
     attempt.final_transformation = aligned.final_transformation;
+    const auto remapping = remapDegenerateCorrection(
+      attempt.init_guess, attempt.final_transformation, attempt.registration_localizability,
+      scoring.remapping);
+    attempt.degeneracy_remapped = remapping.applied;
+    attempt.degeneracy_dropped_m = remapping.dropped_m;
     const auto correction_metrics =
       computeAlignmentCorrectionMetrics(attempt.init_guess, attempt.final_transformation);
     attempt.correction_translation_m = correction_metrics.translation_m;

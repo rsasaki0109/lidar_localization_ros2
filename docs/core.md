@@ -110,6 +110,12 @@ and scans but no ROS graph. It is the same code the node runs, not a copy.
   /* update.reacquisition_attempted, reacquisition_reason ("proposed", "ambiguous", ...),
      reacquisition_pose; on the next scan seeded_from_reacquisition and accepted */
   ```
+- Solution remapping (`remapDegenerateCorrection`,
+  [degeneracy_remapping_policy.hpp](../include/lidar_localization/degeneracy_remapping_policy.hpp)):
+  where NDT_OMP's Hessian is weakest along a horizontal translation it barely constrains
+  (a corridor, a tunnel), the alignment's correction along it is dropped. `scoreAlignment`
+  applies it, so the node (`enable_degeneracy_remapping`) and `lidarloc_localize`
+  (`lidarloc_tracking.enable_degeneracy_remapping`) share it. Off by default.
 - Global localization (`GlobalLocalizer`,
   [global_localization.hpp](../include/lidar_localization/global_localization.hpp)): the G2
   engine "bbs3d" search over the whole map (3D-BBS's voxel maps, `bbs3d_topk_search.hpp`),

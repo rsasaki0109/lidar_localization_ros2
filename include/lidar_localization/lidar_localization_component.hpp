@@ -477,6 +477,7 @@ public:
   // many seconds (<= 0: one delta per scan).
   double previous_delta_max_extrapolation_sec_{1.0};
   bool enable_registration_localizability_diagnostics_{false};
+  lidar_localization::DegeneracyRemappingParams degeneracy_remapping_;
   lidar_localization::HorizontalLocalizability latest_horizontal_localizability_;
   lidar_localization::MeasurementGateParamConfig measurement_gate_config_;
   lidar_localization::RecoveryRetryFromLastPoseParams recovery_retry_from_last_pose_config_;

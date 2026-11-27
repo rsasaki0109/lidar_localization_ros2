@@ -288,7 +288,8 @@ lidar_localization::AlignmentAttempt PCLLocalization::runAlignmentAttempt(
       static_cast<std::size_t>(inlier_ratio_min_points_),
       min_inlier_ratio_,
       measurement_gate_config_.score_threshold,
-      enable_registration_localizability_diagnostics_},
+      enable_registration_localizability_diagnostics_,
+      degeneracy_remapping_},
     attempt);
   scan_tracker_.fillSeedMetrics(attempt, scan_stamp_sec);
   return attempt;
