@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+**New: local re-acquisition, the NDT Hessian and the map-distance prefilter in the C
+API.** The search the node runs after an odometry-bridged outage
+(`enable_local_reacquisition`) moved into `lidar_localization_core` as
+`proposeLocalReacquisition` (`local_reacquisition.hpp`), which the node now calls. The C
+API runs it in `lidarloc_localize` (`lidarloc_set_reacquisition`), on an occupancy grid
+generated from the map instead of a map file. `lidarloc_localize` also applies the
+map-distance prefilter as the node decides it (new `lidarloc_tracking` fields), which it
+skipped before. `lidarloc_result` adds the NDT_OMP score Hessian (`score_hessian`), from
+which a caller can estimate the pose covariance
+([docs/core.md](docs/core.md)). No node parameter, topic or behaviour changed; the C
+structs grew, so C API callers must rebuild.
+
 **Evaluated, not changed: the map-distance prefilter stays opt-in under quickstart's
 odometry defaults.** An A/B of `--map-distance-filter-m 0.5` against off, with
 odometry prediction and quickstart's other odometry defaults on (3 runs or seeds per
