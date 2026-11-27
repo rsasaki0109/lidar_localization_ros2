@@ -1660,6 +1660,149 @@ for the alignment, which did not change (12.3 ms on main); the localizer used 10
 96 CPU-ms per scan. Go2 and Koide (11-30k points, no voxel filter): 5-10 ms median, 8-20 ms
 p95, on 4 threads.
 
+### Why it is not a quickstart default
+
+The [defaults with odometry prediction](#defaults-with-odometry-prediction) turned on
+three settings that had held up on every clean case. The same A/B for
+`--map-distance-filter-m 0.5` (with `map_distance_filter_warmup_accepts: 5`, its
+default) did not pass: it removes the tracking failures among people, but on clean
+cross-session data it adds slides of up to 1.2 m that the window guard and the seed
+guard alone do not have. It stays opt-in.
+
+Measured 2026-11-27 on `main` at `33f7318`, Jazzy, 4 vCPUs, replay at 1x, RKO-LIO
+odometry with odometry prediction on (so quickstart's three odometry defaults are on in
+both arms), standalone profile. **A** passes `--map-distance-filter-m=0`, **B**
+`--map-distance-filter-m=0.5`; 3 runs per case and arm (stress: seeds 1-3), alternating
+A and B. The suites are `go2_jeplo_cross_session.yaml` (15 of its 16 cases: the
+Long_Stairs bag for Outdoor2 → Long_Stairs was not available), `koide_outdoor.yaml`
+(`outdoor_hard_01a` and `02b`; 01b, 02a and the kidnap sequences were not available)
+and `dynamic_obstacles.yaml` with the injector standing obstacles on the map's ground
+(`--map`). Boreas and Istanbul run presets, not quickstart, and were not repeated
+(see the table above: unchanged with the filter off, little change with it on).
+
+**Clean data.** Initialized / wrong start / manual pose over the runs, then RMSE,
+p95 and max horizontal error in m, as the range over the runs that started:
+
+| case (map → scans) | A | B | A: RMSE / p95 / max | B: RMSE / p95 / max |
+|---|---|---|---|---|
+| EIL_Box → EIL_Box | 3 / 0 / 0 | 3 / 0 / 0 | 0.029 / 0.04-0.05 / 0.19-0.20 | 0.029 / 0.04-0.05 / 0.19-0.20 |
+| EIL_Box → EIL_Mask1 | 3 / 0 / 0 | 3 / 0 / 0 | 0.042-0.097 / 0.08-0.24 / 0.17-0.53 | 0.042-0.148 / 0.08-0.42 / 0.17-0.48 |
+| EIL_Box → EIL_Mix | 3 / 0 / 0 | 3 / 0 / 0 | 0.044-0.088 / 0.08-0.17 / 0.32-0.52 | 0.055-0.066 / 0.08-0.10 / 0.37-0.47 |
+| EIL_Box → EIL_Stairs | 3 / 0 / 0 | 2 / 0 / 1 | 0.059-0.072 / 0.13-0.15 / 0.38-0.59 | 0.056-0.070 / 0.12-0.14 / 0.33-0.50 |
+| EIL_Mix → EIL_Box | 3 / 0 / 0 | 3 / 0 / 0 | 0.046-0.048 / 0.09-0.10 / 0.23-0.25 | 0.046-0.050 / 0.09-0.10 / 0.26-0.27 |
+| EIL_Mix → EIL_Mask1 | 3 / 0 / 0 | 3 / 0 / 0 | 0.033-0.040 / 0.06-0.07 / 0.15-0.20 | 0.032-0.038 / 0.06-0.07 / 0.16-0.22 |
+| EIL_Mix → EIL_Mask2 | 3 / 0 / 0 | 3 / 0 / 0 | 0.031-0.060 / 0.05-0.06 / 0.20-0.48 | 0.030-0.063 / 0.05 / 0.23-0.48 |
+| EIL_Mix → EIL_Mix | 3 / 0 / 0 | 3 / 0 / 0 | 0.034-0.035 / 0.06 / 0.27-0.28 | 0.034 / 0.05-0.06 / 0.21-0.27 |
+| EIL_Mix → EIL_Stairs | 3 / 0 / 0 | 3 / 0 / 0 | 0.068-0.071 / 0.12 / 0.53 | 0.069-**0.108** / 0.12-**0.31** / 0.52-**0.73** |
+| EIL_Stairs → EIL_Box | 3 / 0 / 0 | 3 / 0 / 0 | 0.066-0.075 / 0.12-0.18 / 0.35-0.40 | 0.077-**0.299** / 0.15-**0.72** / 0.35-**1.17** |
+| EIL_Stairs → EIL_Stairs | 3 / 0 / 0 | 3 / 0 / 0 | 0.038-0.044 / 0.06 / 0.36-0.49 | 0.035-0.062 / 0.06-0.09 / 0.32-0.58 |
+| Long_Stairs → EIL_Box | 3 / 0 / 0 | 3 / 0 / 0 | 0.113-0.125 / 0.21-0.23 / 0.43-0.58 | 0.112-0.134 / 0.21 / 0.35-0.83 |
+| Long_Stairs → EIL_Mask1 | 0 / 0 / 3 | 2 / 0 / 1 | - | 0.123-0.126 / 0.26-0.27 / 0.39-0.42 |
+| Long_Stairs → EIL_Stairs | 0 / 0 / 3 | 0 / 0 / 3 | - | - |
+| Long_Stairs → Outdoor2 | 3 / 0 / 0 | 3 / 0 / 0 | 0.023 / 0.04 / 0.07-0.09 | 0.023-0.024 / 0.04 / 0.07-0.09 |
+| **cross-session, 45 runs** | 39 / 0 / 6 | 40 / 0 / 5 | | |
+| Koide outdoor_hard_01a | 3 / 0 / 0 | 3 / 0 / 0 | 0.435-**1.442** / 0.85-2.24 / 1.67-3.41 | 0.488-0.521 / 1.13-1.26 / 1.56-1.66 |
+| Koide outdoor_hard_02b | 3 / 0 / 0 | 3 / 0 / 0 | 0.219-0.231 / 0.41-0.46 / 1.45 | 0.184-0.189 / **0.30-0.32** / 1.44-1.45 |
+
+- **No wrong start, no new manual pose, no loss.** Every run that did not start
+  asked for a manual pose before the localizer had aligned a single scan (every view
+  ambiguous); the filter cannot act there, so 6 against 5 is G2's own spread.
+- **The noise.** Most cases repeat to within 0.01 m RMSE and a few cm at p95 in both
+  arms; the cases with a step or props that moved spread more in A alone (EIL_Box →
+  EIL_Mask1: p95 0.08-0.24 m, max 0.17-0.53 m; EIL_Box → EIL_Mix: p95 0.08-0.17 m).
+- **Worse beyond it, in 2 of 45 cross-session runs.** EIL_Stairs → EIL_Box run 1 slid
+  four times to 0.7-0.8 m (p95 0.72 m, max 1.17 m; A's three runs: p95 at most 0.18 m,
+  max at most 0.40 m), and EIL_Mix → EIL_Stairs run 3 to 0.47-0.73 m (A: p95 0.12 m and
+  max 0.53 m in all three). Counting stretches of more than 1 s with the error over
+  0.3 m after the first 3 s of tracking: A 4 (7.2 s in all), B 7 (21.9 s).
+- **Better on Koide.** On 02b the filter took p95 from 0.41-0.46 m to 0.30-0.32 m in
+  every run, with a third fewer scans rejected by fitness (about 320 against 450-470 per run).
+  On 01a, one A run accepted a correction of 2-3 m at 110 s and stayed 2 m off until
+  the track re-entered the map at 300 s (the loss [the odometry
+  defaults](#defaults-with-odometry-prediction) had made rare); no B run did. 01a's
+  higher p95 under B comes from 200-300 s, where every scan of both arms is rejected
+  by fitness (the scans leave the map) and the filter is off (`gap_too_long`): the pose
+  is RKO-LIO's alone there, and B's runs drifted to 1.0-1.4 m, A's to 0.7-1.0 m.
+
+**Stress** (Go2: EIL_Box scans on the EIL_Mix map, obstacles from 20 s; Koide 02b, a
+crowd from 40 s; fixed obstacles: `parked` from 20 s, which saturates at 11-24% of
+the points; the share reached, mean over the scans with obstacles):
+
+| scenario | share | A: started; RMSE / p95 / max (m) | B: started; RMSE / p95 / max (m) |
+|---|---|---|---|
+| Go2, crowd | 0.28-0.29 | 3 of 3; 0.045-0.052 / 0.09-0.10 / 0.22-0.36 | 3 of 3; 0.049-0.073 / 0.10-0.15 / 0.24-0.54 |
+| Go2, crowd | 0.42-0.43 | 3 of 3; 0.070-**1.374** / 0.14-**3.48** / 0.38-**3.90** (seed 1 lost: 3.9 m) | 3 of 3; 0.061-0.081 / 0.11-0.16 / 0.24-0.39 |
+| Go2, parked | 0.11-0.24 | 3 of 3; 0.039-0.064 / 0.07-0.10 / 0.23-0.53 | 3 of 3; 0.046-**0.239** / 0.09-**0.68** / 0.32-**1.01** |
+| Go2, `startup` (fixed, from the first scan) | 0.11-0.15 | 1 of 3; 0.040 / 0.08 / 0.19 | 1 of 3; 0.051 / 0.11 / 0.35 |
+| Koide, crowd | 0.29 | 3 of 3, **all lost**: 9.5-47 / 17-97 / 19-130 | 2 of 3 (one manual pose before the crowd); 0.26-0.41 / 0.50-0.82 / 1.48-1.77 |
+| Koide, crowd | 0.44 | 3 of 3, all lost: 22-47 / 38-86 / 40-96 | 3 of 3, all lost: 54-164 / 92-292 / 102-311 |
+
+So the filter fixes the two tracking failures it was built for (Koide at 29%: 3 of 3
+lost without it, none with it; Go2 at 43%: 1 of 3 lost without it), does not change
+the Go2 crowd at 28% or the G2 startup, cannot hold Koide at 44% (both arms lost, B
+farther), and slid once among the parked cars (seed 1: 0.7-1.0 m for 10 s from 43 s;
+A's runs stayed within 0.53 m).
+
+**How it slides.** The three runs that slid show the same pattern. The pose first
+gets 0.4-0.8 m off, either by accepted alignments drifting 0.1-0.2 m a scan where the
+scene differs from the map (EIL_Box's boxes on the EIL_Stairs map; the filter kept
+0.73-0.82 of the points there against 0.90 just before), or by the guards holding the
+odometry through a stretch of rejected scans (the parked run). From there the
+alignments that stay near the prediction are accepted (corrections of 0.01-0.2 m with
+good fitness), and those back toward the truth (0.35-1.3 m) are rejected by the seed
+guard. The filter widens only with the time since the last *accepted* scan, so each
+accepted scan narrows it to 0.5 m around the wrong pose again. The track came back
+after 2.6-10 s, with the seed guard's release (30 rejected scans) or once the distance
+passed 3 m (`gap_too_long`) and a whole scan was aligned. Without the filter the same
+moments stayed small: in the parked run A's error stayed under 0.12 m where B's
+reached 0.75 m.
+
+**With the other quickstart settings:**
+
+- **Window guard, seed guard, release agreement:** above. The rejection counts did
+  not change much (Go2 clean: 0-56 window-guard and 0-210 seed-guard rejections per
+  run in B, 0-34 and 0-70 in A; the 210 is the run that slid); the release agreement
+  disagreed 9 times in that run and in no other clean Go2 run of either arm.
+- **After a G2 fix** (`map_distance_filter_warmup_accepts: 5`): over 61 B starts the
+  error at the first filtered scan was 0.03 m median, 0.13 m p95; twice 0.37-0.40 m (a
+  fix that the five warmup scans had not corrected), back under 0.15 m after 1-2 s,
+  with the window and seed guards holding in between. Five accepted scans are not a
+  test that the pose converged.
+- **Trusted global start** (`--trusted-global-start-std-m=0.1`, 2 runs per arm of the
+  six cases where it mattered before: EIL_Mix → EIL_Mask2 and EIL_Box, EIL_Box → EIL_Mix
+  and EIL_Stairs, EIL_Stairs → EIL_Box, Long_Stairs → EIL_Box): 12 / 0 / 0 in both arms,
+  B never more than 0.3 m off for 1 s (A once, 0.85 m), first filtered scan at most
+  0.14 m off.
+- **A long gap or leaving the map:** the filter is off past `map_distance_filter_max_m`
+  (3 m: about 2.6 s without an accepted scan) and came back on at the first accepted scan
+  after it: on Koide 01a after the 100 s off the map at 0.05-0.10 m, as A. 31 such
+  returns in the B runs; the five more than 0.3 m off were in the Koide crowds
+  (0.35-10.6 m) and the run that slid (0.75 m).
+- **A reset** (`/initialpose`, reinitialization) starts the warmup again, as after a
+  G2 fix. No run here was reset; the kidnap sequences were not available.
+
+**CPU** (B, from `map_distance_filter_time_sec`, 4 threads; the scans arrive at 10 Hz):
+
+| data | points per scan | filter: median / p95 / max (ms) | alignment, A → B: median / p95 (ms) |
+|---|---|---|---|
+| Go2 MID-360, clean | about 11-12k | 3.7 / 6.6 / 42 (38k scans) | 17 / 37 → 16 / 39 |
+| Go2, crowd | 11-12k | 5.2 / 9.2 / 41 | 19 / 146 → 17 / 119 |
+| Koide MID-360, clean | 20-40k | 6.0 / 13.5 / 62 | 30 / 99 → 26 / 89 |
+| Koide, crowd | 20-40k | 5.5 / 11.8 / 48 | 35 / 142 → 30 / 153 |
+
+Acceptable: about 5% of the scan period at the median and at most 14% at p95, and the
+alignment of fewer points takes a little less time.
+
+**Decision.** The rule for a default with odometry was: no clean case worse beyond
+run-to-run noise, no new wrong start or loss, the stress cases better, CPU acceptable.
+Wrong starts, losses and CPU pass, Koide improves, but two Go2 cross-session cases and
+one parked-obstacle run got worse beyond A's spread, and the 44% Koide crowd was lost
+farther. Turn it on where people or vehicles the map lacks are expected
+([troubleshooting](troubleshooting.md#symptom-tracking-is-lost-among-people-and-vehicles-dynamic-obstacles)),
+not by default. A default would first need the filter to let go of a prediction the
+alignments keep agreeing with, for example by widening it while the seed guard
+rejects corrections larger than the distance, which was not tried here.
+
 ## Boreas with the small-computer knobs
 
 The knobs of [the low-resource preset](mid360_legged_jetson.md#low-resource-preset) that
