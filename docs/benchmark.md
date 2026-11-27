@@ -743,8 +743,10 @@ prediction is on, under every profile
 ([quickstart](quickstart.md#defaults-with-odometry-prediction)):
 `--seed-correction-window-sec 2.0` (it brings the release agreement of 10 scans),
 `--global-nms-radius-m 1.5` (3.0 before) and `--global-consensus-near-alias-samples 3`
-(0 before). Without odometry prediction all three keep the old values. This is the A/B
-evaluation behind that choice. Every run had odometry prediction on and used the
+(0 before). Without odometry prediction all three keep the old values. (A fourth, the
+agreement release of the seed guards, followed later:
+[releasing toward the odometry](#releasing-toward-the-odometry-the-agreement-release).)
+This is the A/B evaluation behind that choice. Every run had odometry prediction on and used the
 default (standalone) profile, which is why the defaults follow odometry prediction and
 not a profile.
 
@@ -1879,6 +1881,199 @@ and neither is a strict improvement for those who turn the filter on, so neither
 merged. Both removed the slides on the two Go2 cases, but those slides are mostly the
 guards': a fix would have to let the guards release toward corrections that keep
 agreeing, with or without the filter.
+
+### Releasing toward the odometry: the agreement release
+
+The fix [above](#letting-go-of-an-offset-the-seed-guard-defends) pointed at the guards:
+once the pose is 0.4-0.8 m off, the seed correction guard rejects the corrections back
+(0.35-2.1 m), and a scan accepted near the wrong pose starts its 30-scan release count
+over. `seed_correction_guard_agreement_release_scans` (quickstart
+`--seed-correction-agreement-release-scans`; 4 by default with odometry prediction,
+else 0, see [quickstart](quickstart.md#defaults-with-odometry-prediction)) lets the
+guard accept such a correction early, when the registration keeps agreeing on it and it
+takes the pose back to the odometry. It lives in `ScanTracker`, so the node and
+`lidarloc_localize` share it.
+
+**The rule.** A scan whose horizontal correction from its seed is beyond the per-scan
+guard (`seed_correction_guard_translation_m`, 0.3 m) and which that guard rejects is
+accepted when both hold:
+
+- **Agreement.** Its map-frame correction (horizontal offset and signed yaw from the
+  seed) lies within `seed_correction_guard_agreement_release_translation_m` (0.15 m)
+  and `_yaw_deg` (2 degrees) of each of the last K - 1 corrections the guards rejected,
+  none older than `_window_sec` (1 s). The seeds come from the odometry, so the
+  odometry's motion between the scans is already out of these corrections; a scan
+  accepted in between moves the pose, and the held corrections move with it. A
+  rejected scan over the fitness threshold is not kept, and the released scan must
+  pass the fitness gate.
+- **Back to the odometry.** Added to the corrections accepted within `_drift_sec`
+  (5 s), it leaves at most `_drift_tolerance_m` (0.25 m), the horizontal norm of the
+  map-frame sum. That is, accepted alignments moved the pose away from the odometry and
+  this correction undoes it.
+
+The released scan reports `seed_correction_guard_agreement_released` (level warn); the
+guards stay armed (no new warmup), and the window guard counts from it. A scan that
+only the window guard rejects, or the per-scan guard rejects for its height or yaw
+alone, is not released. With 0 the gate makes the same decisions as before (a 160-scan
+`lidarloc_localize` sequence with guard and window rejections gives byte-identical poses
+and statuses against `1b36f2f`).
+
+**Choosing the rule from the logged runs.** The `/alignment_status` logs of the 246 A,
+B, W and T runs of the two sections above hold, per scan, the message, the size of the
+correction (`correction_translation_m`, not its direction), fitness and inlier ratio,
+and `est.tum` holds the published pose, which at a rejected scan is the seed. The size
+alone bounds what accepting a rejected correction would do against the ground truth:
+the pose would end at least |size - seed error| off. Of the 25,774 guard rejections,
+11,477 would have left the pose more than 0.3 m off (aliases), 1,693 matched a seed
+error of 0.3 m or more within 0.15 m (consistent with a true offset), and 7,850 came
+from runs already more than 3 m off. Replaying agreement alone on these sizes (a
+necessary condition for the vectors to agree), the aliases agree as often as the true
+offsets:
+
+| agreement only (K, translation, yaw, window), correction over 0.3 m | releases consistent with the truth | aliases |
+|---|---|---|
+| 4, 0.15 m, 2 degrees, 1 s | at most 170 | at most 419 |
+| the same, corrections up to 1 m only | at most 158 | at most 128 |
+| 6, 0.1 m, 1 degree, 1 s, up to 1 m | at most 50 | at most 33 |
+| 8, 0.1 m, 1 degree, 1 s, 0.6-1 m | at most 12 (6 of 150 true-offset streaks) | at most 3 |
+
+The aliases that agree are steady ones: at 93-97 s of the EIL_Box scans every run
+answered 1.3-2.2 m along the room for 2-4 s with the pose within 0.3 m; on Koide 02b at
+109-112 s, 0.5-0.9 m with the pose within 0.2 m. To see their directions, 17 runs were
+repeated with the seed and the result of every gated scan logged (A and B arms of the
+slide, alias and stress cases, same code otherwise; they double as the A re-runs, see
+below). Of their per-scan guard rejections, 117 would have put the pose within 0.2 m of
+the truth (and closer than before) and 485 would have put it more than 0.3 m off and
+farther. Agreement alone (4 scans, 0.15 m, 2 degrees) released 19 right and 18 wrong
+answers there (the EIL_Box aliases at 1.3-1.6 m, an odometry jump on EIL_Mix → EIL_Stairs
+answered 0.69 m the wrong way). What separates them is where the correction goes
+relative to the odometry: added to the corrections accepted in the last 5 s, 78 of the
+117 right ones leave at most 0.25 m and none of the 485 wrong ones does (3 within
+0.3 m); over 10 s the legitimate corrections of the odometry's drift add up and 4 wrong
+ones fall within 0.25 m, over 20 s 3. With both conditions (K = 4, 0.15 m, 2 degrees,
+1 s, 5 s, 0.25 m) the rule released 4 times in those runs, all right (0.24-0.36 m
+to 0.01-0.10 m), plus once in a run that had started 4.5 m off (4.45 to 4.74 m). K = 2
+and 3 released right 9 and 6 times, but 7 and 2 times in that wrong start; K = 5 and 6
+released 3 times. The cost of the second condition: it never releases toward an odometry jump or
+drift (the parked-cars run of #357, where the odometry went 0.75 m while the guards
+held), since that correction moves the pose away from the odometry exactly as an alias
+does.
+
+**Results.** Measured 2026-11-27 from `1b36f2f` with the harness, suites and settings of
+the A/B [above](#why-it-is-not-a-quickstart-default) (Jazzy, 4 vCPUs, replay at 1x,
+RKO-LIO odometry with odometry prediction, standalone profile, 3 runs or seeds per
+cell). **G** is the agreement release (K = 4) with the map-distance filter off, against
+**A** (off, off); **GB** is it with the filter at 0.5 m, against **B**. A and B are the
+runs of that A/B. Initialized / wrong start / manual pose, then p95 / max horizontal
+error in m over the runs that started, and the releases:
+
+| case (map → scans) | A | G | A: p95 / max | G: p95 / max | G releases |
+|---|---|---|---|---|---|
+| EIL_Box → EIL_Box | 3 / 0 / 0 | 3 / 0 / 0 | 0.04-0.05 / 0.19-0.20 | 0.04-0.05 / 0.19-0.20 | 0 |
+| EIL_Box → EIL_Mask1 | 3 / 0 / 0 | 3 / 0 / 0 | 0.08-0.24 / 0.17-0.53 | 0.08-0.10 / 0.17-0.38 | 1 |
+| EIL_Box → EIL_Mix | 3 / 0 / 0 | 3 / 0 / 0 | 0.08-0.17 / 0.32-0.52 | 0.08-0.09 / 0.32-0.47 | 0 |
+| EIL_Box → EIL_Stairs | 3 / 0 / 0 | 3 / 0 / 0 | 0.13-0.15 / 0.38-0.59 | 0.13-0.15 / 0.38-0.51 | 0 |
+| EIL_Mix → EIL_Box | 3 / 0 / 0 | 3 / 0 / 0 | 0.09-0.10 / 0.23-0.25 | 0.08-0.10 / 0.32-0.36 | 0 |
+| EIL_Mix → EIL_Mask1 | 3 / 0 / 0 | 3 / 0 / 0 | 0.06-0.07 / 0.15-0.20 | 0.06-0.07 / 0.16-0.17 | 0 |
+| EIL_Mix → EIL_Mask2 | 3 / 0 / 0 | 3 / 0 / 0 | 0.05-0.06 / 0.20-0.48 | 0.05-0.06 / 0.18-0.48 | 0 |
+| EIL_Mix → EIL_Mix | 3 / 0 / 0 | 3 / 0 / 0 | 0.06 / 0.27-0.28 | 0.05-0.06 / 0.27-0.28 | 0 |
+| EIL_Mix → EIL_Stairs | 3 / 0 / 0 | 3 / 0 / 0 | 0.12 / 0.53 | 0.12-0.13 / 0.42-0.60 | 2 |
+| EIL_Stairs → EIL_Box | 3 / 0 / 0 | 3 / 0 / 0 | 0.12-0.18 / 0.35-0.40 | 0.13 / 0.35-0.42 | 1 |
+| EIL_Stairs → EIL_Stairs | 3 / 0 / 0 | 3 / 0 / 0 | 0.06 / 0.36-0.49 | 0.06 / 0.24-0.32 | 0 |
+| Long_Stairs → EIL_Box | 3 / 0 / 0 | 3 / 0 / 0 | 0.21-0.23 / 0.43-0.58 | 0.21 / 0.37-0.60 | 0 |
+| Long_Stairs → EIL_Mask1 | 0 / 0 / 3 | 1 / 0 / 2 | - | 0.26 / 0.52 | 0 |
+| Long_Stairs → EIL_Stairs | 0 / 0 / 3 | 0 / 0 / 3 | - | - | 0 |
+| Long_Stairs → Outdoor2 | 3 / 0 / 0 | 3 / 0 / 0 | 0.04 / 0.07-0.09 | 0.04 / 0.07 | 0 |
+| **cross-session, 45 runs** | 39 / 0 / 6 | 40 / 0 / 5 | stretches over 0.3 m for more than 1 s: 4 (7.2 s) | 1 (1.0 s) | 4 |
+| Koide outdoor_hard_01a | 3 / 0 / 0 | 3 / 0 / 0 | 0.85-2.24 / 1.67-3.41 | 0.97-11.61 / 1.62-19.28 | 0 |
+| Koide outdoor_hard_02b | 3 / 0 / 0 | 3 / 0 / 0 | 0.41-0.46 / 1.45 | 0.29-0.49 / 1.44-2.17 | 0 |
+
+| stress (as above) | A | G | B | GB | A: p95 / max | G: p95 / max | B: p95 / max | GB: p95 / max | releases G, GB |
+|---|---|---|---|---|---|---|---|---|---|
+| Go2, crowd 28% | 3 / 0 / 0 | 3 / 0 / 0 | 3 / 0 / 0 | 3 / 0 / 0 | 0.09-0.10 / 0.22-0.36 | 0.09-0.11 / 0.25-0.27 | 0.10-0.15 / 0.24-0.54 | 0.09-0.11 / 0.23-0.27 | 0, 0 |
+| Go2, crowd 43% | 3 / 0 / 0 | 3 / 0 / 0 | 3 / 0 / 0 | 3 / 0 / 0 | 0.14-3.48 / 0.38-3.90 (seed 1 lost) | 0.15-2.64 / 0.55-3.13 (seed 1 lost) | 0.11-0.16 / 0.24-0.39 | 0.12-0.13 / 0.24-0.27 | 1, 0 |
+| Go2, parked | 3 / 0 / 0 | 3 / 0 / 0 | 3 / 0 / 0 | 3 / 0 / 0 | 0.07-0.10 / 0.23-0.53 | 0.08-0.09 / 0.22-0.24 | 0.09-0.68 / 0.32-1.01 | 0.08-0.10 / 0.23-0.32 | 0, 0 |
+| Go2, `startup` | 1 / 0 / 2 | 1 / 0 / 2 | 1 / 0 / 2 | not run | 0.08 / 0.19 | 0.10 / 0.53 | 0.11 / 0.35 | | 0, - |
+| Koide, crowd 29% | 3 / 0 / 0, all lost | 3 / 0 / 0, all lost | 2 / 0 / 1 | 3 / 0 / 0, all lost | 17-97 / 19-130 | 31-87 / 35-97 | 0.50-0.82 / 1.48-1.77 | 11-51 / 11-53 | 1, 0 |
+
+GB on the two cases where B slid (3 runs each): EIL_Stairs → EIL_Box p95 0.11-0.13 m, max
+0.34-0.41 m (B: 0.15-0.72 / 0.35-1.17), EIL_Mix → EIL_Stairs 0.11-0.14 / 0.31-0.46 (B:
+0.12-0.31 / 0.52-0.73), one release each; no stretch over 0.3 m for more than 1 s in
+these six runs or the three parked ones (B: 5).
+
+**The releases, against the ground truth** (from the logged seed and result of the
+released scan): 8 in 84 runs (66 G, 18 GB), none wrong.
+
+| run | time | correction | error before → after |
+|---|---|---|---|
+| G, EIL_Mix → EIL_Stairs run 1 | 102.7 s | 0.33 m | 0.29 → 0.04 m (odometry jump, then accepted scans 0.46-0.60 m off) |
+| G, EIL_Mix → EIL_Stairs run 2 | 7.5 s | 0.31 m | 0.29 → 0.02 m (the 0.53 m step A has at 5-9 s in all 3 runs) |
+| G, EIL_Box → EIL_Mask1 run 3 | 19.3 s | 0.39 m | 0.37 → 0.03 m |
+| G, EIL_Stairs → EIL_Box run 3 | 17.8 s | 0.36 m | 0.26 → 0.10 m |
+| GB, EIL_Mix → EIL_Stairs run 1 | 8.6 s | 0.40 m | 0.39 → 0.01 m |
+| GB, EIL_Stairs → EIL_Box run 1 | 83.2 s | 0.35 m | 0.27 → 0.08 m |
+| G, Koide crowd 29%, seed 3 | 76.1 s | 0.34 m | 0.66 → 0.50 m (lost later, as in A) |
+| G, Go2 crowd 43%, seed 1 | 95.9 s | 0.55 m | 3.01 → 2.47 m (lost since 40 s, as in A) |
+
+A first build also released corrections that tripped the per-scan guard by their 3D size
+with less than 0.3 m horizontally (twice: Koide 01a run 1, 0.01 m horizontally, and
+Long_Stairs → EIL_Stairs run 1, 0.28 m, 0.28 → 0.01 m); the rule now needs the
+horizontal part beyond the guard, and those two runs were repeated with it.
+
+- **No wrong start, release or loss it caused.** 40 / 0 / 5 cross-session against 39 /
+  0 / 6, all wrong starts and manual poses G2's (no view unambiguous). The alias cases
+  the window guard, the release agreement and the near-alias rule were made for (the
+  Long_Stairs pairs, EIL_Box → EIL_Stairs, EIL_Stairs → EIL_Box) had no wrong release,
+  and the EIL_Box aliases at 93-97 s, rejected in nearly every run, were never released.
+- **Most runs never release.** 60 of the 66 G runs and 16 of the 18 GB runs had no
+  release; with none, the gate decides every scan as without the rule, so those runs
+  differ from A and B only by run-to-run variation. That is where every value outside
+  A's range comes from: EIL_Mix → EIL_Box max 0.32-0.36 m (A 0.23-0.25), Koide 02b max
+  2.17 m once and Koide 01a (every run decided by the gaps in its data; p95 up to
+  11.6 m, A re-run 12.1 m), and GB on the 29% Koide crowd (lost 3 of 3; B tracked 2 of 2
+  and on a re-run 1 of 3). In the four clean runs with a release, p95 was within A's
+  range or 0.01 m above it, and the maximum within it except EIL_Mix → EIL_Stairs run
+  1, whose 0.60 m came before its release (A: 0.53 m).
+- **Fewer stretches off.** Cross-session, 1 stretch over 0.3 m for more than 1 s (1.0 s)
+  against A's 4 (7.2 s); one of the three fewer is a release (EIL_Mix → EIL_Stairs run
+  2, at the step A has in every run), the others run-to-run. Elsewhere the same within
+  noise (Go2 stress 2 against 2, both in the lost 43% crowd run; Koide 02b 7 against
+  12, no release there).
+- **What it does not fix.** The releases take 0.26-0.39 m offsets back on the fourth
+  agreeing scan; offsets the odometry made (a jump, or drift while the guards held, as in
+  #357's parked run) wait for the guards' release as before.
+- **The A re-runs** (the A arm of the 17 logged runs, same build as A otherwise): the 7 cross-session
+  cells, parked seed 1 and Koide 01a fell within A's range (p95 0.08-0.21 m Go2, 0.90 m
+  01a); Koide 02b reached p95 1.01 m (14 s at up to 1.26 m from 227 s, where A's runs
+  had 0.42-0.75 m), and the 43% Go2 crowd seed 1 started 4.5 m off. So the harness is
+  comparable with A, with Koide 02b's usual spread.
+
+**CPU.** The rule keeps the guard-rejected corrections (at most K) and the accepted
+corrections of the last 5 s (about 50): 0.07 µs more per scan for the gate and its
+history (0.19 against 0.12 µs, 200,000 synthetic scans). The alignment time did not
+change (Go2 clean: median / p95 16.5 / 39.0 ms in A, 16.4 / 37.9 ms in G; Koide clean
+30.6 / 102.6 and 30.5 / 102.7 ms).
+
+**Decision.** The rule for a default with odometry was: no new wrong pose or wrong
+release, no clean case worse beyond A's spread, fewer or shorter stretches off. G had
+no wrong start or release, the values outside A's range are in runs where it did not
+act (apart from 0.01 m of p95 and a maximum reached before a release), and the stretches
+off fell from 4 to 1 cross-session. It is on by default with
+odometry prediction (quickstart, 4 scans); `--seed-correction-agreement-release-scans 0`
+restores the old behaviour. Its gain is small: 6 releases in 66 runs, 4 of them taking
+0.26-0.37 m back to within 0.1 m, and it leaves the offsets odometry makes alone. With the filter (GB)
+neither of B's slides recurred in 9 runs, with 2 releases, so whether it removes them
+is not shown.
+
+What this does not cover:
+
+- The parameters were chosen on 17 logged runs (and the sizes of 246 older ones), then
+  measured on others of the same robot, sites and odometry: Livox MID-360 (a Go2 and a
+  handheld rig) with RKO-LIO. With an odometry that drifts more, the corrections
+  accepted within 5 s add up to more, and a steady alias pointing back along them could
+  pass the drift test.
+- Profiles other than standalone, and odometry jumps on demand (the jump relay of the
+  release agreement's section), were not run.
 
 ## Boreas with the small-computer knobs
 

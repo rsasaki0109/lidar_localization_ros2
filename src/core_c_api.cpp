@@ -330,6 +330,17 @@ lidarloc_tracking lidarloc_default_tracking(void)
   t.map_distance_filter_max_distance_m = m.max_distance_m;
   t.map_distance_filter_warmup_accepts = m.warmup_accepts;
   t.scan_period_sec = 0.1;
+  t.seed_correction_guard_agreement_release_scans = g.seed_correction_guard_agreement_release_scans;
+  t.seed_correction_guard_agreement_release_translation_m =
+    g.seed_correction_guard_agreement_release_translation_m;
+  t.seed_correction_guard_agreement_release_yaw_deg =
+    g.seed_correction_guard_agreement_release_yaw_deg;
+  t.seed_correction_guard_agreement_release_window_sec =
+    g.seed_correction_guard_agreement_release_window_sec;
+  t.seed_correction_guard_agreement_release_drift_sec =
+    g.seed_correction_guard_agreement_release_drift_sec;
+  t.seed_correction_guard_agreement_release_drift_tolerance_m =
+    g.seed_correction_guard_agreement_release_drift_tolerance_m;
   return t;
 }
 
@@ -352,6 +363,18 @@ int lidarloc_set_tracking(lidarloc_core * core, const lidarloc_tracking * tracki
   core->gate.seed_correction_window_guard_sec = t.seed_correction_window_guard_sec;
   core->gate.seed_correction_window_guard_translation_m =
     t.seed_correction_window_guard_translation_m;
+  core->gate.seed_correction_guard_agreement_release_scans =
+    t.seed_correction_guard_agreement_release_scans;
+  core->gate.seed_correction_guard_agreement_release_translation_m =
+    t.seed_correction_guard_agreement_release_translation_m;
+  core->gate.seed_correction_guard_agreement_release_yaw_deg =
+    t.seed_correction_guard_agreement_release_yaw_deg;
+  core->gate.seed_correction_guard_agreement_release_window_sec =
+    t.seed_correction_guard_agreement_release_window_sec;
+  core->gate.seed_correction_guard_agreement_release_drift_sec =
+    t.seed_correction_guard_agreement_release_drift_sec;
+  core->gate.seed_correction_guard_agreement_release_drift_tolerance_m =
+    t.seed_correction_guard_agreement_release_drift_tolerance_m;
   core->retry = lidar_localization::RecoveryRetryFromLastPoseParams{};
   core->retry.enable = t.enable_recovery_retry_from_last_pose != 0;
   core->retry.min_rejections = t.recovery_retry_from_last_pose_min_rejections;
