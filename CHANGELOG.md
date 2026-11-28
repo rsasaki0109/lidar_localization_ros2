@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## 1.13.0 - 2026-11-28
+
+**Upgrading:** two behaviours change by default, both only for `quickstart.py` with
+odometry prediction on (the odom TF discovered, or `--odom-tf-prediction`), under every
+profile. Without odometry prediction, and for the node, the config generator,
+`param/mid360_legged.yaml` and `quickstart.launch.py` called directly, every default is
+as in 1.12.0, and every other new setting (the map-distance prefilter
+`map_distance_filter_m` among them) defaults to off.
+
+- Quickstart turns on the seed correction window guard (`--seed-correction-window-sec
+  2.0`, which also sets the release agreement to 10 scans), suppresses G2 candidates
+  within 1.5 m instead of 3.0 m (`--global-nms-radius-m`) and turns on the near-alias
+  startup rule (`--global-consensus-near-alias-samples 3`) (#350). To restore:
+  `--seed-correction-window-sec 0 --global-nms-radius-m 3
+  --global-consensus-near-alias-samples 0`.
+- Quickstart sets `seed_correction_guard_agreement_release_scans: 4` (#359): the seed
+  correction guard accepts a correction it would reject once the last 4 rejected
+  corrections agree on it and it takes the pose back to the odometry. To restore:
+  `--seed-correction-agreement-release-scans 0`.
+
+Explicit flags win, and the `Settings:` line shows each value's source. The benchmark
+suites that run with odometry get both; add the flags above to a suite's
+`quickstart_args` to compare with earlier results. The C API (`core_c_api.h`,
+`lidar_localization_core`) is new in this release; programs built against it from an
+earlier `main` must rebuild, because `lidarloc_tracking` and `lidarloc_result` grew
+(the map-distance prefilter, the agreement release and the NDT score Hessian; take the
+new fields from `lidarloc_default_tracking`).
+
 **Upgrading / behaviour change for anyone running `quickstart.py` with an odometry
 TF:** with odometry prediction on (discovered or `--odom-tf-prediction`), quickstart now
 also sets `seed_correction_guard_agreement_release_scans: 4`, under every profile
@@ -251,6 +279,32 @@ same name) and quickstart's `--trusted-global-start-std-m` (`0` = off).
   elsewhere p95 at most 0.31 m, max 0.68 m). Off by default because of that cost.
   ([benchmark.md](docs/benchmark.md#eil_stairs--eil_box-a-right-start-pulled-onto-the-turned-room-and-the-fix),
   [troubleshooting.md](docs/troubleshooting.md#symptom-pose-jumps-along-a-corridor-like-axis)).
+
+### Validation
+
+- The release check: two full Koide `outdoor_hard_02b` replays at 1x passed on
+  `release/v1.13.0` (`main` at `d771c6f` plus the version bump), built without a build
+  type, with ndt_omp_ros2 at `17ce1e1`, as for v1.12.0.
+  - **Accuracy:** 0.242 m RMSE in both (0.170 m on the map), as for v1.12.0.
+  - **Coverage:** 100.0% diagnostic coverage in both.
+  - **Alignment:** 16-17 ms at the median and 41 ms at p95, against 18 and 44-46 ms, on
+    the same CPU model (2.10 GHz). v1.12.0 rebuilt and replayed twice on this host,
+    interleaved with two more release runs, measured 16 and 40-42 ms (0.243-0.244 m,
+    0.170 m on the map) against 16 and 40-41 ms, so the difference is the host, not the
+    release: moving the registration and tracking into `lidar_localization_core` neither
+    cost nor saved time
+    ([docs/koide-online-replay.md](docs/koide-online-replay.md#v1130-release-verification-2026-11-28),
+    `docs/validation/v1.13.0-koide-20261128`).
+  - **Resources:** the localizer used 0.51-0.52 cores on average (v1.12.0 on this host:
+    0.51) and held 214-215 MB anonymous memory in steady state.
+- Boreas, `param/boreas_ndt_velodyne.yaml` on the release build: 0.132 m RMSE over the
+  first 120 s, 0.127 m with `use_imu_preintegration: true`, every scan accepted, as on
+  1.12.0.
+- Both checks run the localizer without quickstart, so quickstart's new defaults with
+  odometry prediction (#350, #359) and the opt-in map-distance prefilter are off in
+  them; their results are the Go2/JEPLO and Koide replays cited above, not re-run for the
+  release. The C API is covered by its unit tests, in the ROS build and the core-only
+  build.
 
 ## 1.12.0 - 2026-11-23
 

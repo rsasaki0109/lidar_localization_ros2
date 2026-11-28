@@ -122,6 +122,63 @@ python3 tools/readme_media/initial_pose_from_tum.py \
 
 Ground truth supplies only that initial pose and evaluation; it is not an odometry input. Record `/pcl_pose` and `/alignment_status` before playing the bag. For the 150 m comparison, change only `local_map_radius` in the generated localizer YAML.
 
+## v1.13.0 release verification (2026-11-28)
+
+Two full `outdoor_hard_02b` replays at 1x passed on `release/v1.13.0`: `main` at
+`d771c6f` plus the version bump, which is not compiled in. The release commit adds only
+docs to the tree that was built and replayed.
+
+- **Build:** both this package and `ndt_omp_ros2` were built as in `AGENTS.md`, without
+  a build type, in the release workspace, rebuilt from scratch.
+  `lidar_localization_node` is a new executable, as the localizer changed since v1.12.0
+  (the registration, the per-scan tracking and local re-acquisition moved into
+  `lidar_localization_core`; the opt-in map-distance prefilter and agreement release,
+  both off here). `ndt_omp_ros2` was at `17ce1e1` on `humble`, as for v1.12.0;
+  `humble` has since gained `5a207b1`, a PCL 1.15 include fix not used here.
+- **Setup:** ROS 2 Jazzy in one 4-vCPU cloud container on a 2.10 GHz Xeon, the CPU
+  model of v1.12.0's check, and the same RKO-LIO 0.3.2 binary (`7e91814`, Release) as
+  for v1.6.0 to v1.12.0.
+- **The profile and harness are unchanged.** `localizer.yaml`, RKO's and the QoS file's
+  hashes are identical to v1.12.0's, and the receipts differ only in the localizer hash.
+
+| Metric | Run 1 | Run 2 | Demo acceptance |
+| --- | --- | --- | --- |
+| Position RMSE | 0.242 m | 0.242 m | <= 0.35 m |
+| on / off the map (163.3-259.0 s) | 0.170 / 0.353 m | 0.170 / 0.353 m | — |
+| Diagnostic cloud stamps | 2,209 / 2,209 (100.0%) | 2,209 / 2,209 (100.0%) | >= 97% |
+| Distinct GT-matched pose stamps / expected clouds | 2,201 / 2,209 (99.6%) | 2,201 / 2,209 (99.6%) | >= 95% |
+| Position error p95 | 0.533 m | 0.533 m | — |
+| Maximum output timestamp gap | 0.90 s | 0.90 s | — |
+| Alignment median / p95 | 17 / 41 ms | 16 / 41 ms | — |
+| Localizer CPU, mean / p95 cores | 0.52 / 0.88 | 0.51 / 0.85 | — |
+| Localizer anonymous memory, steady / peak | 215 / 255 MB | 214 / 249 MB | — |
+| Command / RKO / localizer / player exit codes | all 0 | all 0 | successful exit |
+
+RKO dropped 20 frames per run for too few ICP keypoints, as before. Against the v1.12.0
+check:
+
+- **Accuracy:** 0.242 m overall and 0.170 m on the map in both, the same as v1.12.0.
+- **Alignment and CPU:** 16-17 ms at the median and 41 ms at p95 with 0.51-0.52 cores,
+  against 18 and 44-46 ms with 0.56-0.57 cores, on the same CPU model. To separate the
+  host from the code, v1.12.0 (`6f6cf9a`) was rebuilt on this host (same flags, tests
+  off, on the same `ndt_omp_ros2` install) and replayed twice, interleaved with two more
+  replays of the release build:
+
+  | Build, same host | RMSE (on the map) | Alignment median / p95 | CPU, mean cores |
+  | --- | --- | --- | --- |
+  | v1.12.0, 2 runs | 0.243-0.244 m (0.170 m) | 16 / 40-42 ms | 0.51 |
+  | v1.13.0, 2 runs | 0.241-0.242 m (0.170 m) | 16 / 40-41 ms | 0.50-0.51 |
+
+  So the faster times come from this host, not from the release: moving the
+  registration and tracking into `lidar_localization_core` neither cost nor saved time.
+
+Machine-readable summaries and receipts of [run 1](validation/v1.13.0-koide-20261128/run1/summary.json)
+and [run 2](validation/v1.13.0-koide-20261128/run2/summary.json), and the
+[provenance](validation/v1.13.0-koide-20261128/provenance.json) record the result,
+configuration, executable hashes and the same-host comparison.
+[Download the logs, trajectories, resource samples and receipts of both runs](validation/v1.13.0-koide-20261128/evidence.tar.gz).
+Archive SHA-256: `386ff11624444f32c2b761605c015c27fe75975cf3afe68eeaeeac8a1975da9d`. It contains no bag or map files.
+
 ## v1.12.0 release verification (2026-11-23)
 
 Two full `outdoor_hard_02b` replays at 1x passed on `release/v1.12.0`: `main` at
