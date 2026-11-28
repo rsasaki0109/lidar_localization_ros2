@@ -42,19 +42,20 @@ for benchmark and regression commands.
 
 ## Current Public Snapshot
 
-Latest release verification (`2026-11-23`):
+Latest release verification (`2026-11-28`):
 
-- release: `v1.12.0`, verified on `release/v1.12.0` (`main` at `f500a59` plus the
+- release: `v1.13.0`, verified on `release/v1.13.0` (`main` at `d771c6f` plus the
   version bump), with `ndt_omp_ros2` at `17ce1e1` (the 0.2.0 release plus PCL 1.10
-  support), as for v1.11.0
+  support), as for v1.12.0
 - Koide `outdoor_hard_02b`, the release check: two full replays at 1x in ROS 2 Jazzy on
-  4 vCPUs, built without a build type as in `AGENTS.md`, with the v1.11.0 profile and a
-  new localizer executable
-- both passed: `0.242 m` map-frame RMSE in both (`0.170 m` on the map, against `0.171 m`
-  for v1.11.0), `100.0%` diagnostic coverage; alignment `18 ms` at the median and
-  `44-46 ms` at p95, against `14-15 ms` and `36-37 ms` on a host with a faster CPU
-  (2.30 GHz, where this one was 2.10 GHz); v1.11.0 rebuilt and replayed twice on this
-  host measured `18 ms` and `44-47 ms`, so the difference is the host
+  4 vCPUs, built without a build type as in `AGENTS.md`, with the v1.12.0 profile and a
+  new localizer executable (the registration and tracking now in
+  `lidar_localization_core`)
+- both passed: `0.242 m` map-frame RMSE in both (`0.170 m` on the map, as for v1.12.0),
+  `100.0%` diagnostic coverage; alignment `16-17 ms` at the median and `41 ms` at p95,
+  against `18 ms` and `44-46 ms` for v1.12.0 on the same CPU model (2.10 GHz); v1.12.0
+  rebuilt and replayed twice on this host measured `16 ms` and `40-42 ms`, so the
+  difference is the host
 - Boreas `boreas-2021-09-02-11-42`, `param/boreas_ndt_velodyne.yaml`: `0.132 m` RMSE over
   the first 120 s, `0.127 m` with `use_imu_preintegration`, every scan accepted, on the
   release build. Over the first 600 s (4.3 km), `0.105 m` and `0.098-0.099 m` with the
@@ -67,25 +68,28 @@ Latest release verification (`2026-11-23`):
   `0.74-0.77` and `0.45-0.47 m` horizontal RMSE at `8.9-10 Hz` (measured for v1.8.0,
   not re-run)
 
-See [the v1.12.0 verification](koide-online-replay.md#v1120-release-verification-2026-11-23),
+See [the v1.13.0 verification](koide-online-replay.md#v1130-release-verification-2026-11-28),
 [docs/benchmark.md](benchmark.md#boreas-vehicle-preset-replay) and
 [docs/benchmark.md](benchmark.md#under-a-memory-limit). This does not validate automatic
-initialization, recovery, physical hardware, or multi-hour operation, nor the opt-in
-features of v1.12.0 (G2 `bbs3d`, the seed correction window guard and release
-agreement, the near-alias startup rule), which the release check leaves off.
+initialization, recovery, physical hardware, or multi-hour operation, nor what the
+release check leaves off: quickstart's defaults with odometry prediction (the window
+guard, the 1.5 m candidate suppression, the near-alias rule and the agreement release;
+the check runs the localizer with the Koide profile, not quickstart), the opt-in
+map-distance prefilter, and the C API of `lidar_localization_core`, which its unit
+tests cover.
 
-Previous release verification (`2026-11-18`):
+Previous release verification (`2026-11-23`):
 
-- release: `v1.11.0`, verified on `release/v1.11.0` (`main` at `190099e` plus the
+- release: `v1.12.0`, verified on `release/v1.12.0` (`main` at `f500a59` plus the
   version bump), with `ndt_omp_ros2` at `17ce1e1`
 - Koide `outdoor_hard_02b`, the release check: two full replays at 1x in ROS 2 Jazzy on
-  4 vCPUs, built without a build type as in `AGENTS.md`, with the v1.10.0 profile and a
+  4 vCPUs, built without a build type as in `AGENTS.md`, with the v1.11.0 profile and a
   new localizer executable
-- both passed: `0.244 m` and `0.238 m` map-frame RMSE (`0.171 m` on the map), `100.0%`
-  diagnostic coverage; alignment `14-15 ms` at the median and `36-37 ms` at p95, on a
-  2.30 GHz host CPU
+- both passed: `0.242 m` map-frame RMSE in both (`0.170 m` on the map), `100.0%`
+  diagnostic coverage; alignment `18 ms` at the median and `44-46 ms` at p95, on a
+  2.10 GHz host CPU
 
-See [the v1.11.0 verification](koide-online-replay.md#v1110-release-verification-2026-11-18).
+See [the v1.12.0 verification](koide-online-replay.md#v1120-release-verification-2026-11-23).
 It does not validate automatic initialization, recovery, physical hardware, or
 multi-hour operation.
 
@@ -201,7 +205,7 @@ fixtures, but it did not win the replay of 2026-10-11:
 A fix needs a confirmation that does not lean on intermittent odometry, and a replay
 that reproduces the reset.
 
-Open items after v1.12.0:
+Open items after v1.13.0:
 
 - **Koide `outdoor_hard_01a` without odometry holds to 140-151 s, not to the end.**
   With the background map rebuild and `min_inlier_ratio` 0.8, the localizer alone stays
@@ -222,16 +226,24 @@ Open items after v1.12.0:
   10 s stop, within 0.54 m
   ([docs/global_localization.md](global_localization.md#on-koide-with-odometry-after-a-10-s-stop)).
 - **Cross-session maps of a repetitive room (Go2, JEPLO) are not solved by default.**
-  The refined-answer checks of v1.12.0 took live wrong starts from 4 of 28 to 0, but 4
-  runs still need a manual pose, and the replayed starts still give 41 wrong of 889 on
-  pairs whose answers agree on the turned room or a place 1.5-2 m along it. After a
-  right start the Long_Stairs map lets tracking slide 2-2.4 m along the room unless the
-  opt-in window guard is on; with it, one EIL_Box → EIL_Stairs run of four still ended
-  3.1 m off after an odometry jump and a guard release onto an aliased answer (the
-  opt-in release agreement holds such releases in replays with forced odometry jumps;
-  4 new live runs of that pair never reached a release), and the guard does not help
-  when the odometry itself jumps. G2 `bbs3d` does not help with rooms aliased by 180
-  degrees ([docs/benchmark.md](benchmark.md#why-tracking-slid-along-the-room-and-the-fix)).
+  With odometry prediction, quickstart now turns on the window guard, the near-alias
+  rule and the agreement release: the 15 cross-session cases started 40 of 45 runs, none
+  wrong, and 5 needed a manual pose (Long_Stairs → EIL_Mask1 and EIL_Stairs, where
+  every view is ambiguous); the replayed G2 starts still give 41 wrong of 889 on pairs
+  whose answers agree on the turned room or a place 1.5-2 m along it. The guards do not
+  help when the odometry itself jumps, and the agreement release does not release
+  toward an offset the odometry made. G2 `bbs3d` does not help with rooms aliased by 180
+  degrees ([docs/benchmark.md](benchmark.md#releasing-toward-the-odometry-the-agreement-release),
+  [docs/benchmark.md](benchmark.md#why-tracking-slid-along-the-room-and-the-fix)).
+- **People and vehicles the map lacks.** The opt-in map-distance prefilter
+  (`map_distance_filter_m`) kept tracking with obstacles on 11-29% of a scan, but it
+  stays opt-in: it let the pose slide 0.7-1.2 m in 2 of 45 clean Go2 cross-session runs,
+  and the two ways tried to let it go of an offset the seed guard defends lost clean
+  Koide runs. Nothing tried helps global localization among obstacles: the Go2 startup
+  came through in 1 of 6 runs with 11-15% of the points on obstacles and in 0 of 12 at
+  26-44%, and scans the obstacles fill (Boreas at 39%, Koide at 43%) are lost
+  ([docs/benchmark.md](benchmark.md#why-it-is-not-a-quickstart-default),
+  [docs/benchmark.md](benchmark.md#g2-startup-among-obstacles)).
 
 Other work remains:
 
