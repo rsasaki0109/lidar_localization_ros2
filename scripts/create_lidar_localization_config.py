@@ -303,6 +303,14 @@ def make_params(args: argparse.Namespace) -> dict[str, object]:
         else 0,
         "seed_correction_guard_release_agreement_translation_m": 0.3,
         "seed_correction_guard_release_agreement_yaw_deg": 5.0,
+        # Opt-in: let the guards accept a correction that this many rejected ones
+        # in a row agreed with, when it takes the pose back to the odometry
+        # (docs/benchmark.md).
+        "seed_correction_guard_agreement_release_scans": max(
+            int(getattr(args, "seed_correction_agreement_release_scans", 0)), 0
+        )
+        if getattr(args, "odom_tf_prediction", False)
+        else 0,
         # Opt-in: an initial pose whose covariance claims at most this horizontal
         # standard deviation (quickstart's confirmed global fixes) is held to the
         # odometry from the first scan, without the warmup (docs/benchmark.md).
@@ -526,6 +534,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "0.3 m away from the odometry, and release the guards after 30 "
         "rejections only toward an answer the last 10 rejected ones agree with "
         "(0: off).",
+    )
+    parser.add_argument(
+        "--seed-correction-agreement-release-scans",
+        type=int,
+        default=0,
+        help="With --odom-tf-prediction: accept a correction the seed correction "
+        "guards reject once this many in a row agree and it takes the pose back to "
+        "the odometry, undoing a slide of accepted alignments (0: off).",
     )
     parser.add_argument(
         "--trusted-global-start-std-m",

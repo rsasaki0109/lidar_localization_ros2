@@ -70,8 +70,9 @@ function(lidar_localization_add_core pclomp_include_dir pclomp_target)
   endif()
 endfunction()
 
-# The C API from a C program (test/test_core_c_api.c), and the map-distance
-# prefilter (test/test_map_distance_filter.cpp), in both builds.
+# The C API from a C program (test/test_core_c_api.c), the map-distance
+# prefilter (test/test_map_distance_filter.cpp) and the scan tracker
+# (test/test_scan_tracker.cpp), in both builds.
 function(lidar_localization_add_core_c_api_test)
   add_executable(test_core_c_api test/test_core_c_api.c)
   set_target_properties(test_core_c_api PROPERTIES LINKER_LANGUAGE CXX)
@@ -82,6 +83,10 @@ function(lidar_localization_add_core_c_api_test)
   target_link_libraries(test_map_distance_filter lidar_localization_core)
   add_test(NAME map_distance_filter COMMAND test_map_distance_filter)
   set_tests_properties(map_distance_filter PROPERTIES TIMEOUT 60)
+  add_executable(test_scan_tracker test/test_scan_tracker.cpp)
+  target_link_libraries(test_scan_tracker lidar_localization_core)
+  add_test(NAME scan_tracker COMMAND test_scan_tracker)
+  set_tests_properties(scan_tracker PROPERTIES TIMEOUT 60)
 endfunction()
 
 if(LIDAR_LOCALIZATION_CORE_ONLY)

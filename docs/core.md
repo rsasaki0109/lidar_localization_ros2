@@ -56,7 +56,8 @@ and scans but no ROS graph. It is the same code the node runs, not a copy.
     them. It is reset at an initial pose, moved by an accepted scan, and advanced without a
     measurement.
   - The measurement gate's own state: settled accepts since a reset, the windowed seed
-    correction guard, and the release agreement.
+    correction guard, the release agreement, and the agreement release (the corrections
+    the guards rejected and those accepted within its drift horizon).
   - The gate's decision on an attempt, and the attempt's seed metrics.
 
   `scoreAlignment` turns the backend's result into the attempt the gate reads: the fitness,
@@ -71,8 +72,9 @@ and scans but no ROS graph. It is the same code the node runs, not a copy.
      tracking is trusted (the node's decision, with the `map_distance_filter_*` fields of
      `lidarloc_tracking`).
   4. A retry from the last accepted pose (`enable_recovery_retry_from_last_pose`).
-  5. The measurement gate (score threshold, `min_inlier_ratio`, the seed correction guard
-     and its window).
+  5. The measurement gate (score threshold, `min_inlier_ratio`, the seed correction guard,
+     its window and its agreement release, the
+     `seed_correction_guard_agreement_release_*` fields of `lidarloc_tracking`, 0 = off).
   6. The update of the tracked pose and the prediction, as the node's raw registration pose
      backend does.
   7. With `lidarloc_set_reacquisition`, local re-acquisition after rejected scans given a

@@ -8,7 +8,9 @@
 # passed --global-nms-radius-m=1.5 --global-consensus-near-alias-samples=3 and had no
 # window guard; to measure that add --seed-correction-window-sec=0, and for the old
 # defaults altogether --seed-correction-window-sec=0 --global-nms-radius-m=3
-# --global-consensus-near-alias-samples=0.
+# --global-consensus-near-alias-samples=0. Since the agreement release became a
+# default with odometry prediction, compare with earlier results by adding
+# --seed-correction-agreement-release-scans=0.
 #
 # JEPLO_ROOT layout as for the other Go2 suites, with maps_loc/<run>/map.pcd built
 # by build_map_from_odometry.py + align_map_to_ground_truth.py from that run only:

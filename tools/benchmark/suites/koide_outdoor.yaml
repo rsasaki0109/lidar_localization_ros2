@@ -9,7 +9,9 @@
 # (docs/quickstart.md#defaults-with-odometry-prediction). Results up to v1.12.0
 # had none of them; to compare with them add quickstart_args:
 # [--seed-correction-window-sec=0, --global-nms-radius-m=3,
-#  --global-consensus-near-alias-samples=0].
+#  --global-consensus-near-alias-samples=0,
+#  --seed-correction-agreement-release-scans=0]. The agreement release became a
+# default with odometry prediction later; for results before it add only the last.
 defaults:
   repeats: 3
   odometry_launch: lidarslam rko_lio_odometry.launch.py

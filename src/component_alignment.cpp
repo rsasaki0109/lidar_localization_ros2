@@ -161,6 +161,8 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
       settled_accepts_since_reset_ = 0;
       seed_correction_window_.clear();
       seed_correction_release_history_.clear();
+      scan_tracker_.seed_correction_agreement_history.clear();
+      scan_tracker_.accepted_correction_history.clear();
     }
     last_odom_seed_stamp_sec_ = scan_stamp_sec;
   }

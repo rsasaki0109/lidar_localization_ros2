@@ -406,6 +406,24 @@ void PCLLocalization::initializeParameters()
   get_parameter(
     "seed_correction_guard_release_agreement_yaw_deg",
     measurement_gate_config_.seed_correction_guard_release_agreement_yaw_deg);
+  get_parameter(
+    "seed_correction_guard_agreement_release_scans",
+    measurement_gate_config_.seed_correction_guard_agreement_release_scans);
+  get_parameter(
+    "seed_correction_guard_agreement_release_translation_m",
+    measurement_gate_config_.seed_correction_guard_agreement_release_translation_m);
+  get_parameter(
+    "seed_correction_guard_agreement_release_yaw_deg",
+    measurement_gate_config_.seed_correction_guard_agreement_release_yaw_deg);
+  get_parameter(
+    "seed_correction_guard_agreement_release_window_sec",
+    measurement_gate_config_.seed_correction_guard_agreement_release_window_sec);
+  get_parameter(
+    "seed_correction_guard_agreement_release_drift_sec",
+    measurement_gate_config_.seed_correction_guard_agreement_release_drift_sec);
+  get_parameter(
+    "seed_correction_guard_agreement_release_drift_tolerance_m",
+    measurement_gate_config_.seed_correction_guard_agreement_release_drift_tolerance_m);
   get_parameter("enable_local_reacquisition", local_reacquisition_params_.enable);
   get_parameter(
     "local_reacquisition_min_rejections", local_reacquisition_params_.min_rejections);
@@ -698,6 +716,15 @@ void PCLLocalization::initializeParameters()
     measurement_gate_config_.seed_correction_guard_release_agreement_scans,
     measurement_gate_config_.seed_correction_guard_release_agreement_translation_m,
     measurement_gate_config_.seed_correction_guard_release_agreement_yaw_deg);
+  RCLCPP_INFO(
+    get_logger(), "seed_correction_guard_agreement_release: scans=%d translation_m=%lf "
+    "yaw_deg=%lf window_sec=%lf drift_sec=%lf drift_tolerance_m=%lf",
+    measurement_gate_config_.seed_correction_guard_agreement_release_scans,
+    measurement_gate_config_.seed_correction_guard_agreement_release_translation_m,
+    measurement_gate_config_.seed_correction_guard_agreement_release_yaw_deg,
+    measurement_gate_config_.seed_correction_guard_agreement_release_window_sec,
+    measurement_gate_config_.seed_correction_guard_agreement_release_drift_sec,
+    measurement_gate_config_.seed_correction_guard_agreement_release_drift_tolerance_m);
   RCLCPP_INFO(
     get_logger(), "enable_recovery_retry_from_last_pose: %d",
     recovery_retry_from_last_pose_config_.enable);

@@ -321,16 +321,20 @@ def detect_sim_time(typed_topics: Sequence[tuple[str, str]]) -> bool:
 # flag always wins. Measured with odometry prediction (RKO-LIO) on the JEPLO Go2
 # and Koide MID-360 replays (docs/benchmark.md#defaults-with-odometry-prediction):
 # the 1.5 m radius was evaluated only together with odometry, so without it all
-# three keep the values of v1.12.0.
+# keep the values of v1.12.0. The agreement release acts on the seed correction
+# guards, which only odometry prediction turns on
+# (docs/benchmark.md#releasing-toward-the-odometry-the-agreement-release).
 DEFAULT_SETTINGS: dict[str, float | int] = {
     "seed_correction_window_sec": 0.0,
     "global_nms_radius_m": 3.0,
     "global_consensus_near_alias_samples": 0,
+    "seed_correction_agreement_release_scans": 0,
 }
 ODOMETRY_DEFAULT_SETTINGS: dict[str, float | int] = {
     "seed_correction_window_sec": 2.0,
     "global_nms_radius_m": 1.5,
     "global_consensus_near_alias_samples": 3,
+    "seed_correction_agreement_release_scans": 4,
 }
 SETTING_FROM_COMMAND_LINE = "command line"
 SETTING_FROM_ODOMETRY_DEFAULT = "default with odometry prediction"

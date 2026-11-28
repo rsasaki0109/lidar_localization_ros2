@@ -212,6 +212,7 @@ These keys are diagnostics only — they never change acceptance behavior.
 | `seed_correction_window_guard_rejected` | the corrections accepted within `seed_correction_window_guard_sec`, plus this scan's, would move the pose more than `seed_correction_window_guard_translation_m` from the odometry (opt-in) | expected while degraded scans pull the track along a weak axis; persistent streaks mean the odometry itself drifted |
 | `seed_correction_guard_release_disagreed` | the guards' rejection streak reached `seed_correction_guard_release_rejections`, but this scan's correction disagrees with the last `seed_correction_guard_release_agreement_scans` rejected ones (opt-in) | expected while NDT flickers onto an alias during a long streak; persistent streaks mean the odometry itself drifted or the answers never settle |
 | `seed_correction_guard_rejected` | result jumped more than `seed_correction_guard_translation_m` / `_yaw_deg` from the seed (opt-in guard) | expected while an aliased match is suppressed; persistent streaks mean the seed itself drifted |
+| `seed_correction_guard_agreement_released` | accepted although the seed correction guard would reject it: the last `seed_correction_guard_agreement_release_scans` rejected corrections agreed with it and it takes the pose back to the odometry (quickstart: 4 with odometry prediction) | expected now and then after accepted scans slid the pose; frequent releases on a static robot mean the odometry and the map disagree |
 | `recovery_retry_from_last_pose_recovered` | retry from last good pose succeeded | transient glitch; usually OK |
 | `gtsam_update_rejected` | backend smoother rejected the update | often follows repeated measurement rejects |
 
@@ -347,6 +348,11 @@ correct it. So:
   slides on the two Go2 cases where they happened (0 of 6 runs, against 2 of 6), but
   lost runs that tracked without them (the Koide crowd, clean Koide 02b), so neither
   is in ([what was tried](benchmark.md#letting-go-of-an-offset-the-seed-guard-defends)).
+  The guards' agreement release (on by default with quickstart's odometry prediction)
+  takes back such an offset when accepted scans made it; with the filter it released
+  twice in 18 runs, both right, and neither earlier slide recurred in 9 runs, so
+  whether it removes them is not shown
+  ([measured](benchmark.md#releasing-toward-the-odometry-the-agreement-release)).
   Turn the filter on where people or vehicles the map lacks are expected.
 
 `/alignment_status` reports `map_distance_filter_status` (`applied`, `warming_up`,
@@ -639,6 +645,21 @@ looks good; previous-delta prediction then extrapolates the jump.
   of the scan's points face: also on open ground (a field, a car park), where NDT's
   cells pin a scan of bare ground to their lattice and the Hessian looks well
   constrained.
+
+- if the pose stays 0.3-0.8 m off for seconds after a run of degraded scans while
+  `seed_correction_guard_rejected` keeps rejecting corrections of about that size back,
+  set `seed_correction_guard_agreement_release_scans` (quickstart: 4 by default with
+  odometry prediction; `--seed-correction-agreement-release-scans 0` turns it off): the
+  guard then accepts a correction whose horizontal part is beyond its limit when it
+  agrees with each of the last N - 1 rejected ones
+  (`seed_correction_guard_agreement_release_translation_m` 0.15 m, `_yaw_deg` 2 degrees,
+  none older than `_window_sec` 1 s) and, added to the corrections accepted within
+  `_drift_sec` (5 s), leaves at most `_drift_tolerance_m` (0.25 m): it undoes what the
+  accepted scans slid. It reports `seed_correction_guard_agreement_released`. It does
+  not release toward an offset the odometry made (a jump, or drift while the guards
+  held), which looks like an alias from inside the gate; those still wait for the
+  guards' release
+  ([benchmark.md](benchmark.md#releasing-toward-the-odometry-the-agreement-release)).
 
 ## Symptom: Tracking Does Not Recover After Leaving the Map With External Odometry
 

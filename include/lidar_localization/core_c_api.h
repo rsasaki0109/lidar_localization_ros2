@@ -150,6 +150,22 @@ typedef struct lidarloc_tracking
   double map_distance_filter_max_distance_m;
   int map_distance_filter_warmup_accepts;
   double scan_period_sec;
+  /* The agreement release (the node's seed_correction_guard_agreement_release_*
+   * parameters; measurement_gate_policy.hpp): with
+   * seed_correction_guard_agreement_release_scans K > 0, a scan the seed
+   * correction guard rejects for a horizontal correction beyond
+   * seed_correction_guard_translation_m is accepted when that correction from the
+   * seed agrees with each of the last K - 1 corrections the guards rejected (within
+   * _translation_m horizontally and _yaw_deg, none older than _window_sec) and,
+   * added to the corrections accepted within _drift_sec, leaves at most
+   * _drift_tolerance_m: it takes the pose back to the seeds' track. The status
+   * is then "seed_correction_guard_agreement_released". 0 = off. */
+  int seed_correction_guard_agreement_release_scans;
+  double seed_correction_guard_agreement_release_translation_m;
+  double seed_correction_guard_agreement_release_yaw_deg;
+  double seed_correction_guard_agreement_release_window_sec;
+  double seed_correction_guard_agreement_release_drift_sec;
+  double seed_correction_guard_agreement_release_drift_tolerance_m;
   /* Solution remapping (NDT_OMP, degeneracy_remapping_policy.hpp): where the
    * Hessian's weakest direction is a horizontal translation with less than
    * degeneracy_remapping_weak_ratio of its strongest eigenvalue (a corridor,

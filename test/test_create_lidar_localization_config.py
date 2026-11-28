@@ -159,6 +159,23 @@ class TestCreateLidarLocalizationConfig(unittest.TestCase):
             config_tool.make_params(args(trusted_global_start_std_m=0.1))[key], 0.0
         )
 
+    def test_agreement_release_is_opt_in_with_odometry(self):
+        key = "seed_correction_guard_agreement_release_scans"
+        self.assertEqual(config_tool.make_params(args(odom_tf_prediction=True))[key], 0)
+        self.assertEqual(
+            config_tool.make_params(
+                args(odom_tf_prediction=True, seed_correction_agreement_release_scans=4)
+            )[key],
+            4,
+        )
+        # Without odometry seeding the seed correction guards are off.
+        self.assertEqual(
+            config_tool.make_params(args(seed_correction_agreement_release_scans=4))[
+                key
+            ],
+            0,
+        )
+
     def test_map_distance_filter_is_opt_in(self):
         self.assertEqual(config_tool.make_params(args())["map_distance_filter_m"], 0.0)
         self.assertEqual(

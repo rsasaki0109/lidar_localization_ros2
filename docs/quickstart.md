@@ -146,7 +146,10 @@ made NDT jump 1-2 m along the aisle with excellent fitness; the guard took the m
 error from 0.71 m to 0.11 m on a lidar_slam_ros2 map. It waits for five accepted scans
 in a row within those limits after any reset or odometry gap (more than 1 s between
 odometry seeds), so it neither holds an imprecise global-search pose nor blocks the
-correction after the robot was carried. It gives way after 30 rejections in a row.
+correction after the robot was carried. It gives way after 30 rejections in a row, and
+earlier to a correction that 4 rejected scans in a row agree on when it takes the pose
+back to the odometry after accepted scans slid it away (the agreement release,
+`--seed-correction-agreement-release-scans`).
 
 ## Localizing on a lidar_slam_ros2 map
 
@@ -416,7 +419,7 @@ with an unlimited budget, with no accepted pose more than 3 m wrong.
 
 ### Defaults with odometry prediction
 
-Three quickstart settings default by whether odometry prediction is on
+Four quickstart settings default by whether odometry prediction is on
 (`use_odom_tf_prediction: true`, discovered from the odom TF or set by
 `--odom-tf-prediction`), the same under every profile. An explicit flag always wins,
 including the old value; quickstart prints the resolved values on its `Settings:` line,
@@ -428,11 +431,16 @@ with where each came from (`default with odometry prediction`, `default` or
 | `--seed-correction-window-sec` | 2.0 (also sets the release agreement to 10 scans) | 0 (off) |
 | `--global-nms-radius-m` | 1.5 | 3.0 |
 | `--global-consensus-near-alias-samples` | 3 | 0 (off) |
+| `--seed-correction-agreement-release-scans` | 4 | 0 (off) |
 
-Without odometry prediction the window guard and the near-alias rule could not act, and
-the 1.5 m radius was only evaluated together with them, so all three keep the values of
-v1.12.0. `--global-search-engine bbs3d` and `--trusted-global-start-std-m` stay opt-in,
-and so does `--map-distance-filter-m`: it keeps tracking among people and vehicles the
+Without odometry prediction the window guard, the near-alias rule and the agreement
+release could not act, and the 1.5 m radius was only evaluated together with them, so all
+four keep the values of v1.12.0. The agreement release lets the seed correction guard
+accept a correction it rejects once 4 scans in a row agree on it and it takes the pose
+back to the odometry, undoing a slide of accepted alignments; it released 6 times in 66
+replays, never wrongly, and left every other run as before
+([measured](benchmark.md#releasing-toward-the-odometry-the-agreement-release)).
+`--global-search-engine bbs3d` and `--trusted-global-start-std-m` stay opt-in, and so does `--map-distance-filter-m`: it keeps tracking among people and vehicles the
 map lacks, but it let the pose slide 0.7-1.2 m off in 2 of 45 clean Go2 cross-session
 runs and 1 of 3 among parked cars, where the guards alone did not
 ([why it is not a default](benchmark.md#why-it-is-not-a-quickstart-default)).
@@ -441,8 +449,8 @@ It was measured with the default (standalone) profile on Livox MID-360 sensors (
 and a handheld rig) with RKO-LIO odometry; other sensors and odometry sources get the
 same defaults but were not measured. For the old behaviour with odometry pass
 `--seed-correction-window-sec 0 --global-nms-radius-m 3
---global-consensus-near-alias-samples 0`. The config generator
-(`create_lidar_localization_config.py`), `param/mid360_legged.yaml` and
+--global-consensus-near-alias-samples 0 --seed-correction-agreement-release-scans 0`.
+The config generator (`create_lidar_localization_config.py`), `param/mid360_legged.yaml` and
 `quickstart.launch.py` called directly do not apply these defaults: they keep the
 values they had (`quickstart.launch.py` is quickstart's launch target and gets every
 value from it).
