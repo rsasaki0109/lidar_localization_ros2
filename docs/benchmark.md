@@ -738,7 +738,7 @@ of a published fix (the query scan's, moved by planar odometry only) are not cha
 
 ### Defaults with odometry prediction
 
-After v1.12.0, quickstart turns on three settings that were opt-in whenever odometry
+From v1.13.0, quickstart turns on three settings that were opt-in whenever odometry
 prediction is on, under every profile
 ([quickstart](quickstart.md#defaults-with-odometry-prediction)):
 `--seed-correction-window-sec 2.0` (it brings the release agreement of 10 scans),
