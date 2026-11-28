@@ -132,6 +132,12 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
   declare_parameter("seed_correction_guard_release_agreement_scans", 0);
   declare_parameter("seed_correction_guard_release_agreement_translation_m", 0.3);
   declare_parameter("seed_correction_guard_release_agreement_yaw_deg", 5.0);
+  declare_parameter("seed_correction_guard_agreement_release_scans", 0);
+  declare_parameter("seed_correction_guard_agreement_release_translation_m", 0.15);
+  declare_parameter("seed_correction_guard_agreement_release_yaw_deg", 2.0);
+  declare_parameter("seed_correction_guard_agreement_release_window_sec", 1.0);
+  declare_parameter("seed_correction_guard_agreement_release_drift_sec", 5.0);
+  declare_parameter("seed_correction_guard_agreement_release_drift_tolerance_m", 0.25);
   declare_parameter("enable_rejected_seed_update", false);
   declare_parameter("rejected_seed_update_min_rejections", 0);
   declare_parameter("rejected_seed_update_max_fitness", 10.0);

@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+**Upgrading / behaviour change for anyone running `quickstart.py` with an odometry
+TF:** with odometry prediction on (discovered or `--odom-tf-prediction`), quickstart now
+also sets `seed_correction_guard_agreement_release_scans: 4`, under every profile
+(`--seed-correction-agreement-release-scans`; 0 without odometry prediction). The
+seed correction guard then accepts a correction it would reject once the last 4
+rejected corrections agree on it and it takes the pose back to the odometry (below).
+To get the old behaviour back:
+
+```bash
+quickstart.py ... --seed-correction-agreement-release-scans 0
+```
+
+An explicit flag wins; the `Settings:` line and the head of the generated parameter
+file show the value and its source. The node parameter defaults to 0 (off), and so do
+the config generator (`create_lidar_localization_config.py`),
+`param/mid360_legged.yaml` and `quickstart.launch.py` called directly. The benchmark
+suites that run with odometry get it; add the flag above to a suite's
+`quickstart_args` to compare with earlier results. `lidarloc_tracking` gained its fields
+at the end (0 = off from `lidarloc_default_tracking`), so C API callers must rebuild.
+
+**New: the agreement release of the seed correction guards.** Once the pose is 0.3-0.8 m
+off, the per-scan guard rejected the corrections back, and a scan accepted near the
+wrong pose started its 30-scan release over. With
+`seed_correction_guard_agreement_release_scans` K > 0, a scan whose horizontal
+correction is beyond the guard is accepted when its map-frame correction agrees with
+each of the last K - 1 rejected ones (`_translation_m` 0.15 m, `_yaw_deg` 2 degrees,
+none older than `_window_sec` 1 s; corrections move with any scan accepted in between)
+and, added to the corrections accepted within `_drift_sec` (5 s), leaves at most
+`_drift_tolerance_m` (0.25 m), i.e. it undoes a slide of accepted alignments. It reports
+`seed_correction_guard_agreement_released`. It is in `ScanTracker`, so the node and
+`lidarloc_localize` share it. Chosen from the logged runs of the map-distance
+evaluations: agreement alone takes steady aliases as often as true offsets (on 17
+runs logged with directions, 19 right and 18 wrong releases; the EIL_Box scans answer
+1.3-2.2 m along the room for seconds in nearly every run), while the drift condition
+passes 78 of 117 right per-scan rejections and none of 485 wrong ones. Measured with
+RKO-LIO odometry prediction (3 runs or seeds per case, 84 runs): 8 releases, none
+wrong (6 took 0.26-0.39 m offsets to 0.01-0.10 m, 2 came in runs already lost);
+cross-session 40 / 0 / 5 initialized / wrong / manual against 39 / 0 / 6, stretches
+over 0.3 m for more than 1 s 1 against 4; 60 of 66 runs never released and so decided
+every scan as before. It does not release toward an offset the odometry made (a jump,
+or drift while the guards held). 0.07 µs per scan
+([docs/benchmark.md](docs/benchmark.md#releasing-toward-the-odometry-the-agreement-release),
+[docs/troubleshooting.md](docs/troubleshooting.md#common-message-values)).
+
 **New: global localization in `lidar_localization_core`.** The G2 engine "bbs3d" search
 over the whole map, with each candidate refined by the registration and the decision of
 local re-acquisition, is `GlobalLocalizer` (`global_localization.hpp`). The C API runs it as

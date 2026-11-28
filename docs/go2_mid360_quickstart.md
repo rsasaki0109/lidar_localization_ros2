@@ -140,12 +140,15 @@ stays off for 3 s before the guards let the registration correct it
 When quickstart runs with odometry prediction (it finds the `odom -> livox_frame` TF of
 step 2, or you pass `--odom-tf-prediction`), it turns on, by default and under any
 `--profile`, the two settings above (`--global-nms-radius-m 1.5`,
-`--global-consensus-near-alias-samples 3`) and the window guard
+`--global-consensus-near-alias-samples 3`), the window guard
 (`--seed-correction-window-sec 2.0`, which also makes the guards' release wait for 10
-agreeing scans). Without odometry prediction they keep 3.0 m and off. quickstart prints
+agreeing scans) and the agreement release (`--seed-correction-agreement-release-scans 4`:
+the guards accept a correction back to the odometry that 4 scans in a row agree on).
+Without odometry prediction they keep 3.0 m and off. quickstart prints
 the values it uses, with their source, on its `Settings:` line. Explicit flags win; the
 behaviour before these defaults is `--seed-correction-window-sec 0
---global-nms-radius-m 3 --global-consensus-near-alias-samples 0`.
+--global-nms-radius-m 3 --global-consensus-near-alias-samples 0
+--seed-correction-agreement-release-scans 0`.
 
 Measured with the commands on this page (default profile, RKO-LIO odometry) on the
 JEPLO Go2 and Koide replays against the old defaults (two runs per case): on the 16

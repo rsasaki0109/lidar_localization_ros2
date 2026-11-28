@@ -85,6 +85,34 @@ struct MeasurementGateParams
   double seed_correction_guard_release_agreement_translation_m{0.3};
   double seed_correction_guard_release_agreement_yaw_deg{5.0};
 
+  // Agreement release.  The guards above let go of an offset only after
+  // release_rejections scans in a row were rejected; an accepted scan near the
+  // offset pose starts the count over, so a pose that accepted alignments slid
+  // away from the odometry can be defended for seconds while the registration
+  // keeps pointing back.  With agreement_release_scans K > 0 a scan whose
+  // horizontal correction from its seed is beyond the per-scan guard's
+  // translation limit (and which that guard rejects) is accepted when
+  // - its map-frame correction from its seed (horizontal offset and yaw) agrees
+  //   within agreement_release_translation_m and agreement_release_yaw_deg with
+  //   each of the last K - 1 corrections the guards rejected, none older than
+  //   agreement_release_window_sec (the corrections are kept relative to the
+  //   pose: an accepted scan in between moves them by its own correction, see
+  //   SeedCorrectionAgreementHistory), and
+  // - it takes the pose back to the odometry: added to the corrections accepted
+  //   within agreement_release_drift_sec, it leaves at most
+  //   agreement_release_drift_tolerance_m (horizontal norm of the map-frame sum).
+  //   A consistent alias near a right pose, or an odometry jump, asks to move
+  //   away from the odometry and is still rejected.
+  // Only corrections that pass the fitness gate count, and the released scan
+  // must pass it too.  It reports seed_correction_guard_agreement_released.
+  // 0 disables this.
+  int seed_correction_guard_agreement_release_scans{0};
+  double seed_correction_guard_agreement_release_translation_m{0.15};
+  double seed_correction_guard_agreement_release_yaw_deg{2.0};
+  double seed_correction_guard_agreement_release_window_sec{1.0};
+  double seed_correction_guard_agreement_release_drift_sec{5.0};
+  double seed_correction_guard_agreement_release_drift_tolerance_m{0.25};
+
   bool enable_rejected_seed_update{false};
   int rejected_seed_update_min_rejections{0};
   double rejected_seed_update_max_fitness{10.0};
@@ -109,6 +137,10 @@ struct MeasurementGateInput
   // Whether this scan's correction agrees with the recent guard-rejected ones
   // (see SeedCorrectionReleaseHistory); read only once the guards would release.
   bool release_agreed{true};
+  // Whether this scan's correction agrees with the latest guard-rejected ones
+  // and takes the pose back to the odometry (the agreement release); read only
+  // when a guard trips.
+  bool agreement_released{false};
 };
 
 struct MeasurementGateParamConfig : MeasurementGateParams
@@ -360,12 +392,99 @@ private:
   std::deque<Entry> entries_;
 };
 
+// Map-frame corrections (result minus seed: dx, dy, signed yaw) of the scans
+// the seed correction guards rejected, with their stamps, for the agreement
+// release. Each correction is where the registration put the pose relative to
+// the odometry-propagated seed, so odometry motion between the scans is
+// already removed; an accepted scan moves the pose, and with it every held
+// correction, by its own correction (shift).
+class SeedCorrectionAgreementHistory
+{
+public:
+  void clear() {entries_.clear();}
+
+  void add(
+    double stamp_sec, double dx, double dy, double dyaw_deg, std::size_t capacity)
+  {
+    if (
+      capacity == 0 || !std::isfinite(stamp_sec) || !std::isfinite(dx) ||
+      !std::isfinite(dy) || !std::isfinite(dyaw_deg))
+    {
+      return;
+    }
+    entries_.push_back({stamp_sec, dx, dy, dyaw_deg});
+    while (entries_.size() > capacity) {
+      entries_.pop_front();
+    }
+  }
+
+  // The pose moved by (dx, dy, dyaw_deg): the held corrections now point that
+  // much less far.
+  void shift(double dx, double dy, double dyaw_deg)
+  {
+    if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dyaw_deg)) {
+      clear();
+      return;
+    }
+    for (auto & entry : entries_) {
+      entry.dx -= dx;
+      entry.dy -= dy;
+      entry.dyaw_deg -= dyaw_deg;
+    }
+  }
+
+  // True when at least `scans` corrections are held, the latest `scans` are
+  // within window_sec before stamp_sec, and each lies within translation_m
+  // (horizontal) and yaw_deg of (dx, dy, dyaw_deg).
+  bool agrees(
+    double stamp_sec, double dx, double dy, double dyaw_deg, std::size_t scans,
+    double translation_m, double yaw_deg, double window_sec) const
+  {
+    if (scans == 0) {
+      return true;
+    }
+    if (
+      entries_.size() < scans || !std::isfinite(stamp_sec) || !std::isfinite(dx) ||
+      !std::isfinite(dy) || !std::isfinite(dyaw_deg))
+    {
+      return false;
+    }
+    for (auto it = entries_.end() - static_cast<std::ptrdiff_t>(scans); it != entries_.end();
+      ++it)
+    {
+      if (it->stamp_sec > stamp_sec || stamp_sec - it->stamp_sec > window_sec) {
+        return false;
+      }
+      const double yaw_diff = std::abs(std::remainder(it->dyaw_deg - dyaw_deg, 360.0));
+      if (std::hypot(it->dx - dx, it->dy - dy) > translation_m || yaw_diff > yaw_deg) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  std::size_t size() const {return entries_.size();}
+
+private:
+  struct Entry
+  {
+    double stamp_sec;
+    double dx;
+    double dy;
+    double dyaw_deg;
+  };
+  std::deque<Entry> entries_;
+};
+
 inline bool isSeedCorrectionGuardRejection(const std::string & status_message)
 {
   return status_message == "seed_correction_guard_rejected" ||
          status_message == "seed_correction_window_guard_rejected" ||
          status_message == "seed_correction_guard_release_disagreed";
 }
+
+constexpr const char * kSeedCorrectionGuardAgreementReleased =
+  "seed_correction_guard_agreement_released";
 
 // Odometry seeds more than this far apart in time bridge a gap (a stalled or
 // restarted front end, a covered sensor): the seed may be far off afterwards.
@@ -407,7 +526,14 @@ inline MeasurementGateDecision evaluateMeasurementGate(
   const bool window_tripped =
     params.enable_seed_correction_window_guard && guard_warmed_up &&
     input.window_correction_translation_m > params.seed_correction_window_guard_translation_m;
+  // The agreement release lets a correction beyond the per-scan guard through
+  // (and the window guard, which it may trip as well); the fitness gate below
+  // still applies. A scan only the window guard rejects stays rejected.
+  const bool agreement_release =
+    params.seed_correction_guard_agreement_release_scans > 0 && input.agreement_released &&
+    per_scan_tripped;
   if (
+    !agreement_release &&
     guard_released && (per_scan_tripped || window_tripped) &&
     params.seed_correction_guard_release_agreement_scans > 0 && !input.release_agreed)
   {
@@ -417,14 +543,14 @@ inline MeasurementGateDecision evaluateMeasurementGate(
     return gate;
   }
 
-  if (per_scan_tripped && !guard_released) {
+  if (!agreement_release && per_scan_tripped && !guard_released) {
     gate.status_level = kMeasurementGateWarn;
     gate.status_message = "seed_correction_guard_rejected";
     gate.reject_measurement = true;
     return gate;
   }
 
-  if (window_tripped && !guard_released) {
+  if (!agreement_release && window_tripped && !guard_released) {
     gate.status_level = kMeasurementGateWarn;
     gate.status_message = "seed_correction_window_guard_rejected";
     gate.reject_measurement = true;
@@ -433,6 +559,10 @@ inline MeasurementGateDecision evaluateMeasurementGate(
 
   const bool threshold_exceeded = input.fitness_score > gate.effective_score_threshold;
   if (!threshold_exceeded && !gate.borderline_seed_gate_active) {
+    if (agreement_release) {
+      gate.status_level = kMeasurementGateWarn;
+      gate.status_message = kSeedCorrectionGuardAgreementReleased;
+    }
     return gate;
   }
 

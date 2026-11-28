@@ -532,6 +532,18 @@ def build_arg_parser(show_all: bool = False) -> argparse.ArgumentParser:
         ),
     )
     tuning.add_argument(
+        "--seed-correction-agreement-release-scans",
+        type=int,
+        default=None,
+        help=advanced(
+            "with odometry prediction, accept a correction the seed guards reject "
+            "once this many in a row agree and it takes the pose back to the "
+            "odometry, undoing a slide of accepted alignments "
+            "(0: off; default: 4 with odometry prediction, else 0; "
+            "docs/benchmark.md)"
+        ),
+    )
+    tuning.add_argument(
         "--map-distance-filter-m",
         type=float,
         default=0.0,
@@ -796,6 +808,13 @@ def _config_args(args, cloud_topic: str, imu_topic: str):
         )
     if args.map_distance_filter_m > 0.0:
         argv.extend(["--map-distance-filter-m", str(args.map_distance_filter_m)])
+    if args.seed_correction_agreement_release_scans > 0:
+        argv.extend(
+            [
+                "--seed-correction-agreement-release-scans",
+                str(args.seed_correction_agreement_release_scans),
+            ]
+        )
     return config_tool.build_arg_parser().parse_args(argv)
 
 

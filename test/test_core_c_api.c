@@ -6,6 +6,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "lidar_localization/core_c_api.h"
 
@@ -244,6 +245,83 @@ static void check_reacquisition(const float * map, size_t n)
   free(scan);
 }
 
+/* The agreement release. Tracking with odometry seeds (the tracked pose moved
+ * by the odometry's motion), then four scans that register 0.15 m off each
+ * (a scene the map lacks): each is accepted and the pose slides 0.6 m away
+ * from the odometry. The next scans register on the truth again; the guard
+ * rejects the 0.6 m corrections back. With
+ * seed_correction_guard_agreement_release_scans 3 the third agreeing one is
+ * accepted, since it takes the pose back to the odometry; off (0), the guard
+ * holds. An odometry that drifted 0.6 m instead (drift 1) is held either way:
+ * that correction moves the pose away from the odometry. */
+static void check_agreement_release(const float * map, size_t n, int scans, int drift)
+{
+  lidarloc_config config = lidarloc_default_config();
+  config.registration_method = "GICP_OMP";
+  config.ndt_num_threads = 2;
+  char error[256];
+  lidarloc_core * core = lidarloc_create(&config, error, sizeof error);
+  assert(core);
+  assert(lidarloc_set_map(core, map, n) == 0);
+  lidarloc_tracking tracking = lidarloc_default_tracking();
+  assert(tracking.seed_correction_guard_agreement_release_scans == 0);
+  tracking.score_threshold = 0.5;
+  tracking.enable_seed_correction_guard = 1;
+  tracking.seed_correction_guard_translation_m = 0.3;
+  tracking.seed_correction_guard_warmup_accepts = 3;
+  tracking.seed_correction_guard_agreement_release_scans = scans;
+  /* The drift horizon covers the slide but not the first scans, which the NDT
+   * initializer refines a few centimetres off. */
+  tracking.seed_correction_guard_agreement_release_drift_sec = 0.75;
+  assert(lidarloc_set_tracking(core, &tracking) == 0);
+  float * scan = malloc(3 * n * sizeof(float));
+  lidarloc_update update;
+  double truth[16], seen[16], seed[16];
+  double x = -5.0;
+  const double y = -3.0;
+  pose(x, y, 0.0, truth);
+  assert(lidarloc_set_initial_pose(core, truth, 0.0) == 0);
+  /* The offset of the tracked pose from the truth. */
+  double offset = 0.0;
+  int k = 1;
+  for (; k <= 10; ++k) {
+    x += 0.2;
+    pose(x, y, 0.0, truth);
+    const double scan_offset = (k > 6 && !drift) ? offset + 0.15 : 0.0;
+    pose(x, y + scan_offset, 0.0, seen);
+    pose(x, y + offset, 0.0, seed);
+    scan_from(map, n, seen, scan);
+    assert(lidarloc_localize(core, scan, n, 0.1 * k, seed, &update) == 0);
+    assert(update.accepted);
+    offset = update.pose[7] - y;
+  }
+  if (drift) {
+    /* The odometry jumps 0.6 m at once. */
+    offset = 0.6;
+  }
+  assert(fabs(offset - 0.6) < 0.05);
+  int released_at = 0;
+  for (; k <= 16; ++k) {
+    x += 0.2;
+    pose(x, y, 0.0, truth);
+    pose(x, y + offset, 0.0, seed);
+    scan_from(map, n, truth, scan);
+    assert(lidarloc_localize(core, scan, n, 0.1 * k, seed, &update) == 0);
+    printf("offset scan %d (release after %d, drift %d): accepted %d, %s\n", k, scans, drift,
+      update.accepted, update.status);
+    if (update.accepted) {
+      assert(strcmp(update.status, "seed_correction_guard_agreement_released") == 0);
+      assert(hypot(update.pose[3] - x, update.pose[7] - y) < 0.05);
+      released_at = k;
+      break;
+    }
+    assert(strcmp(update.status, "seed_correction_guard_rejected") == 0);
+  }
+  assert(released_at == (scans > 0 && !drift ? 10 + scans : 0));
+  lidarloc_destroy(core);
+  free(scan);
+}
+
 /* Global localization: a scan of the room from (2, -3) turned 2.0 rad, no
  * prior. The search over the whole room finds it; a scan with no points in
  * range is refused. */
@@ -316,6 +394,9 @@ int main(void)
   check_tracking(map, n, 0);
   check_tracking(map, n, 1);
   check_reacquisition(map, n);
+  check_agreement_release(map, n, 0, 0);
+  check_agreement_release(map, n, 3, 0);
+  check_agreement_release(map, n, 3, 1);
   check_global(map, n);
 
   lidarloc_config config = lidarloc_default_config();

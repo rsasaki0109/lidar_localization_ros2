@@ -41,6 +41,12 @@ public:
   SeedCorrectionWindow seed_correction_window;
   // Release agreement: corrections of the latest guard-rejected scans.
   SeedCorrectionReleaseHistory seed_correction_release_history;
+  // Agreement release: stamped corrections of the latest guard-rejected scans,
+  // the accepted corrections within its drift horizon, and whether the last
+  // gated scan was released by it.
+  SeedCorrectionAgreementHistory seed_correction_agreement_history;
+  SeedCorrectionWindow accepted_correction_history;
+  bool last_gate_agreement_released{false};
 
   // Starts over at a pose (an initial pose, a reinitialization).
   void reset(const Eigen::Matrix4f & pose_matrix, double stamp_sec);
@@ -70,7 +76,8 @@ public:
   // accept (acceptMeasurement).
   MeasurementGateDecision evaluateGate(
     const AlignmentAttempt & attempt, const MeasurementGateParamConfig & gate_config);
-  // Keeps the corrections of guard-rejected scans for the release agreement.
+  // Keeps the corrections of guard-rejected scans for the release agreement
+  // and the agreement release.
   void recordReleaseHistory(
     const AlignmentAttempt & attempt, const MeasurementGateDecision & gate,
     const MeasurementGateParamConfig & gate_config);

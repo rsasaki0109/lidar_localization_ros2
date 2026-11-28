@@ -265,11 +265,13 @@ NOT_GIVEN = {
     "seed_correction_window_sec": None,
     "global_nms_radius_m": None,
     "global_consensus_near_alias_samples": None,
+    "seed_correction_agreement_release_scans": None,
 }
 OLD_DEFAULTS = {
     "seed_correction_window_sec": 0.0,
     "global_nms_radius_m": 3.0,
     "global_consensus_near_alias_samples": 0,
+    "seed_correction_agreement_release_scans": 0,
 }
 
 
@@ -288,6 +290,7 @@ class TestOdometrySettings(unittest.TestCase):
                 "seed_correction_window_sec": 2.0,
                 "global_nms_radius_m": 1.5,
                 "global_consensus_near_alias_samples": 3,
+                "seed_correction_agreement_release_scans": 4,
             },
         )
         self.assertEqual(self.sources(settings), {MODEL.SETTING_FROM_ODOMETRY_DEFAULT})
@@ -298,10 +301,12 @@ class TestOdometrySettings(unittest.TestCase):
                 "global_nms_radius_m=1.5 (default with odometry prediction)",
                 "global_consensus_near_alias_samples=3 (default with odometry "
                 "prediction)",
+                "seed_correction_agreement_release_scans=4 (default with odometry "
+                "prediction)",
             ],
         )
 
-    def test_without_odometry_all_three_keep_the_old_defaults(self):
+    def test_without_odometry_all_keep_the_old_defaults(self):
         # The 1.5 m radius too: it was only evaluated together with odometry.
         # Not known yet (None) resolves the same way.
         for odometry in (False, None):
