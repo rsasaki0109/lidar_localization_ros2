@@ -22,6 +22,13 @@ point count (`RegistrationEngine::horizontalConstraint`, `registration_fitness.h
 ground they are both zero, where NDT's cells pin the scan to their lattice and its Hessian
 reports it well constrained (Robot Native Engine's fields: NDT stopped 0.5-2.6 m off).
 
+On recorded data (Koide `indoor_hard_01`, an Azure Kinect in corridors;
+`experiments/degeneracy_remapping_koide`), seeded 2 cm from the truth, NDT without
+remapping moved 398 of 2378 clouds more than 10 cm away; remapping by the Hessian left 314,
+and with `degeneracy_remapping_min_horizontal_constraint: 0.02` 227. It stays opt-in: it
+keeps the seed's position along the directions it drops, which suits an odometry seed, not
+a coarse guess.
+
 ## 1.13.0 - 2026-11-28
 
 **Upgrading:** two behaviours change by default, both only for `quickstart.py` with
