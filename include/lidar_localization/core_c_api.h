@@ -86,6 +86,15 @@ typedef struct lidarloc_result
    * approximates the pose covariance up to the scale of the NDT score. */
   int score_hessian_valid;
   double score_hessian[36];
+  /* lidarloc_localize with enable_degeneracy_remapping: whether the correction
+   * along the Hessian's weakest direction was dropped, and how much (m). */
+  int degeneracy_remapped;
+  double degeneracy_dropped_m;
+  /* With degeneracy_remapping_min_horizontal_constraint: how the map's
+   * surfaces pin the scan horizontally, the eigenvalues (ascending) of the
+   * summed horizontal parts of the surface normals under the scan's points
+   * over its point count; NaN when not computed. */
+  double horizontal_constraint[2];
 } lidarloc_result;
 
 /* The node's parameter defaults, but NDT_OMP (the node's default is PCL's NDT)
@@ -157,6 +166,19 @@ typedef struct lidarloc_tracking
   double seed_correction_guard_agreement_release_window_sec;
   double seed_correction_guard_agreement_release_drift_sec;
   double seed_correction_guard_agreement_release_drift_tolerance_m;
+  /* Solution remapping (NDT_OMP, degeneracy_remapping_policy.hpp): where the
+   * Hessian's weakest direction is a horizontal translation with less than
+   * degeneracy_remapping_weak_ratio of its strongest eigenvalue (a corridor,
+   * a tunnel), the correction along it is dropped and the pose keeps the
+   * seed's position along it. Off by default. */
+  int enable_degeneracy_remapping;
+  double degeneracy_remapping_weak_ratio;
+  /* Above 0 (with enable_degeneracy_remapping, any backend with a target search
+   * tree): also drop the correction along every horizontal direction the map's
+   * surfaces under the scan pin less than this (see horizontal_constraint in
+   * lidarloc_result). Bare ground pins neither, though NDT's Hessian says it
+   * does. */
+  double degeneracy_remapping_min_horizontal_constraint;
 } lidarloc_tracking;
 
 typedef struct lidarloc_update

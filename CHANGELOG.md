@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+**New, opt-in: solution remapping of degenerate alignments.** In a corridor or a tunnel the
+walls pin the pose across it but not along it, and NDT's correction along it is noise the
+scan cannot confirm; kept scan after scan, it slides the pose along the corridor in steps
+below the seed correction guards' limits. With `enable_degeneracy_remapping` (default off),
+when NDT_OMP's Hessian is weakest along a horizontal translation with less than
+`degeneracy_remapping_weak_ratio` (0.05) of its strongest eigenvalue, the correction's
+component along it is dropped and the pose keeps the prediction's position along the
+corridor (`degeneracy_remapping_policy.hpp`, in `scoreAlignment`; the C API's
+`lidarloc_tracking` fields of the same names, with `degeneracy_remapped` and
+`degeneracy_dropped_m` in the result). Found in Robot Native Engine's simulated 300 m road
+tunnel, where it took lidar_localization_ros2's tracking from 95 m at worst to 2.9 m; in the
+C API test's corridor NDT slid 0.12 m along it from a seed 0.3 m off, and with remapping it
+keeps the seed's 0.3 m while correcting the 0.2 m across.
+`degeneracy_remapping_min_horizontal_constraint` (default 0, off; any backend) also drops
+the correction along every horizontal direction the map's surfaces under the scan pin less
+than that: the eigenvalues of the summed horizontal parts of their normals over the scan's
+point count (`RegistrationEngine::horizontalConstraint`, `registration_fitness.hpp`). On bare
+ground they are both zero, where NDT's cells pin the scan to their lattice and its Hessian
+reports it well constrained (Robot Native Engine's fields: NDT stopped 0.5-2.6 m off).
+
 ## 1.13.0 - 2026-11-28
 
 **Upgrading:** two behaviours change by default, both only for `quickstart.py` with

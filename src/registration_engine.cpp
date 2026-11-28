@@ -677,6 +677,11 @@ RegistrationFitness RegistrationEngine::fitness(
   return registrationFitness(*registration_, threads(), inlier_distance_m, inlier_min_points);
 }
 
+HorizontalConstraint RegistrationEngine::horizontalConstraint(double inlier_distance_m) const
+{
+  return lidar_localization::horizontalConstraint(*registration_, threads(), inlier_distance_m);
+}
+
 std::optional<RegistrationLocalizabilityMetrics> RegistrationEngine::localizability() const
 {
   if (!registration_objects_.ndt_omp) {

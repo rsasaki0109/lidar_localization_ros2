@@ -17,6 +17,7 @@
 
 #include "lidar_localization/alignment_attempt_policy.hpp"
 #include "lidar_localization/alignment_pipeline_policy.hpp"
+#include "lidar_localization/degeneracy_remapping_policy.hpp"
 #include "lidar_localization/measurement_gate_policy.hpp"
 #include "lidar_localization/prediction_state_policy.hpp"
 #include "lidar_localization/registration_engine.hpp"
@@ -94,11 +95,15 @@ struct AlignmentScoring
   double min_inlier_ratio{0.0};
   double score_threshold{0.0};
   bool localizability{false};
+  // Solution remapping of degenerate alignments (NDT_OMP; it analyses the
+  // Hessian whether or not `localizability` is set).
+  DegeneracyRemappingParams remapping;
 };
 
 // Fills an attempt from the backend's result: convergence, iterations, the
 // fitness and inlier ratio (and the score the gate reads), the localizability,
-// and with convergence the pose and its correction from the seed.
+// and with convergence the pose (remapped where degenerate) and its correction
+// from the seed.
 void scoreAlignment(
   const RegistrationEngine & engine, const RegistrationAlignResult & aligned,
   const AlignmentScoring & scoring, AlignmentAttempt & attempt);

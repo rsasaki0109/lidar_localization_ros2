@@ -37,6 +37,11 @@ void PCLLocalization::declareImuPreintegrationParameters()
   declare_parameter("continuous_time_deskew_reference_time_sec", 0.0);
   declare_parameter("continuous_time_pose_history_duration_sec", 2.0);
   declare_parameter("enable_registration_localizability_diagnostics", false);
+  // Solution remapping of degenerate NDT_OMP alignments
+  // (degeneracy_remapping_policy.hpp).
+  declare_parameter("enable_degeneracy_remapping", false);
+  declare_parameter("degeneracy_remapping_weak_ratio", 0.05);
+  declare_parameter("degeneracy_remapping_min_horizontal_constraint", 0.0);
 }
 
 void PCLLocalization::loadImuPreintegrationParameters()
@@ -81,6 +86,17 @@ void PCLLocalization::loadImuPreintegrationParameters()
   get_parameter(
     "enable_registration_localizability_diagnostics",
     enable_registration_localizability_diagnostics_);
+  get_parameter("enable_degeneracy_remapping", degeneracy_remapping_.enable);
+  get_parameter("degeneracy_remapping_weak_ratio", degeneracy_remapping_.weak_ratio);
+  get_parameter(
+    "degeneracy_remapping_min_horizontal_constraint",
+    degeneracy_remapping_.min_horizontal_constraint);
+  if (degeneracy_remapping_.enable && registration_method_ != "NDT_OMP") {
+    RCLCPP_WARN(
+      get_logger(),
+      "enable_degeneracy_remapping needs NDT_OMP's Hessian; it has no effect with %s",
+      registration_method_.c_str());
+  }
   if (
     continuous_time_deskew_mode_ != "relative_motion" &&
     continuous_time_deskew_mode_ != "imu_pose_history" &&

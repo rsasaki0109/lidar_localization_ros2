@@ -192,6 +192,9 @@ public:
   // The last NDT-OMP alignment's localizability; nullopt for the other
   // backends.
   std::optional<RegistrationLocalizabilityMetrics> localizability() const;
+  // How the target's surfaces pin the last alignment horizontally
+  // (registration_fitness.hpp); invalid without a target search tree.
+  HorizontalConstraint horizontalConstraint(double inlier_distance_m) const;
 
   // Whether a target change freed memory since the last call (the node then
   // returns it to the OS).

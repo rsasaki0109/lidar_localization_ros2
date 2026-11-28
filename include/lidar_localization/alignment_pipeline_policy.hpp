@@ -47,6 +47,15 @@ struct AlignmentAttempt
   std::size_t map_distance_filter_input_points{0};
   std::size_t map_distance_filter_kept_points{0};
   double map_distance_filter_time_sec{0.0};
+  // Solution remapping (degeneracy_remapping_policy.hpp): whether the
+  // correction along the Hessian's weakest direction was dropped, and how much.
+  bool degeneracy_remapped{false};
+  double degeneracy_dropped_m{0.0};
+  // With min_horizontal_constraint: how the map's surfaces pin the scan
+  // horizontally (HorizontalConstraint's eigenvalues, ascending; NaN when not
+  // computed).
+  Eigen::Vector2d horizontal_constraint{
+    Eigen::Vector2d::Constant(std::numeric_limits<double>::quiet_NaN())};
 };
 
 struct AlignmentPipelineInput

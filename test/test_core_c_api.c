@@ -368,6 +368,118 @@ static void check_global(const float * map, size_t n)
   free(scan);
 }
 
+/* Solution remapping in a corridor: 40 m of floor and two walls 4 m apart,
+ * nothing across the corridor. NDT_OMP from a seed 0.3 m along the corridor and
+ * 0.2 m across: the Hessian is weakest along it, and with remapping the pose
+ * keeps the seed's x while y comes back to the truth. */
+static void check_remapping(void)
+{
+  size_t n = 0;
+  float * map = malloc(3 * 200000 * sizeof(float));
+#define PUT(X, Y, Z) do { map[3 * n] = (X); map[3 * n + 1] = (Y); map[3 * n + 2] = (Z); ++n; } \
+  while (0)
+  for (int i = 0; i <= 400; ++i) {
+    const float x = -20.0f + 0.1f * (float)i;
+    for (int j = 0; j <= 20; ++j) {
+      const float y = -2.0f + 0.2f * (float)j;
+      PUT(x, y + 0.013f * (float)(i % 7), 0.0f);
+    }
+    for (int k = 1; k <= 15; ++k) {
+      PUT(x, -2.0f, 0.2f * (float)k);
+      PUT(x, 2.0f, 0.2f * (float)k);
+    }
+  }
+#undef PUT
+  float * scan = malloc(3 * n * sizeof(float));
+  double truth[16], seed[16];
+  pose(0.0, 0.0, 0.0, truth);
+  scan_from(map, n, truth, scan);
+  pose(0.3, 0.2, 0.0, seed);
+  for (int remap = 0; remap <= 2; ++remap) {
+    lidarloc_config config = lidarloc_default_config();
+    config.ndt_num_threads = 2;
+    char error[256];
+    lidarloc_core * core = lidarloc_create(&config, error, sizeof error);
+    assert(core && lidarloc_set_map(core, map, n) == 0);
+    lidarloc_tracking tracking = lidarloc_default_tracking();
+    assert(!tracking.enable_degeneracy_remapping);
+    tracking.enable_degeneracy_remapping = remap > 0;
+    /* 2: by the map's surfaces under the scan as well. */
+    tracking.degeneracy_remapping_min_horizontal_constraint = remap == 2 ? 0.02 : 0.0;
+    assert(lidarloc_set_tracking(core, &tracking) == 0);
+    assert(lidarloc_set_initial_pose(core, truth, 0.0) == 0);
+    lidarloc_update update;
+    assert(lidarloc_localize(core, scan, n, 0.1, seed, &update) == 0);
+    printf(
+      "corridor, remapping %d: accepted %d at (%.3f, %.3f), weak ratio %.4f, remapped %d "
+      "(%.3f m dropped), horizontal constraint %.4f %.4f\n",
+      remap, update.accepted, update.pose[3], update.pose[7], update.alignment.weak_ratio,
+      update.alignment.degeneracy_remapped, update.alignment.degeneracy_dropped_m,
+      update.alignment.horizontal_constraint[0], update.alignment.horizontal_constraint[1]);
+    assert(update.accepted);
+    assert(fabs(update.pose[7]) < 0.05);
+    assert(update.alignment.degeneracy_remapped == (remap > 0));
+    if (remap) {
+      assert(fabs(update.pose[3] - 0.3) < 1e-3);
+    }
+    if (remap == 2) {
+      /* Nothing faces along the corridor; the walls face across it. */
+      assert(update.alignment.horizontal_constraint[0] < 0.01);
+      assert(update.alignment.horizontal_constraint[1] > 0.05);
+    }
+    lidarloc_destroy(core);
+  }
+  free(scan);
+  free(map);
+}
+
+/* Bare ground: a floor and nothing else in reach. NDT's Hessian is not weak
+ * there (its cells pin the scan to their lattice), but no surface faces
+ * sideways: with the horizontal constraint the pose keeps the seed's x and y. */
+static void check_bare_ground(void)
+{
+  size_t n = 0;
+  float * map = malloc(3 * 100000 * sizeof(float));
+  for (int i = 0; i <= 300; ++i) {
+    for (int j = 0; j <= 300; ++j) {
+      map[3 * n] = -15.0f + 0.1f * (float)i;
+      map[3 * n + 1] = -15.0f + 0.1f * (float)j;
+      map[3 * n + 2] = 0.0f;
+      ++n;
+    }
+  }
+  float * scan = malloc(3 * n * sizeof(float));
+  double truth[16], seed[16];
+  pose(0.0, 0.0, 0.0, truth);
+  scan_from(map, n, truth, scan);
+  pose(0.27, -0.33, 0.0, seed);
+  lidarloc_config config = lidarloc_default_config();
+  config.ndt_num_threads = 2;
+  char error[256];
+  lidarloc_core * core = lidarloc_create(&config, error, sizeof error);
+  assert(core && lidarloc_set_map(core, map, n) == 0);
+  lidarloc_tracking tracking = lidarloc_default_tracking();
+  tracking.enable_degeneracy_remapping = 1;
+  tracking.degeneracy_remapping_min_horizontal_constraint = 0.02;
+  assert(lidarloc_set_tracking(core, &tracking) == 0);
+  assert(lidarloc_set_initial_pose(core, truth, 0.0) == 0);
+  lidarloc_update update;
+  assert(lidarloc_localize(core, scan, n, 0.1, seed, &update) == 0);
+  printf(
+    "bare ground: accepted %d at (%.3f, %.3f), weak ratio %.4f, horizontal constraint %.4f "
+    "%.4f, %.3f m dropped\n",
+    update.accepted, update.pose[3], update.pose[7], update.alignment.weak_ratio,
+    update.alignment.horizontal_constraint[0], update.alignment.horizontal_constraint[1],
+    update.alignment.degeneracy_dropped_m);
+  assert(update.alignment.horizontal_constraint[1] < 0.01);
+  if (update.accepted) {
+    assert(fabs(update.pose[3] - 0.27) < 1e-3 && fabs(update.pose[7] + 0.33) < 1e-3);
+  }
+  lidarloc_destroy(core);
+  free(scan);
+  free(map);
+}
+
 int main(void)
 {
   const size_t n = room(NULL);
@@ -398,6 +510,8 @@ int main(void)
   check_agreement_release(map, n, 3, 0);
   check_agreement_release(map, n, 3, 1);
   check_global(map, n);
+  check_remapping();
+  check_bare_ground();
 
   lidarloc_config config = lidarloc_default_config();
   char error[256];

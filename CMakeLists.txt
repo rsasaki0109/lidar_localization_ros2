@@ -831,6 +831,11 @@ if(BUILD_TESTING)
   target_link_libraries(test_causal_twist_history Eigen3::Eigen)
   add_test(NAME causal_twist_history COMMAND test_causal_twist_history)
 
+  add_executable(test_degeneracy_remapping_policy test/test_degeneracy_remapping_policy.cpp)
+  target_include_directories(test_degeneracy_remapping_policy PRIVATE include)
+  target_link_libraries(test_degeneracy_remapping_policy Eigen3::Eigen)
+  add_test(NAME degeneracy_remapping_policy COMMAND test_degeneracy_remapping_policy)
+
   add_executable(test_local_reacquisition_policy test/test_local_reacquisition_policy.cpp)
   target_include_directories(test_local_reacquisition_policy PRIVATE include)
   add_test(NAME local_reacquisition_policy COMMAND test_local_reacquisition_policy)

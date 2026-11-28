@@ -1,6 +1,7 @@
 #ifndef LIDAR_LOCALIZATION_REGISTRATION_FITNESS_HPP_
 #define LIDAR_LOCALIZATION_REGISTRATION_FITNESS_HPP_
 
+#include <Eigen/Eigenvalues>
 #include <pcl/common/transforms.h>
 #include <pcl/registration/registration.h>
 
@@ -75,6 +76,78 @@ RegistrationFitness registrationFitness(
     result.inlier_ratio = transformed.size() < min_inlier_points ? 0.0 :
       static_cast<double>(inliers) / count;
   }
+  return result;
+}
+
+// How the map's surfaces under the aligned scan pin it horizontally: for every source
+// point, moved by the final transformation, within inlier_distance_m of the target, the
+// normal of the target's surface there (the smallest principal axis of its NEIGHBOURS
+// nearest target points, when they lie on a plane), and the sum of the normals'
+// horizontal parts' outer products over the scan's points. Its eigenvalues are the share
+// of the scan that pins the pose along each horizontal direction: both near zero on bare
+// ground (every normal is vertical), one near zero along a corridor or a tunnel. Unlike
+// the NDT Hessian, it does not see NDT's cells, which pin a scan of bare ground to their
+// lattice.
+struct HorizontalConstraint
+{
+  bool valid{false};
+  // The summed outer products divided by the scan's point count.
+  Eigen::Matrix2d information{Eigen::Matrix2d::Zero()};
+  std::size_t points{0};
+};
+
+template<typename PointSource, typename PointTarget, typename Scalar>
+HorizontalConstraint horizontalConstraint(
+  pcl::Registration<PointSource, PointTarget, Scalar> & registration, int threads,
+  double inlier_distance_m, int neighbours = 10)
+{
+  HorizontalConstraint result;
+  const auto source = registration.getInputSource();
+  const auto tree = registration.getSearchMethodTarget();
+  if (!source || !tree || !tree->getInputCloud() || source->empty() || neighbours < 3) {
+    return result;
+  }
+  const auto & target = *tree->getInputCloud();
+  pcl::PointCloud<PointSource> transformed;
+  pcl::transformPointCloud(*source, transformed, registration.getFinalTransformation());
+  const int count = static_cast<int>(transformed.size());
+  const float inlier_limit = static_cast<float>(inlier_distance_m * inlier_distance_m);
+  std::vector<Eigen::Matrix2d> per_point(transformed.size(), Eigen::Matrix2d::Zero());
+#pragma omp parallel for num_threads(std::max(1, threads)) schedule(guided, 32)
+  for (int i = 0; i < count; ++i) {
+    pcl::Indices index(static_cast<std::size_t>(neighbours));
+    std::vector<float> distance(static_cast<std::size_t>(neighbours));
+    const int found = tree->nearestKSearch(transformed[i], neighbours, index, distance);
+    if (found < 3 || distance[0] > inlier_limit) {
+      continue;
+    }
+    Eigen::Vector3d mean = Eigen::Vector3d::Zero();
+    for (int k = 0; k < found; ++k) {
+      const auto & p = target[static_cast<std::size_t>(index[static_cast<std::size_t>(k)])];
+      mean += Eigen::Vector3d(p.x, p.y, p.z);
+    }
+    mean /= found;
+    Eigen::Matrix3d covariance = Eigen::Matrix3d::Zero();
+    for (int k = 0; k < found; ++k) {
+      const auto & p = target[static_cast<std::size_t>(index[static_cast<std::size_t>(k)])];
+      const Eigen::Vector3d d = Eigen::Vector3d(p.x, p.y, p.z) - mean;
+      covariance += d * d.transpose();
+    }
+    const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver(covariance);
+    const auto & values = solver.eigenvalues();
+    // A plane: the smallest spread well below the middle one.
+    if (!(values(0) < 0.1 * values(1))) {
+      continue;
+    }
+    const Eigen::Vector2d normal = solver.eigenvectors().col(0).head<2>();
+    per_point[static_cast<std::size_t>(i)] = normal * normal.transpose();
+  }
+  for (const auto & m : per_point) {
+    result.information += m;
+  }
+  result.points = transformed.size();
+  result.information /= static_cast<double>(count);
+  result.valid = true;
   return result;
 }
 
